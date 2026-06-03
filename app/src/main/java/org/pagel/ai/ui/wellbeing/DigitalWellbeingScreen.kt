@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -54,7 +55,7 @@ fun DigitalWellbeingScreen(onSettings: () -> Unit = {}, vm: WellbeingViewModel =
     val ctx = LocalContext.current
     // Initial load happens in WellbeingViewModel.init; REFRESH re-harvests on demand.
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(Modifier.fillMaxSize().scanlines(), color = MaterialTheme.colorScheme.background) {
         if (!state.hasAccess) {
             PermissionGate(
                 onGrant = { ctx.startActivity(UsagePermission.settingsIntent()) },
@@ -77,6 +78,7 @@ fun DigitalWellbeingScreen(onSettings: () -> Unit = {}, vm: WellbeingViewModel =
                     modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp),
                 ) {
+                    item { SectionHeader("TOP APPS", list.size) }
                     items(list, key = { it.pkg }) { AppRow(it, maxMs) }
                     item { TrackingFooter(events) }
                 }
@@ -268,6 +270,35 @@ private fun fmtDuration(ms: Long): String {
         h > 0 -> "${h}h ${m}m"
         totalMin > 0 -> "${m}m"
         else -> "${ms / 1000L}s"
+    }
+}
+
+/** Subtle CRT scanline texture over the whole screen (fixed; content scrolls under it). */
+private fun Modifier.scanlines(): Modifier = drawWithContent {
+    drawContent()
+    val gap = 3.5.dp.toPx()
+    var y = 0f
+    while (y < size.height) {
+        drawLine(Color(0x08FFFFFF), Offset(0f, y), Offset(size.width, y), 1f)
+        y += gap
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String, count: Int) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
+        Spacer(Modifier.width(12.dp))
+        Text(
+            "$count",
+            style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFamily),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
