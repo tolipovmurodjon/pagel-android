@@ -2,6 +2,7 @@ package org.pagel.ai.service
 
 import android.content.Context
 import androidx.work.Constraints
+import androidx.work.NetworkType
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -14,6 +15,7 @@ object WorkScheduler {
 
     private const val HARVEST = "pagel-harvest"
     private const val ROLLUP = "pagel-rollup"
+    private const val SYNC = "pagel-sync"
     private const val HARVEST_NOW = "pagel-harvest-now"
 
     fun ensure(ctx: Context) {
@@ -25,6 +27,11 @@ object WorkScheduler {
 
         val rollup = PeriodicWorkRequestBuilder<RollupWorker>(2, TimeUnit.HOURS).build()
         wm.enqueueUniquePeriodicWork(ROLLUP, ExistingPeriodicWorkPolicy.KEEP, rollup)
+
+        val syncWork = PeriodicWorkRequestBuilder<SyncWorker>(3, TimeUnit.HOURS)
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .build()
+        wm.enqueueUniquePeriodicWork(SYNC, ExistingPeriodicWorkPolicy.KEEP, syncWork)
     }
 
     /** Fire an immediate harvest (e.g. user tapped refresh). */
