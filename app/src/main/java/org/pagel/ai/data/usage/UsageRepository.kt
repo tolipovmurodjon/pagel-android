@@ -8,6 +8,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.pagel.ai.domain.AppUsage
+import org.pagel.ai.domain.FocusScore
 import org.pagel.ai.domain.UsageSnapshot
 import java.time.LocalDate
 import java.time.ZoneId
@@ -16,12 +17,15 @@ import javax.inject.Singleton
 
 /**
  * Reads today's app usage from the OS [UsageStatsManager]. Foreground time comes from the
- * aggregated stats; launch counts are derived from ACTIVITY_RESUMED events. Read-only.
+ * aggregated stats; launch counts are derived from ACTIVITY_RESUMED events. Categorizes each app
+ * and computes a focus score. Read-only.
  */
 @Singleton
 class UsageRepository @Inject constructor(
     @ApplicationContext private val ctx: Context,
+    private val categorizer: AppCategorizer,
 ) {
+    private val focus = FocusScore()
     suspend fun today(): UsageSnapshot = withContext(Dispatchers.IO) {
         val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val start = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
@@ -49,16 +53,21 @@ class UsageRepository @Inject constructor(
                     label = labelFor(pm, us.packageName),
                     totalMs = us.totalTimeInForeground,
                     opens = opens[us.packageName] ?: 0,
+                    category = categorizer.categorize(us.packageName),
                 )
             }
             .sortedByDescending { it.totalMs }
             .toList()
 
+        val fr = focus.compute(apps.map { it.category to it.totalMs })
         UsageSnapshot(
             apps = apps,
             activeMs = apps.sumOf { it.totalMs },
             totalOpens = apps.sumOf { it.opens },
             distinctApps = apps.size,
+            focusScore = fr.score,
+            productiveMs = fr.productiveMs,
+            distractingMs = fr.distractingMs,
         )
     }
 

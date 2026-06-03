@@ -32,12 +32,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import org.pagel.ai.data.usage.UsagePermission
+import org.pagel.ai.domain.AppCategory
 import org.pagel.ai.domain.AppUsage
+import org.pagel.ai.ui.hud.FocusDial
 import org.pagel.ai.ui.hud.JarvisCore
 import org.pagel.ai.ui.theme.MonoFamily
 
@@ -57,9 +60,10 @@ fun DigitalWellbeingScreen(vm: WellbeingViewModel = hiltViewModel()) {
         } else {
             Column(Modifier.fillMaxSize()) {
                 Header(
+                    focusScore = state.snapshot?.focusScore ?: 0,
+                    productiveMs = state.snapshot?.productiveMs ?: 0L,
+                    distractingMs = state.snapshot?.distractingMs ?: 0L,
                     activeMs = state.snapshot?.activeMs ?: 0L,
-                    opens = state.snapshot?.totalOpens ?: 0,
-                    apps = state.snapshot?.distinctApps ?: 0,
                     loading = state.loading,
                     onRefresh = { vm.harvestAndRefresh() },
                 )
@@ -94,10 +98,17 @@ private fun TrackingFooter(events: Int) {
 }
 
 @Composable
-private fun Header(activeMs: Long, opens: Int, apps: Int, loading: Boolean, onRefresh: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 24.dp, bottom = 8.dp)) {
+private fun Header(
+    focusScore: Int,
+    productiveMs: Long,
+    distractingMs: Long,
+    activeMs: Long,
+    loading: Boolean,
+    onRefresh: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 22.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            JarvisCore(Modifier.size(48.dp), particleCount = 160)
+            JarvisCore(Modifier.size(40.dp), particleCount = 130)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("PAGEL", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground)
@@ -111,28 +122,37 @@ private fun Header(activeMs: Long, opens: Int, apps: Int, loading: Boolean, onRe
                 )
             }
         }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(6.dp))
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            FocusDial(focusScore, Modifier.size(190.dp))
+        }
+        Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Stat(Modifier.weight(1f), fmtDuration(activeMs), "ACTIVE")
-            Stat(Modifier.weight(1f), opens.toString(), "OPENS")
-            Stat(Modifier.weight(1f), apps.toString(), "APPS")
+            Stat(Modifier.weight(1f), fmtDuration(productiveMs), "FOCUSED", MaterialTheme.colorScheme.primary)
+            Stat(Modifier.weight(1f), fmtDuration(distractingMs), "DISTRACTED", MaterialTheme.colorScheme.onSurfaceVariant)
+            Stat(Modifier.weight(1f), fmtDuration(activeMs), "ACTIVE", MaterialTheme.colorScheme.onBackground)
         }
         Spacer(Modifier.height(14.dp))
     }
 }
 
 @Composable
-private fun Stat(modifier: Modifier, value: String, label: String) {
+private fun Stat(
+    modifier: Modifier,
+    value: String,
+    label: String,
+    valueColor: Color = MaterialTheme.colorScheme.primary,
+) {
     Column(
         modifier
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .padding(vertical = 14.dp, horizontal = 12.dp),
+            .padding(vertical = 14.dp, horizontal = 10.dp),
     ) {
         Text(
             value,
-            style = MaterialTheme.typography.titleLarge.copy(fontFamily = MonoFamily),
-            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.titleMedium.copy(fontFamily = MonoFamily),
+            color = valueColor,
         )
         Spacer(Modifier.height(2.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -141,6 +161,11 @@ private fun Stat(modifier: Modifier, value: String, label: String) {
 
 @Composable
 private fun AppRow(app: AppUsage, maxMs: Long) {
+    val barColor = when (app.category) {
+        AppCategory.PRODUCTIVE -> MaterialTheme.colorScheme.primary       // bright cyan
+        AppCategory.DISTRACTING -> MaterialTheme.colorScheme.onSurfaceVariant // grey (neutral, not a 2nd hue)
+        AppCategory.NEUTRAL -> MaterialTheme.colorScheme.secondary         // dim cyan
+    }
     Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -166,7 +191,7 @@ private fun AppRow(app: AppUsage, maxMs: Long) {
                     .fillMaxWidth((app.totalMs.toFloat() / maxMs).coerceIn(0.02f, 1f))
                     .height(3.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(barColor),
             )
         }
         Spacer(Modifier.height(6.dp))
