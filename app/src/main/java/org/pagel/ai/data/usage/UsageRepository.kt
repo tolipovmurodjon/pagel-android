@@ -9,17 +9,18 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.pagel.ai.domain.AppUsage
+import org.pagel.ai.domain.EventType
 import org.pagel.ai.domain.FocusScore
+import org.pagel.ai.domain.SessionBuilder
+import org.pagel.ai.domain.UsageEvent
 import org.pagel.ai.domain.UsageSnapshot
-import java.time.LocalDate
-import java.time.ZoneId
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Reads today's app usage from the OS [UsageStatsManager]. Foreground time comes from the
- * aggregated stats; launch counts are derived from ACTIVITY_RESUMED events. Categorizes each app
- * and computes a focus score. Read-only.
+ * Reads recent app usage from the OS event stream (rolling last 24h). Time AND open-counts come
+ * from the SAME source — paired ACTIVITY_RESUMED/PAUSED events folded by [SessionBuilder] — so they
+ * always agree (no daily-bucket spillover, no midnight-reset emptiness). Categorizes + scores focus.
  */
 @Singleton
 class UsageRepository @Inject constructor(
@@ -27,38 +28,53 @@ class UsageRepository @Inject constructor(
     private val categorizer: AppCategorizer,
 ) {
     private val focus = FocusScore()
+
     suspend fun today(): UsageSnapshot = withContext(Dispatchers.IO) {
         val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val start = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val now = System.currentTimeMillis()
+        val start = now - WINDOW_MS
 
-        // launch counts per package
-        val opens = HashMap<String, Int>()
-        val events = usm.queryEvents(start, now)
+        // Normalize the OS event stream into domain events.
+        val events = ArrayList<UsageEvent>()
+        val stream = usm.queryEvents(start, now)
         val e = UsageEvents.Event()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(e)
-            if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                opens[e.packageName] = (opens[e.packageName] ?: 0) + 1
-            }
+        while (stream.hasNextEvent()) {
+            stream.getNextEvent(e)
+            val type = when (e.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED -> EventType.APP_FG
+                UsageEvents.Event.ACTIVITY_PAUSED -> EventType.APP_BG
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE -> EventType.SCREEN_OFF
+                else -> null
+            } ?: continue
+            val pkg = if (type == EventType.APP_FG || type == EventType.APP_BG) e.packageName else null
+            events.add(UsageEvent(e.timeStamp, type, pkg))
         }
+        // Close any app still in the foreground at `now` so its in-progress time is counted.
+        events.add(UsageEvent(now, EventType.SCREEN_OFF, null))
+
+        val sessions = SessionBuilder().build(events)
+        val opens = events
+            .asSequence()
+            .filter { it.type == EventType.APP_FG && it.pkg != null }
+            .groupingBy { it.pkg!! }
+            .eachCount()
 
         val pm = ctx.packageManager
         val self = ctx.packageName
-        val apps = usm.queryAndAggregateUsageStats(start, now).values
-            .asSequence()
-            .filter { it.totalTimeInForeground > 1_000L && it.packageName != self }
-            .map { us ->
+        val apps = sessions
+            .filter { it.pkg != self }
+            .groupBy { it.pkg }
+            .map { (pkg, ss) ->
                 AppUsage(
-                    pkg = us.packageName,
-                    label = labelFor(pm, us.packageName),
-                    totalMs = us.totalTimeInForeground,
-                    opens = opens[us.packageName] ?: 0,
-                    category = categorizer.categorize(us.packageName),
+                    pkg = pkg,
+                    label = labelFor(pm, pkg),
+                    totalMs = ss.sumOf { it.durationMs },
+                    opens = opens[pkg] ?: 0,
+                    category = categorizer.categorize(pkg),
                 )
             }
+            .filter { it.totalMs > 1_000L }
             .sortedByDescending { it.totalMs }
-            .toList()
 
         val fr = focus.compute(apps.map { it.category to it.totalMs })
         UsageSnapshot(
@@ -79,7 +95,11 @@ class UsageRepository @Inject constructor(
             @Suppress("DEPRECATION") pm.getApplicationInfo(pkg, 0)
         }
         pm.getApplicationLabel(info).toString()
-    } catch (e: PackageManager.NameNotFoundException) {
+    } catch (ex: PackageManager.NameNotFoundException) {
         pkg
+    }
+
+    private companion object {
+        const val WINDOW_MS = 24L * 60 * 60 * 1000 // rolling last 24 hours
     }
 }

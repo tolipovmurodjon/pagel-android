@@ -32,9 +32,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import org.pagel.ai.data.usage.UsagePermission
@@ -114,7 +117,7 @@ private fun Header(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("PAGEL", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground)
-                Text("AWARENESS · TODAY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("AWARENESS · LAST 24H", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
             IconButton(onClick = onSettings) {
                 Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -150,6 +153,7 @@ private fun Stat(
 ) {
     Column(
         modifier
+            .hudCorners(MaterialTheme.colorScheme.outlineVariant)
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surface)
             .padding(vertical = 14.dp, horizontal = 10.dp),
@@ -266,3 +270,20 @@ private fun fmtDuration(ms: Long): String {
         else -> "${ms / 1000L}s"
     }
 }
+
+/** Iron-Man HUD: thin L-shaped brackets at the four corners of a panel. */
+private fun Modifier.hudCorners(color: Color, len: Dp = 9.dp, stroke: Dp = 1.5.dp): Modifier =
+    drawBehind {
+        val l = len.toPx()
+        val w = stroke.toPx()
+        val cw = size.width
+        val ch = size.height
+        drawLine(color, Offset(0f, 0f), Offset(l, 0f), w)
+        drawLine(color, Offset(0f, 0f), Offset(0f, l), w)
+        drawLine(color, Offset(cw, 0f), Offset(cw - l, 0f), w)
+        drawLine(color, Offset(cw, 0f), Offset(cw, l), w)
+        drawLine(color, Offset(0f, ch), Offset(l, ch), w)
+        drawLine(color, Offset(0f, ch), Offset(0f, ch - l), w)
+        drawLine(color, Offset(cw, ch), Offset(cw - l, ch), w)
+        drawLine(color, Offset(cw, ch), Offset(cw, ch - l), w)
+    }
