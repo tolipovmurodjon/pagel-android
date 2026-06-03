@@ -6,6 +6,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import org.pagel.ai.data.spend.SpendStore
+import org.pagel.ai.domain.SpendEvent
 import org.pagel.ai.domain.UsageSnapshot
 import java.net.HttpURLConnection
 import java.net.URL
@@ -21,6 +23,7 @@ import javax.inject.Singleton
 class BrainSync @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val settings: SyncSettings,
+    private val spendStore: SpendStore,
 ) {
     suspend fun push(snap: UsageSnapshot, day: String): Result<Unit> = withContext(Dispatchers.IO) {
         val (url, bearer) = settings.current()
@@ -28,6 +31,7 @@ class BrainSync @Inject constructor(
             return@withContext Result.failure(IllegalStateException("Sync not configured"))
         }
         val endpoint = url.trimEnd('/') + "/v1/phone/usage"
+        val spend = spendStore.today()
         runCatching {
             val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
@@ -37,14 +41,14 @@ class BrainSync @Inject constructor(
                 setRequestProperty("Authorization", "Bearer $bearer")
                 setRequestProperty("Content-Type", "application/json")
             }
-            conn.outputStream.use { it.write(buildJson(snap, day).toByteArray()) }
+            conn.outputStream.use { it.write(buildJson(snap, day, spend).toByteArray()) }
             val code = conn.responseCode
             conn.disconnect()
             if (code !in 200..299) error("HTTP $code")
         }
     }
 
-    private fun buildJson(snap: UsageSnapshot, day: String): String {
+    private fun buildJson(snap: UsageSnapshot, day: String, spend: List<SpendEvent>): String {
         val apps = JSONArray()
         snap.apps.take(40).forEach { a ->
             apps.put(
@@ -56,6 +60,10 @@ class BrainSync @Inject constructor(
                     .put("category", a.category.name),
             )
         }
+        val spendArr = JSONArray()
+        spend.forEach { s ->
+            spendArr.put(JSONObject().put("ts", s.ts).put("amount", s.amount).put("raw", s.raw))
+        }
         return JSONObject()
             .put("day", day)
             .put("focusScore", snap.focusScore)
@@ -65,6 +73,8 @@ class BrainSync @Inject constructor(
             .put("distinctApps", snap.distinctApps)
             .put("totalOpens", snap.totalOpens)
             .put("apps", apps)
+            .put("spend", spendArr)
+            .put("spendTotal", spend.sumOf { it.amount })
             .toString()
     }
 }

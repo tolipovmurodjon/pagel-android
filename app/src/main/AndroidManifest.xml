@@ -49,6 +49,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- Reads bank notifications to capture spend amounts (special access, granted in Settings). -->
+        <service
+            android:name=".data.spend.SpendNotificationListener"
+            android:exported="false"
+            android:label="PAGEL spend"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- We provide WorkManager config via PagelApp (Hilt); remove the default initializer. -->
         <provider
             android:name="androidx.startup.InitializationProvider"
