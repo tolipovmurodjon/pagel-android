@@ -26,7 +26,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -49,7 +48,7 @@ fun DigitalWellbeingScreen(vm: WellbeingViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
     val events by vm.storedEvents.collectAsState()
     val ctx = LocalContext.current
-    LaunchedEffect(Unit) { vm.harvestAndRefresh() }
+    // Initial load happens in WellbeingViewModel.init; REFRESH re-harvests on demand.
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         if (!state.hasAccess) {

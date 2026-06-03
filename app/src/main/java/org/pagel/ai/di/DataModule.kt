@@ -23,5 +23,6 @@ object DataModule {
             .build()
 
     @Provides
+    @Singleton
     fun provideDao(db: AwarenessDb): AwarenessDao = db.dao()
 }

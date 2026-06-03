@@ -39,6 +39,10 @@ class WellbeingViewModel @Inject constructor(
     val storedEvents: StateFlow<Int> =
         dao.observeEventCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    init {
+        harvestAndRefresh()
+    }
+
     /** Harvest the OS event stream into Room, then refresh the live view. */
     fun harvestAndRefresh() {
         if (!UsagePermission.hasAccess(ctx)) {

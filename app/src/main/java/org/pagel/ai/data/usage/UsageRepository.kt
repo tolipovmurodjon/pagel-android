@@ -4,6 +4,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -72,7 +73,12 @@ class UsageRepository @Inject constructor(
     }
 
     private fun labelFor(pm: PackageManager, pkg: String): String = try {
-        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        val info = if (Build.VERSION.SDK_INT >= 33) {
+            pm.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(0L))
+        } else {
+            @Suppress("DEPRECATION") pm.getApplicationInfo(pkg, 0)
+        }
+        pm.getApplicationLabel(info).toString()
     } catch (e: PackageManager.NameNotFoundException) {
         pkg
     }

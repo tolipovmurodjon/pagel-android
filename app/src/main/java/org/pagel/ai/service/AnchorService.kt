@@ -11,7 +11,6 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -55,7 +54,9 @@ class AnchorService : Service() {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_USER_PRESENT)
         }
-        ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        // SCREEN_ON/OFF/USER_PRESENT are protected system broadcasts — register without an export
+        // flag (the 2-arg form is exempt from the Android 14 flag requirement and guarantees delivery).
+        registerReceiver(screenReceiver, filter)
         WorkScheduler.ensure(this)
     }
 
