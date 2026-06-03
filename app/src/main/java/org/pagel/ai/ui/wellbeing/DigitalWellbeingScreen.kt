@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -44,7 +45,7 @@ import org.pagel.ai.ui.hud.JarvisCore
 import org.pagel.ai.ui.theme.MonoFamily
 
 @Composable
-fun DigitalWellbeingScreen(vm: WellbeingViewModel = hiltViewModel()) {
+fun DigitalWellbeingScreen(onSettings: () -> Unit = {}, vm: WellbeingViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
     val events by vm.storedEvents.collectAsState()
     val ctx = LocalContext.current
@@ -65,6 +66,7 @@ fun DigitalWellbeingScreen(vm: WellbeingViewModel = hiltViewModel()) {
                     activeMs = state.snapshot?.activeMs ?: 0L,
                     loading = state.loading,
                     onRefresh = { vm.harvestAndRefresh() },
+                    onSettings = onSettings,
                 )
                 val list = state.snapshot?.apps.orEmpty()
                 val maxMs = (list.firstOrNull()?.totalMs ?: 1L).coerceAtLeast(1L)
@@ -104,6 +106,7 @@ private fun Header(
     activeMs: Long,
     loading: Boolean,
     onRefresh: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 22.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -112,6 +115,9 @@ private fun Header(
             Column(Modifier.weight(1f)) {
                 Text("PAGEL", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground)
                 Text("AWARENESS · TODAY", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onRefresh) {
                 Icon(

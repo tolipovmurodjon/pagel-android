@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import org.pagel.ai.ui.hud.JarvisCore
+import org.pagel.ai.ui.settings.SettingsScreen
 import org.pagel.ai.ui.theme.Cyan
 import org.pagel.ai.ui.theme.CyanBright
 import org.pagel.ai.ui.theme.PagelTheme
@@ -90,7 +91,15 @@ private fun AwarenessApp() {
         delay(1600)
         ready = true
     }
-    if (ready) DigitalWellbeingScreen() else BootScreen()
+    if (!ready) {
+        BootScreen()
+        return
+    }
+    var screen by remember { mutableStateOf("dash") }
+    when (screen) {
+        "settings" -> SettingsScreen(onBack = { screen = "dash" })
+        else -> DigitalWellbeingScreen(onSettings = { screen = "settings" })
+    }
 }
 
 @Composable
