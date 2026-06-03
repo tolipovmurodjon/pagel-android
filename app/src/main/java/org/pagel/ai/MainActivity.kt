@@ -1,9 +1,16 @@
 package org.pagel.ai
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import org.pagel.ai.service.AnchorService
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -47,15 +54,30 @@ import org.pagel.ai.ui.wellbeing.DigitalWellbeingScreen
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    private val notifPerm =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        ensureNotifPermission()
+        ContextCompat.startForegroundService(this, Intent(this, AnchorService::class.java))
         setContent {
             PagelTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     AwarenessApp()
                 }
             }
+        }
+    }
+
+    private fun ensureNotifPermission() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 }

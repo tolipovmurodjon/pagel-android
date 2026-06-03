@@ -24,7 +24,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -42,13 +44,15 @@ import org.pagel.ai.ui.theme.MonoFamily
 @Composable
 fun DigitalWellbeingScreen(vm: WellbeingViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
+    val events by vm.storedEvents.collectAsState()
     val ctx = LocalContext.current
+    LaunchedEffect(Unit) { vm.harvestAndRefresh() }
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         if (!state.hasAccess) {
             PermissionGate(
                 onGrant = { ctx.startActivity(UsagePermission.settingsIntent()) },
-                onRefresh = { vm.refresh() },
+                onRefresh = { vm.harvestAndRefresh() },
             )
         } else {
             Column(Modifier.fillMaxSize()) {
@@ -57,7 +61,7 @@ fun DigitalWellbeingScreen(vm: WellbeingViewModel = hiltViewModel()) {
                     opens = state.snapshot?.totalOpens ?: 0,
                     apps = state.snapshot?.distinctApps ?: 0,
                     loading = state.loading,
-                    onRefresh = { vm.refresh() },
+                    onRefresh = { vm.harvestAndRefresh() },
                 )
                 val list = state.snapshot?.apps.orEmpty()
                 val maxMs = (list.firstOrNull()?.totalMs ?: 1L).coerceAtLeast(1L)
@@ -66,9 +70,26 @@ fun DigitalWellbeingScreen(vm: WellbeingViewModel = hiltViewModel()) {
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp),
                 ) {
                     items(list, key = { it.pkg }) { AppRow(it, maxMs) }
+                    item { TrackingFooter(events) }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TrackingFooter(events: Int) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "TRACKING · $events EVENTS STORED ON-DEVICE",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

@@ -29,6 +29,25 @@
             </intent-filter>
         </activity>
 
+        <!-- Anchor foreground service: real-time screen events + keeps the harvest scheduled. -->
+        <service
+            android:name=".service.AnchorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="continuous owner life-logging for a personal AI assistant" />
+        </service>
+
+        <!-- Re-arm periodic harvest after reboot. -->
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- We provide WorkManager config via PagelApp (Hilt); remove the default initializer. -->
         <provider
             android:name="androidx.startup.InitializationProvider"
