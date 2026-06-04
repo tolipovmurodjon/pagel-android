@@ -23,7 +23,10 @@ class SyncSettings @Inject constructor(@ApplicationContext private val ctx: Cont
 
     suspend fun current(): Pair<String, String> {
         val p = ctx.syncDataStore.data.first()
-        return (p[urlKey]?.takeIf { it.isNotBlank() } ?: defaultUrl) to (p[bearerKey] ?: "")
+        val stored = p[urlKey]?.trim().orEmpty()
+        // Heal stale endpoints: blank, or an old ephemeral cloudflare quick-tunnel → use the stable base.
+        val url = if (stored.isBlank() || stored.contains("trycloudflare")) defaultUrl else stored
+        return url to (p[bearerKey] ?: "")
     }
 
     suspend fun save(url: String, bearer: String) {
