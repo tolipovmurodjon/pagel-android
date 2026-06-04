@@ -42,6 +42,18 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- Quick-Settings tile: one tap (even from lock screen) → talk to PAGEL. -->
+        <service
+            android:name=".service.VoiceTile"
+            android:exported="true"
+            android:icon="@android:drawable/ic_btn_speak_now"
+            android:label="PAGEL"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <!-- Anchor foreground service: real-time screen events + keeps the harvest scheduled. -->
         <service
             android:name=".service.AnchorService"

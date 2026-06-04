@@ -35,8 +35,13 @@ import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.foundation.lazy.itemsIndexed
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.IconButton
@@ -351,42 +356,83 @@ private fun VoicePickerBar(current: VoiceOption, status: String?, onClick: () ->
 
 @Composable
 private fun VoiceChooser(selectedId: String, onPick: (VoiceOption) -> Unit) {
+    var pending by remember { mutableStateOf(VoiceCatalog.byId(selectedId) ?: VoiceCatalog.default) }
+    var playingId by remember { mutableStateOf<String?>(null) }
+    val player = remember {
+        MediaPlayer().apply {
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+            setOnCompletionListener { playingId = null }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { runCatching { player.release() } } }
+
+    fun preview(v: VoiceOption) {
+        pending = v
+        if (v.previewUrl.isBlank()) return
+        runCatching {
+            player.reset()
+            player.setDataSource(v.previewUrl)
+            playingId = v.id
+            player.setOnPreparedListener { it.start() }
+            player.prepareAsync()
+        }.onFailure { playingId = null }
+    }
+
     Column(
         Modifier
             .fillMaxWidth()
-            .heightIn(max = 520.dp)
-            .verticalScroll(rememberScrollState())
+            .heightIn(max = 540.dp)
             .padding(horizontal = 20.dp)
-            .padding(bottom = 28.dp),
+            .padding(bottom = 24.dp),
     ) {
         Text("CHOOSE PAGEL'S VOICE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Human & playful first. Applies on your next call.",
+            "Tap a name to hear it. Human & playful first.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(14.dp))
-        VoiceCatalog.voices.forEach { v ->
-            val sel = v.id == selectedId
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)
-                    .clickable { onPick(v) }
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(if (v.female) "♀" else "♂", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(v.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
-                    Text(v.vibe, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+            VoiceCatalog.voices.forEach { v ->
+                val isPending = v.id == pending.id
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isPending) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent)
+                        .clickable { preview(v) }
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (v.id == playingId) "🔊" else "▶", color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "${v.name}  ${if (v.female) "♀" else "♂"}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onBackground,
+                        )
+                        Text(v.vibe, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (v.id == selectedId) Text("✓ current", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 }
-                if (sel) Text("✓", color = MaterialTheme.colorScheme.primary)
             }
         }
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = { runCatching { player.stop() }; onPick(pending) },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) { Text("USE ${pending.name.uppercase()}", style = MaterialTheme.typography.labelLarge) }
     }
 }
 
