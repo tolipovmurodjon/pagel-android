@@ -17,3 +17,5 @@ local.properties
 /app/release
 
 # Room schemas are intentionally tracked (do NOT ignore app/schemas)
+
+_*.tmp
