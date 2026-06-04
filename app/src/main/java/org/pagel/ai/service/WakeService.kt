@@ -89,9 +89,15 @@ class WakeService : Service() {
         pausedUntil = SystemClock.uptimeMillis() + ms
     }
 
+    /** A call is genuinely in progress — pause KWS to free the mic. ERROR/IDLE both mean "free to listen". */
+    private fun sessionActive(): Boolean = when (sessionManager.state.value) {
+        VoiceState.CONNECTING, VoiceState.LISTENING, VoiceState.THINKING, VoiceState.SPEAKING -> true
+        else -> false
+    }
+
     private fun shouldListen(): Boolean {
         if (SystemClock.uptimeMillis() < pausedUntil) return false
-        if (sessionManager.state.value != VoiceState.IDLE) return false
+        if (sessionActive()) return false
         // only-when-charging policy (read once per check; cheap)
         return charging || !chargerOnlyCached
     }
@@ -111,43 +117,62 @@ class WakeService : Service() {
         val minBuf = AudioRecord.getMinBufferSize(
             sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
         ).coerceAtLeast(sampleRate)
-        var record: AudioRecord? = null
-        var stream = spotter.createStream()
         val buf = ShortArray(sampleRate / 10) // 100 ms chunks
+        var record: AudioRecord? = null
+        var stream: com.k2fsa.sherpa.onnx.OnlineStream? = null
+
+        fun teardown() {
+            record?.let { runCatching { it.stop() }; runCatching { it.release() } }
+            record = null
+            stream?.let { runCatching { it.release() } }
+            stream = null
+        }
 
         try {
             while (running) {
+                // Pause (and free the mic) while a real call is live, off-charger, or in cooldown.
                 if (!shouldListen()) {
-                    record?.let { runCatching { it.stop() }; runCatching { it.release() } }
-                    record = null
-                    Thread.sleep(250)
+                    teardown()
+                    Thread.sleep(300)
                     continue
                 }
+                // (Re)acquire the mic + a fresh recognizer stream when resuming.
                 if (record == null) {
-                    record = AudioRecord(
-                        MediaRecorder.AudioSource.VOICE_RECOGNITION, sampleRate,
-                        AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2,
-                    ).also { runCatching { it.startRecording() } }
-                    spotter.reset(stream)
+                    val r = runCatching {
+                        AudioRecord(
+                            MediaRecorder.AudioSource.VOICE_RECOGNITION, sampleRate,
+                            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, minBuf * 2,
+                        )
+                    }.getOrNull()
+                    if (r == null || r.state != AudioRecord.STATE_INITIALIZED) {
+                        runCatching { r?.release() }
+                        Thread.sleep(500) // mic busy/unavailable — back off and retry, never die
+                        continue
+                    }
+                    runCatching { r.startRecording() }
+                    record = r
+                    stream = spotter.createStream()
                 }
-                val n = record?.read(buf, 0, buf.size) ?: 0
+                val s = stream ?: continue
+                val n = record?.read(buf, 0, buf.size) ?: -1
                 if (n > 0) {
                     val samples = FloatArray(n) { buf[it] / 32768.0f }
-                    stream.acceptWaveform(samples, sampleRate)
-                    while (spotter.isReady(stream)) spotter.decode(stream)
-                    val keyword = spotter.getResult(stream).keyword
+                    s.acceptWaveform(samples, sampleRate)
+                    while (spotter.isReady(s)) spotter.decode(s)
+                    val keyword = spotter.getResult(s).keyword
                     if (keyword.isNotBlank()) {
                         onWake(keyword)
-                        spotter.reset(stream)
-                        cooldown(2000) // let the session take the mic
+                        teardown()        // release the mic NOW so the session can grab it
+                        cooldown(2500)
                     }
+                } else {
+                    Thread.sleep(15)
                 }
             }
         } catch (t: Throwable) {
             Log.e(TAG, "listen loop crashed", t)
         } finally {
-            record?.let { runCatching { it.stop() }; runCatching { it.release() } }
-            runCatching { stream.release() }
+            teardown()
             runCatching { spotter.release() }
         }
     }

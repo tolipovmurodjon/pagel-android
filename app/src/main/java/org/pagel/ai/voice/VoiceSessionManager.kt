@@ -45,6 +45,7 @@ class VoiceSessionManager @Inject constructor(
     val muted: StateFlow<Boolean> = _muted.asStateFlow()
 
     private var session: ConversationSession? = null
+    private var lastAmpNs = 0L
 
     /** Mint a token, open the WebRTC session, and wire the callbacks. No-op if already live. */
     fun start(context: Context) {
@@ -87,7 +88,17 @@ class VoiceSessionManager @Inject constructor(
                 val s = ConversationClient.startSession(config, context)
                 session = s
                 // Mirror the SDK's live flows so the UI can pulse the core to PAGEL's voice + show mute.
-                launch { s.audioLevel.collect { _amplitude.value = it } }
+                // Throttle the audio level to ~14 Hz — collecting it raw (~100 Hz) storms recomposition
+                // and freezes the UI (mute taps get lost). The visual stays smooth at this rate.
+                launch {
+                    s.audioLevel.collect { lvl ->
+                        val now = System.nanoTime()
+                        if (now - lastAmpNs > 70_000_000L) {
+                            lastAmpNs = now
+                            _amplitude.value = lvl
+                        }
+                    }
+                }
                 launch { s.isMuted.collect { _muted.value = it } }
             } catch (t: Throwable) {
                 _error.value = t.localizedMessage ?: t.message ?: "Failed to start voice"

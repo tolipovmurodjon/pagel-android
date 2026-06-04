@@ -31,6 +31,8 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +41,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import org.pagel.ai.service.WakeService
+import org.pagel.ai.voice.VoiceCatalog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -72,6 +75,8 @@ fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewMod
     val amplitude by vm.amplitude.collectAsState()
     val muted by vm.muted.collectAsState()
     val armed by vm.armed.collectAsState(initial = false)
+    val selectedVoice by vm.selectedVoice.collectAsState()
+    var voiceMenu by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
 
@@ -151,6 +156,28 @@ fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewMod
                     }
                     Spacer(Modifier.width(4.dp))
                     Text("PAGEL · VOICE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Box {
+                        Text(
+                            "🎙 ${selectedVoice.name} ▾",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clickable { voiceMenu = true },
+                        )
+                        DropdownMenu(expanded = voiceMenu, onDismissRequest = { voiceMenu = false }) {
+                            VoiceCatalog.voices.forEach { v ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(v.name, color = MaterialTheme.colorScheme.onBackground)
+                                            Text(v.vibe, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    },
+                                    onClick = { vm.setVoice(v); voiceMenu = false },
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.weight(1f))
                     Text(
                         "HEY PAGEL",
@@ -185,7 +212,7 @@ fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewMod
                                         CircleShape,
                                     ),
                             )
-                            JarvisCore(Modifier.size(300.dp), energy = energy, spin = spin)
+                            JarvisCore(Modifier.size(300.dp), particleCount = 440, energy = energy, spin = spin)
                         }
                         Spacer(Modifier.height(8.dp))
                         Text(

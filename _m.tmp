@@ -1,0 +1,19 @@
+﻿Voice audit fixes: smart brain, voice picker, mute/wake/silence bugs
+
+Server (voice_llm.py, verified via curl):
+- silence guard: empty/punctuation/filler input returns EMPTY so TTS stays
+  silent (kills the talks-non-stop-on-silence loop)
+- model kimi-k2.6:cloud + think:false (gpt-oss leaked reasoning + ignored
+  memory; kimi is smart, clean, knows Boss); num_predict cap
+- rich Boss profile in boss-core-memory (was 6 lines) -> knows who he is
+- /v1/voice/set-voice endpoint (PATCHes the EL agent voice)
+
+App (builds green):
+- mute-freeze fix: throttle audioLevel 100Hz -> ~14Hz (recomposition storm
+  was freezing taps); lighter core during calls (440 particles)
+- wake fix: resume listening after a call OR error (treated error as
+  in-call and died); fresh mic + stream each session; back off if mic busy
+- voice picker: VoiceCatalog (8 voices) + SetVoiceClient + dropdown in the
+  voice top bar -> choose PAGEL's voice (applies next session)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
