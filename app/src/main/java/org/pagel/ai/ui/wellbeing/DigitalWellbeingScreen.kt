@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
@@ -49,7 +50,11 @@ import org.pagel.ai.ui.hud.JarvisCore
 import org.pagel.ai.ui.theme.MonoFamily
 
 @Composable
-fun DigitalWellbeingScreen(onSettings: () -> Unit = {}, vm: WellbeingViewModel = hiltViewModel()) {
+fun DigitalWellbeingScreen(
+    onSettings: () -> Unit = {},
+    onVoice: () -> Unit = {},
+    vm: WellbeingViewModel = hiltViewModel(),
+) {
     val state by vm.state.collectAsState()
     val events by vm.storedEvents.collectAsState()
     val ctx = LocalContext.current
@@ -71,6 +76,7 @@ fun DigitalWellbeingScreen(onSettings: () -> Unit = {}, vm: WellbeingViewModel =
                     loading = state.loading,
                     onRefresh = { vm.harvestAndRefresh() },
                     onSettings = onSettings,
+                    onVoice = onVoice,
                 )
                 val list = state.snapshot?.apps.orEmpty()
                 val maxMs = (list.firstOrNull()?.totalMs ?: 1L).coerceAtLeast(1L)
@@ -112,6 +118,7 @@ private fun Header(
     loading: Boolean,
     onRefresh: () -> Unit,
     onSettings: () -> Unit,
+    onVoice: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 22.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -120,6 +127,9 @@ private fun Header(
             Column(Modifier.weight(1f)) {
                 Text("PAGEL", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onBackground)
                 Text("AWARENESS · LAST 24H", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onVoice) {
+                Icon(Icons.Rounded.Mic, contentDescription = "Talk to PAGEL", tint = MaterialTheme.colorScheme.primary)
             }
             IconButton(onClick = onSettings) {
                 Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant)

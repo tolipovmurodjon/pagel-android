@@ -16,6 +16,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // LiveKit (via the ElevenLabs voice SDK) pulls audioswitch from JitPack (commit-versioned).
+        maven { url = uri("https://jitpack.io") }
     }
 }
 

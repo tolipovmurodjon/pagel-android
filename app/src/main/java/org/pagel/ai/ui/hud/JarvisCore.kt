@@ -42,6 +42,8 @@ private data class Particle(
 fun JarvisCore(
     modifier: Modifier = Modifier,
     particleCount: Int = 700,
+    energy: Float = 1f, // overall brightness/bloom — voice drives this (speaking = brighter)
+    spin: Float = 1f,   // swirl-rate multiplier — voice drives this (thinking = faster)
 ) {
     val tau = (2.0 * PI).toFloat()
     val particles = remember(particleCount) {
@@ -82,10 +84,10 @@ fun JarvisCore(
         val rad = size.minDimension / 2f
         val dot = rad / 200f
 
-        // soft inner core disc — breathes
+        // soft inner core disc — breathes (brighter as energy rises)
         drawCircle(
             brush = Brush.radialGradient(
-                listOf(Cyan.copy(alpha = 0.14f + 0.10f * breathe), Color.Transparent),
+                listOf(Cyan.copy(alpha = ((0.14f + 0.10f * breathe) * energy).coerceIn(0f, 1f)), Color.Transparent),
                 center = c, radius = rad * 0.5f,
             ),
             radius = rad * 0.5f, center = c,
@@ -93,15 +95,15 @@ fun JarvisCore(
 
         // the fine orbiting particle field
         particles.forEach { p ->
-            val ang = p.angle + time * tau * p.speed
+            val ang = p.angle + time * tau * p.speed * spin
             val rr = (p.radius + sin(time * tau * 0.5f + p.phase) * 0.03f) * rad * (0.97f + 0.03f * breathe)
             val x = c.x + rr * cos(ang)
             val y = c.y + rr * sin(ang)
             val tw = 0.40f + 0.60f * (0.5f + 0.5f * sin(time * tau * p.twinkle + p.phase))
             val a = (p.alpha * tw).coerceIn(0f, 1f)
             val s = p.size * dot
-            if (a > 0.5f) drawCircle(Cyan.copy(alpha = a * 0.16f), radius = s * 2.6f, center = Offset(x, y)) // selective bloom
-            drawCircle(CyanBright.copy(alpha = a), radius = s, center = Offset(x, y))                         // crisp core
+            if (a > 0.5f) drawCircle(Cyan.copy(alpha = (a * 0.16f * energy).coerceIn(0f, 1f)), radius = s * 2.6f, center = Offset(x, y)) // selective bloom
+            drawCircle(CyanBright.copy(alpha = a), radius = s, center = Offset(x, y))                                                    // crisp core
         }
 
         // a single faint scan spark orbiting the ring

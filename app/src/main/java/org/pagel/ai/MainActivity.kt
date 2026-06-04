@@ -51,6 +51,7 @@ import org.pagel.ai.ui.settings.SettingsScreen
 import org.pagel.ai.ui.theme.Cyan
 import org.pagel.ai.ui.theme.CyanBright
 import org.pagel.ai.ui.theme.PagelTheme
+import org.pagel.ai.ui.voice.VoiceScreen
 import org.pagel.ai.ui.wellbeing.DigitalWellbeingScreen
 
 @AndroidEntryPoint
@@ -98,7 +99,11 @@ private fun AwarenessApp() {
     var screen by remember { mutableStateOf("dash") }
     when (screen) {
         "settings" -> SettingsScreen(onBack = { screen = "dash" })
-        else -> DigitalWellbeingScreen(onSettings = { screen = "settings" })
+        "voice" -> VoiceScreen(onBack = { screen = "dash" })
+        else -> DigitalWellbeingScreen(
+            onSettings = { screen = "settings" },
+            onVoice = { screen = "voice" },
+        )
     }
 }
 
