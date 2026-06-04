@@ -1,7 +1,7 @@
 package org.pagel.ai.ui.hud
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import kotlin.math.roundToInt
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -30,11 +32,13 @@ import kotlin.math.sin
 @Composable
 fun FocusDial(score: Int, modifier: Modifier = Modifier) {
     val target = (score / 100f).coerceIn(0f, 1f)
-    val animated by animateFloatAsState(
-        targetValue = target,
-        animationSpec = tween(900, easing = FastOutSlowInEasing),
-        label = "focus",
-    )
+    // Boot-up sweep: start at 0 on first show and animate to the score (arc + number rise together).
+    val anim = remember { Animatable(0f) }
+    LaunchedEffect(target) {
+        anim.animateTo(target, animationSpec = tween(1100, easing = FastOutSlowInEasing))
+    }
+    val animated = anim.value
+    val shown = (animated * 100).roundToInt()
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val c = center
@@ -70,7 +74,7 @@ fun FocusDial(score: Int, modifier: Modifier = Modifier) {
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                "$score",
+                "$shown",
                 style = MaterialTheme.typography.displayMedium.copy(fontFamily = org.pagel.ai.ui.theme.MonoFamily),
                 color = MaterialTheme.colorScheme.primary,
             )
