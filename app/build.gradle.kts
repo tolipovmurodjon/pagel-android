@@ -21,6 +21,9 @@ android {
         versionName = "0.1-A1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        // Ship only the ABIs we run on (real Samsung = arm64, emulator = x86_64). The voice SDK's
+        // WebRTC native libs are large; this trims the APK from ~117MB to ~40MB.
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
     buildTypes {

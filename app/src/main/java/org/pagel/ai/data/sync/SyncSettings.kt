@@ -18,9 +18,12 @@ class SyncSettings @Inject constructor(@ApplicationContext private val ctx: Cont
     private val urlKey = stringPreferencesKey("endpoint_url")
     private val bearerKey = stringPreferencesKey("bearer")
 
+    /** Stable default brain base — serves both /v1/phone/usage and /v1/voice/token. */
+    val defaultUrl: String = "https://humopedia.com/pagel-voice"
+
     suspend fun current(): Pair<String, String> {
         val p = ctx.syncDataStore.data.first()
-        return (p[urlKey] ?: "") to (p[bearerKey] ?: "")
+        return (p[urlKey]?.takeIf { it.isNotBlank() } ?: defaultUrl) to (p[bearerKey] ?: "")
     }
 
     suspend fun save(url: String, bearer: String) {

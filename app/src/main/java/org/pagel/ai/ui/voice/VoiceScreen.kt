@@ -28,6 +28,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.MicOff
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,9 +46,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -61,7 +66,10 @@ fun VoiceScreen(onBack: () -> Unit, vm: VoiceViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
     val error by vm.error.collectAsState()
     val transcript by vm.transcript.collectAsState()
+    val amplitude by vm.amplitude.collectAsState()
+    val muted by vm.muted.collectAsState()
     val ctx = LocalContext.current
+    val haptics = LocalHapticFeedback.current
 
     var wantStart by remember { mutableStateOf(false) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -81,13 +89,21 @@ fun VoiceScreen(onBack: () -> Unit, vm: VoiceViewModel = hiltViewModel()) {
 
     val active = state != VoiceState.IDLE && state != VoiceState.ERROR
 
-    // The core breathes with the conversation: brighter when speaking, faster when thinking.
+    // A short haptic pulse each time PAGEL takes/yields the floor — physical presence.
+    LaunchedEffect(state) {
+        when (state) {
+            VoiceState.LISTENING, VoiceState.SPEAKING -> haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            else -> Unit
+        }
+    }
+
+    // The core breathes with the conversation; while PAGEL speaks it pulses to his live voice level.
     val targetEnergy = when (state) {
         VoiceState.IDLE -> 0.65f
         VoiceState.CONNECTING -> 0.85f
         VoiceState.LISTENING -> 1.0f
         VoiceState.THINKING -> 1.15f
-        VoiceState.SPEAKING -> 1.45f
+        VoiceState.SPEAKING -> 1.35f
         VoiceState.ERROR -> 0.5f
     }
     val targetSpin = when (state) {
@@ -98,8 +114,10 @@ fun VoiceScreen(onBack: () -> Unit, vm: VoiceViewModel = hiltViewModel()) {
         VoiceState.SPEAKING -> 1.15f
         VoiceState.ERROR -> 0.3f
     }
-    val energy by animateFloatAsState(targetEnergy, tween(900), label = "energy")
-    val spin by animateFloatAsState(targetSpin, tween(900), label = "spin")
+    val baseEnergy by animateFloatAsState(targetEnergy, tween(700), label = "energy")
+    val spin by animateFloatAsState(targetSpin, tween(700), label = "spin")
+    val liveAmp by animateFloatAsState(if (state == VoiceState.SPEAKING) amplitude else 0f, tween(120), label = "amp")
+    val energy = baseEnergy + liveAmp * 0.9f
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(
@@ -125,11 +143,25 @@ fun VoiceScreen(onBack: () -> Unit, vm: VoiceViewModel = hiltViewModel()) {
                     Text("PAGEL · VOICE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
 
-                // hero core + caption
+                // hero core + reactive halo + caption
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Spacer(Modifier.height(18.dp))
-                        JarvisCore(Modifier.size(300.dp), energy = energy, spin = spin)
+                        Box(contentAlignment = Alignment.Center) {
+                            // halo that swells with PAGEL's voice
+                            Box(
+                                Modifier
+                                    .size(300.dp)
+                                    .scale(1f + liveAmp * 0.18f)
+                                    .background(
+                                        Brush.radialGradient(
+                                            listOf(Color(0x222FE4D6).copy(alpha = 0.10f + liveAmp * 0.22f), Color.Transparent),
+                                        ),
+                                        CircleShape,
+                                    ),
+                            )
+                            JarvisCore(Modifier.size(300.dp), energy = energy, spin = spin)
+                        }
                         Spacer(Modifier.height(8.dp))
                         Text(
                             text = error?.takeIf { state == VoiceState.ERROR } ?: captionFor(state),
@@ -143,7 +175,7 @@ fun VoiceScreen(onBack: () -> Unit, vm: VoiceViewModel = hiltViewModel()) {
 
                 Spacer(Modifier.height(14.dp))
 
-                // live transcript
+                // live transcript (auto-scrolls to newest)
                 val listState = rememberLazyListState()
                 LaunchedEffect(transcript.size) {
                     if (transcript.isNotEmpty()) listState.animateScrollToItem(transcript.lastIndex)
@@ -156,12 +188,29 @@ fun VoiceScreen(onBack: () -> Unit, vm: VoiceViewModel = hiltViewModel()) {
                     items(transcript) { line -> TranscriptBubble(line) }
                 }
 
-                // talk / end control
-                Box(
+                // controls: mute (when live) + talk/end + retry (on error)
+                Row(
                     Modifier.fillMaxWidth().padding(vertical = 22.dp),
-                    contentAlignment = Alignment.Center,
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TalkButton(active = active, onClick = { if (active) vm.stop() else talk() })
+                    if (active) {
+                        RoundControl(
+                            icon = if (muted) Icons.Rounded.MicOff else Icons.Rounded.Mic,
+                            label = if (muted) "UNMUTE" else "MUTE",
+                            filled = false,
+                            onClick = { vm.toggleMute() },
+                            size = 64,
+                        )
+                        Spacer(Modifier.width(28.dp))
+                    }
+                    RoundControl(
+                        icon = if (active) Icons.Rounded.Stop else if (state == VoiceState.ERROR) Icons.Rounded.Refresh else Icons.Rounded.Mic,
+                        label = if (active) "END" else if (state == VoiceState.ERROR) "RETRY" else "TALK",
+                        filled = !active,
+                        onClick = { if (active) vm.stop() else talk() },
+                        size = 92,
+                    )
                 }
             }
         }
@@ -178,37 +227,39 @@ private fun captionFor(state: VoiceState): String = when (state) {
 }
 
 @Composable
-private fun TalkButton(active: Boolean, onClick: () -> Unit) {
+private fun RoundControl(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    filled: Boolean,
+    onClick: () -> Unit,
+    size: Int,
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier
-                .size(92.dp)
+                .size(size.dp)
                 .clip(CircleShape)
                 .then(
-                    if (active) {
+                    if (filled) {
+                        Modifier.background(MaterialTheme.colorScheme.primary)
+                    } else {
                         Modifier
                             .background(MaterialTheme.colorScheme.surface)
                             .border(1.5.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                    } else {
-                        Modifier.background(MaterialTheme.colorScheme.primary)
                     },
                 )
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector = if (active) Icons.Rounded.Stop else Icons.Rounded.Mic,
-                contentDescription = if (active) "End" else "Talk",
-                tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(38.dp),
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (filled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size((size * 0.4f).dp),
             )
         }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            if (active) "END" else "TALK",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Spacer(Modifier.height(8.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

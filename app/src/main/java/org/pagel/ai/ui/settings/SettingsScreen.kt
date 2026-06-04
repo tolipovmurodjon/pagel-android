@@ -57,7 +57,7 @@ fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) 
             )
             Spacer(Modifier.height(20.dp))
 
-            Field("Brain URL", ui.url, vm::setUrl, "https://….trycloudflare.com")
+            Field("Brain URL", ui.url, vm::setUrl, "https://humopedia.com/pagel-voice")
             Spacer(Modifier.height(14.dp))
             Field("Bearer token", ui.bearer, vm::setBearer, "paste your phone.bearer")
             Spacer(Modifier.height(22.dp))

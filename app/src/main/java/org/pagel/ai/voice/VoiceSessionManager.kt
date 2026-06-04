@@ -37,6 +37,13 @@ class VoiceSessionManager @Inject constructor(
     private val _transcript = MutableStateFlow<List<Transcript>>(emptyList())
     val transcript: StateFlow<List<Transcript>> = _transcript.asStateFlow()
 
+    /** Live output level of PAGEL's voice (0..1) — the JARVIS core pulses to this. */
+    private val _amplitude = MutableStateFlow(0f)
+    val amplitude: StateFlow<Float> = _amplitude.asStateFlow()
+
+    private val _muted = MutableStateFlow(false)
+    val muted: StateFlow<Boolean> = _muted.asStateFlow()
+
     private var session: ConversationSession? = null
 
     /** Mint a token, open the WebRTC session, and wire the callbacks. No-op if already live. */
@@ -77,7 +84,11 @@ class VoiceSessionManager @Inject constructor(
                         }
                     },
                 )
-                session = ConversationClient.startSession(config, context)
+                val s = ConversationClient.startSession(config, context)
+                session = s
+                // Mirror the SDK's live flows so the UI can pulse the core to PAGEL's voice + show mute.
+                launch { s.audioLevel.collect { _amplitude.value = it } }
+                launch { s.isMuted.collect { _muted.value = it } }
             } catch (t: Throwable) {
                 _error.value = t.localizedMessage ?: t.message ?: "Failed to start voice"
                 _state.value = VoiceState.ERROR
@@ -95,8 +106,15 @@ class VoiceSessionManager @Inject constructor(
         }
         scope.launch {
             runCatching { s.endSession() }
+            _amplitude.value = 0f
+            _muted.value = false
             _state.value = VoiceState.IDLE
         }
+    }
+
+    fun toggleMute() {
+        val s = session ?: return
+        scope.launch { runCatching { s.toggleMute() } }
     }
 
     private fun appendUser(text: String) {

@@ -14,9 +14,12 @@ class VoiceViewModel @Inject constructor(
     val state = manager.state
     val error = manager.error
     val transcript = manager.transcript
+    val amplitude = manager.amplitude
+    val muted = manager.muted
 
     fun start(context: Context) = manager.start(context)
     fun stop() = manager.stop()
+    fun toggleMute() = manager.toggleMute()
 
     override fun onCleared() {
         manager.stop()
