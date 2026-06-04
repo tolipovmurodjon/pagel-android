@@ -21,9 +21,10 @@ class WakeSettings @Inject constructor(@ApplicationContext private val ctx: Cont
     private val chargerOnlyKey = booleanPreferencesKey("only_when_charging")
 
     val armed: Flow<Boolean> = ctx.wakeDataStore.data.map { it[armedKey] ?: false }
-    val chargerOnly: Flow<Boolean> = ctx.wakeDataStore.data.map { it[chargerOnlyKey] ?: true }
+    // Default FALSE: when armed, listen ALWAYS (not only on charger). Charger-only is opt-in.
+    val chargerOnly: Flow<Boolean> = ctx.wakeDataStore.data.map { it[chargerOnlyKey] ?: false }
 
-    suspend fun chargerOnlyNow(): Boolean = ctx.wakeDataStore.data.first()[chargerOnlyKey] ?: true
+    suspend fun chargerOnlyNow(): Boolean = ctx.wakeDataStore.data.first()[chargerOnlyKey] ?: false
 
     suspend fun setArmed(v: Boolean) = ctx.wakeDataStore.edit { it[armedKey] = v }.let {}
     suspend fun setChargerOnly(v: Boolean) = ctx.wakeDataStore.edit { it[chargerOnlyKey] = v }.let {}

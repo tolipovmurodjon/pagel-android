@@ -109,9 +109,12 @@ class WakeService : Service() {
         runCatching { chargerOnlyCached = kotlinx.coroutines.runBlocking { wakeSettings.chargerOnlyNow() } }
 
         val spotter = buildSpotter() ?: run {
-            Log.e(TAG, "KWS init failed — stopping"); stopSelf(); return
+            Log.e(TAG, "KWS init failed")
+            updateNotice("Wake error — couldn't load the model. Toggle hands-free off then on.")
+            return
         }
         this.spotter = spotter
+        updateNotice("Listening for “Hey PAGEL”")
 
         val sampleRate = 16000
         val minBuf = AudioRecord.getMinBufferSize(
@@ -179,6 +182,7 @@ class WakeService : Service() {
 
     private fun onWake(keyword: String) {
         Log.i(TAG, "WAKE: $keyword")
+        updateNotice("Heard “Hey PAGEL” ✓")
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             putExtra(EXTRA_START_VOICE, true)
@@ -202,8 +206,8 @@ class WakeService : Service() {
                 modelType = "zipformer2",
             ),
             keywordsFile = "$dir/keywords.txt",
-            keywordsScore = 1.8f,
-            keywordsThreshold = 0.22f,
+            keywordsScore = 2.0f,
+            keywordsThreshold = 0.20f,
         )
         KeywordSpotter(assets, config)
     }.getOrNull()
@@ -236,6 +240,25 @@ class WakeService : Service() {
             this, NOTIF_ID, notif,
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0,
         )
+    }
+
+    /** Reflect the live wake state in the ongoing notification — so failures are never silent again. */
+    private fun updateNotice(text: String) {
+        val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notif = NotificationCompat.Builder(this, CHANNEL)
+            .setContentTitle("PAGEL")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setOngoing(true)
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this, 0, Intent(this, MainActivity::class.java),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .build()
+        runCatching { mgr.notify(NOTIF_ID, notif) }
     }
 
     override fun onDestroy() {
