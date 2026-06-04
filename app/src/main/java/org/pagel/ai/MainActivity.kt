@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import org.pagel.ai.service.AnchorService
+import org.pagel.ai.service.WakeService
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -60,17 +61,37 @@ class MainActivity : ComponentActivity() {
     private val notifPerm =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+    private val voiceRequest = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         ensureNotifPermission()
         ContextCompat.startForegroundService(this, Intent(this, AnchorService::class.java))
+        handleVoiceIntent(intent)
         setContent {
             PagelTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    AwarenessApp()
+                    AwarenessApp(voiceRequest)
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleVoiceIntent(intent)
+    }
+
+    /** A "Hey PAGEL" wake hands off here — show over the lockscreen and jump to the voice surface. */
+    private fun handleVoiceIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(WakeService.EXTRA_START_VOICE, false) == true) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            }
+            voiceRequest.value = true
         }
     }
 
@@ -86,7 +107,7 @@ class MainActivity : ComponentActivity() {
 
 /** Brief branded boot splash, then the live awareness dashboard. */
 @Composable
-private fun AwarenessApp() {
+private fun AwarenessApp(voiceRequested: androidx.compose.runtime.MutableState<Boolean>) {
     var ready by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(1600)
@@ -97,12 +118,21 @@ private fun AwarenessApp() {
         return
     }
     var screen by remember { mutableStateOf("dash") }
+    var autostartVoice by remember { mutableStateOf(false) }
+    // A "Hey PAGEL" wake (or relaunch with the extra) jumps straight to voice and auto-starts it.
+    LaunchedEffect(voiceRequested.value) {
+        if (voiceRequested.value) {
+            autostartVoice = true
+            screen = "voice"
+            voiceRequested.value = false
+        }
+    }
     when (screen) {
         "settings" -> SettingsScreen(onBack = { screen = "dash" })
-        "voice" -> VoiceScreen(onBack = { screen = "dash" })
+        "voice" -> VoiceScreen(onBack = { screen = "dash" }, autostart = autostartVoice)
         else -> DigitalWellbeingScreen(
             onSettings = { screen = "settings" },
-            onVoice = { screen = "voice" },
+            onVoice = { autostartVoice = false; screen = "voice" },
         )
     }
 }

@@ -35,7 +35,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import org.pagel.ai.service.WakeService
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -62,30 +65,37 @@ import org.pagel.ai.voice.Transcript
 import org.pagel.ai.voice.VoiceState
 
 @Composable
-fun VoiceScreen(onBack: () -> Unit, vm: VoiceViewModel = hiltViewModel()) {
+fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
     val error by vm.error.collectAsState()
     val transcript by vm.transcript.collectAsState()
     val amplitude by vm.amplitude.collectAsState()
     val muted by vm.muted.collectAsState()
+    val armed by vm.armed.collectAsState(initial = false)
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
 
     var wantStart by remember { mutableStateOf(false) }
+    var wantArm by remember { mutableStateOf(false) }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && wantStart) vm.start(ctx)
+        if (granted && wantArm) { vm.setArmed(true); WakeService.start(ctx) }
         wantStart = false
+        wantArm = false
     }
+    fun hasMic() = ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+        PackageManager.PERMISSION_GRANTED
     fun talk() {
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            vm.start(ctx)
-        } else {
-            wantStart = true
-            micPermission.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        if (hasMic()) vm.start(ctx) else { wantStart = true; micPermission.launch(Manifest.permission.RECORD_AUDIO) }
     }
+    fun setHandsFree(on: Boolean) {
+        if (!on) { vm.setArmed(false); WakeService.stop(ctx); return }
+        if (hasMic()) { vm.setArmed(true); WakeService.start(ctx) }
+        else { wantArm = true; micPermission.launch(Manifest.permission.RECORD_AUDIO) }
+    }
+
+    // A "Hey PAGEL" wake handed us here → open the mic immediately.
+    LaunchedEffect(autostart) { if (autostart) talk() }
 
     val active = state != VoiceState.IDLE && state != VoiceState.ERROR
 
@@ -141,6 +151,21 @@ fun VoiceScreen(onBack: () -> Unit, vm: VoiceViewModel = hiltViewModel()) {
                     }
                     Spacer(Modifier.width(4.dp))
                     Text("PAGEL · VOICE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "HEY PAGEL",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (armed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Switch(
+                        checked = armed,
+                        onCheckedChange = { setHandsFree(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.primary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                        ),
+                    )
                 }
 
                 // hero core + reactive halo + caption

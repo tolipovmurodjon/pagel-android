@@ -43,6 +43,10 @@ android {
         compose = true
         buildConfig = true
     }
+    androidResources {
+        // KWS onnx models are mmap-loaded by sherpa-onnx — must stay uncompressed in the APK.
+        noCompress += "onnx"
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -109,6 +113,9 @@ dependencies {
 
     // Voice — ElevenLabs Conversational-AI (real-time talk to the brain over WebRTC)
     implementation(libs.elevenlabs.android)
+
+    // Wake word — sherpa-onnx on-device KWS ("Hey PAGEL"); local AAR bundles JNI .so + Kotlin API
+    implementation(files("libs/sherpa-onnx-1.13.2.aar"))
 
     // Charts/shimmer deferred to the dashboard (Task 7): Vico 3.x needs Kotlin 2.3 and breaks
     // this Kotlin-2.0.21 toolchain. Re-add then via Vico 2.x (Kotlin-2.0 safe) or a deliberate
