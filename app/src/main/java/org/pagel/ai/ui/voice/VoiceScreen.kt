@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,9 +34,11 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -42,6 +47,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import org.pagel.ai.service.WakeService
 import org.pagel.ai.voice.VoiceCatalog
+import org.pagel.ai.voice.VoiceOption
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -67,6 +73,7 @@ import org.pagel.ai.ui.theme.MonoFamily
 import org.pagel.ai.voice.Transcript
 import org.pagel.ai.voice.VoiceState
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
@@ -76,7 +83,8 @@ fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewMod
     val muted by vm.muted.collectAsState()
     val armed by vm.armed.collectAsState(initial = false)
     val selectedVoice by vm.selectedVoice.collectAsState()
-    var voiceMenu by remember { mutableStateOf(false) }
+    val voiceStatus by vm.voiceStatus.collectAsState()
+    var voiceSheet by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
 
@@ -156,28 +164,6 @@ fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewMod
                     }
                     Spacer(Modifier.width(4.dp))
                     Text("PAGEL · VOICE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(12.dp))
-                    Box {
-                        Text(
-                            "🎙 ${selectedVoice.name} ▾",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.clickable { voiceMenu = true },
-                        )
-                        DropdownMenu(expanded = voiceMenu, onDismissRequest = { voiceMenu = false }) {
-                            VoiceCatalog.voices.forEach { v ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(v.name, color = MaterialTheme.colorScheme.onBackground)
-                                            Text(v.vibe, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    },
-                                    onClick = { vm.setVoice(v); voiceMenu = false },
-                                )
-                            }
-                        }
-                    }
                     Spacer(Modifier.weight(1f))
                     Text(
                         "HEY PAGEL",
@@ -240,9 +226,25 @@ fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewMod
                     items(transcript) { line -> TranscriptBubble(line) }
                 }
 
+                // Prominent voice picker — tap to open the chooser sheet.
+                VoicePickerBar(current = selectedVoice, status = voiceStatus, onClick = { voiceSheet = true })
+
+                if (voiceSheet) {
+                    ModalBottomSheet(
+                        onDismissRequest = { voiceSheet = false },
+                        sheetState = rememberModalBottomSheetState(),
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ) {
+                        VoiceChooser(
+                            selectedId = selectedVoice.id,
+                            onPick = { v -> vm.setVoice(v); voiceSheet = false },
+                        )
+                    }
+                }
+
                 // controls: mute (when live) + talk/end + retry (on error)
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 22.dp),
+                    Modifier.fillMaxWidth().padding(vertical = 18.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -312,6 +314,79 @@ private fun RoundControl(
         }
         Spacer(Modifier.height(8.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun VoicePickerBar(current: VoiceOption, status: String?, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("🎙", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("VOICE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    "${current.name} · ${current.vibe}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+            Text("CHANGE ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        if (!status.isNullOrBlank()) {
+            Spacer(Modifier.height(6.dp))
+            Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun VoiceChooser(selectedId: String, onPick: (VoiceOption) -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(max = 520.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 28.dp),
+    ) {
+        Text("CHOOSE PAGEL'S VOICE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Human & playful first. Applies on your next call.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(14.dp))
+        VoiceCatalog.voices.forEach { v ->
+            val sel = v.id == selectedId
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (sel) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)
+                    .clickable { onPick(v) }
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(if (v.female) "♀" else "♂", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(v.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                    Text(v.vibe, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (sel) Text("✓", color = MaterialTheme.colorScheme.primary)
+            }
+        }
     }
 }
 

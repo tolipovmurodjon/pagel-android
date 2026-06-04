@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import org.pagel.ai.voice.SetVoiceClient
 import org.pagel.ai.voice.VoiceCatalog
 import org.pagel.ai.voice.VoiceOption
+import org.pagel.ai.voice.VoicePrefs
 import org.pagel.ai.voice.VoiceSessionManager
 import org.pagel.ai.voice.WakeSettings
 import javax.inject.Inject
@@ -19,7 +20,14 @@ class VoiceViewModel @Inject constructor(
     private val manager: VoiceSessionManager,
     private val wakeSettings: WakeSettings,
     private val setVoiceClient: SetVoiceClient,
+    private val voicePrefs: VoicePrefs,
 ) : ViewModel() {
+
+    init {
+        viewModelScope.launch {
+            voicePrefs.selectedId()?.let { id -> VoiceCatalog.byId(id)?.let { _selectedVoice.value = it } }
+        }
+    }
 
     val state = manager.state
     val error = manager.error
@@ -43,13 +51,14 @@ class VoiceViewModel @Inject constructor(
     fun setChargerOnly(v: Boolean) = viewModelScope.launch { wakeSettings.setChargerOnly(v) }
 
     fun setVoice(v: VoiceOption) = viewModelScope.launch {
+        _selectedVoice.value = v // optimistic — reflect the pick instantly
         _voiceStatus.value = "Switching to ${v.name}…"
         val r = setVoiceClient.set(v.id)
         if (r.isSuccess) {
-            _selectedVoice.value = v
-            _voiceStatus.value = "Voice: ${v.name}"
+            voicePrefs.setSelectedId(v.id)
+            _voiceStatus.value = "${v.name} — you'll hear it on your next call"
         } else {
-            _voiceStatus.value = "Couldn't switch voice"
+            _voiceStatus.value = "Couldn't switch voice — check Settings"
         }
     }
 
