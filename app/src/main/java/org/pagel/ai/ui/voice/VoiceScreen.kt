@@ -4,8 +4,13 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -72,6 +77,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 import androidx.hilt.navigation.compose.hiltViewModel
 import org.pagel.ai.ui.hud.JarvisCore
 import org.pagel.ai.ui.theme.MonoFamily
@@ -123,6 +129,18 @@ fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewMod
             VoiceState.LISTENING, VoiceState.SPEAKING -> haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             else -> Unit
         }
+    }
+
+    // Live "DOING" HUD — poll the brain for what PAGEL is doing during a task.
+    var doing by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(active) {
+        if (!active) { doing = null; return@LaunchedEffect }
+        while (active) {
+            val d = vm.pollDoing()
+            doing = if (d != null && d.active && d.label.isNotBlank() && d.label != "Done") d.label else null
+            delay(700)
+        }
+        doing = null
     }
 
     // The core breathes with the conversation; while PAGEL speaks it pulses to his live voice level.
@@ -213,6 +231,10 @@ fun VoiceScreen(onBack: () -> Unit, autostart: Boolean = false, vm: VoiceViewMod
                             else MaterialTheme.colorScheme.onBackground,
                             textAlign = TextAlign.Center,
                         )
+                        doing?.let {
+                            Spacer(Modifier.height(12.dp))
+                            DoingChip(it)
+                        }
                     }
                 }
 
@@ -319,6 +341,30 @@ private fun RoundControl(
         }
         Spacer(Modifier.height(8.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun DoingChip(label: String) {
+    val t = rememberInfiniteTransition(label = "doing")
+    val a by t.animateFloat(
+        initialValue = 0.25f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
+        label = "pulse",
+    )
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(8.dp).alpha(a).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+        )
+        Spacer(Modifier.width(10.dp))
+        Text("$label…", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     }
 }
 

@@ -7,11 +7,13 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.pagel.ai.voice.Doing
 import org.pagel.ai.voice.SetVoiceClient
 import org.pagel.ai.voice.VoiceCatalog
 import org.pagel.ai.voice.VoiceOption
 import org.pagel.ai.voice.VoicePrefs
 import org.pagel.ai.voice.VoiceSessionManager
+import org.pagel.ai.voice.VoiceStatusClient
 import org.pagel.ai.voice.WakeSettings
 import javax.inject.Inject
 
@@ -21,7 +23,10 @@ class VoiceViewModel @Inject constructor(
     private val wakeSettings: WakeSettings,
     private val setVoiceClient: SetVoiceClient,
     private val voicePrefs: VoicePrefs,
+    private val statusClient: VoiceStatusClient,
 ) : ViewModel() {
+
+    suspend fun pollDoing(): Doing? = statusClient.poll()
 
     init {
         viewModelScope.launch {
