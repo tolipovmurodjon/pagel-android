@@ -19,3 +19,4 @@ local.properties
 # Room schemas are intentionally tracked (do NOT ignore app/schemas)
 
 _*.tmp
+.superpowers/

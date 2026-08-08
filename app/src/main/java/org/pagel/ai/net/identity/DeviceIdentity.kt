@@ -19,6 +19,24 @@ data class DeviceIdentity(
     // Never print private key material, even via a debugger watch or a stray log.toString() call.
     override fun toString(): String =
         "DeviceIdentity(deviceId=$deviceId, publicKeyRaw=<${publicKeyRaw.size} bytes>, privateKeyRaw=<redacted>)"
+
+    // ByteArray has no structural equals()/hashCode() — the generated data-class versions would
+    // compare publicKeyRaw/privateKeyRaw by array reference, so two identities loaded from the
+    // same bytes (e.g. round-tripped through storage) would wrongly compare unequal.
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is DeviceIdentity) return false
+        return deviceId == other.deviceId &&
+            publicKeyRaw.contentEquals(other.publicKeyRaw) &&
+            privateKeyRaw.contentEquals(other.privateKeyRaw)
+    }
+
+    override fun hashCode(): Int {
+        var result = deviceId.hashCode()
+        result = 31 * result + publicKeyRaw.contentHashCode()
+        result = 31 * result + privateKeyRaw.contentHashCode()
+        return result
+    }
 }
 
 fun DeviceIdentity.publicKeyB64Url(): String = base64UrlNoPad(publicKeyRaw)

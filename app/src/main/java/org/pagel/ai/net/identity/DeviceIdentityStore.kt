@@ -1,16 +1,13 @@
 package org.pagel.ai.net.identity
 
-import android.content.Context
-import androidx.security.crypto.EncryptedFile
-import androidx.security.crypto.MasterKey
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.File
 import java.util.Base64
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -18,6 +15,17 @@ import javax.inject.Singleton
 /** Loads this device's Ed25519 identity, generating and persisting one on first use. */
 interface DeviceIdentityStore {
     suspend fun loadOrCreate(): DeviceIdentity
+}
+
+/**
+ * Byte-level persistence for the identity record, kept behind an interface so
+ * [DefaultDeviceIdentityStore]'s locking/idempotency logic is unit-testable with a fake — the real
+ * implementation ([EncryptedFileDeviceIdentityFileIo]) needs an Android Keystore, unavailable in a
+ * plain JVM unit test.
+ */
+interface DeviceIdentityFileIo {
+    fun readBytes(): ByteArray?
+    fun writeBytes(bytes: ByteArray)
 }
 
 @Serializable
@@ -30,33 +38,30 @@ private data class DeviceIdentityRecord(
 )
 
 /**
- * Persists the device identity encrypted at rest via [EncryptedFile] at `filesDir/pagel-device-identity.json`.
+ * JSON-encodes the device identity through the injected [DeviceIdentityFileIo].
  * `loadOrCreate()` returns the existing identity if present, else generates and persists once.
+ *
+ * Guarded by [mutex] so concurrent callers (e.g. the operator and node connections starting at
+ * once against this same singleton — see Task 6) converge on one generated identity instead of
+ * a last-write-wins race: the loser of the race re-checks [read] *inside* the lock and returns
+ * the winner's persisted identity rather than generating its own.
  */
 @Singleton
-class EncryptedFileDeviceIdentityStore @Inject constructor(
-    @ApplicationContext private val ctx: Context,
+class DefaultDeviceIdentityStore @Inject constructor(
+    private val fileIo: DeviceIdentityFileIo,
 ) : DeviceIdentityStore {
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val file = File(ctx.filesDir, FILE_NAME)
+    private val mutex = Mutex()
 
-    override suspend fun loadOrCreate(): DeviceIdentity = withContext(Dispatchers.IO) {
-        read() ?: Ed25519.generate().also { write(it) }
+    override suspend fun loadOrCreate(): DeviceIdentity = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            read() ?: Ed25519.generate().also { write(it) }
+        }
     }
 
-    private fun masterKey(): MasterKey =
-        MasterKey.Builder(ctx)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-
-    private fun encryptedFile(): EncryptedFile =
-        EncryptedFile.Builder(ctx, file, masterKey(), EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB)
-            .build()
-
     private fun read(): DeviceIdentity? {
-        if (!file.exists()) return null
-        val bytes = encryptedFile().openFileInput().use { it.readBytes() }
+        val bytes = fileIo.readBytes() ?: return null
         val record = json.decodeFromString<DeviceIdentityRecord>(String(bytes, Charsets.UTF_8))
         return DeviceIdentity(
             deviceId = record.deviceId,
@@ -66,18 +71,12 @@ class EncryptedFileDeviceIdentityStore @Inject constructor(
     }
 
     private fun write(identity: DeviceIdentity) {
-        // EncryptedFile refuses to write over a file that already exists.
-        if (file.exists()) file.delete()
         val record = DeviceIdentityRecord(
             deviceId = identity.deviceId,
             publicKeyB64Url = identity.publicKeyB64Url(),
             privateKeyB64Url = base64UrlNoPad(identity.privateKeyRaw),
             createdAtMs = System.currentTimeMillis(),
         )
-        encryptedFile().openFileOutput().use { it.write(json.encodeToString(record).toByteArray(Charsets.UTF_8)) }
-    }
-
-    private companion object {
-        const val FILE_NAME = "pagel-device-identity.json"
+        fileIo.writeBytes(json.encodeToString(record).toByteArray(Charsets.UTF_8))
     }
 }
