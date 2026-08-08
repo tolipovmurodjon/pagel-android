@@ -9,6 +9,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import org.pagel.ai.data.room.AwarenessDao
 import org.pagel.ai.data.room.AwarenessDb
+import org.pagel.ai.net.identity.DeviceIdentityStore
+import org.pagel.ai.net.identity.EncryptedFileDeviceIdentityStore
 import javax.inject.Singleton
 
 @Module
@@ -25,4 +27,8 @@ object DataModule {
     @Provides
     @Singleton
     fun provideDao(db: AwarenessDb): AwarenessDao = db.dao()
+
+    @Provides
+    @Singleton
+    fun provideDeviceIdentityStore(store: EncryptedFileDeviceIdentityStore): DeviceIdentityStore = store
 }

@@ -27,6 +27,9 @@ lottie = "6.5.2"
 timber = "5.0.1"
 elevenlabs = "0.7.2"
 
+bouncycastle = "1.78.1"
+securityCrypto = "1.1.0-alpha06"
+
 junit = "4.13.2"
 junitVersion = "1.3.0"
 espressoCore = "3.7.0"
@@ -73,6 +76,10 @@ jakewharton-timber = { group = "com.jakewharton.timber", name = "timber", versio
 
 # ElevenLabs Conversational-AI SDK (Kotlin 2.0.21-built → no metadata clash; LiveKit/WebRTC under the hood)
 elevenlabs-android = { group = "io.elevenlabs", name = "elevenlabs-android", version.ref = "elevenlabs" }
+
+# Ed25519 (minSdk 30 lacks platform Ed25519, which needs API 33) — lightweight API, no JCE provider registration
+bouncycastle = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
