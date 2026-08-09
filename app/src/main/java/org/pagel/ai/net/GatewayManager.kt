@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import okhttp3.WebSocket
 import org.pagel.ai.net.identity.DeviceIdentityStore
+import org.pagel.ai.net.node.NodeCommand
 import org.pagel.ai.net.node.NodeCommandDispatcher
 import org.pagel.ai.net.node.NodeCommands
 import org.pagel.ai.net.ws.ConnState
@@ -68,6 +69,15 @@ class GatewayManager @Inject constructor(
     tokenStore: GatewayDeviceTokenStore,
     config: GatewayConnectionConfig,
     private val scope: CoroutineScope,
+    /** The [NodeCommand]s the node connection serves, bound in [GatewayModule] as a plain
+     *  `List<NodeCommand>` from Task 4's four `device.*` commands (Task 5/6 add more there without
+     *  this class changing again). `@JvmSuppressWildcards` matches Kotlin's `List<out E>`
+     *  declaration-site variance to [GatewayModule]'s `@Provides` return type — without it, Dagger
+     *  sees `List<NodeCommand>` and `List<? extends NodeCommand>` as two different keys and fails
+     *  with a missing binding. Defaulted to empty so every pre-existing direct construction (e.g.
+     *  [GatewayManagerTest][org.pagel.ai.net.GatewayManagerTest], which never invokes a node
+     *  command) keeps compiling unchanged. */
+    nodeCommands: List<@JvmSuppressWildcards NodeCommand> = emptyList(),
 ) {
     private val operatorConnection = GatewayConnection(
         role = GatewayClientInfo.ROLE_OPERATOR,
@@ -95,12 +105,12 @@ class GatewayManager @Inject constructor(
      *  entirely rather than replying to something it was never asked (see
      *  [org.pagel.ai.net.ws.GatewayConnection.handleNodeInvokeRequest]'s doc).
      *
-     *  Empty today: no [org.pagel.ai.net.node.NodeCommand] implementation exists yet (Tasks 4-6 add
-     *  them). Still wired now, not deferred, because that's what makes every currently-declared
-     *  command in [NodeCommands.DECLARED] fail the same way an invoke would once real commands
-     *  exist — a same, honest `INVALID_REQUEST: unknown command "..."` reply — instead of a bare
-     *  operator-side `TIMEOUT` from nothing ever answering at all. */
-    private val nodeCommandDispatcher = NodeCommandDispatcher(emptyList())
+     *  Wired from [nodeCommands] — Task 4's four `device.*` commands today. A command declared in
+     *  [NodeCommands.DECLARED] with no matching entry in [nodeCommands] (Task 5/6's not-yet-built
+     *  ones) still fails the same way an invoke for it always would — a same, honest
+     *  `INVALID_REQUEST: unknown command "..."` reply — instead of a bare operator-side `TIMEOUT`
+     *  from nothing ever answering at all. */
+    private val nodeCommandDispatcher = NodeCommandDispatcher(nodeCommands)
 
     /** `scopes: []` — required for node pairing auto-approve eligibility: "a fresh `role: node`
      *  device pairing request with no requested scopes." Never add scopes here. */

@@ -19,6 +19,13 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.WebSocket
 import org.pagel.ai.BuildConfig
+import org.pagel.ai.net.node.NodeCommand
+import org.pagel.ai.net.node.commands.AndroidDeviceInfoSource
+import org.pagel.ai.net.node.commands.DeviceHealthCommand
+import org.pagel.ai.net.node.commands.DeviceInfoCommand
+import org.pagel.ai.net.node.commands.DeviceInfoSource
+import org.pagel.ai.net.node.commands.DevicePermissionsCommand
+import org.pagel.ai.net.node.commands.DeviceStatusCommand
 import org.pagel.ai.net.ws.GatewayDeviceTokenStore
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
@@ -70,6 +77,30 @@ object GatewayModule {
     @Provides
     @Singleton
     fun provideWebSocketFactory(client: OkHttpClient): WebSocket.Factory = client
+
+    /** [AndroidDeviceInfoSource] is the only production [DeviceInfoSource] — see that interface's
+     *  doc for why the four `device.*` commands (Task 4) depend on the interface, not the concrete
+     *  Android-backed class, directly. */
+    @Provides
+    @Singleton
+    fun provideDeviceInfoSource(source: AndroidDeviceInfoSource): DeviceInfoSource = source
+
+    /**
+     * [GatewayManager]'s `nodeCommands` binding — Task 4's four `device.*` commands today; Task 5/6
+     * add their commands here, not by touching [GatewayManager]'s constructor again. Returns a plain
+     * `List<NodeCommand>`, not a `Set` multibinding: four fixed, individually-injected commands need
+     * no open-ended collection mechanism, and a plain list matches [GatewayManager]'s own
+     * `List<NodeCommand>` parameter type without adding Dagger multibinding machinery this phase
+     * doesn't otherwise use.
+     */
+    @Provides
+    @Singleton
+    fun provideNodeCommands(
+        deviceStatus: DeviceStatusCommand,
+        deviceInfo: DeviceInfoCommand,
+        deviceHealth: DeviceHealthCommand,
+        devicePermissions: DevicePermissionsCommand,
+    ): List<NodeCommand> = listOf(deviceStatus, deviceInfo, deviceHealth, devicePermissions)
 
     /** [GatewayManager] must keep retrying across navigation, not just while the debug screen is
      *  on screen — an app-lifetime scope, not a screen-lifetime one. [SupervisorJob] so one
