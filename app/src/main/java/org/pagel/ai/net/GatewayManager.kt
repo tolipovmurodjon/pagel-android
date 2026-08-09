@@ -110,6 +110,10 @@ class GatewayManager @Inject constructor(
     val operatorLastError: StateFlow<GatewayError?> = operatorConnection.lastError
     val nodeLastError: StateFlow<GatewayError?> = nodeConnection.lastError
 
+    /** Diagnostic passthrough — see [GatewayConnection.lastSignedPayload]. */
+    val operatorSignedPayload: StateFlow<String?> = operatorConnection.lastSignedPayload
+    val nodeSignedPayload: StateFlow<String?> = nodeConnection.lastSignedPayload
+
     /** See the class doc's "Exposed status" section. */
     val status: StateFlow<GatewayStatus> =
         combine(operatorConnection.state, nodeConnection.state, ::GatewayStatus)
@@ -148,6 +152,31 @@ class GatewayManager @Inject constructor(
     }
 
     private companion object {
-        val OPERATOR_SCOPES = listOf("operator.read", "operator.write")
+        /**
+         * Empty — deliberately, and this is not the obvious choice.
+         *
+         * We originally requested `["operator.read", "operator.write"]`. The live gateway then
+         * rejected the handshake with `device signature invalid`, while its own log showed our frame
+         * was otherwise perfect (`client=openclaw-android ui role=operator scopes=2 device=yes`).
+         *
+         * The cause is server-side scope rewriting. `message-handler`'s connect path holds `scopes`
+         * in a `let` and can blank it before verifying:
+         *
+         * ```js
+         * const clearUnboundScopes = () => { if (scopes.length > 0) { scopes = []; connectParams.scopes = scopes; } };
+         * ```
+         *
+         * That same `scopes` variable is then passed to `resolveDeviceSignaturePayloadVersion(...)`,
+         * so the gateway rebuilds the signed string with `scopes=""` while we signed
+         * `"operator.read,operator.write"`. The strings differ, the Ed25519 check fails, and the
+         * reported error points at the signature rather than at the scopes — which is why this cost
+         * two live rounds to find. The node connection never hit it precisely because it already
+         * sent an empty list.
+         *
+         * Requesting nothing is also the correct model regardless: scopes are *granted* by the
+         * device-pairing record, not claimed by the connect frame. Boss's paired row already reads
+         * `operator.write`, and asking for more than the pairing binds is what triggers the rewrite.
+         */
+        val OPERATOR_SCOPES = emptyList<String>()
     }
 }

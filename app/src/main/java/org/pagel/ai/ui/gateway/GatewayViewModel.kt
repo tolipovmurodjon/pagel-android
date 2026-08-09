@@ -21,6 +21,9 @@ data class GatewayUi(
     val operatorError: String? = null,
     val nodeState: ConnState = ConnState.Disconnected,
     val nodeError: String? = null,
+    /** Diagnostic for `device signature invalid` — token slot already redacted upstream. */
+    val operatorSignedPayload: String? = null,
+    val nodeSignedPayload: String? = null,
 ) {
     // Same rule, same reason as ConnectAuth.toString() / DeviceIdentity.toString(): a live gateway
     // auth token must never be able to reach a stray Timber.d("$ui") or crash-report toString().
@@ -70,6 +73,12 @@ class GatewayViewModel @Inject constructor(
         }
         viewModelScope.launch {
             manager.nodeLastError.collect { e -> _ui.update { it.copy(nodeError = e?.let { x -> "${x.code}: ${x.message}" }) } }
+        }
+        viewModelScope.launch {
+            manager.operatorSignedPayload.collect { p -> _ui.update { it.copy(operatorSignedPayload = p) } }
+        }
+        viewModelScope.launch {
+            manager.nodeSignedPayload.collect { p -> _ui.update { it.copy(nodeSignedPayload = p) } }
         }
     }
 

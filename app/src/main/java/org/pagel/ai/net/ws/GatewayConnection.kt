@@ -234,6 +234,21 @@ class GatewayConnection(
     private val _lastError = MutableStateFlow<GatewayError?>(null)
     val lastError: StateFlow<GatewayError?> = _lastError.asStateFlow()
 
+    /**
+     * The exact string that was Ed25519-signed for the most recent handshake attempt, for on-device
+     * diagnosis of `device signature invalid`.
+     *
+     * That error means the gateway rebuilt this string from our own frame and got something
+     * different — so the only way to find the culprit is to read both. Nothing else surfaces it: the
+     * payload never travels the wire (only the signature does), and the gateway's rejection names
+     * the signature rather than the field that actually differed.
+     *
+     * The `token` slot is redacted before exposure. It carries the device token once we hold one,
+     * and this value is rendered on screen and read aloud in chat during debugging.
+     */
+    private val _lastSignedPayload = MutableStateFlow<String?>(null)
+    val lastSignedPayload: StateFlow<String?> = _lastSignedPayload.asStateFlow()
+
     private val _events = MutableSharedFlow<GatewayFrame.Event>(extraBufferCapacity = 64)
     val events: SharedFlow<GatewayFrame.Event> = _events.asSharedFlow()
 
@@ -401,6 +416,7 @@ class GatewayConnection(
             platform = platform,
             deviceFamily = deviceFamily,
         )
+        _lastSignedPayload.value = redactTokenSlot(payload, presentedToken)
         val signature = Ed25519.sign(identity.privateKeyRaw, payload.toByteArray(Charsets.UTF_8))
         val device = DeviceAuthBlock(
             id = identity.deviceId,
@@ -697,9 +713,27 @@ class GatewayConnection(
         }
     }
 
+    /**
+     * Blanks the `token` slot (index 7) of a v3 payload so the rest can be shown on screen.
+     *
+     * Splits on `|` with `limit` unset and rejoins, rather than replacing the token's text, because
+     * an empty token is the normal case and `String.replace("", …)` would corrupt every position.
+     * Falls back to the untouched string only when the shape isn't the expected 11 fields.
+     */
+    private fun redactTokenSlot(payload: String, token: String?): String {
+        if (token.isNullOrEmpty()) return payload
+        val parts = payload.split('|')
+        if (parts.size != 11) return payload
+        return parts.mapIndexed { i, p -> if (i == TOKEN_SLOT) "<redacted:${p.length}>" else p }
+            .joinToString("|")
+    }
+
     private companion object {
         /** `PROTOCOL_VERSION` (`docs/gateway/protocol.md:717-750`). Global Constraints for this
          *  phase pin both connections to v4 — no N-1 node tolerance yet. */
         const val PROTOCOL_VERSION = 4
+
+        /** `v3|deviceId|clientId|clientMode|role|scopes|signedAtMs|`**`token`**`|nonce|platform|deviceFamily` */
+        const val TOKEN_SLOT = 7
     }
 }

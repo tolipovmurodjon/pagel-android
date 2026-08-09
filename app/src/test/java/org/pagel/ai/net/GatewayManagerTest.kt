@@ -228,7 +228,15 @@ class GatewayManagerTest {
         // both silently drift to the stale protocol.md:61 value ("operator") together — pin the
         // actual wire value the server needs.
         assertEquals("ui", opParams.client.mode)
-        assertEquals(listOf("operator.read", "operator.write"), opParams.scopes)
+        // Empty, not ["operator.read","operator.write"]. Requesting scopes the device pairing does
+        // not bind makes the gateway blank them server-side (`clearUnboundScopes`) and then verify
+        // the signature against the *blanked* list, while we signed the requested one — reported as
+        // `device signature invalid`, which points at the wrong thing entirely. Scopes are granted by
+        // the pairing record, not claimed in the connect frame. See GatewayManager.OPERATOR_SCOPES.
+        assertTrue(
+            "operator must request no scopes — asking for unbound scopes breaks signature verification",
+            opParams.scopes.isEmpty(),
+        )
 
         assertEquals("node", nodeParams.role)
         assertEquals("node", nodeParams.client.mode)

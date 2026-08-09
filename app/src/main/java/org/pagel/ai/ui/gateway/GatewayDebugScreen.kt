@@ -1,6 +1,7 @@
 package org.pagel.ai.ui.gateway
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -144,15 +145,21 @@ fun GatewayDebugScreen(onBack: () -> Unit, vm: GatewayViewModel = hiltViewModel(
             }
 
             Spacer(Modifier.height(28.dp))
-            ConnRow("OPERATOR", "chat · dashboard · settings", ui.operatorState, ui.operatorError)
+            ConnRow("OPERATOR", "chat · dashboard · settings", ui.operatorState, ui.operatorError, ui.operatorSignedPayload)
             Spacer(Modifier.height(14.dp))
-            ConnRow("NODE", "sensors · canvas · talk", ui.nodeState, ui.nodeError)
+            ConnRow("NODE", "sensors · canvas · talk", ui.nodeState, ui.nodeError, ui.nodeSignedPayload)
         }
     }
 }
 
 @Composable
-private fun ConnRow(label: String, subtitle: String, state: ConnState, error: String?) {
+private fun ConnRow(
+    label: String,
+    subtitle: String,
+    state: ConnState,
+    error: String?,
+    signedPayload: String? = null,
+) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -182,6 +189,26 @@ private fun ConnRow(label: String, subtitle: String, state: ConnState, error: St
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+            // "device signature invalid" means the gateway rebuilt this exact string from our frame
+            // and got something different. The payload never crosses the wire, so without showing it
+            // here there is no way to see WHICH field diverged — the error only ever names the
+            // signature. Token slot is redacted upstream.
+            if (signedPayload != null && error.contains("signature", ignoreCase = true)) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "SIGNED PAYLOAD",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(4.dp))
+                SelectionContainer {
+                    Text(
+                        signedPayload,
+                        style = MaterialTheme.typography.labelMedium.copy(fontFamily = MonoFamily),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
