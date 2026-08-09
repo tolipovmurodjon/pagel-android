@@ -300,10 +300,14 @@ class GatewayConnectionTest {
     }
 
     @Test
-    fun `a configured gateway auth token does not change the signed device-auth payload`() = runTest {
-        // The regression this whole fix must not reintroduce: auth.token is a shared secret, not a
-        // signing input. The gateway resolves the signed slot as deviceToken ?? bootstrapToken ??
-        // null (message-handler-CzwI6JjW.js) and never looks at auth.token there.
+    fun `a configured gateway auth token IS what gets signed - it wins over the device token`() = runTest {
+        // resolveSignatureToken (message-handler-CzwI6JjW.js) is:
+        //   auth?.token ?? auth?.deviceToken ?? auth?.bootstrapToken ?? null
+        // auth.token comes FIRST. An earlier version of this test asserted the opposite, from a
+        // truncated read of that function, and so locked the bug in: we signed an empty slot while
+        // the gateway rebuilt the string with the shared secret in it, and the handshake failed as
+        // "device signature invalid". Confirmed against the live gateway with a Node probe -
+        // signing the gateway token here returns ok=true.
         val identity = Ed25519.generate()
         val h = newHarness(scope = backgroundScope, identity = identity, authToken = "gw-secret")
         // No presented (device) token seeded — tokenStore.get() returns null.
@@ -332,18 +336,23 @@ class GatewayConnectionTest {
             deviceFamily = params.client.deviceFamily,
         )
 
-        // Correct: the signed slot was built from the (absent) device token, not the gateway token.
-        val correctPayload = rebuild(signedToken = params.auth?.deviceToken)
-        assertTrue(Ed25519.verify(publicKeyBytes, correctPayload.toByteArray(Charsets.UTF_8), signatureBytes))
+        // Correct: the gateway token occupies the signed slot, exactly as the server rebuilds it.
+        val correctPayload = rebuild(signedToken = params.auth?.token)
+        assertTrue(
+            "the signed slot must carry auth.token when one is configured",
+            Ed25519.verify(publicKeyBytes, correctPayload.toByteArray(Charsets.UTF_8), signatureBytes),
+        )
 
-        // Pins the exact regression: if a future change fed the gateway auth token into signing
-        // instead, this payload would be the one that verifies. It must NOT.
-        val wrongPayload = rebuild(signedToken = params.auth?.token)
-        assertTrue(!Ed25519.verify(publicKeyBytes, wrongPayload.toByteArray(Charsets.UTF_8), signatureBytes))
+        // Pins the regression: signing an empty/absent slot is what broke the live handshake.
+        val wrongPayload = rebuild(signedToken = params.auth?.deviceToken)
+        assertTrue(
+            "signing the (absent) device token instead of auth.token is the bug this test exists for",
+            !Ed25519.verify(publicKeyBytes, wrongPayload.toByteArray(Charsets.UTF_8), signatureBytes),
+        )
     }
 
     @Test
-    fun `a gateway auth token and a presented device token can both be sent, and only the device token is signed`() = runTest {
+    fun `both tokens can be sent at once, and auth token takes precedence in the signed slot`() = runTest {
         val identity = Ed25519.generate()
         val tokenStore = FakeTokenStore(
             seed = mapOf((identity.deviceId to GatewayClientInfo.ROLE_OPERATOR) to "device-tok"),
@@ -365,7 +374,9 @@ class GatewayConnectionTest {
             role = params.role,
             scopes = params.scopes,
             signedAtMs = params.device.signedAt,
-            token = params.auth?.deviceToken, // the device token, never the gateway auth token
+            // auth.token wins: resolveSignatureToken is
+            // auth?.token ?? auth?.deviceToken ?? auth?.bootstrapToken ?? null.
+            token = params.auth?.token,
             nonce = params.device.nonce,
             platform = params.client.platform,
             deviceFamily = params.client.deviceFamily,
@@ -373,6 +384,15 @@ class GatewayConnectionTest {
         val signatureBytes = Base64.getUrlDecoder().decode(params.device.signature)
         val publicKeyBytes = Base64.getUrlDecoder().decode(params.device.publicKey)
         assertTrue(Ed25519.verify(publicKeyBytes, rebuiltPayload.toByteArray(Charsets.UTF_8), signatureBytes))
+
+        // And the device token is NOT what was signed, even though it is present on the wire.
+        val deviceTokenPayload = buildDeviceAuthPayloadV3(
+            deviceId = params.device.id, clientId = params.client.id, clientMode = params.client.mode,
+            role = params.role, scopes = params.scopes, signedAtMs = params.device.signedAt,
+            token = params.auth?.deviceToken, nonce = params.device.nonce,
+            platform = params.client.platform, deviceFamily = params.client.deviceFamily,
+        )
+        assertTrue(!Ed25519.verify(publicKeyBytes, deviceTokenPayload.toByteArray(Charsets.UTF_8), signatureBytes))
     }
 
     @Test

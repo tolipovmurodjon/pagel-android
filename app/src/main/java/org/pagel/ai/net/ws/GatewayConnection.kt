@@ -64,10 +64,19 @@ data class ConnectClientInfo(
  *  same value for every client, configured on the debug screen (see [GatewayConnection]'s
  *  `authToken` constructor param) — "you may talk to this gateway at all." [deviceToken] is this
  *  device's own per-`(deviceId, role)` pairing token, carried over from a prior `hello-ok` —
- *  "you are specifically this device." The gateway resolves the *signed* device-auth slot as
- *  `deviceToken ?? bootstrapToken ?? null` and never reads [token] for that purpose — see
- *  `buildDeviceAuthPayloadV3`'s `token` param, which must keep being fed [deviceToken], not [token].
- *  `bootstrapToken`/`password` flows are out of scope for this phase. */
+ *  "you are specifically this device."
+ *
+ *  The gateway resolves the *signed* device-auth slot as
+ *  `auth.token ?? auth.deviceToken ?? auth.bootstrapToken ?? null` (`resolveSignatureToken`,
+ *  `message-handler-CzwI6JjW.js`). [token] is **first** — so whenever a shared gateway secret is
+ *  configured, that is what must go into `buildDeviceAuthPayloadV3`'s `token` param, ahead of
+ *  [deviceToken].
+ *
+ *  An earlier revision of this doc asserted the opposite, from a truncated read of that function,
+ *  and the code followed it: we signed an empty slot while the gateway rebuilt the string with the
+ *  secret in it. The handshake then failed as `device signature invalid`, which points at the
+ *  crypto and not at the token slot — three live debugging rounds. `bootstrapToken`/`password`
+ *  flows remain out of scope for this phase. */
 @Serializable
 data class ConnectAuth(
     val token: String? = null,
@@ -404,6 +413,22 @@ class GatewayConnection(
         val gatewayAuthToken = authToken // snapshot: see the authToken property's @Volatile doc
         val signedAtMs = clock()
 
+        // Mirrors the gateway's own resolveSignatureToken, which decides what goes in the payload's
+        // token slot when it rebuilds this string to verify us:
+        //
+        //   connectParams.auth?.token ?? connectParams.auth?.deviceToken
+        //     ?? connectParams.auth?.bootstrapToken ?? null
+        //
+        // `auth.token` — the shared gateway secret — comes FIRST, ahead of the device token. That is
+        // easy to get backwards, and getting it backwards is silent: the handshake fails as
+        // `device signature invalid`, pointing at the crypto rather than at the token slot. It cost
+        // three live rounds. Before we sent auth.token at all the server resolved null here and our
+        // empty slot happened to agree; adding the gateway token is what broke the match.
+        //
+        // Verified against the live gateway with a Node probe: signing the gateway token in this
+        // slot returns ok=true, signing an empty slot returns device-signature.
+        val signatureToken = gatewayAuthToken ?: presentedToken
+
         val payload = buildDeviceAuthPayloadV3(
             deviceId = identity.deviceId,
             clientId = GatewayClientInfo.ID,
@@ -411,7 +436,7 @@ class GatewayConnection(
             role = role,
             scopes = scopes,
             signedAtMs = signedAtMs,
-            token = presentedToken,
+            token = signatureToken,
             nonce = challenge.nonce,
             platform = platform,
             deviceFamily = deviceFamily,
@@ -425,7 +450,9 @@ class GatewayConnection(
         // secret — the public key and signature both travel the wire in clear, and the token slot
         // is redacted below.
         _lastSignedPayload.value = buildString {
-            append(redactTokenSlot(payload, presentedToken))
+            // Must be signatureToken, NOT presentedToken: the slot now normally carries the shared
+            // gateway secret, and redacting against the wrong value would render it on screen.
+            append(redactTokenSlot(payload, signatureToken))
             append("\n\npub  ").append(identity.publicKeyB64Url())
             append("\nsig  ").append(base64UrlNoPad(signature))
         }
