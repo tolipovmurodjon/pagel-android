@@ -9,6 +9,7 @@ import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -623,5 +624,72 @@ class GatewayConnectionTest {
 
         assertEquals("a stale scheduled retry must not resurrect after an explicit disconnect", 1, h.sockets.size)
         assertEquals(ConnState.Disconnected, h.connection.state.value)
+    }
+
+    // ---- Fix round 1: AwaitingApproval must survive the pairing-required close ----
+
+    @Test
+    fun `a 1008 close following NOT_PAIRED does not clobber AwaitingApproval`() = runTest {
+        val h = newHarness(scope = backgroundScope)
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+        h.listener().onMessage(h.socket, errorResJson(h.sentConnectFrame().id, "NOT_PAIRED", "device pending approval"))
+        runCurrent()
+        assertEquals(ConnState.AwaitingApproval, h.connection.state.value)
+
+        // The gateway's own unpaired-connect sequence (message-handler-CzwI6JjW.js) sends this
+        // NOT_PAIRED res, then closes 1008 — the close must not downgrade the state just set.
+        h.listener().onClosed(h.socket, 1008, "pairing required")
+        runCurrent()
+
+        assertEquals(ConnState.AwaitingApproval, h.connection.state.value)
+    }
+
+    @Test
+    fun `the retry loop stays in AwaitingApproval across several NOT_PAIRED cycles, without ever failing`() = runTest {
+        val h = newMultiHarness(scope = backgroundScope)
+        val observedStates = mutableListOf<ConnState>()
+        val collectJob = backgroundScope.launch { h.connection.state.collect { observedStates.add(it) } }
+
+        h.connection.connect()
+        runCurrent()
+
+        // reconnectAttempt only resets on a successful hello-ok, which never happens in this test —
+        // so, unlike the single-cycle test above, the backoff keeps growing cycle over cycle.
+        val delays = listOf(1_000L, 2_000L, 4_000L)
+        for ((attempt, delayMs) in delays.withIndex()) {
+            h.listeners[attempt].onMessage(h.sockets[attempt], challengeJson("n$attempt", attempt.toLong()))
+            runCurrent()
+            h.listeners[attempt].onMessage(h.sockets[attempt], errorResJson(h.connectId(attempt), "NOT_PAIRED", "device pending approval"))
+            runCurrent()
+            h.listeners[attempt].onClosed(h.sockets[attempt], 1008, "pairing required")
+            runCurrent()
+            assertEquals(ConnState.AwaitingApproval, h.connection.state.value)
+
+            // The settled state through the *entire* backoff wait must read AwaitingApproval — this
+            // is what "Boss sees a stable waiting-for-approval" means: sampled at any point during
+            // the (up to 30s) wait, not just in the instant right after the error arrives.
+            advanceTimeBy(delayMs - 1)
+            runCurrent()
+            assertEquals(
+                "state must still read AwaitingApproval mid-wait (cycle $attempt), not stuck at Disconnected",
+                ConnState.AwaitingApproval,
+                h.connection.state.value,
+            )
+
+            advanceTimeBy(1) // the next attempt starts
+            runCurrent()
+        }
+
+        collectJob.cancel()
+        // A brief Disconnected->Connecting blip at the instant each new attempt starts is expected
+        // (connect()/disconnect() are unconditional — see scheduleReconnect's doc) and not asserted
+        // against here. Failed is different: nothing in a pure NOT_PAIRED loop should ever produce
+        // it, so its total absence across the whole run is a meaningful, achievable assertion.
+        assertTrue(
+            "Failed must never appear while the server only ever says NOT_PAIRED",
+            observedStates.none { it == ConnState.Failed },
+        )
     }
 }

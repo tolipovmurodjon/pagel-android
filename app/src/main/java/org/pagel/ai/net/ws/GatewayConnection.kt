@@ -139,7 +139,11 @@ data class HelloOk(
  * which case [startupSidecarsRetryDelay] honours the server's own `retryAfterMs` instead. A
  * `NOT_PAIRED` error code or a `PAIRING_REQUIRED` `details.code` ([isPairingRequired]) is not a
  * hard failure — it lands in [ConnState.AwaitingApproval] instead of [ConnState.Failed], but still
- * retries on the same schedule. There is no resume/replay ("Events are not replayed... refresh
+ * retries on the same schedule. [ConnState.AwaitingApproval] is sticky against the 1008 close the
+ * gateway sends right after the `NOT_PAIRED` `res` (`Listener.onClosed`'s
+ * [ConnState.AwaitingApproval] guard, symmetric with its [ConnState.Failed] one) — without it, the
+ * settled state during the *entire* backoff wait between retries would read `Disconnected` instead
+ * of `AwaitingApproval`, not just for an instant. There is no resume/replay ("Events are not replayed... refresh
  * state... before continuing", `docs/gateway/index.md:325-327`): [seqGaps] only flags that a gap
  * happened so the caller can refetch; this class never requests replay.
  *
@@ -528,17 +532,23 @@ class GatewayConnection(
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
             if (myGeneration != generation.get()) return
             // A close while we were still mid-handshake or live is the server (or the network)
-            // ending the connection out from under us — e.g. code 1008 policy violation, the
-            // pairing-required/unauthorized case — not a clean shutdown. [disconnect] already sets
-            // Disconnected (and bumps [generation]) before closing the socket, so a close that
-            // follows our own [disconnect] call never reaches here at all. A bare close carries no
-            // [GatewayError], so [isPairingRequired] can never see it — this always lands in
-            // [ConnState.Failed] (still retried by [fail]/[scheduleReconnect]), never
-            // [ConnState.AwaitingApproval], even for a 1008 that was in fact pairing-related. Only
-            // an actual `res.error` on the `connect` RPC can route to AwaitingApproval.
+            // ending the connection out from under us — e.g. code 1008 policy violation — not a
+            // clean shutdown. [disconnect] already sets Disconnected (and bumps [generation])
+            // before closing the socket, so a close that follows our own [disconnect] call never
+            // reaches here at all.
+            //
+            // The gateway's own unpaired-connect handling (`message-handler-CzwI6JjW.js`) always
+            // sends the `NOT_PAIRED` `res` *before* the 1008 close, never a bare close alone — so by
+            // the time this callback runs for that case, [enterAwaitingApproval] has already set
+            // [ConnState.AwaitingApproval] for this same generation. This close must not downgrade
+            // that: hence the [ConnState.AwaitingApproval] guard below, symmetric with the existing
+            // [ConnState.Failed] one. A close that arrives with *no* preceding `res.error` (e.g. a
+            // genuinely bare 1008, or the network dying mid-handshake) still lands in
+            // [ConnState.Failed] via the `Connecting`/`Connected` branch below, same as any other
+            // unexplained close.
             if (_state.value == ConnState.Connecting || _state.value == ConnState.Connected) {
                 fail(myGeneration, GatewayError("SOCKET_CLOSED", "socket closed (code=$code): ${reason.ifBlank { "no reason given" }}"))
-            } else if (_state.value != ConnState.Failed) {
+            } else if (_state.value != ConnState.Failed && _state.value != ConnState.AwaitingApproval) {
                 _state.value = ConnState.Disconnected
             }
         }
