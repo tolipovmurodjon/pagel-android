@@ -270,7 +270,9 @@ class WakeService : Service() {
     companion object {
         const val EXTRA_START_VOICE = "start_voice"
         private const val CHANNEL = "pagel_voice_wake"
-        private const val NOTIF_ID = 4201
+        // Distinct from AnchorService.NOTIF_ID (4201) — both are foreground services that run
+        // simultaneously when hands-free is armed; sharing an id lets one clobber the other's notice.
+        private const val NOTIF_ID = 4202
         private const val TAG = "WakeService"
 
         fun start(context: Context) =

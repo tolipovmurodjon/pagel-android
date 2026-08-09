@@ -134,6 +134,10 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.cash.turbine)
+    // Local loopback HTTP server — lets BrainSyncTest capture the exact JSON bytes buildJson()
+    // produces through the real push() seam, without opening a socket to anything but localhost.
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.org.json)
 
     // Instrumented test
     androidTestImplementation(libs.androidx.junit)

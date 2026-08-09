@@ -62,7 +62,10 @@ class BrainSync @Inject constructor(
         }
         val spendArr = JSONArray()
         spend.forEach { s ->
-            spendArr.put(JSONObject().put("ts", s.ts).put("amount", s.amount).put("raw", s.raw))
+            // No "raw" — that's the first 140 chars of the literal bank notification text
+            // (SpendParser.kt). Sending it would contradict the "no notification text" promise above
+            // and SettingsScreen's "only the amount syncs".
+            spendArr.put(JSONObject().put("ts", s.ts).put("amount", s.amount))
         }
         return JSONObject()
             .put("day", day)
