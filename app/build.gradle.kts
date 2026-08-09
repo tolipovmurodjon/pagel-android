@@ -122,6 +122,9 @@ dependencies {
     implementation(libs.bouncycastle)
     implementation(libs.androidx.security.crypto)
 
+    // Gateway WebSocket transport (net/ws) — promoted from a transitive elevenlabs-android dep.
+    implementation(libs.okhttp)
+
     // Charts/shimmer deferred to the dashboard (Task 7): Vico 3.x needs Kotlin 2.3 and breaks
     // this Kotlin-2.0.21 toolchain. Re-add then via Vico 2.x (Kotlin-2.0 safe) or a deliberate
     // Kotlin bump. Until then, all visuals are hand-rolled Canvas (no chart dependency needed).

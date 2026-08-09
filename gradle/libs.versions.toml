@@ -26,6 +26,7 @@ kotlinxSerialization = "1.7.3"
 lottie = "6.5.2"
 timber = "5.0.1"
 elevenlabs = "0.7.2"
+okhttp = "4.12.0"
 
 bouncycastle = "1.78.1"
 securityCrypto = "1.1.0-alpha06"
@@ -76,6 +77,10 @@ jakewharton-timber = { group = "com.jakewharton.timber", name = "timber", versio
 
 # ElevenLabs Conversational-AI SDK (Kotlin 2.0.21-built → no metadata clash; LiveKit/WebRTC under the hood)
 elevenlabs-android = { group = "io.elevenlabs", name = "elevenlabs-android", version.ref = "elevenlabs" }
+
+# Gateway WebSocket transport — was already a transitive dep of elevenlabs-android (WebRTC signaling);
+# promoted to explicit since net/ws now depends on it directly for the gateway connection.
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 # Ed25519 (minSdk 30 lacks platform Ed25519, which needs API 33) — lightweight API, no JCE provider registration
 bouncycastle = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
