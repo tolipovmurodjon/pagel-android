@@ -36,7 +36,21 @@ class ConnectSignerTest {
         assertEquals("", normalizeDeviceMetadataForAuth("   "))
         // Non-ASCII uppercase must be left untouched — String.lowercase() would change these.
         assertEquals("ÄÖÜ-x", normalizeDeviceMetadataForAuth("ÄÖÜ-X"))
-        assertEquals("i̇stanbul", normalizeDeviceMetadataForAuth("i̇stanbul"))
+        // ASCII 'I' must fold to ASCII 'i'. A locale-sensitive lowercase() under a Turkish
+        // default locale yields dotless 'ı' here, which would silently break the signature.
+        assertEquals("istanbul", normalizeDeviceMetadataForAuth("Istanbul"))
+    }
+
+    @Test
+    fun `clientMode and role are distinct fields and not interchangeable`() {
+        // Every other test passes the same value for both, so a swap of these two adjacent
+        // fields would produce byte-identical output and go undetected. Mismatched on purpose.
+        val payload = buildDeviceAuthPayloadV3(
+            deviceId = "d", clientId = "c", clientMode = "operator", role = "node",
+            scopes = emptyList(), signedAtMs = 1L, token = null, nonce = "n",
+            platform = null, deviceFamily = null,
+        )
+        assertEquals("v3|d|c|operator|node||1||n||", payload)
     }
 
     @Test
