@@ -44,6 +44,16 @@ object GatewayModule {
     @Singleton
     fun provideGatewayDeviceTokenStore(store: DataStoreGatewayDeviceTokenStore): GatewayDeviceTokenStore = store
 
+    /** The gateway's shared `auth.token` secret — a different gate from [GatewayDeviceTokenStore]
+     *  above. See [GatewayAuthTokenStore]'s doc. */
+    @Provides
+    @Singleton
+    fun provideGatewayAuthTokenFileIo(io: EncryptedFileGatewayAuthTokenFileIo): GatewayAuthTokenFileIo = io
+
+    @Provides
+    @Singleton
+    fun provideGatewayAuthTokenStore(store: DefaultGatewayAuthTokenStore): GatewayAuthTokenStore = store
+
     /**
      * `pingInterval = 0`: the gateway has its own tick/watchdog protocol
      * ([org.pagel.ai.net.ws.GatewayConnection]'s watchdog, built in Task 5) — OkHttp's ping would
@@ -80,9 +90,10 @@ object GatewayModule {
 
     /**
      * Read once, synchronously, when Hilt first builds the [GatewayManager] singleton (normally
-     * when `GatewayViewModel` is first created) — see [GatewaySettings]'s doc for why a later
-     * [GatewaySettings.saveUrl] doesn't retarget it live. `runBlocking` here is a single
-     * main-thread DataStore read at cold start, not a hot path.
+     * when `GatewayViewModel` is first created) — only relevant if a connection attempt somehow
+     * happens before the debug screen ever runs its own [GatewayManager.start] overload, which reads
+     * the current URL/token live on every CONNECT tap (see [GatewaySettings]'s doc). `runBlocking`
+     * here is a single main-thread DataStore read at cold start, not a hot path.
      */
     @Provides
     @Singleton

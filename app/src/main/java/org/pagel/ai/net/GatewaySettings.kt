@@ -19,11 +19,12 @@ private val Context.gatewaySettingsDataStore by preferencesDataStore(name = "pag
  * [DataStoreGatewayDeviceTokenStore]'s `"pagel_gateway"` — three unrelated concerns, three files,
  * no key collisions possible.
  *
- * **Read once, at [GatewayManager] construction — not live.** `GatewayModule.provideGatewayConnectionConfig`
- * reads [currentUrl] synchronously when Hilt first builds the [GatewayManager] singleton (normally
- * when `GatewayViewModel` is first created), and [GatewayConnectionConfig.serverUrl] is baked into
- * both connections at that point — it is never re-read afterward. Saving a new URL here later does
- * not retarget an already-built [GatewayManager]; the debug screen says so next to the field.
+ * **Read at Hilt construction only for a hypothetical connection attempt before the debug screen
+ * ever runs.** `GatewayModule.provideGatewayConnectionConfig` still reads [currentUrl] synchronously
+ * once, when Hilt first builds the [GatewayManager] singleton, and bakes it into
+ * [GatewayConnectionConfig.serverUrl] — but every real CONNECT tap goes through
+ * [GatewayManager.start]'s two-arg overload instead, which retargets both connections at whatever
+ * value [GatewayViewModel] just read, live, no app restart required.
  */
 @Singleton
 class GatewaySettings @Inject constructor(@ApplicationContext private val ctx: Context) {

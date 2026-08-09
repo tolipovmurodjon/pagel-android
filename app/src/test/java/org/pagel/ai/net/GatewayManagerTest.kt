@@ -78,6 +78,7 @@ class GatewayManagerTest {
         val sockets: MutableList<WebSocket>,
         val listeners: MutableList<WebSocketListener>,
         val sentPerSocket: MutableList<MutableList<String>>,
+        val requests: MutableList<okhttp3.Request>,
     )
 
     private fun newHarness(
@@ -89,8 +90,10 @@ class GatewayManagerTest {
         val sockets = mutableListOf<WebSocket>()
         val listeners = mutableListOf<WebSocketListener>()
         val sentPerSocket = mutableListOf<MutableList<String>>()
+        val requests = mutableListOf<okhttp3.Request>()
         val factory = mockk<WebSocket.Factory>()
         every { factory.newWebSocket(any(), any()) } answers {
+            requests.add(firstArg())
             listeners.add(secondArg())
             val sent = mutableListOf<String>()
             sentPerSocket.add(sent)
@@ -112,7 +115,7 @@ class GatewayManagerTest {
             ),
             scope = scope,
         )
-        return Harness(manager, sockets, listeners, sentPerSocket)
+        return Harness(manager, sockets, listeners, sentPerSocket, requests)
     }
 
     private fun challengeJson(nonce: String, ts: Long) = GatewayJson.encodeToString(
@@ -355,5 +358,52 @@ class GatewayManagerTest {
 
         assertEquals(ConnState.Disconnected, h.manager.operatorState.value)
         assertEquals(ConnState.Disconnected, h.manager.nodeState.value)
+    }
+
+    // ---- Gateway token fix: start(serverUrl, authToken) retargets live, no app restart needed ----
+
+    @Test
+    fun `start with serverUrl and authToken opens both sockets against the given URL, carrying the token`() = runTest {
+        val h = newHarness(scope = backgroundScope)
+        h.manager.start("wss://retargeted.test/ws", "gw-secret")
+        runCurrent()
+        h.deliverChallengeToAll()
+        runCurrent()
+
+        assertEquals(2, h.sockets.size)
+        // OkHttp's Request.Builder().url() normalizes ws(s):// to http(s):// internally (same
+        // mapping gatewayUrlOrNull performs before validating) — assert on that normalized form.
+        h.requests.forEach { assertEquals("https://retargeted.test/ws", it.url.toString()) }
+
+        val opParams = h.connectParams(h.indexForRole(GatewayClientInfo.ROLE_OPERATOR))
+        val nodeParams = h.connectParams(h.indexForRole(GatewayClientInfo.ROLE_NODE))
+        assertEquals("gw-secret", opParams.auth?.token)
+        assertEquals("gw-secret", nodeParams.auth?.token)
+    }
+
+    @Test
+    fun `start with serverUrl and authToken retargets a connection that is already live, not a no-op`() = runTest {
+        // The wart this overload exists to close: GatewayConnection.connect() no-ops while
+        // Connecting/Connected, so retargeting without disconnecting first would silently keep the
+        // old URL — Boss taps CONNECT with a fix and nothing happens. Prove start() disconnects first.
+        val h = newHarness(scope = backgroundScope)
+        h.manager.start("wss://original.test/ws", null)
+        runCurrent()
+        assertEquals(2, h.sockets.size)
+        h.requests.forEach { assertEquals("https://original.test/ws", it.url.toString()) }
+
+        h.manager.start("wss://corrected.test/ws", "gw-secret-2")
+        runCurrent()
+
+        // Fresh sockets were opened (the old ones were torn down, new ones opened against the new
+        // URL) rather than the retarget being swallowed by connect()'s Connecting-state no-op guard.
+        assertEquals(4, h.sockets.size)
+        assertEquals("https://corrected.test/ws", h.requests[2].url.toString())
+        assertEquals("https://corrected.test/ws", h.requests[3].url.toString())
+
+        h.deliverChallengeToAll()
+        runCurrent()
+        val opIdx = h.indexForRole(GatewayClientInfo.ROLE_OPERATOR)
+        assertEquals("gw-secret-2", h.connectParams(opIdx).auth?.token)
     }
 }

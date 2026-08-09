@@ -59,9 +59,15 @@ data class ConnectClientInfo(
     val deviceFamily: String? = null,
 )
 
-/** `{ token?, bootstrapToken?, deviceToken?, password?, ... }` — Task 4 only ever populates
- *  [deviceToken], carried over from a prior `hello-ok`. Shared-token and bootstrap-pairing flows
- *  are out of scope for "construct a connection and complete a handshake". */
+/** `{ token?, bootstrapToken?, deviceToken?, password?, ... }` — two independent gates, both
+ *  presentable at once: [token] is the gateway's shared `gateway.auth.mode = "token"` secret, the
+ *  same value for every client, configured on the debug screen (see [GatewayConnection]'s
+ *  `authToken` constructor param) — "you may talk to this gateway at all." [deviceToken] is this
+ *  device's own per-`(deviceId, role)` pairing token, carried over from a prior `hello-ok` —
+ *  "you are specifically this device." The gateway resolves the *signed* device-auth slot as
+ *  `deviceToken ?? bootstrapToken ?? null` and never reads [token] for that purpose — see
+ *  `buildDeviceAuthPayloadV3`'s `token` param, which must keep being fed [deviceToken], not [token].
+ *  `bootstrapToken`/`password` flows are out of scope for this phase. */
 @Serializable
 data class ConnectAuth(
     val token: String? = null,
@@ -201,7 +207,14 @@ class GatewayConnection(
     private val role: String,
     private val mode: String,
     private val scopes: List<String>,
-    private val serverUrl: String,
+    private var serverUrl: String,
+    /** The gateway's shared `gateway.auth.mode = "token"` secret, sent as `auth.token` — see
+     *  [ConnectAuth]'s doc for how this differs from the per-device [tokenStore] token. `null` when
+     *  Boss hasn't configured one (or the gateway isn't in token mode). Read fresh by every
+     *  [connect]/reconnect attempt, so [updateConnectionParams] can retarget it without rebuilding
+     *  this instance — see that method's doc. `@Volatile`: read from the handshake coroutine, which
+     *  does not hold [Any.synchronized]'s lock the way [connect]/[updateConnectionParams] do. */
+    @Volatile private var authToken: String? = null,
     private val clientVersion: String,
     private val platform: String,
     private val deviceFamily: String?,
@@ -277,14 +290,18 @@ class GatewayConnection(
         val rpc = GatewayRpc(send = { req -> sendReq(gen, req) }, nextId = idGenerator, timeoutMs = rpcTimeoutMs)
     }
 
-    /** Opens the socket and runs the handshake once. No-op if already connecting/connected.
+    /** Opens the socket and runs the handshake once. No-op if already connecting/connected — a
+     *  caller that wants to retarget a *live* connection at a new [serverUrl]/[authToken] must
+     *  [disconnect] first (see [updateConnectionParams]'s doc; [GatewayManager]'s two-arg `start`
+     *  does exactly that).
      *
      *  A [serverUrl] OkHttp can't parse (Boss typing `100.64.0.1:18789` with no scheme into the
      *  debug screen) lands in [ConnState.Failed] with an `INVALID_URL` [lastError] instead of
      *  throwing out of this call — which, since [connect] runs on the caller's thread (the main
      *  thread, from the CONNECT button), used to mean an app crash. Deliberately *not*
-     *  [scheduleReconnect]ed: [serverUrl] is fixed for the lifetime of this instance, so no amount
-     *  of retrying can heal it — the CONNECT button is the retry. */
+     *  [scheduleReconnect]ed: nothing changes [serverUrl] *during* a reconnect streak (only an
+     *  explicit [updateConnectionParams] + fresh [connect] does), so no amount of automatic retrying
+     *  can heal a bad one — the CONNECT button is the retry. */
     fun connect() {
         synchronized(this) {
             if (_state.value == ConnState.Connecting || _state.value == ConnState.Connected) return
@@ -327,6 +344,25 @@ class GatewayConnection(
         }
     }
 
+    /**
+     * Updates the URL and gateway auth token this connection uses for its *next* [connect] call —
+     * including the ones [scheduleReconnect] fires automatically, since those call the same no-arg
+     * [connect] and so pick up whatever is set here. This is the fix for "applies on next app
+     * launch": [GatewayManager]'s two-arg `start` calls this (via [disconnect] first) so a URL or
+     * token Boss just typed takes effect on this CONNECT tap, not the next cold start.
+     *
+     * Deliberately does *not* itself [connect]/[disconnect] anything — call it on a connection that
+     * is [ConnState.Connecting] or [ConnState.Connected] and nothing changes until the caller also
+     * [disconnect]s (see [connect]'s no-op guard): calling this mid-attempt would otherwise let a
+     * handshake already under way sign and send a frame built from a mix of the old and new values.
+     */
+    fun updateConnectionParams(serverUrl: String, authToken: String?) {
+        synchronized(this) {
+            this.serverUrl = serverUrl
+            this.authToken = authToken
+        }
+    }
+
     /** See the class doc's "Exceptions" section for why the whole body is wrapped. */
     private suspend fun runHandshake(attempt: Attempt) {
         try {
@@ -350,6 +386,7 @@ class GatewayConnection(
 
         val identity = deviceIdentityStore.loadOrCreate()
         val presentedToken = tokenStore.get(identity.deviceId, role)
+        val gatewayAuthToken = authToken // snapshot: see the authToken property's @Volatile doc
         val signedAtMs = clock()
 
         val payload = buildDeviceAuthPayloadV3(
@@ -392,7 +429,16 @@ class GatewayConnection(
                 signedAt = device.signedAt,
                 nonce = device.nonce,
             ),
-            auth = presentedToken?.let { ConnectAuth(deviceToken = it) },
+            // gatewayAuthToken (auth.token, the shared gateway secret) and presentedToken
+            // (auth.deviceToken, this device's own pairing token) are independent gates and can
+            // both be present at once — see ConnectAuth's doc. Critically, gatewayAuthToken must
+            // NEVER be fed into buildDeviceAuthPayloadV3 above: the gateway resolves the *signed*
+            // slot as deviceToken ?? bootstrapToken ?? null and never reads auth.token for that.
+            auth = if (gatewayAuthToken != null || presentedToken != null) {
+                ConnectAuth(token = gatewayAuthToken, deviceToken = presentedToken)
+            } else {
+                null
+            },
         )
 
         val result = attempt.rpc.call("connect", GatewayJson.encodeToJsonElement(ConnectParams.serializer(), params))

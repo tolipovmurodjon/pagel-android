@@ -59,6 +59,7 @@ class GatewayConnectionTest {
         role: String = GatewayClientInfo.ROLE_OPERATOR,
         mode: String = GatewayClientInfo.MODE_OPERATOR,
         scopes: List<String> = listOf("operator.read", "operator.write"),
+        authToken: String? = null,
     ): Harness {
         val fakeSocket = mockk<WebSocket>(relaxed = true)
         val sent = mutableListOf<String>()
@@ -72,6 +73,7 @@ class GatewayConnectionTest {
             mode = mode,
             scopes = scopes,
             serverUrl = "wss://gateway.test/ws",
+            authToken = authToken,
             clientVersion = "0.1-A1",
             platform = "Android",
             deviceFamily = "SM-A057F",
@@ -145,6 +147,7 @@ class GatewayConnectionTest {
         identity: DeviceIdentity = Ed25519.generate(),
         tokenStore: FakeTokenStore = FakeTokenStore(),
         deviceIdentityStore: DeviceIdentityStore = FakeDeviceIdentityStore(identity),
+        authToken: String? = null,
     ): MultiHarness {
         val sockets = mutableListOf<WebSocket>()
         val listeners = mutableListOf<WebSocketListener>()
@@ -166,6 +169,7 @@ class GatewayConnectionTest {
             mode = GatewayClientInfo.MODE_OPERATOR,
             scopes = listOf("operator.read", "operator.write"),
             serverUrl = "wss://gateway.test/ws",
+            authToken = authToken,
             clientVersion = "0.1-A1",
             platform = "Android",
             deviceFamily = "SM-A057F",
@@ -256,6 +260,119 @@ class GatewayConnectionTest {
         // Prove the check isn't vacuous: a payload rebuilt from a tampered field must NOT verify.
         val tampered = rebuiltPayload.replace("nonce-xyz", "nonce-tampered")
         assertTrue(!Ed25519.verify(publicKeyBytes, tampered.toByteArray(Charsets.UTF_8), signatureBytes))
+    }
+
+    // ---- Gateway token fix: auth.token is a second, independent gate on top of device pairing ----
+
+    @Test
+    fun `auth token is present in the connect frame when a gateway auth token is configured`() = runTest {
+        val h = newHarness(scope = backgroundScope, authToken = "gw-secret")
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+
+        val connectLine = h.sent.single { it.contains("\"method\":\"connect\"") }
+        assertTrue(
+            "the raw wire frame must carry auth.token",
+            connectLine.contains("\"token\":\"gw-secret\""),
+        )
+        val params = GatewayJson.decodeFromJsonElement(ConnectParams.serializer(), h.sentConnectFrame().params!!)
+        assertEquals("gw-secret", params.auth?.token)
+    }
+
+    @Test
+    fun `auth token is absent from the connect frame when no gateway auth token is configured`() = runTest {
+        val h = newHarness(scope = backgroundScope) // authToken defaults to null
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+
+        val connectLine = h.sent.single { it.contains("\"method\":\"connect\"") }
+        // GatewayJson.explicitNulls = false, so a null ConnectAuth.token must vanish from the wire
+        // entirely, not serialize as "token":null — check the raw JSON, not the decoded object,
+        // which can't distinguish "absent" from "explicit null" once round-tripped.
+        assertTrue(
+            "no gateway auth token was configured, so \"token\": must not appear on the wire: $connectLine",
+            !connectLine.contains("\"token\":"),
+        )
+    }
+
+    @Test
+    fun `a configured gateway auth token does not change the signed device-auth payload`() = runTest {
+        // The regression this whole fix must not reintroduce: auth.token is a shared secret, not a
+        // signing input. The gateway resolves the signed slot as deviceToken ?? bootstrapToken ??
+        // null (message-handler-CzwI6JjW.js) and never looks at auth.token there.
+        val identity = Ed25519.generate()
+        val h = newHarness(scope = backgroundScope, identity = identity, authToken = "gw-secret")
+        // No presented (device) token seeded — tokenStore.get() returns null.
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("nonce-x", 1L))
+        runCurrent()
+
+        val params = GatewayJson.decodeFromJsonElement(ConnectParams.serializer(), h.sentConnectFrame().params!!)
+        assertEquals("gw-secret", params.auth?.token)
+        assertEquals(null, params.auth?.deviceToken)
+
+        val signatureBytes = Base64.getUrlDecoder().decode(params.device.signature)
+        val publicKeyBytes = Base64.getUrlDecoder().decode(params.device.publicKey)
+
+        fun rebuild(signedToken: String?) = buildDeviceAuthPayloadV3(
+            deviceId = params.device.id,
+            clientId = params.client.id,
+            clientMode = params.client.mode,
+            role = params.role,
+            scopes = params.scopes,
+            signedAtMs = params.device.signedAt,
+            token = signedToken,
+            nonce = params.device.nonce,
+            platform = params.client.platform,
+            deviceFamily = params.client.deviceFamily,
+        )
+
+        // Correct: the signed slot was built from the (absent) device token, not the gateway token.
+        val correctPayload = rebuild(signedToken = params.auth?.deviceToken)
+        assertTrue(Ed25519.verify(publicKeyBytes, correctPayload.toByteArray(Charsets.UTF_8), signatureBytes))
+
+        // Pins the exact regression: if a future change fed the gateway auth token into signing
+        // instead, this payload would be the one that verifies. It must NOT.
+        val wrongPayload = rebuild(signedToken = params.auth?.token)
+        assertTrue(!Ed25519.verify(publicKeyBytes, wrongPayload.toByteArray(Charsets.UTF_8), signatureBytes))
+    }
+
+    @Test
+    fun `a gateway auth token and a presented device token can both be sent, and only the device token is signed`() = runTest {
+        val identity = Ed25519.generate()
+        val tokenStore = FakeTokenStore(
+            seed = mapOf((identity.deviceId to GatewayClientInfo.ROLE_OPERATOR) to "device-tok"),
+        )
+        val h = newHarness(scope = backgroundScope, identity = identity, tokenStore = tokenStore, authToken = "gw-secret")
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("nonce-y", 1L))
+        runCurrent()
+
+        val params = GatewayJson.decodeFromJsonElement(ConnectParams.serializer(), h.sentConnectFrame().params!!)
+        assertEquals("gw-secret", params.auth?.token)
+        assertEquals("device-tok", params.auth?.deviceToken)
+
+        val rebuiltPayload = buildDeviceAuthPayloadV3(
+            deviceId = params.device.id,
+            clientId = params.client.id,
+            clientMode = params.client.mode,
+            role = params.role,
+            scopes = params.scopes,
+            signedAtMs = params.device.signedAt,
+            token = params.auth?.deviceToken, // the device token, never the gateway auth token
+            nonce = params.device.nonce,
+            platform = params.client.platform,
+            deviceFamily = params.client.deviceFamily,
+        )
+        val signatureBytes = Base64.getUrlDecoder().decode(params.device.signature)
+        val publicKeyBytes = Base64.getUrlDecoder().decode(params.device.publicKey)
+        assertTrue(Ed25519.verify(publicKeyBytes, rebuiltPayload.toByteArray(Charsets.UTF_8), signatureBytes))
     }
 
     @Test

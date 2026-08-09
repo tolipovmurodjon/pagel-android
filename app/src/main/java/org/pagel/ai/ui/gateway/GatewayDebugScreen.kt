@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -37,6 +38,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -46,10 +49,12 @@ import org.pagel.ai.ui.theme.MonoFamily
 
 /**
  * Task 8's debug screen — NOT the final Connect UI (Phase B/H builds that). Just enough to drive
- * the machine built in Tasks 1-6: the gateway URL, Connect/Disconnect, and operator+node state
- * shown *separately* with each half's own last error, because "operator Connected while node
- * still awaits approval" is a normal state a Boolean would hide (see [org.pagel.ai.net.GatewayManager]'s
- * doc). No QR scanning, no mDNS discovery, no gateway registry — out of scope for this task.
+ * the machine built in Tasks 1-6: the gateway URL, the gateway auth token (a second, independent
+ * gate on top of device pairing — see [org.pagel.ai.net.ws.ConnectAuth]'s doc), Connect/Disconnect,
+ * and operator+node state shown *separately* with each half's own last error, because "operator
+ * Connected while node still awaits approval" is a normal state a Boolean would hide (see
+ * [org.pagel.ai.net.GatewayManager]'s doc). No QR scanning, no mDNS discovery, no gateway registry
+ * — out of scope for this task.
  */
 @Composable
 fun GatewayDebugScreen(onBack: () -> Unit, vm: GatewayViewModel = hiltViewModel()) {
@@ -91,10 +96,29 @@ fun GatewayDebugScreen(onBack: () -> Unit, vm: GatewayViewModel = hiltViewModel(
                     cursorColor = MaterialTheme.colorScheme.primary,
                 ),
             )
+            Spacer(Modifier.height(14.dp))
+
+            OutlinedTextField(
+                value = ui.token,
+                onValueChange = vm::setToken,
+                label = { Text("Gateway auth token") },
+                placeholder = { Text("shared secret, not the device pairing token") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                    focusedLabelColor = MaterialTheme.colorScheme.primary,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                ),
+            )
             Spacer(Modifier.height(6.dp))
             Text(
-                "Applies on next app launch, not live — the running connections keep whatever " +
-                    "URL they started with.",
+                "Only needed if the gateway runs gateway.auth.mode = \"token\" — read it on the " +
+                    "server from gateway.auth.token in ~/.openclaw/openclaw.json. Both fields take " +
+                    "effect on the next CONNECT tap, no app restart needed.",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -151,9 +175,23 @@ private fun ConnRow(label: String, subtitle: String, state: ConnState, error: St
                 style = MaterialTheme.typography.bodyMedium.copy(fontFamily = MonoFamily),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (isMissingGatewayTokenError(error)) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Enter the gateway auth token above and tap CONNECT again.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
+
+/** The raw gateway error ("INVALID_REQUEST: unauthorized: gateway token missing (provide gateway
+ *  auth token)") is accurate but doesn't tell Boss what to do about it — this spots that specific
+ *  case so [ConnRow] can point at the token field instead of leaving him to guess. */
+private fun isMissingGatewayTokenError(error: String): Boolean =
+    error.contains("gateway token", ignoreCase = true)
 
 @Composable
 private fun StateChip(state: ConnState) {

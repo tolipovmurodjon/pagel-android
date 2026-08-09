@@ -71,6 +71,9 @@ class GatewayManager @Inject constructor(
         mode = GatewayClientInfo.MODE_OPERATOR,
         scopes = OPERATOR_SCOPES,
         serverUrl = config.serverUrl,
+        // No gateway auth token at construction — see this class's `start(serverUrl, authToken)`
+        // doc for why that's fine: nothing connects before the debug screen calls it.
+        authToken = null,
         clientVersion = config.clientVersion,
         platform = config.platform,
         deviceFamily = config.deviceFamily,
@@ -87,6 +90,7 @@ class GatewayManager @Inject constructor(
         mode = GatewayClientInfo.MODE_NODE,
         scopes = emptyList(),
         serverUrl = config.serverUrl,
+        authToken = null, // see the operator connection's identical comment above
         clientVersion = config.clientVersion,
         platform = config.platform,
         deviceFamily = config.deviceFamily,
@@ -116,6 +120,26 @@ class GatewayManager @Inject constructor(
     fun start() {
         operatorConnection.connect()
         nodeConnection.connect()
+    }
+
+    /**
+     * Retargets both connections at [serverUrl]/[authToken], then starts them — the live-update fix
+     * for what used to be "applies on next app launch": [GatewayViewModel][org.pagel.ai.ui.gateway.GatewayViewModel]
+     * calls this overload with whatever Boss just typed, on *every* CONNECT tap, so a corrected URL
+     * or a freshly-entered gateway token takes effect immediately instead of requiring a force-restart.
+     *
+     * [stop] runs *first*, not folded into [GatewayConnection.connect] itself: [connect] no-ops
+     * while a connection is [ConnState.Connecting]/[ConnState.Connected] (see its own doc), so
+     * calling [GatewayConnection.updateConnectionParams] on a live connection without disconnecting
+     * first would silently keep talking to the old URL/token — exactly the wart this method exists
+     * to close. Stopping before updating also means a handshake that's already mid-flight can't sign
+     * and send a frame built from a mix of the old and new values.
+     */
+    fun start(serverUrl: String, authToken: String?) {
+        stop()
+        operatorConnection.updateConnectionParams(serverUrl, authToken)
+        nodeConnection.updateConnectionParams(serverUrl, authToken)
+        start()
     }
 
     fun stop() {
