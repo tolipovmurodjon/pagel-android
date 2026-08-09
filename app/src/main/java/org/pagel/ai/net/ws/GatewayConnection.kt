@@ -4,6 +4,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -29,8 +30,11 @@ import org.pagel.ai.net.identity.publicKeyB64Url
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
-/** Lifecycle of one [GatewayConnection]. [AwaitingApproval] is reachable once Task 5 wires up
- *  `NOT_PAIRED`/`PAIRING_REQUIRED` handling; this task never transitions into it. */
+/**
+ * Lifecycle of one [GatewayConnection]. [AwaitingApproval] means the device is known to the
+ * gateway but still needs an explicit `openclaw devices approve` — not terminal, the connection
+ * keeps retrying with the same backoff as [Failed] (see [GatewayConnection.scheduleReconnect]).
+ */
 enum class ConnState { Disconnected, Connecting, AwaitingApproval, Connected, Failed }
 
 /**
@@ -125,8 +129,23 @@ data class HelloOk(
  * → send `connect` as a `req` frame → await the correlated `res` (`ok:true` → `payload` is `hello-ok`;
  * `ok:false` → `error` is a [GatewayError]).
  *
- * Reconnect/backoff and the `AwaitingApproval` state are Task 5. This class makes exactly one
- * connection attempt per [connect] call.
+ * **Reconnect.** Every path that ends an attempt without success — [fail] and
+ * [enterAwaitingApproval] alike — schedules the next attempt via [scheduleReconnect], which is
+ * disconnect-then-connect on a timer through the same public, generation-guarded [connect] /
+ * [disconnect] entry points any other caller uses (see "Stale-attempt safety" below: this is
+ * exactly the retry loop that section was written for). The delay is [reconnectPolicy]'s
+ * exponential backoff (1s to 2s to ... capped at 30s, reset to 1s on the next [handleHelloOk]),
+ * except when the gateway hands back `UNAVAILABLE` with `details.reason == "startup-sidecars"`, in
+ * which case [startupSidecarsRetryDelay] honours the server's own `retryAfterMs` instead. A
+ * `NOT_PAIRED` error code or a `PAIRING_REQUIRED` `details.code` ([isPairingRequired]) is not a
+ * hard failure — it lands in [ConnState.AwaitingApproval] instead of [ConnState.Failed], but still
+ * retries on the same schedule. There is no resume/replay ("Events are not replayed... refresh
+ * state... before continuing", `docs/gateway/index.md:325-327`): [seqGaps] only flags that a gap
+ * happened so the caller can refetch; this class never requests replay.
+ *
+ * A post-`hello-ok` watchdog ([armWatchdog]) closes the socket with code 4000 and fails the
+ * connection (feeding the same reconnect path) if 2x the server's advertised
+ * `hello-ok.policy.tickIntervalMs` passes with no inbound frame at all.
  *
  * **Stale-attempt safety.** [connect] can be called again (Task 5's reconnect loop is exactly this,
  * on a timer) while a previous attempt's socket is still unwinding — a late `onFailure`/`onClosed`
@@ -168,6 +187,7 @@ class GatewayConnection(
     private val clock: () -> Long = System::currentTimeMillis,
     private val challengeTimeoutMs: Long = 15_000,
     private val rpcTimeoutMs: Long = 30_000,
+    private val reconnectPolicy: ReconnectPolicy = ReconnectPolicy(),
 ) {
     private val _state = MutableStateFlow(ConnState.Disconnected)
     val state: StateFlow<ConnState> = _state.asStateFlow()
@@ -178,6 +198,15 @@ class GatewayConnection(
     private val _events = MutableSharedFlow<GatewayFrame.Event>(extraBufferCapacity = 64)
     val events: SharedFlow<GatewayFrame.Event> = _events.asSharedFlow()
 
+    /** Gap between the previous inbound event's `seq` and this one's. `seq` is per-socket,
+     *  monotonic, and resets on every new connection (`docs/gateway/protocol.md` §1.5) — there is
+     *  no replay protocol, so this only flags that a gap happened; the caller is responsible for
+     *  refetching current state (`health`, `system-presence`, ...) itself (Phase B). */
+    data class SeqGap(val expected: Long, val actual: Long)
+
+    private val _seqGaps = MutableSharedFlow<SeqGap>(extraBufferCapacity = 8)
+    val seqGaps: SharedFlow<SeqGap> = _seqGaps.asSharedFlow()
+
     /** Bumped on every [connect] and [disconnect]; the single source of truth for "which attempt is
      *  current." See the class doc's "Stale-attempt safety" section. */
     private val generation = AtomicInteger(0)
@@ -187,6 +216,28 @@ class GatewayConnection(
     @Volatile private var challengeDeferred: CompletableDeferred<ChallengePayload>? = null
     @Volatile private var handshakeJob: Job? = null
 
+    /** The pending [scheduleReconnect] timer, if any. Deliberately *not* touched by [connect] or
+     *  [disconnect] — see [scheduleReconnect]'s doc for why: the `gen != generation.get()` check
+     *  inside its delayed continuation is what has to do that job, so it stays load-bearing rather
+     *  than redundant with an eager cancel. */
+    @Volatile private var reconnectJob: Job? = null
+
+    /** The post-`hello-ok` tick-timeout watchdog, if armed. See [armWatchdog]. */
+    @Volatile private var watchdogJob: Job? = null
+
+    /** Attempt index fed to [reconnectPolicy]; incremented on every backoff-driven retry, reset to
+     *  0 by [handleHelloOk] on success. Not reset by [disconnect] — an explicit disconnect mid-
+     *  backoff-streak followed by a manual reconnect that also fails resumes the streak's delay
+     *  rather than restarting at 1s; this is a deliberate simplification for Task 5, not a bug. */
+    @Volatile private var reconnectAttempt: Int = 0
+
+    /** Learned from `hello-ok.policy.tickIntervalMs`; drives [armWatchdog]. Never hardcoded — see
+     *  the class doc. */
+    @Volatile private var tickIntervalMs: Long = 0
+
+    /** The last inbound event's `seq`, per attempt (reset in [connect]). See [SeqGap]. */
+    @Volatile private var lastSeq: Long? = null
+
     private data class ChallengePayload(val nonce: String, val ts: Long)
 
     /** Opens the socket and runs the handshake once. No-op if already connecting/connected. */
@@ -194,8 +245,11 @@ class GatewayConnection(
         synchronized(this) {
             if (_state.value == ConnState.Connecting || _state.value == ConnState.Connected) return
             handshakeJob?.cancel() // any leftover attempt (e.g. one that just failed) stops here, not later
+            watchdogJob?.cancel() // the previous attempt's watchdog, if any, belongs to a dead generation
+            watchdogJob = null
             val myGeneration = generation.incrementAndGet()
 
+            lastSeq = null // seq is per-socket (docs/gateway/protocol.md §1.5) — this is a new socket
             _lastError.value = null
             _state.value = ConnState.Connecting
 
@@ -209,12 +263,15 @@ class GatewayConnection(
         }
     }
 
-    /** Closes the socket, if any, cancels its in-flight attempt, and returns to [ConnState.Disconnected]. */
+    /** Closes the socket, if any, cancels its in-flight attempt, and returns to [ConnState.Disconnected].
+     *  Deliberately does *not* touch [reconnectJob] — see that field's doc. */
     fun disconnect() {
         synchronized(this) {
             generation.incrementAndGet() // invalidate the in-flight attempt, if any, before touching anything else
             handshakeJob?.cancel()
             handshakeJob = null
+            watchdogJob?.cancel()
+            watchdogJob = null
             webSocket?.close(1000, "client disconnect")
             webSocket = null
             rpc = null
@@ -282,7 +339,10 @@ class GatewayConnection(
         val result = activeRpc.call("connect", GatewayJson.encodeToJsonElement(ConnectParams.serializer(), params))
         result.fold(
             onSuccess = { helloOkPayload -> handleHelloOk(myGeneration, identity.deviceId, helloOkPayload) },
-            onFailure = { t -> fail(myGeneration, errorFrom(t)) },
+            onFailure = { t ->
+                val error = errorFrom(t)
+                if (isPairingRequired(error)) enterAwaitingApproval(myGeneration, error) else fail(myGeneration, error)
+            },
         )
     }
 
@@ -297,6 +357,9 @@ class GatewayConnection(
         hello.auth.deviceToken?.let { token ->
             scope.launch { tokenStore.put(deviceId, role, token) }
         }
+        reconnectAttempt = 0 // a successful handshake resets the backoff curve for the *next* failure
+        tickIntervalMs = hello.policy.tickIntervalMs
+        armWatchdog(gen)
         _state.value = ConnState.Connected
     }
 
@@ -306,18 +369,106 @@ class GatewayConnection(
         else -> GatewayError("UNKNOWN", t.message ?: "unknown gateway error")
     }
 
+    /** True when [error] means "the device needs an explicit pairing approval" rather than a hard
+     *  failure — protocol-reference-handshake.md §1.6, two distinct signals that mean the same
+     *  thing to this client:
+     *  - top-level `error.code == "NOT_PAIRED"`, from the closed six-value `ErrorCodes` enum
+     *    (`schema-BuOFpc7K.js:2646-2659`): "Device exists but still needs an explicit pairing
+     *    approval." Documented retryable, "yes, poll."
+     *  - `error.details.code == "PAIRING_REQUIRED"`, a *separate* namespace specific to connect
+     *    failures (`connect-error-details.ts`; full table `docs/gateway/troubleshooting.md:347-356`):
+     *    "needs approval... show pending state, poll." Also `docs/gateway/protocol.md:802-806`:
+     *    "Keep reconnecting with the same bootstrap token until the request is approved."
+     */
+    private fun isPairingRequired(error: GatewayError): Boolean {
+        if (error.code == "NOT_PAIRED") return true
+        val details = error.details as? JsonObject ?: return false
+        return (details["code"] as? JsonPrimitive)?.takeIf { it.isString }?.content == "PAIRING_REQUIRED"
+    }
+
+    /** `UNAVAILABLE` with `details.reason == "startup-sidecars"` carries the gateway's own
+     *  `retryAfterMs` — `docs/gateway/protocol.md:117-120`: "Retry within your connection budget
+     *  instead of treating it as a terminal handshake failure." Returns `null` (fall back to
+     *  [reconnectPolicy]) for every other error, including other `UNAVAILABLE` reasons. */
+    private fun startupSidecarsRetryDelay(error: GatewayError): Long? {
+        val details = error.details as? JsonObject ?: return null
+        val reason = (details["reason"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        return error.retryAfterMs.takeIf { reason == "startup-sidecars" }
+    }
+
     /** Fails the connection outright, and immediately unblocks anything waiting on this attempt —
      *  the pending `connect.challenge` wait and any in-flight RPC — rather than leaving them to
      *  discover the failure only when their own [challengeTimeoutMs]/[rpcTimeoutMs] independently
      *  elapse. Safe to call more than once per attempt: cancelling an already-completed
      *  [challengeDeferred] and clearing an already-empty [GatewayRpc] pending map are both no-ops.
-     *  A no-op entirely if [gen] no longer names the current attempt — see the class doc. */
+     *  A no-op entirely if [gen] no longer names the current attempt — see the class doc. Schedules
+     *  the next attempt via [scheduleReconnect]: per the plan's Done-when #5 ("killing the network
+     *  and restoring it reconnects without a restart"), every failure here is worth retrying — this
+     *  task doesn't special-case the troubleshooting table's "stop and surface" codes
+     *  (`AUTH_TOKEN_MISMATCH`, `NOT_LINKED`, ...); see the Task 5 report. */
     private fun fail(gen: Int, error: GatewayError) {
         if (gen != generation.get()) return
         _lastError.value = error
         _state.value = ConnState.Failed
         challengeDeferred?.cancel()
         rpc?.cancelAll(error)
+        scheduleReconnect(gen, error)
+    }
+
+    /** Like [fail], but for [isPairingRequired] errors: lands in [ConnState.AwaitingApproval]
+     *  instead of [ConnState.Failed] — not terminal, still retries via [scheduleReconnect] so the
+     *  UI can show "waiting for Boss to run `openclaw devices approve`" rather than a dead end. */
+    private fun enterAwaitingApproval(gen: Int, error: GatewayError) {
+        if (gen != generation.get()) return
+        _lastError.value = error
+        _state.value = ConnState.AwaitingApproval
+        challengeDeferred?.cancel()
+        rpc?.cancelAll(error)
+        scheduleReconnect(gen, error)
+    }
+
+    /**
+     * Schedules the next [connect] attempt after this attempt's failure. Honours
+     * [startupSidecarsRetryDelay] when the gateway says so, otherwise [reconnectPolicy]'s
+     * exponential backoff (which also advances [reconnectAttempt] — the Elvis operator below short-
+     * circuits that increment when the server-provided delay is used instead, so a startup-sidecars
+     * retry doesn't consume a step of the exponential curve).
+     *
+     * Reconnect is disconnect-then-connect on a timer, through the public, generation-guarded
+     * [connect] / [disconnect] API — never touching [webSocket]/[rpc]/[challengeDeferred] directly.
+     * [connect] and [disconnect] deliberately do *not* eagerly cancel [reconnectJob] (see that
+     * field's doc): the `gen != generation.get()` check below, run right before this timer's
+     * [disconnect]+[connect] pair, is what makes a superseded retry (a manual [disconnect] during
+     * the backoff window, or a newer attempt already under way for some other reason) a no-op
+     * instead of resurrecting stale state.
+     */
+    private fun scheduleReconnect(gen: Int, error: GatewayError) {
+        reconnectJob?.cancel() // replace any earlier still-pending timer for this same generation
+        val delayMs = startupSidecarsRetryDelay(error) ?: reconnectPolicy.nextDelayMs(reconnectAttempt++)
+        reconnectJob = scope.launch {
+            delay(delayMs)
+            if (gen != generation.get()) return@launch // superseded — see the doc above
+            disconnect()
+            connect()
+        }
+    }
+
+    /** (Re)arms the tick-timeout watchdog: `docs/gateway/protocol.md:761` — "Tick-timeout close —
+     *  code 4000 when silence exceeds tickIntervalMs * 2." First armed by [handleHelloOk] once the
+     *  server's real `policy.tickIntervalMs` is known (the pre-`hello-ok` phase already has its own
+     *  [challengeTimeoutMs]/[rpcTimeoutMs] budgets, so there's nothing for a watchdog to add there),
+     *  then re-armed by [Listener.onMessage] on every subsequent inbound frame so genuine liveness
+     *  keeps resetting the clock. Expiry closes the socket with 4000 and runs the same [fail] ->
+     *  [scheduleReconnect] path as any other failure. */
+    private fun armWatchdog(gen: Int) {
+        watchdogJob?.cancel()
+        watchdogJob = scope.launch {
+            val budgetMs = tickIntervalMs * 2
+            delay(budgetMs)
+            if (gen != generation.get()) return@launch
+            webSocket?.close(4000, "tick timeout: no inbound frame within ${budgetMs}ms")
+            fail(gen, GatewayError("TICK_TIMEOUT", "no inbound frame within ${budgetMs}ms"))
+        }
     }
 
     private fun sendReq(gen: Int, req: GatewayFrame.Req): Boolean {
@@ -335,7 +486,17 @@ class GatewayConnection(
             if (nonce != null) challengeDeferred?.complete(ChallengePayload(nonce, ts))
             return // handshake-internal — not surfaced on the public events flow
         }
+        frame.seq?.let(::checkSeqGap)
         _events.tryEmit(frame)
+    }
+
+    /** See [SeqGap]. */
+    private fun checkSeqGap(seq: Long) {
+        val previous = lastSeq
+        if (previous != null && seq != previous + 1) {
+            _seqGaps.tryEmit(SeqGap(expected = previous + 1, actual = seq))
+        }
+        lastSeq = seq
     }
 
     /** One per [connect] attempt, tagged with the [generation] value that was current when it was
@@ -349,6 +510,9 @@ class GatewayConnection(
 
         override fun onMessage(webSocket: WebSocket, text: String) {
             if (myGeneration != generation.get()) return
+            // Any inbound frame is liveness: reset the tick-timeout watchdog, once armed (post
+            // hello-ok — see armWatchdog's doc for why not before).
+            if (_state.value == ConnState.Connected) armWatchdog(myGeneration)
             when (val frame = parseGatewayFrame(text)) {
                 is GatewayFrame.Event -> handleEvent(myGeneration, frame)
                 is GatewayFrame.Res -> rpc?.onResponse(frame)
@@ -367,7 +531,11 @@ class GatewayConnection(
             // ending the connection out from under us — e.g. code 1008 policy violation, the
             // pairing-required/unauthorized case — not a clean shutdown. [disconnect] already sets
             // Disconnected (and bumps [generation]) before closing the socket, so a close that
-            // follows our own [disconnect] call never reaches here at all.
+            // follows our own [disconnect] call never reaches here at all. A bare close carries no
+            // [GatewayError], so [isPairingRequired] can never see it — this always lands in
+            // [ConnState.Failed] (still retried by [fail]/[scheduleReconnect]), never
+            // [ConnState.AwaitingApproval], even for a 1008 that was in fact pairing-related. Only
+            // an actual `res.error` on the `connect` RPC can route to AwaitingApproval.
             if (_state.value == ConnState.Connecting || _state.value == ConnState.Connected) {
                 fail(myGeneration, GatewayError("SOCKET_CLOSED", "socket closed (code=$code): ${reason.ifBlank { "no reason given" }}"))
             } else if (_state.value != ConnState.Failed) {

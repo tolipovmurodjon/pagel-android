@@ -6,10 +6,10 @@ import app.cash.turbine.test
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.add
@@ -88,7 +88,12 @@ class GatewayConnectionTest {
         GatewayFrame.Event(event = "connect.challenge", payload = buildJsonObject { put("nonce", nonce); put("ts", ts) }),
     )
 
-    private fun helloOkResJson(id: String, deviceToken: String? = null, role: String = "operator") = GatewayJson.encodeToString(
+    private fun helloOkResJson(
+        id: String,
+        deviceToken: String? = null,
+        role: String = "operator",
+        tickIntervalMs: Long = 15_000,
+    ) = GatewayJson.encodeToString(
         GatewayFrame.Res.serializer(),
         GatewayFrame.Res(
             id = id,
@@ -109,7 +114,7 @@ class GatewayConnectionTest {
                     buildJsonObject {
                         put("maxPayload", 26_214_400)
                         put("maxBufferedBytes", 10_485_760)
-                        put("tickIntervalMs", 15_000)
+                        put("tickIntervalMs", tickIntervalMs)
                     },
                 )
             },
@@ -171,11 +176,17 @@ class GatewayConnectionTest {
         return MultiHarness(connection, sockets, listeners, sentPerAttempt)
     }
 
+    /** Like [Harness.sentConnectFrame], for one attempt of a [MultiHarness]. */
+    private fun MultiHarness.connectId(attempt: Int): String = GatewayJson.decodeFromString(
+        GatewayFrame.Req.serializer(),
+        sentPerAttempt[attempt].single { it.contains("\"method\":\"connect\"") },
+    ).id
+
     @Test
     fun `completes the handshake and reaches Connected on hello-ok`() = runTest {
         val identity = Ed25519.generate()
         val tokenStore = FakeTokenStore()
-        val h = newHarness(scope = this, identity = identity, tokenStore = tokenStore)
+        val h = newHarness(scope = backgroundScope, identity = identity, tokenStore = tokenStore)
 
         h.connection.state.test {
             assertEquals(ConnState.Disconnected, awaitItem())
@@ -201,7 +212,7 @@ class GatewayConnectionTest {
         val tokenStore = FakeTokenStore(
             seed = mapOf((identity.deviceId to GatewayClientInfo.ROLE_OPERATOR) to "prior-token"),
         )
-        val h = newHarness(scope = this, identity = identity, tokenStore = tokenStore)
+        val h = newHarness(scope = backgroundScope, identity = identity, tokenStore = tokenStore)
 
         h.connection.connect()
         h.listener().onMessage(h.socket, challengeJson(nonce = "nonce-xyz", ts = 42L))
@@ -233,25 +244,32 @@ class GatewayConnectionTest {
 
     @Test
     fun `an error response fails the connection with the gateway's error code`() = runTest {
-        val h = newHarness(scope = this)
+        val h = newHarness(scope = backgroundScope)
 
         h.connection.connect()
         h.listener().onMessage(h.socket, challengeJson("n1", 1L))
         runCurrent()
 
-        h.listener().onMessage(h.socket, errorResJson(h.sentConnectFrame().id, "NOT_PAIRED", "awaiting approval"))
+        // INVALID_REQUEST, not NOT_PAIRED: NOT_PAIRED now has its own AwaitingApproval behaviour,
+        // covered separately. This test is about the generic "some other error" -> Failed path.
+        // Message from the doc's own example, docs/plugins/admin-http-rpc.md:150-157.
+        h.listener().onMessage(h.socket, errorResJson(h.sentConnectFrame().id, "INVALID_REQUEST", "bad params"))
         runCurrent()
 
         assertEquals(ConnState.Failed, h.connection.state.value)
-        assertEquals("NOT_PAIRED", h.connection.lastError.value?.code)
+        assertEquals("INVALID_REQUEST", h.connection.lastError.value?.code)
     }
 
     @Test
     fun `no connect_challenge within the timeout fails the connection`() = runTest {
-        val h = newHarness(scope = this)
+        val h = newHarness(scope = backgroundScope)
 
         h.connection.connect()
-        advanceUntilIdle() // nothing ever arrives — the 15s challenge budget must elapse and fail
+        // Nothing ever arrives — the 15s challenge budget must elapse and fail. Advance exactly to
+        // that boundary (not advanceUntilIdle): a failure now schedules a reconnect retry, so
+        // draining the scheduler fully would run forever in virtual time.
+        advanceTimeBy(15_000)
+        runCurrent()
 
         assertEquals(ConnState.Failed, h.connection.state.value)
         assertEquals("CHALLENGE_TIMEOUT", h.connection.lastError.value?.code)
@@ -259,7 +277,7 @@ class GatewayConnectionTest {
 
     @Test
     fun `a socket close mid-handshake fails immediately, not after the RPC's own 30s timeout`() = runTest {
-        val h = newHarness(scope = this)
+        val h = newHarness(scope = backgroundScope)
 
         h.connection.connect()
         h.listener().onMessage(h.socket, challengeJson("n1", 1L))
@@ -274,7 +292,7 @@ class GatewayConnectionTest {
 
     @Test
     fun `events other than connect_challenge are forwarded on the public events flow`() = runTest {
-        val h = newHarness(scope = this)
+        val h = newHarness(scope = backgroundScope)
 
         h.connection.events.test {
             h.connection.connect()
@@ -295,7 +313,7 @@ class GatewayConnectionTest {
 
     @Test
     fun `no frames are sent before the challenge is delivered`() = runTest {
-        val h = newHarness(scope = this)
+        val h = newHarness(scope = backgroundScope)
 
         h.connection.connect()
         runCurrent()
@@ -307,7 +325,7 @@ class GatewayConnectionTest {
     fun `a stale attempt cannot hijack a newer one`() = runTest {
         val identity = Ed25519.generate()
         val tokenStore = FakeTokenStore()
-        val h = newMultiHarness(scope = this, identity = identity, tokenStore = tokenStore)
+        val h = newMultiHarness(scope = backgroundScope, identity = identity, tokenStore = tokenStore)
 
         // Attempt #1: opens a socket, never receives a challenge — stalls indefinitely.
         h.connection.connect()
@@ -341,11 +359,269 @@ class GatewayConnectionTest {
         // Advancing time past attempt #1's 15s challenge budget must also leave attempt #2 untouched
         // (belt-and-suspenders: disconnect() already cancels attempt #1's coroutine outright, so by
         // this point there may be nothing left to time out at all — the assertion holds either way).
+        // advanceTimeBy + runCurrent, not advanceUntilIdle: attempt #2 is Connected with a watchdog
+        // armed 30s out (2x the 15s default tickIntervalMs in helloOkResJson), and draining the
+        // scheduler fully would run past that and fail the connection this test is proving survived.
         advanceTimeBy(15_001)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ConnState.Connected, h.connection.state.value)
 
         // And attempt #2's token — not some artifact of attempt #1 — is what's persisted.
         assertEquals("tok-attempt-2", tokenStore.snapshot()[identity.deviceId to GatewayClientInfo.ROLE_OPERATOR])
+    }
+
+    // ---- Task 5: reconnect backoff, AwaitingApproval, watchdog, seq gaps ----
+
+    @Test
+    fun `reconnect backoff increases exponentially across consecutive failures, capped at 30s`() = runTest {
+        val h = newMultiHarness(scope = backgroundScope)
+        h.connection.connect()
+        runCurrent()
+        assertEquals(1, h.sockets.size)
+
+        val expectedDelays = listOf(1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L, 30_000L)
+        for (delayMs in expectedDelays) {
+            val beforeCount = h.sockets.size
+            h.listeners[beforeCount - 1].onFailure(h.sockets[beforeCount - 1], IOException("boom"), null)
+            runCurrent()
+            assertEquals(ConnState.Failed, h.connection.state.value)
+            assertEquals("no retry scheduled synchronously with the failure", beforeCount, h.sockets.size)
+
+            advanceTimeBy(delayMs - 1)
+            runCurrent()
+            assertEquals("must not retry before ${delayMs}ms", beforeCount, h.sockets.size)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals("must retry at exactly ${delayMs}ms", beforeCount + 1, h.sockets.size)
+        }
+    }
+
+    @Test
+    fun `a successful hello-ok resets the backoff to 1s for the next failure`() = runTest {
+        val h = newMultiHarness(scope = backgroundScope)
+        h.connection.connect()
+        runCurrent()
+
+        // First failure retries after 1s (attempt 0 of the exponential curve).
+        h.listeners[0].onFailure(h.sockets[0], IOException("boom"), null)
+        runCurrent()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(2, h.sockets.size)
+
+        // Complete attempt #2 successfully.
+        h.listeners[1].onMessage(h.sockets[1], challengeJson("nonce-b", 1L))
+        runCurrent()
+        h.listeners[1].onMessage(h.sockets[1], helloOkResJson(h.connectId(1)))
+        runCurrent()
+        assertEquals(ConnState.Connected, h.connection.state.value)
+
+        // A fresh failure now must retry after 1s again, NOT 4s (the next un-reset value in the
+        // exponential sequence) — proving the successful hello-ok reset the attempt counter.
+        h.listeners[1].onFailure(h.sockets[1], IOException("dropped"), null)
+        runCurrent()
+        advanceTimeBy(999)
+        runCurrent()
+        assertEquals(2, h.sockets.size)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(3, h.sockets.size)
+    }
+
+    @Test
+    fun `NOT_PAIRED enters AwaitingApproval and keeps retrying rather than terminating`() = runTest {
+        // NOT_PAIRED — the closed six-value ErrorCodes enum, schema-BuOFpc7K.js:2646-2659:
+        // "Device exists but still needs an explicit pairing approval." Documented retryable/poll,
+        // protocol-reference-handshake.md §1.6.
+        val h = newMultiHarness(scope = backgroundScope)
+        h.connection.connect()
+        h.listeners[0].onMessage(h.sockets[0], challengeJson("n1", 1L))
+        runCurrent()
+        h.listeners[0].onMessage(h.sockets[0], errorResJson(h.connectId(0), "NOT_PAIRED", "device pending approval"))
+        runCurrent()
+
+        assertEquals(ConnState.AwaitingApproval, h.connection.state.value)
+        assertEquals("NOT_PAIRED", h.connection.lastError.value?.code)
+
+        // Not terminal: the normal backoff still schedules a retry.
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(2, h.sockets.size)
+    }
+
+    @Test
+    fun `PAIRING_REQUIRED in error details also enters AwaitingApproval`() = runTest {
+        // PAIRING_REQUIRED — the connect-failure error.details.code namespace (a separate
+        // namespace from the top-level ErrorCodes enum), docs/gateway/troubleshooting.md:347-356:
+        // "needs approval... show pending state, poll." Also docs/gateway/protocol.md:802-806:
+        // "Keep reconnecting with the same bootstrap token until the request is approved."
+        val h = newHarness(scope = backgroundScope)
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+
+        val detailsError = GatewayJson.encodeToString(
+            GatewayFrame.Res.serializer(),
+            GatewayFrame.Res(
+                id = h.sentConnectFrame().id,
+                ok = false,
+                error = GatewayError(
+                    code = "UNAUTHORIZED", // top-level code is generic; the pairing signal is in details.code
+                    message = "pairing required",
+                    details = buildJsonObject { put("code", "PAIRING_REQUIRED"); put("reason", "not-paired") },
+                ),
+            ),
+        )
+        h.listener().onMessage(h.socket, detailsError)
+        runCurrent()
+
+        assertEquals(ConnState.AwaitingApproval, h.connection.state.value)
+    }
+
+    @Test
+    fun `UNAVAILABLE with startup-sidecars reason honours retryAfterMs instead of policy backoff`() = runTest {
+        val h = newMultiHarness(scope = backgroundScope)
+        h.connection.connect()
+        h.listeners[0].onMessage(h.sockets[0], challengeJson("n1", 1L))
+        runCurrent()
+
+        val err = GatewayJson.encodeToString(
+            GatewayFrame.Res.serializer(),
+            GatewayFrame.Res(
+                id = h.connectId(0),
+                ok = false,
+                error = GatewayError(
+                    code = "UNAVAILABLE",
+                    message = "starting up",
+                    details = buildJsonObject { put("reason", "startup-sidecars") },
+                    retryable = true,
+                    retryAfterMs = 5_000,
+                ),
+            ),
+        )
+        h.listeners[0].onMessage(h.sockets[0], err)
+        runCurrent()
+        assertEquals(ConnState.Failed, h.connection.state.value)
+
+        // Must NOT use the default policy delay (1000ms would be attempt 0's normal backoff).
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals("policy backoff must be overridden by retryAfterMs", 1, h.sockets.size)
+
+        advanceTimeBy(3_999) // total elapsed since the error: 4_999ms
+        runCurrent()
+        assertEquals(1, h.sockets.size)
+
+        advanceTimeBy(1) // total elapsed: 5_000ms == retryAfterMs
+        runCurrent()
+        assertEquals(2, h.sockets.size)
+    }
+
+    @Test
+    fun `watchdog fires at exactly 2x the server's tickIntervalMs and reconnects`() = runTest {
+        // 7_000ms deliberately: neither doc example value (15_000 / 30_000) for tickIntervalMs, so
+        // a hardcoded watchdog interval would fail this test.
+        val h = newMultiHarness(scope = backgroundScope)
+        h.connection.connect()
+        h.listeners[0].onMessage(h.sockets[0], challengeJson("n1", 1L))
+        runCurrent()
+        h.listeners[0].onMessage(h.sockets[0], helloOkResJson(h.connectId(0), tickIntervalMs = 7_000))
+        runCurrent()
+        assertEquals(ConnState.Connected, h.connection.state.value)
+
+        advanceTimeBy(13_999) // 2 * 7_000 - 1
+        runCurrent()
+        assertEquals("watchdog must not fire before 2x tickIntervalMs", ConnState.Connected, h.connection.state.value)
+        assertEquals(1, h.sockets.size)
+
+        advanceTimeBy(1) // exactly 14_000ms of silence
+        runCurrent()
+        verify { h.sockets[0].close(4000, any()) }
+        assertEquals(ConnState.Failed, h.connection.state.value)
+    }
+
+    @Test
+    fun `an inbound frame resets the watchdog so it does not fire on the original schedule`() = runTest {
+        val h = newMultiHarness(scope = backgroundScope)
+        h.connection.connect()
+        h.listeners[0].onMessage(h.sockets[0], challengeJson("n1", 1L))
+        runCurrent()
+        h.listeners[0].onMessage(h.sockets[0], helloOkResJson(h.connectId(0), tickIntervalMs = 7_000))
+        runCurrent()
+
+        advanceTimeBy(13_000) // close to the original 14_000ms deadline, but not there yet
+        runCurrent()
+        val tickJson = GatewayJson.encodeToString(
+            GatewayFrame.Event.serializer(),
+            GatewayFrame.Event(event = "tick", payload = buildJsonObject { put("ts", 1L) }),
+        )
+        h.listeners[0].onMessage(h.sockets[0], tickJson) // any inbound frame resets the watchdog clock
+        runCurrent()
+
+        advanceTimeBy(13_999) // just under 14_000ms since the reset
+        runCurrent()
+        assertEquals("the reset must hold — this would be 26_999ms since hello-ok on the original clock", ConnState.Connected, h.connection.state.value)
+
+        advanceTimeBy(1) // exactly 14_000ms since the reset
+        runCurrent()
+        assertEquals(ConnState.Failed, h.connection.state.value)
+    }
+
+    @Test
+    fun `a seq gap is exposed for the caller to refetch, without requesting replay`() = runTest {
+        val h = newHarness(scope = backgroundScope)
+        h.connection.seqGaps.test {
+            h.connection.connect()
+            h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+            runCurrent()
+            h.listener().onMessage(h.socket, helloOkResJson(h.sentConnectFrame().id))
+            runCurrent()
+
+            fun eventWithSeq(seq: Long) = GatewayJson.encodeToString(
+                GatewayFrame.Event.serializer(),
+                GatewayFrame.Event(event = "presence", payload = buildJsonObject {}, seq = seq),
+            )
+            h.listener().onMessage(h.socket, eventWithSeq(1))
+            h.listener().onMessage(h.socket, eventWithSeq(2))
+            h.listener().onMessage(h.socket, eventWithSeq(5)) // gap: expected 3, got 5
+            runCurrent()
+
+            val gap = awaitItem()
+            assertEquals(3L, gap.expected)
+            assertEquals(5L, gap.actual)
+        }
+    }
+
+    @Test
+    fun `a manual disconnect during the backoff window cancels the scheduled retry`() = runTest {
+        // Regression test for the generation guard interacting with the retry loop: the retry loop
+        // schedules connect()/disconnect() on a timer, so a failure followed by an explicit
+        // disconnect() before that timer fires must NOT resurrect the dead attempt when the timer
+        // eventually runs. This is exactly what [GatewayConnection]'s generation counter exists to
+        // prevent. Without the `gen != generation.get()` check in the reconnect continuation, this
+        // test fails: the stale retry fires anyway, opening a second socket and moving the
+        // connection back to Connecting after the caller explicitly asked it to stop.
+        val h = newMultiHarness(scope = backgroundScope)
+        h.connection.connect()
+        runCurrent()
+        assertEquals(1, h.sockets.size)
+
+        // Challenge never arrives — the 15s budget elapses, Failed, and a retry is scheduled 1s out.
+        advanceTimeBy(15_000)
+        runCurrent()
+        assertEquals(ConnState.Failed, h.connection.state.value)
+        assertEquals(1, h.sockets.size)
+
+        // The user (or a lifecycle callback) explicitly disconnects before the scheduled retry fires.
+        h.connection.disconnect()
+        assertEquals(ConnState.Disconnected, h.connection.state.value)
+
+        // Advance well past the 1s the retry was scheduled for.
+        advanceTimeBy(2_000)
+        runCurrent()
+
+        assertEquals("a stale scheduled retry must not resurrect after an explicit disconnect", 1, h.sockets.size)
+        assertEquals(ConnState.Disconnected, h.connection.state.value)
     }
 }
