@@ -1,5 +1,6 @@
 package org.pagel.ai.service
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
@@ -7,10 +8,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,9 +88,29 @@ class AnchorService : Service() {
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            startForeground(NOTIF_ID, n, foregroundServiceType())
         } else {
             startForeground(NOTIF_ID, n)
+        }
+    }
+
+    /**
+     * `specialUse` always applies — it is what keeps this service alive as the catch-all awareness
+     * service and must never be silently dropped. `location` is OR'd in only when foreground location
+     * permission is *currently* granted: Android 14+ throws a `SecurityException` from
+     * `startForeground()` if a declared type's required permission isn't held at call time, and this
+     * service can start at boot (`BootReceiver`) before Boss has granted anything. The manifest's
+     * `specialUse|location` is the ceiling; passing a subset here (just `specialUse`, pre-grant) is
+     * legal and does not need the service to restart once location is later granted — `location.get`
+     * itself gates on the real permission (`LocationGetCommand`), not on this service's declared type.
+     */
+    private fun foregroundServiceType(): Int {
+        val hasLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        return if (hasLocation) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        } else {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         }
     }
 

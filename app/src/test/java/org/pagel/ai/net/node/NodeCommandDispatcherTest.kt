@@ -95,6 +95,21 @@ class NodeCommandDispatcherTest {
     }
 
     @Test
+    fun `a command that throws NodeCommandError reports its own code and message, not COMMAND_ERROR`() = runTest {
+        val command = FakeNodeCommand(onInvoke = { throw NodeCommandError("LOCATION_TIMEOUT", "no fix within 5000ms") })
+        val dispatcher = NodeCommandDispatcher(listOf(command))
+
+        val result = dispatcher.handle(request(id = "req-loc", nodeId = "node-loc"))
+
+        assertTrue(result is InvokeResult.Error)
+        result as InvokeResult.Error
+        assertEquals("req-loc", result.id)
+        assertEquals("node-loc", result.nodeId)
+        assertEquals("LOCATION_TIMEOUT", result.code)
+        assertEquals("no fix within 5000ms", result.message)
+    }
+
+    @Test
     fun `a command that throws is converted to a COMMAND_ERROR result, not propagated`() = runTest {
         val command = FakeNodeCommand(onInvoke = { throw IllegalStateException("sensor unavailable") })
         val dispatcher = NodeCommandDispatcher(listOf(command))

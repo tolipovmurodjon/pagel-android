@@ -17,6 +17,15 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Slice 3: "Hey PAGEL" wake word — on-device mic foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Phase D Task 5: location.get — a fix obtainable while the app is closed and the phone is
+         locked. ACCESS_BACKGROUND_LOCATION is the whole point: the Play-Store build of the official
+         OpenClaw app never declares it, so Android never offers "Allow all the time" for it at all —
+         a manifest ceiling no setting can work around. Declaring it here is what makes that option
+         exist; Boss still has to grant it himself in Settings (no runtime dialog can, Android 11+). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <application
         android:name=".PagelApp"
@@ -55,11 +64,19 @@
             </intent-filter>
         </service>
 
-        <!-- Anchor foreground service: real-time screen events + keeps the harvest scheduled. -->
+        <!-- Anchor foreground service: real-time screen events, keeps the harvest scheduled, and
+             (Phase D Task 5) is where a backgrounded location.get fix gets obtained. The manifest
+             attribute is the *ceiling*; a startForeground() call may pass any subset of it, so
+             declaring both bits here is safe even on the cold-boot path before Boss has granted
+             location — see AnchorService.foregroundServiceType() for the runtime subset choice.
+             specialUse and location are not documented as mutually exclusive (unlike shortService,
+             which the platform explicitly demotes when combined with another type), so both are kept:
+             specialUse is what keeps this catch-all awareness service alive and must never be
+             silently dropped, and location is what lets a fix be obtained while backgrounded. -->
         <service
             android:name=".service.AnchorService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|location">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="continuous owner life-logging for a personal AI assistant" />

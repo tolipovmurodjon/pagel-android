@@ -23,3 +23,16 @@ interface NodeCommand {
     val name: String
     suspend fun invoke(params: JsonObject): JsonElement
 }
+
+/**
+ * Thrown by a [NodeCommand] that has its own named, stable `error.code` vocabulary — e.g.
+ * `location.get`'s `LOCATION_DISABLED` / `LOCATION_PERMISSION_REQUIRED` /
+ * `LOCATION_BACKGROUND_UNAVAILABLE` / `LOCATION_TIMEOUT` / `LOCATION_UNAVAILABLE` (protocol
+ * reference §4.2) — instead of letting [NodeCommandDispatcher.handle]'s generic `Throwable` catch
+ * collapse it to `COMMAND_ERROR`. Boss's server-side skills and watchers already branch on these
+ * exact strings, so a command that has them must be able to report them precisely; encoding an error
+ * inside the *successful* return payload isn't an option — [NodeCommandDispatcher] would wire it back
+ * as `ok:true`, which is a lie the caller can't detect. Any other thrown [Throwable] is unaffected and
+ * still becomes `COMMAND_ERROR`.
+ */
+class NodeCommandError(val code: String, errorMessage: String) : Exception(errorMessage)

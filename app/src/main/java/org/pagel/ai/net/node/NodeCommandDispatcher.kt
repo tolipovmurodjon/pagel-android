@@ -91,6 +91,15 @@ class NodeCommandDispatcher(commands: List<NodeCommand>) {
             )
         } catch (e: CancellationException) {
             throw e // real cancellation (the owning scope shutting down) — not this command's outcome to report
+        } catch (e: NodeCommandError) {
+            // Ahead of the generic Throwable catch below so a command's own stable error vocabulary
+            // (see NodeCommandError's doc) reaches the wire as-is instead of collapsing to COMMAND_ERROR.
+            InvokeResult.Error(
+                id = request.id,
+                nodeId = request.nodeId,
+                code = e.code,
+                message = e.message ?: e.code,
+            )
         } catch (t: Throwable) {
             // No code for "a command threw" is named anywhere in the protocol reference (only
             // INVALID_REQUEST and TIMEOUT are). COMMAND_ERROR is this dispatcher's own choice,
