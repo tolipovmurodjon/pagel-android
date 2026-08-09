@@ -237,6 +237,15 @@ class GatewayConnection(
      *  never fed into [buildDeviceAuthPayloadV3]. Defaulted, unlike [deviceFamily], because it is
      *  new: every pre-existing call site that doesn't care about it should keep compiling untouched. */
     private val modelIdentifier: String? = null,
+    /** High-level capability categories (`docs/gateway/protocol.md` §2.3) and the exact-match
+     *  command names (§2.2) this connection's `connect` frame advertises. Neither is fed into
+     *  [buildDeviceAuthPayloadV3] — they're outside its eleven signed fields — but both *are* part
+     *  of the pairing-approval surface (§2.5), so changing either from a previously-approved value
+     *  costs a re-approval. Both default empty: the operator connection is not a node and must never
+     *  declare either (see [GatewayManager]); only the node connection's constructor call passes
+     *  real values, sourced from [org.pagel.ai.net.node.NodeCommands.DECLARED] for [commands]. */
+    private val caps: List<String> = emptyList(),
+    private val commands: List<String> = emptyList(),
     private val webSocketFactory: WebSocket.Factory,
     private val deviceIdentityStore: DeviceIdentityStore,
     private val tokenStore: GatewayDeviceTokenStore,
@@ -489,6 +498,8 @@ class GatewayConnection(
             ),
             role = role,
             scopes = scopes,
+            caps = caps,
+            commands = commands,
             device = ConnectDevice(
                 id = device.id,
                 publicKey = device.publicKey,

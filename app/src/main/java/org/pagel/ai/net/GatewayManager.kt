@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import okhttp3.WebSocket
 import org.pagel.ai.net.identity.DeviceIdentityStore
+import org.pagel.ai.net.node.NodeCommands
 import org.pagel.ai.net.ws.ConnState
 import org.pagel.ai.net.ws.GatewayClientInfo
 import org.pagel.ai.net.ws.GatewayConnection
@@ -79,6 +80,9 @@ class GatewayManager @Inject constructor(
         platform = config.platform,
         deviceFamily = config.deviceFamily,
         modelIdentifier = config.modelIdentifier,
+        // caps/commands: left at GatewayConnection's empty defaults, deliberately. The operator
+        // connection is not a node — `docs/nodes/index.md`'s command allowlist only ever applies to
+        // a node-role session — so declaring either here would be meaningless at best.
         webSocketFactory = webSocketFactory,
         deviceIdentityStore = deviceIdentityStore,
         tokenStore = tokenStore,
@@ -97,6 +101,15 @@ class GatewayManager @Inject constructor(
         platform = config.platform,
         deviceFamily = config.deviceFamily,
         modelIdentifier = config.modelIdentifier,
+        // "location" is the only documented cap (protocol-reference-node-commands.md §2.3) backed by
+        // an implemented command (location.get, Task 5). "talk" is deliberately omitted — it's the
+        // one cap with real server behavior (unconditionally widens the allowlist to talk.ptt.*,
+        // §2.3's hasTalkSurface) — and no talk.ptt.* command exists to serve it.
+        caps = NODE_CAPS,
+        // NodeCommands.DECLARED is the single source of truth Task 3's dispatcher also reads from —
+        // see that object's doc for which Android-allowed commands are in it and why the rest (all
+        // legal to declare, none implemented, some needing permissions Boss has denied) are not.
+        commands = NodeCommands.DECLARED,
         webSocketFactory = webSocketFactory,
         deviceIdentityStore = deviceIdentityStore,
         tokenStore = tokenStore,
@@ -181,5 +194,9 @@ class GatewayManager @Inject constructor(
          * `operator.write`, and asking for more than the pairing binds is what triggers the rewrite.
          */
         val OPERATOR_SCOPES = emptyList<String>()
+
+        /** See the node connection's construction above for why this is `["location"]` and nothing
+         *  more — most importantly, why `"talk"` is not in it. */
+        val NODE_CAPS = listOf("location")
     }
 }

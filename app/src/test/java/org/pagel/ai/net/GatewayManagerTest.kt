@@ -22,6 +22,7 @@ import org.pagel.ai.net.identity.DeviceIdentity
 import org.pagel.ai.net.identity.DeviceIdentityStore
 import org.pagel.ai.net.identity.Ed25519
 import org.pagel.ai.net.identity.buildDeviceAuthPayloadV3
+import org.pagel.ai.net.node.NodeCommands
 import org.pagel.ai.net.ws.ConnState
 import org.pagel.ai.net.ws.ConnectParams
 import org.pagel.ai.net.ws.GatewayClientInfo
@@ -265,6 +266,69 @@ class GatewayManagerTest {
         // exists to catch.
         assertEquals("SM-A057F", opParams.client.deviceFamily)
         assertEquals("SM-A057F", nodeParams.client.deviceFamily)
+    }
+
+    @Test
+    fun `node connection declares NodeCommands DECLARED and its caps - operator declares neither`() = runTest {
+        val h = newHarness(scope = backgroundScope)
+        h.manager.start()
+        runCurrent()
+        h.deliverChallengeToAll()
+        runCurrent()
+
+        val opParams = h.connectParams(h.indexForRole(GatewayClientInfo.ROLE_OPERATOR))
+        val nodeParams = h.connectParams(h.indexForRole(GatewayClientInfo.ROLE_NODE))
+
+        // The node connection is the one Task 3's dispatcher will serve invokes on - it must
+        // advertise exactly NodeCommands.DECLARED, the single source of truth the dispatcher itself
+        // reads from, not a hand-copied literal that could drift from it.
+        assertEquals(NodeCommands.DECLARED, nodeParams.commands)
+        // "location" is the only documented cap (protocol-reference-node-commands.md §2.3) backed by
+        // an implemented command (location.get); "talk" is deliberately omitted - it's the one cap
+        // with real server behavior (widens the allowlist to talk.ptt.* independent of platform),
+        // and we implement no talk.ptt.* command to serve it.
+        assertEquals(listOf("location"), nodeParams.caps)
+
+        // The operator connection is not a node - `docs/nodes/index.md`'s allowlist only ever
+        // applies to a node-role session, and declaring commands here would be meaningless at best.
+        assertTrue("operator is not a node - it must declare no commands", opParams.commands.isEmpty())
+        assertTrue("operator is not a node - it must declare no caps", opParams.caps.isEmpty())
+    }
+
+    @Test
+    fun `every declared node command is in the Android default-allowed set`() {
+        // protocol-reference-node-commands.md §3.1, PLATFORM_DEFAULTS.android flattened verbatim -
+        // a literal, not a reference to any production constant, so a future careless addition to
+        // NodeCommands.DECLARED that the gateway does not actually allow for Android fails this test
+        // instead of silently shipping a command the gateway refuses no matter what we send.
+        val androidDefaultAllowed = setOf(
+            "camera.list",
+            "location.get",
+            "notifications.list",
+            "notifications.actions",
+            "system.notify",
+            "device.info",
+            "device.status",
+            "device.permissions",
+            "device.health",
+            "device.apps",
+            "contacts.search",
+            "calendar.events",
+            "callLog.search",
+            "reminders.list",
+            "photos.latest",
+            "motion.activity",
+            "motion.pedometer",
+        )
+        assertTrue(
+            "every declared command must be Android-default-allowed, or the gateway refuses it " +
+                "regardless of what the connect frame says",
+            androidDefaultAllowed.containsAll(NodeCommands.DECLARED),
+        )
+        assertTrue(
+            "must actually declare something - this whole task exists to fix commands: []",
+            NodeCommands.DECLARED.isNotEmpty(),
+        )
     }
 
     @Test
