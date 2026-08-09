@@ -28,6 +28,9 @@ import org.pagel.ai.net.identity.Ed25519
 import org.pagel.ai.net.identity.base64UrlNoPad
 import org.pagel.ai.net.identity.buildDeviceAuthPayloadV3
 import org.pagel.ai.net.identity.publicKeyB64Url
+import org.pagel.ai.net.node.InvokeRequest
+import org.pagel.ai.net.node.InvokeResult
+import org.pagel.ai.net.node.NodeCommandDispatcher
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -121,6 +124,46 @@ data class ConnectParams(
     val permissions: Map<String, Boolean> = emptyMap(),
     val auth: ConnectAuth? = null,
     val device: ConnectDevice,
+)
+
+/** `NodeInvokeRequestEventSchema` (`schema-BuOFpc7K.js:3505-3512`) — the payload of an inbound
+ *  `node.invoke.request` event (protocol reference §1.1). `paramsJSON` is a JSON *string*, and the
+ *  gateway emits a literal wire `null` for it when the invoke carried no params — modeled nullable,
+ *  never assumed absent. Fields are individually re-checked non-blank before dispatch in
+ *  [GatewayConnection.handleNodeInvokeRequest]: a decode that succeeds with a blank `id`/`nodeId`/
+ *  `command` is exactly as malformed as one that fails to decode at all, and protocol reference §6.2
+ *  says both are dropped without a reply — there is nothing valid to echo a reply's `id`/`nodeId`
+ *  from otherwise. */
+@Serializable
+data class NodeInvokeRequestPayload(
+    val id: String,
+    val nodeId: String,
+    val command: String,
+    val paramsJSON: String? = null,
+    val timeoutMs: Long? = null,
+    val idempotencyKey: String? = null,
+)
+
+/** `NodeInvokeResultParamsSchema` (`schema-BuOFpc7K.js:3444-3455`) — the `params` of the node's own
+ *  `node.invoke.result` req, `additionalProperties:false`. Deliberately carries `payloadJSON`, never
+ *  `payload`: protocol reference §1.2 recommends `payloadJSON` to match the shipped reference host,
+ *  and avoids the `Type.Unknown()` re-validation ambiguity `payload` invites. [GatewayJson]'s
+ *  `explicitNulls = false` drops whichever of `payloadJSON`/`error` is null instead of serializing
+ *  it, so a success result never emits a stray `"error":null` on the wire (or vice versa). */
+@Serializable
+data class NodeInvokeResultParams(
+    val id: String,
+    val nodeId: String,
+    val ok: Boolean,
+    val payloadJSON: String? = null,
+    val error: NodeInvokeResultErrorParams? = null,
+)
+
+/** Both fields optional per `NodeInvokeResultParamsSchema` — protocol reference §1.2. */
+@Serializable
+data class NodeInvokeResultErrorParams(
+    val code: String? = null,
+    val message: String? = null,
 )
 
 @Serializable
@@ -246,6 +289,13 @@ class GatewayConnection(
      *  real values, sourced from [org.pagel.ai.net.node.NodeCommands.DECLARED] for [commands]. */
     private val caps: List<String> = emptyList(),
     private val commands: List<String> = emptyList(),
+    /** Serves inbound `node.invoke.request` events (Task 3; protocol reference §1) — `null` for the
+     *  operator connection, which must ignore that event entirely rather than reply to something it
+     *  was never asked (see [handleNodeInvokeRequest]'s doc). Only the node connection's constructor
+     *  call passes a real instance, built from [org.pagel.ai.net.node.NodeCommands.DECLARED]'s
+     *  implementations — the same drift guard [commands] above is subject to, enforced instead at
+     *  [org.pagel.ai.net.node.NodeCommandDispatcher]'s own construction. */
+    private val nodeCommandDispatcher: NodeCommandDispatcher? = null,
     private val webSocketFactory: WebSocket.Factory,
     private val deviceIdentityStore: DeviceIdentityStore,
     private val tokenStore: GatewayDeviceTokenStore,
@@ -689,10 +739,113 @@ class GatewayConnection(
             val nonce = (obj?.get("nonce") as? JsonPrimitive)?.takeIf { it.isString }?.content
             val ts = (obj?.get("ts") as? JsonPrimitive)?.content?.toLongOrNull() ?: clock()
             if (nonce != null) attempt.challengeDeferred.complete(ChallengePayload(nonce, ts))
-            return // handshake-internal — not surfaced on the public events flow
+            return // handshake-internal, and pre-hello-ok — not surfaced on the public events flow, no seq to track yet
         }
+        // Tracked for every event regardless of what happens to it next (including
+        // node.invoke.request below): seq is a per-socket counter over the whole frame stream, so
+        // skipping this for a frame this method also intercepts would make the *next* ordinary event
+        // look like it gapped by however many invokes happened in between, when nothing was lost.
         frame.seq?.let(::checkSeqGap)
+        if (frame.event == "node.invoke.request") {
+            handleNodeInvokeRequest(attempt, frame.payload)
+            return // served (node role) or dropped (operator role — see that method's doc); never forwarded
+        }
         _events.tryEmit(frame)
+    }
+
+    /**
+     * Serves an inbound `node.invoke.request` event (protocol reference §1.1) by dispatching to
+     * [nodeCommandDispatcher] and replying with a `node.invoke.result` req (§1.2) — or, when
+     * [nodeCommandDispatcher] is `null` (the operator connection), does nothing at all: the gateway
+     * never actually pushes this event to an operator-role session, but "ignore it entirely" is the
+     * explicit requirement rather than something to leave implicit in "no dispatcher was passed."
+     *
+     * A payload that fails to decode, or decodes with a blank `id`/`nodeId`/`command`, is dropped
+     * without any reply (§6.2) — the gateway never sends such a frame, so this is defensive, not a
+     * real path, and there is nothing valid to echo a reply's `id`/`nodeId` from regardless. A
+     * `paramsJSON` that *is* present but fails to parse as a JSON object is different: `id`/`nodeId`
+     * are known-good by that point, so this replies `INVALID_REQUEST` instead of staying silent.
+     *
+     * Dispatch (and the reply that follows it) runs on [scope], off [Listener.onMessage]'s thread
+     * (protocol reference §8 item 4) — whatever the resolved [org.pagel.ai.net.node.NodeCommand]
+     * does must never block this connection from reading its next inbound frame.
+     */
+    private fun handleNodeInvokeRequest(attempt: Attempt, payload: JsonElement?) {
+        val dispatcher = nodeCommandDispatcher ?: return
+        val obj = payload as? JsonObject ?: return
+        val request = runCatching {
+            GatewayJson.decodeFromJsonElement(NodeInvokeRequestPayload.serializer(), obj)
+        }.getOrNull() ?: return
+        if (request.id.isBlank() || request.nodeId.isBlank() || request.command.isBlank()) return
+
+        val params = decodeInvokeParams(request.paramsJSON)
+        if (params == null) {
+            val error = InvokeResult.Error(
+                id = request.id,
+                nodeId = request.nodeId,
+                code = "INVALID_REQUEST",
+                message = "paramsJSON malformed JSON",
+            )
+            scope.launch { replyInvoke(attempt, error) }
+            return
+        }
+
+        val invokeRequest = InvokeRequest(
+            id = request.id,
+            nodeId = request.nodeId,
+            command = request.command,
+            params = params,
+            timeoutMs = request.timeoutMs,
+        )
+        scope.launch { replyInvoke(attempt, dispatcher.handle(invokeRequest)) }
+    }
+
+    /** `paramsJSON` is a JSON string or a literal wire `null` (protocol reference §1.1) — never an
+     *  object. Absent/`null`/empty decodes to an empty params object, matching "treat null as empty
+     *  params." A present-but-unparseable string, or one that parses to something other than a JSON
+     *  object, returns `null` so the caller replies `INVALID_REQUEST` instead of handing a
+     *  [org.pagel.ai.net.node.NodeCommand] params it never promised to accept. */
+    private fun decodeInvokeParams(paramsJSON: String?): JsonObject? {
+        if (paramsJSON.isNullOrEmpty()) return JsonObject(emptyMap())
+        val parsed = runCatching { GatewayJson.parseToJsonElement(paramsJSON) }.getOrNull() ?: return null
+        return parsed as? JsonObject
+    }
+
+    /**
+     * Sends the node's own `req`, method `node.invoke.result` (protocol reference §1.2) —
+     * fire-and-forget, exactly like the shipped reference host's own `sendInvokeResult`
+     * (`try { await client.request(...) } catch {}`): [GatewayRpc.call] already reports every
+     * ordinary failure (send-fail, `ok:false` res, its own RPC timeout) as a `Result.failure` rather
+     * than throwing, and there is nothing useful to do with that result here, so it's simply
+     * discarded rather than wrapped in a `runCatching` that would also swallow a genuine
+     * [kotlinx.coroutines.CancellationException] — the one thing this class rethrows unconditionally
+     * everywhere else ([runHandshake], [org.pagel.ai.net.node.NodeCommandDispatcher.handle]). Routes
+     * through [GatewayRpc.call], whose `send` lambda is [sendReq] — its existing
+     * `gen != generation.get()` guard is what makes "never deliver a result on a new connection"
+     * (§1.3, §6.4) automatic here rather than a second check this method has to remember to make.
+     * [result]'s `id`/`nodeId` are copied verbatim from the originating request by [InvokeResult]'s
+     * construction, not re-derived from local state here — see that type's doc for why that matters
+     * (§1.3's `nodeId` mismatch / late-result rules).
+     */
+    private suspend fun replyInvoke(attempt: Attempt, result: InvokeResult) {
+        val params = when (result) {
+            is InvokeResult.Success -> NodeInvokeResultParams(
+                id = result.id,
+                nodeId = result.nodeId,
+                ok = true,
+                payloadJSON = result.payload.toString(), // JsonElement.toString() IS valid compact JSON
+            )
+            is InvokeResult.Error -> NodeInvokeResultParams(
+                id = result.id,
+                nodeId = result.nodeId,
+                ok = false,
+                error = NodeInvokeResultErrorParams(code = result.code, message = result.message),
+            )
+        }
+        attempt.rpc.call(
+            "node.invoke.result",
+            GatewayJson.encodeToJsonElement(NodeInvokeResultParams.serializer(), params),
+        )
     }
 
     /** See [SeqGap]. */

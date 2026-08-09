@@ -9,10 +9,13 @@ import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -26,6 +29,8 @@ import org.pagel.ai.net.identity.DeviceIdentity
 import org.pagel.ai.net.identity.DeviceIdentityStore
 import org.pagel.ai.net.identity.Ed25519
 import org.pagel.ai.net.identity.buildDeviceAuthPayloadV3
+import org.pagel.ai.net.node.NodeCommand
+import org.pagel.ai.net.node.NodeCommandDispatcher
 import java.io.IOException
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
@@ -45,6 +50,17 @@ class GatewayConnectionTest {
         fun snapshot(): Map<Pair<String, String>, String> = tokens.toMap()
     }
 
+    /** A [NodeCommand] the test controls directly, for wiring-level tests of Task 3's
+     *  `node.invoke.request` handling — no Android APIs, no real socket. `"device.status"` is a real
+     *  [org.pagel.ai.net.node.NodeCommands.DECLARED] entry with no implementation yet, so
+     *  [NodeCommandDispatcher]'s own construction-time drift guard accepts it. */
+    private class FakeNodeCommand(
+        override val name: String = "device.status",
+        private val onInvoke: suspend (JsonObject) -> JsonElement = { buildJsonObject { put("ok", true) } },
+    ) : NodeCommand {
+        override suspend fun invoke(params: JsonObject): JsonElement = onInvoke(params)
+    }
+
     private data class Harness(
         val connection: GatewayConnection,
         val socket: WebSocket,
@@ -62,6 +78,7 @@ class GatewayConnectionTest {
         authToken: String? = null,
         deviceFamily: String? = "SM-A057F",
         modelIdentifier: String? = null,
+        nodeCommandDispatcher: NodeCommandDispatcher? = null,
     ): Harness {
         val fakeSocket = mockk<WebSocket>(relaxed = true)
         val sent = mutableListOf<String>()
@@ -80,6 +97,7 @@ class GatewayConnectionTest {
             platform = "Android",
             deviceFamily = deviceFamily,
             modelIdentifier = modelIdentifier,
+            nodeCommandDispatcher = nodeCommandDispatcher,
             webSocketFactory = factory,
             deviceIdentityStore = FakeDeviceIdentityStore(identity),
             tokenStore = tokenStore,
@@ -92,6 +110,38 @@ class GatewayConnectionTest {
     private fun challengeJson(nonce: String, ts: Long) = GatewayJson.encodeToString(
         GatewayFrame.Event.serializer(),
         GatewayFrame.Event(event = "connect.challenge", payload = buildJsonObject { put("nonce", nonce); put("ts", ts) }),
+    )
+
+    /** `NodeInvokeRequestEventSchema` (protocol reference §1.1) — `paramsJSON` is the raw JSON
+     *  *string* to embed, or `null` for the wire's literal null (matching the gateway's own emission
+     *  when an invoke carries no params). Built via [NodeInvokeRequestPayload]'s own serializer,
+     *  not hand-assembled with `buildJsonObject`/`put`: `JsonObjectBuilder.put` returns the *previous*
+     *  value at that key (it's backed by `MutableMap.put`), which is `null` on a key's first
+     *  insert — an `x?.let { put(...) } ?: put(..., JsonNull)` pattern silently always falls through
+     *  to the `null` branch and clobbers the just-inserted value. Round-tripping through the real
+     *  schema sidesteps that trap entirely. */
+    private fun nodeInvokeRequestEventJson(
+        id: String,
+        nodeId: String,
+        command: String,
+        paramsJSON: String? = "{}",
+        timeoutMs: Long? = null,
+    ) = GatewayJson.encodeToString(
+        GatewayFrame.Event.serializer(),
+        GatewayFrame.Event(
+            event = "node.invoke.request",
+            payload = GatewayJson.encodeToJsonElement(
+                NodeInvokeRequestPayload.serializer(),
+                NodeInvokeRequestPayload(
+                    id = id,
+                    nodeId = nodeId,
+                    command = command,
+                    paramsJSON = paramsJSON,
+                    timeoutMs = timeoutMs,
+                    idempotencyKey = "idem-$id",
+                ),
+            ),
+        ),
     )
 
     private fun helloOkResJson(
@@ -1021,5 +1071,255 @@ class GatewayConnectionTest {
             "Failed must never appear while the server only ever says NOT_PAIRED",
             observedStates.none { it == ConnState.Failed },
         )
+    }
+
+    // ---- Task 3: node.invoke.request -> node.invoke.result transport ----
+
+    private fun nodeHarness(
+        scope: CoroutineScope,
+        dispatcher: NodeCommandDispatcher,
+        identity: DeviceIdentity = Ed25519.generate(),
+    ) = newHarness(
+        scope = scope,
+        identity = identity,
+        role = GatewayClientInfo.ROLE_NODE,
+        mode = GatewayClientInfo.MODE_NODE,
+        scopes = emptyList(),
+        nodeCommandDispatcher = dispatcher,
+    )
+
+    private fun Harness.invokeResultParams(): NodeInvokeResultParams {
+        val resultFrame = sent.single { it.contains("\"method\":\"node.invoke.result\"") }
+        val req = GatewayJson.decodeFromString(GatewayFrame.Req.serializer(), resultFrame)
+        assertEquals("node.invoke.result", req.method)
+        assertEquals("req", req.type)
+        return GatewayJson.decodeFromJsonElement(NodeInvokeResultParams.serializer(), req.params!!)
+    }
+
+    @Test
+    fun `a node role connection replies to node_invoke_request echoing id and nodeId verbatim via payloadJSON`() = runTest {
+        val expectedPayload = buildJsonObject { put("battery", buildJsonObject { put("level", 0.62) }) }
+        val dispatcher = NodeCommandDispatcher(listOf(FakeNodeCommand(onInvoke = { expectedPayload })))
+        val h = nodeHarness(scope = backgroundScope, dispatcher = dispatcher)
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+        h.listener().onMessage(h.socket, helloOkResJson(h.sentConnectFrame().id, role = "node"))
+        runCurrent()
+        assertEquals(ConnState.Connected, h.connection.state.value)
+
+        // Deliberately NOT the harness's own deviceId — proves nodeId is echoed straight off the
+        // request payload, never substituted with local device identity (protocol reference §1.3's
+        // nodeId-mismatch rule is exactly what a substitution here would trip).
+        val payloadNodeId = "totally-different-node-id-999"
+        h.listener().onMessage(
+            h.socket,
+            nodeInvokeRequestEventJson(id = "invoke-req-1", nodeId = payloadNodeId, command = "device.status"),
+        )
+        runCurrent()
+
+        val resultFrame = h.sent.single { it.contains("\"method\":\"node.invoke.result\"") }
+        val params = h.invokeResultParams()
+        assertEquals("invoke-req-1", params.id)
+        assertEquals(payloadNodeId, params.nodeId)
+        assertTrue(params.ok)
+        assertEquals(null, params.error)
+
+        // The payload rides in payloadJSON (a JSON string), never a raw "payload" key.
+        assertTrue("must not send a raw payload key: $resultFrame", !resultFrame.contains("\"payload\":"))
+        assertTrue("payloadJSON must be present on success", params.payloadJSON != null)
+        assertEquals(expectedPayload, GatewayJson.parseToJsonElement(params.payloadJSON!!))
+    }
+
+    @Test
+    fun `an operator role connection ignores node_invoke_request entirely - no reply, not forwarded on events`() = runTest {
+        val h = newHarness(scope = backgroundScope) // role defaults to operator; no dispatcher wired
+
+        h.connection.events.test {
+            h.connection.connect()
+            h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+            runCurrent()
+            h.listener().onMessage(h.socket, helloOkResJson(h.sentConnectFrame().id))
+            runCurrent()
+            val sentBeforeInvoke = h.sent.size
+
+            h.listener().onMessage(
+                h.socket,
+                nodeInvokeRequestEventJson(id = "invoke-req-2", nodeId = "irrelevant-node-id", command = "device.status"),
+            )
+            runCurrent()
+            assertEquals("operator connection must never reply to node.invoke.request", sentBeforeInvoke, h.sent.size)
+
+            // And it isn't silently forwarded on the public events flow either: an ordinary event
+            // sent right after must be the *first* thing to arrive there.
+            val tickJson = GatewayJson.encodeToString(
+                GatewayFrame.Event.serializer(),
+                GatewayFrame.Event(event = "tick", payload = buildJsonObject { put("ts", 1L) }),
+            )
+            h.listener().onMessage(h.socket, tickJson)
+            assertEquals("tick", awaitItem().event)
+        }
+    }
+
+    @Test
+    fun `an unknown command produces an INVALID_REQUEST node_invoke_result over the wire`() = runTest {
+        val dispatcher = NodeCommandDispatcher(emptyList())
+        val h = nodeHarness(scope = backgroundScope, dispatcher = dispatcher)
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+        h.listener().onMessage(h.socket, helloOkResJson(h.sentConnectFrame().id, role = "node"))
+        runCurrent()
+
+        h.listener().onMessage(
+            h.socket,
+            nodeInvokeRequestEventJson(id = "invoke-req-3", nodeId = "node-3", command = "camera.snap"),
+        )
+        runCurrent()
+
+        val params = h.invokeResultParams()
+        assertEquals("invoke-req-3", params.id)
+        assertEquals("node-3", params.nodeId)
+        assertTrue(!params.ok)
+        assertEquals("INVALID_REQUEST", params.error?.code)
+    }
+
+    @Test
+    fun `a command exceeding the request timeoutMs produces exactly one TIMEOUT reply, no late second one`() = runTest {
+        val dispatcher = NodeCommandDispatcher(listOf(FakeNodeCommand(onInvoke = { delay(60_000); buildJsonObject {} })))
+        val h = nodeHarness(scope = backgroundScope, dispatcher = dispatcher)
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+        // tickIntervalMs well clear of the time this test advances, so the watchdog never fires and
+        // muddies which mechanism produced the TIMEOUT reply.
+        h.listener().onMessage(h.socket, helloOkResJson(h.sentConnectFrame().id, role = "node", tickIntervalMs = 60_000))
+        runCurrent()
+
+        h.listener().onMessage(
+            h.socket,
+            nodeInvokeRequestEventJson(id = "invoke-req-4", nodeId = "node-4", command = "device.status", timeoutMs = 5_000),
+        )
+        runCurrent()
+        assertTrue("no reply before the timeout elapses", h.sent.none { it.contains("\"method\":\"node.invoke.result\"") })
+
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        val params = h.invokeResultParams()
+        assertEquals("TIMEOUT", params.error?.code)
+
+        // Well past the command's own (cancelled) delay — no late second reply must ever appear.
+        advanceTimeBy(20_000)
+        runCurrent()
+        assertEquals(1, h.sent.count { it.contains("\"method\":\"node.invoke.result\"") })
+    }
+
+    @Test
+    fun `a malformed paramsJSON string produces an INVALID_REQUEST reply without ever reaching the command`() = runTest {
+        var invoked = false
+        val dispatcher = NodeCommandDispatcher(listOf(FakeNodeCommand(onInvoke = { invoked = true; buildJsonObject {} })))
+        val h = nodeHarness(scope = backgroundScope, dispatcher = dispatcher)
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+        h.listener().onMessage(h.socket, helloOkResJson(h.sentConnectFrame().id, role = "node"))
+        runCurrent()
+
+        h.listener().onMessage(
+            h.socket,
+            nodeInvokeRequestEventJson(
+                id = "invoke-req-5",
+                nodeId = "node-5",
+                command = "device.status",
+                paramsJSON = "{not valid json",
+            ),
+        )
+        runCurrent()
+
+        assertTrue("the command must never run against malformed params", !invoked)
+        val params = h.invokeResultParams()
+        assertEquals("invoke-req-5", params.id)
+        assertEquals("node-5", params.nodeId)
+        assertEquals("INVALID_REQUEST", params.error?.code)
+    }
+
+    @Test
+    fun `an absent paramsJSON is treated as empty params, not an error`() = runTest {
+        // nodeInvokeRequestEventJson(paramsJSON = null) round-trips through NodeInvokeRequestPayload's
+        // own serializer, and GatewayJson.explicitNulls = false OMITS a null field entirely rather
+        // than writing "paramsJSON":null — so this specifically covers the "field absent" case.
+        // "field present with a literal wire null" is the next test.
+        var receivedParams: JsonObject? = null
+        val dispatcher = NodeCommandDispatcher(listOf(FakeNodeCommand(onInvoke = { p -> receivedParams = p; buildJsonObject {} })))
+        val h = nodeHarness(scope = backgroundScope, dispatcher = dispatcher)
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+        h.listener().onMessage(h.socket, helloOkResJson(h.sentConnectFrame().id, role = "node"))
+        runCurrent()
+
+        h.listener().onMessage(
+            h.socket,
+            nodeInvokeRequestEventJson(id = "invoke-req-6", nodeId = "node-6", command = "device.status", paramsJSON = null),
+        )
+        runCurrent()
+
+        assertEquals(JsonObject(emptyMap()), receivedParams)
+        assertTrue(h.invokeResultParams().ok)
+    }
+
+    @Test
+    fun `a paramsJSON present on the wire as a literal null is also treated as empty params`() = runTest {
+        // The gateway itself always sends the paramsJSON key, with a literal JSON null value when an
+        // invoke carries no params (protocol reference §1.1's own warning: "your Kotlin model must
+        // accept String, null, and absent"). A raw hand-written frame, not the
+        // nodeInvokeRequestEventJson helper, is what actually puts "paramsJSON":null on the wire
+        // rather than omitting the key.
+        var receivedParams: JsonObject? = null
+        val dispatcher = NodeCommandDispatcher(listOf(FakeNodeCommand(onInvoke = { p -> receivedParams = p; buildJsonObject {} })))
+        val h = nodeHarness(scope = backgroundScope, dispatcher = dispatcher)
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+        h.listener().onMessage(h.socket, helloOkResJson(h.sentConnectFrame().id, role = "node"))
+        runCurrent()
+
+        val rawFrame = """{"type":"event","event":"node.invoke.request","payload":""" +
+            """{"id":"invoke-req-8","nodeId":"node-8","command":"device.status","paramsJSON":null,""" +
+            """"idempotencyKey":"idem-8"}}"""
+        assertTrue("the fixture must actually put a literal wire null, not omit the key", rawFrame.contains("\"paramsJSON\":null"))
+        h.listener().onMessage(h.socket, rawFrame)
+        runCurrent()
+
+        assertEquals(JsonObject(emptyMap()), receivedParams)
+        assertTrue(h.invokeResultParams().ok)
+    }
+
+    @Test
+    fun `a node_invoke_request payload with a blank command is dropped without any reply`() = runTest {
+        val dispatcher = NodeCommandDispatcher(listOf(FakeNodeCommand()))
+        val h = nodeHarness(scope = backgroundScope, dispatcher = dispatcher)
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("n1", 1L))
+        runCurrent()
+        h.listener().onMessage(h.socket, helloOkResJson(h.sentConnectFrame().id, role = "node"))
+        runCurrent()
+        val sentBefore = h.sent.size
+
+        h.listener().onMessage(
+            h.socket,
+            nodeInvokeRequestEventJson(id = "invoke-req-7", nodeId = "node-7", command = ""),
+        )
+        runCurrent()
+
+        assertEquals("a blank command must be dropped, not replied to", sentBefore, h.sent.size)
     }
 }

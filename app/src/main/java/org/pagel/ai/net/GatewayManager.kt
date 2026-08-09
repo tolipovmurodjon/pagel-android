@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import okhttp3.WebSocket
 import org.pagel.ai.net.identity.DeviceIdentityStore
+import org.pagel.ai.net.node.NodeCommandDispatcher
 import org.pagel.ai.net.node.NodeCommands
 import org.pagel.ai.net.ws.ConnState
 import org.pagel.ai.net.ws.GatewayClientInfo
@@ -89,6 +90,18 @@ class GatewayManager @Inject constructor(
         scope = scope,
     )
 
+    /** Serves `node.invoke.request` on [nodeConnection] (Task 3; protocol reference §1) — `null`,
+     *  i.e. not wired at all, on [operatorConnection], so that connection ignores the event
+     *  entirely rather than replying to something it was never asked (see
+     *  [org.pagel.ai.net.ws.GatewayConnection.handleNodeInvokeRequest]'s doc).
+     *
+     *  Empty today: no [org.pagel.ai.net.node.NodeCommand] implementation exists yet (Tasks 4-6 add
+     *  them). Still wired now, not deferred, because that's what makes every currently-declared
+     *  command in [NodeCommands.DECLARED] fail the same way an invoke would once real commands
+     *  exist — a same, honest `INVALID_REQUEST: unknown command "..."` reply — instead of a bare
+     *  operator-side `TIMEOUT` from nothing ever answering at all. */
+    private val nodeCommandDispatcher = NodeCommandDispatcher(emptyList())
+
     /** `scopes: []` — required for node pairing auto-approve eligibility: "a fresh `role: node`
      *  device pairing request with no requested scopes." Never add scopes here. */
     private val nodeConnection = GatewayConnection(
@@ -110,6 +123,7 @@ class GatewayManager @Inject constructor(
         // see that object's doc for which Android-allowed commands are in it and why the rest (all
         // legal to declare, none implemented, some needing permissions Boss has denied) are not.
         commands = NodeCommands.DECLARED,
+        nodeCommandDispatcher = nodeCommandDispatcher,
         webSocketFactory = webSocketFactory,
         deviceIdentityStore = deviceIdentityStore,
         tokenStore = tokenStore,
