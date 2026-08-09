@@ -95,6 +95,14 @@ object GatewayModule {
      * the current URL/token live on every CONNECT tap (see [GatewaySettings]'s doc). `runBlocking`
      * here is a single main-thread DataStore read at cold start, not a hot path.
      */
+    /**
+     * `deviceFamily = "Android"`, NOT `Build.MODEL`. The gateway's `platformMatchesDeviceFamily`
+     * (`node-command-policy-CO8bCAnE.js:157-165`) only resolves `platformId = "android"` when
+     * `deviceFamily` normalizes to `""` or `"android"` — a model name like `"SM-A057F"` there
+     * demoted every node to the 3-command `unknown` allowlist and blocked every `nodes invoke`.
+     * The model goes in `modelIdentifier` instead, which the schema accepts and which plays no part
+     * in platform resolution or the signed device-auth payload.
+     */
     @Provides
     @Singleton
     fun provideGatewayConnectionConfig(settings: GatewaySettings): GatewayConnectionConfig =
@@ -102,6 +110,7 @@ object GatewayModule {
             serverUrl = runBlocking { settings.currentUrl() },
             clientVersion = BuildConfig.VERSION_NAME,
             platform = "Android",
-            deviceFamily = Build.MODEL,
+            deviceFamily = "Android",
+            modelIdentifier = Build.MODEL,
         )
 }

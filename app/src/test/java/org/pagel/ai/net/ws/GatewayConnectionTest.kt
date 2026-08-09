@@ -60,6 +60,8 @@ class GatewayConnectionTest {
         mode: String = GatewayClientInfo.MODE_OPERATOR,
         scopes: List<String> = listOf("operator.read", "operator.write"),
         authToken: String? = null,
+        deviceFamily: String? = "SM-A057F",
+        modelIdentifier: String? = null,
     ): Harness {
         val fakeSocket = mockk<WebSocket>(relaxed = true)
         val sent = mutableListOf<String>()
@@ -76,7 +78,8 @@ class GatewayConnectionTest {
             authToken = authToken,
             clientVersion = "0.1-A1",
             platform = "Android",
-            deviceFamily = "SM-A057F",
+            deviceFamily = deviceFamily,
+            modelIdentifier = modelIdentifier,
             webSocketFactory = factory,
             deviceIdentityStore = FakeDeviceIdentityStore(identity),
             tokenStore = tokenStore,
@@ -260,6 +263,64 @@ class GatewayConnectionTest {
         // Prove the check isn't vacuous: a payload rebuilt from a tampered field must NOT verify.
         val tampered = rebuiltPayload.replace("nonce-xyz", "nonce-tampered")
         assertTrue(!Ed25519.verify(publicKeyBytes, tampered.toByteArray(Charsets.UTF_8), signatureBytes))
+    }
+
+    // ---- Task 1: platform identification fix — deviceFamily="Android", model in modelIdentifier ----
+
+    @Test
+    fun `deviceFamily is Android on the wire and in the signed payload, modelIdentifier carries the model unsigned`() = runTest {
+        // Reproduces node-command-policy-CO8bCAnE.js's platformMatchesDeviceFamily: the "android"
+        // platformId only resolves when deviceFamily normalizes to "" or "android". Sending the
+        // marketing model name there (the old bug) demotes every node to platformId "unknown" and
+        // the whole command allowlist. The model belongs in modelIdentifier instead, which is NOT
+        // one of buildDeviceAuthPayloadV3's eleven signed fields.
+        val identity = Ed25519.generate()
+        val h = newHarness(
+            scope = backgroundScope,
+            identity = identity,
+            deviceFamily = "Android",
+            modelIdentifier = "SM-A057F",
+        )
+
+        h.connection.connect()
+        h.listener().onMessage(h.socket, challengeJson("nonce-model", 7L))
+        runCurrent()
+
+        val params = GatewayJson.decodeFromJsonElement(ConnectParams.serializer(), h.sentConnectFrame().params!!)
+        assertEquals("Android", params.client.deviceFamily)
+        assertEquals("SM-A057F", params.client.modelIdentifier)
+
+        // The signed payload must verify when rebuilt from buildDeviceAuthPayloadV3 — which has no
+        // modelIdentifier parameter at all — proving modelIdentifier was never part of what was
+        // signed. If modelIdentifier had leaked into the signed string, this verification would fail.
+        val rebuiltPayload = buildDeviceAuthPayloadV3(
+            deviceId = params.device.id,
+            clientId = params.client.id,
+            clientMode = params.client.mode,
+            role = params.role,
+            scopes = params.scopes,
+            signedAtMs = params.device.signedAt,
+            token = params.auth?.deviceToken,
+            nonce = params.device.nonce,
+            platform = params.client.platform,
+            deviceFamily = params.client.deviceFamily,
+        )
+        val signatureBytes = Base64.getUrlDecoder().decode(params.device.signature)
+        val publicKeyBytes = Base64.getUrlDecoder().decode(params.device.publicKey)
+        assertTrue(Ed25519.verify(publicKeyBytes, rebuiltPayload.toByteArray(Charsets.UTF_8), signatureBytes))
+
+        // The v3 payload is 11 `|`-separated fields; deviceFamily is the last one (position 11,
+        // 0-indexed 10) and must be the ASCII-lowercased "android" — normalizeDeviceMetadataForAuth's
+        // job — exactly what platformMatchesDeviceFamily requires for platformId "android".
+        val fields = rebuiltPayload.split('|')
+        assertEquals(11, fields.size)
+        assertEquals("android", fields[10])
+
+        // And the model must never leak into the signed payload at all.
+        assertTrue(
+            "modelIdentifier must never appear in the signed payload: $rebuiltPayload",
+            !rebuiltPayload.contains("SM-A057F"),
+        )
     }
 
     // ---- Gateway token fix: auth.token is a second, independent gate on top of device pairing ----

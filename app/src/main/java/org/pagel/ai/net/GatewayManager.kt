@@ -18,15 +18,16 @@ import javax.inject.Singleton
 /**
  * Wire/identity metadata shared by both connections a [GatewayManager] owns. It's the same
  * physical device talking to the same gateway host, so `serverUrl`/`clientVersion`/`platform`/
- * `deviceFamily` are identical for both — only `role`, `client.mode`, and `scopes` differ (fixed
- * per connection in [GatewayManager], not configurable here), because those three are the axis the
- * protocol actually multiplexes on (see [GatewayManager]'s doc).
+ * `deviceFamily`/`modelIdentifier` are identical for both — only `role`, `client.mode`, and
+ * `scopes` differ (fixed per connection in [GatewayManager], not configurable here), because those
+ * three are the axis the protocol actually multiplexes on (see [GatewayManager]'s doc).
  */
 data class GatewayConnectionConfig(
     val serverUrl: String,
     val clientVersion: String,
     val platform: String,
     val deviceFamily: String?,
+    val modelIdentifier: String?,
 )
 
 /** The two roles a [GatewayManager] tracks, read together — see [GatewayManager.status]. */
@@ -77,6 +78,7 @@ class GatewayManager @Inject constructor(
         clientVersion = config.clientVersion,
         platform = config.platform,
         deviceFamily = config.deviceFamily,
+        modelIdentifier = config.modelIdentifier,
         webSocketFactory = webSocketFactory,
         deviceIdentityStore = deviceIdentityStore,
         tokenStore = tokenStore,
@@ -94,6 +96,7 @@ class GatewayManager @Inject constructor(
         clientVersion = config.clientVersion,
         platform = config.platform,
         deviceFamily = config.deviceFamily,
+        modelIdentifier = config.modelIdentifier,
         webSocketFactory = webSocketFactory,
         deviceIdentityStore = deviceIdentityStore,
         tokenStore = tokenStore,

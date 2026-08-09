@@ -112,6 +112,11 @@ class GatewayManagerTest {
                 clientVersion = "0.1-A1",
                 platform = "Android",
                 deviceFamily = "SM-A057F",
+                // Deliberately distinct from deviceFamily above: if GatewayManager ever cross-wired
+                // the two fields (silently reintroducing Task 1's exact bug in production, since
+                // GatewayModule's Build.MODEL would land back in deviceFamily), a shared value here
+                // would let both assertions below pass anyway and hide the regression.
+                modelIdentifier = "model-SM-A057F",
             ),
             scope = scope,
         )
@@ -241,6 +246,25 @@ class GatewayManagerTest {
         assertEquals("node", nodeParams.role)
         assertEquals("node", nodeParams.client.mode)
         assertTrue("node pairing eligibility requires an empty scope list", nodeParams.scopes.isEmpty())
+    }
+
+    @Test
+    fun `modelIdentifier from config reaches both connections' connect frames`() = runTest {
+        val h = newHarness(scope = backgroundScope)
+        h.manager.start()
+        runCurrent()
+        h.deliverChallengeToAll()
+        runCurrent()
+
+        val opParams = h.connectParams(h.indexForRole(GatewayClientInfo.ROLE_OPERATOR))
+        val nodeParams = h.connectParams(h.indexForRole(GatewayClientInfo.ROLE_NODE))
+
+        assertEquals("model-SM-A057F", opParams.client.modelIdentifier)
+        assertEquals("model-SM-A057F", nodeParams.client.modelIdentifier)
+        // And it must not have landed in deviceFamily instead — the exact cross-wiring this test
+        // exists to catch.
+        assertEquals("SM-A057F", opParams.client.deviceFamily)
+        assertEquals("SM-A057F", nodeParams.client.deviceFamily)
     }
 
     @Test

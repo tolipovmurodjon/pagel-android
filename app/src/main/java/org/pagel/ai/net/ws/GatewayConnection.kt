@@ -57,6 +57,12 @@ data class ConnectClientInfo(
     val platform: String,
     val mode: String,
     val deviceFamily: String? = null,
+    /** The marketing/model name (`Build.MODEL`, e.g. `"SM-A057F"`) — NOT `deviceFamily`.
+     *  `ConnectParamsSchema.client.modelIdentifier` is `Type.Optional(NonEmptyString)` and, unlike
+     *  `deviceFamily`, plays no role in `platformMatchesDeviceFamily`/`normalizePlatformId` and is
+     *  NOT one of `buildDeviceAuthPayloadV3`'s eleven signed fields — putting the model here instead
+     *  of in `deviceFamily` is exactly Task 1's fix. */
+    val modelIdentifier: String? = null,
 )
 
 /** `{ token?, bootstrapToken?, deviceToken?, password?, ... }` — two independent gates, both
@@ -227,6 +233,10 @@ class GatewayConnection(
     private val clientVersion: String,
     private val platform: String,
     private val deviceFamily: String?,
+    /** See [ConnectClientInfo.modelIdentifier]'s doc — carried on `client.modelIdentifier` only,
+     *  never fed into [buildDeviceAuthPayloadV3]. Defaulted, unlike [deviceFamily], because it is
+     *  new: every pre-existing call site that doesn't care about it should keep compiling untouched. */
+    private val modelIdentifier: String? = null,
     private val webSocketFactory: WebSocket.Factory,
     private val deviceIdentityStore: DeviceIdentityStore,
     private val tokenStore: GatewayDeviceTokenStore,
@@ -473,6 +483,9 @@ class GatewayConnection(
                 platform = platform,
                 mode = mode,
                 deviceFamily = deviceFamily,
+                // NOT fed into buildDeviceAuthPayloadV3 above — modelIdentifier is not one of its
+                // eleven signed fields. See ConnectClientInfo.modelIdentifier's doc.
+                modelIdentifier = modelIdentifier,
             ),
             role = role,
             scopes = scopes,
