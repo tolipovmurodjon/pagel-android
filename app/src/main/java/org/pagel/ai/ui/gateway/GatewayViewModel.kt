@@ -57,9 +57,15 @@ class GatewayViewModel @Inject constructor(
         _ui.value = _ui.value.copy(url = v)
     }
 
+    /** Saves first, *then* starts — sequentially, in one coroutine. The old version launched the
+     *  suspending [GatewaySettings.saveUrl] and called [GatewayManager.start] in the same tick, so a
+     *  correction Boss typed after a bad URL raced the connect attempt that the bad URL had caused,
+     *  and could lose. */
     fun connect() {
-        viewModelScope.launch { settings.saveUrl(_ui.value.url) }
-        manager.start()
+        viewModelScope.launch {
+            settings.saveUrl(_ui.value.url)
+            manager.start()
+        }
     }
 
     fun disconnect() {

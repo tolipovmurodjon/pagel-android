@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,9 +35,35 @@ class GatewaySettings @Inject constructor(@ApplicationContext private val ctx: C
     val defaultUrl: String = "ws://100.64.0.1:18789"
 
     suspend fun currentUrl(): String =
-        ctx.gatewaySettingsDataStore.data.first()[urlKey]?.trim()?.takeIf { it.isNotBlank() } ?: defaultUrl
+        ctx.gatewaySettingsDataStore.data.first()[urlKey]?.let(::gatewayUrlOrNull) ?: defaultUrl
 
-    suspend fun saveUrl(url: String) {
-        ctx.gatewaySettingsDataStore.edit { it[urlKey] = url.trim() }
+    /**
+     * Persists [url] only if OkHttp can actually open it, and reports which happened.
+     *
+     * A rejected URL is *not* stored, which is the whole point: `Request.Builder().url(...)` throws
+     * on a scheme-less string like `100.64.0.1:18789`, and a stored bad value would be re-read into
+     * [GatewayConnectionConfig] at every cold start — a crash Boss could only escape by clearing
+     * app data. `GatewayConnection.connect()` guards the same case independently, in case a bad
+     * value predates this check.
+     */
+    suspend fun saveUrl(url: String): Boolean {
+        val valid = gatewayUrlOrNull(url) ?: return false
+        ctx.gatewaySettingsDataStore.edit { it[urlKey] = valid }
+        return true
     }
+}
+
+/**
+ * The trimmed [raw] if it is a URL OkHttp will accept for a WebSocket, else `null`. `ws`/`wss` are
+ * mapped to `http`/`https` first because that is exactly what `Request.Builder.url(String)` does
+ * before parsing, so this accepts precisely the set that won't throw there.
+ */
+fun gatewayUrlOrNull(raw: String): String? {
+    val trimmed = raw.trim()
+    val asHttp = when {
+        trimmed.startsWith("ws://", ignoreCase = true) -> "http://" + trimmed.substring(5)
+        trimmed.startsWith("wss://", ignoreCase = true) -> "https://" + trimmed.substring(6)
+        else -> trimmed
+    }
+    return trimmed.takeIf { asHttp.toHttpUrlOrNull() != null }
 }

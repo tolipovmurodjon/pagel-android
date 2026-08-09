@@ -144,6 +144,7 @@ class GatewayConnectionTest {
         scope: CoroutineScope,
         identity: DeviceIdentity = Ed25519.generate(),
         tokenStore: FakeTokenStore = FakeTokenStore(),
+        deviceIdentityStore: DeviceIdentityStore = FakeDeviceIdentityStore(identity),
     ): MultiHarness {
         val sockets = mutableListOf<WebSocket>()
         val listeners = mutableListOf<WebSocketListener>()
@@ -169,12 +170,26 @@ class GatewayConnectionTest {
             platform = "Android",
             deviceFamily = "SM-A057F",
             webSocketFactory = factory,
-            deviceIdentityStore = FakeDeviceIdentityStore(identity),
+            deviceIdentityStore = deviceIdentityStore,
             tokenStore = tokenStore,
             scope = scope,
             idGenerator = { "connect-${idCounter.incrementAndGet()}" },
         )
         return MultiHarness(connection, sockets, listeners, sentPerAttempt)
+    }
+
+    /**
+     * Teaches a mock socket the one piece of `RealWebSocket` semantics that matters here: once the
+     * client flushes its own close frame (having already read the peer's), OkHttp delivers
+     * `onClosed`. A plain relaxed mock swallows `close()` silently, and that gap is precisely what
+     * hid the missing `onClosing` override — a fake socket "noticed" a close the real stack never
+     * reports. Tests that assert on a server-initiated close must opt in to this.
+     */
+    private fun deliverOnClosedWhenClientCloses(socket: WebSocket, listener: WebSocketListener) {
+        every { socket.close(any(), any()) } answers {
+            listener.onClosed(socket, firstArg(), secondArg<String?>() ?: "")
+            true
+        }
     }
 
     /** Like [Harness.sentConnectFrame], for one attempt of a [MultiHarness]. */
@@ -284,11 +299,128 @@ class GatewayConnectionTest {
         h.listener().onMessage(h.socket, challengeJson("n1", 1L))
         runCurrent() // connect req is now in flight, awaiting a res that will never come
 
-        h.listener().onClosed(h.socket, 1008, "policy violation")
+        // onClosing, not onClosed: the *server* closed first, and OkHttp 4.12 only ever delivers
+        // onClosed once the client has enqueued its own close frame. This test used to call
+        // onClosed directly — a callback the real stack would never have delivered here.
+        deliverOnClosedWhenClientCloses(h.socket, h.listener())
+        h.listener().onClosing(h.socket, 1008, "policy violation")
         runCurrent() // no time advance — must resolve now, not by exhausting the 30s RPC timeout
 
         assertEquals(ConnState.Failed, h.connection.state.value)
         assertEquals("SOCKET_CLOSED", h.connection.lastError.value?.code)
+    }
+
+    @Test
+    fun `a server-initiated close while Connected is noticed at once, not 2x tickIntervalMs later`() = runTest {
+        val h = newMultiHarness(scope = backgroundScope)
+        h.connection.connect()
+        h.listeners[0].onMessage(h.sockets[0], challengeJson("n1", 1L))
+        runCurrent()
+        h.listeners[0].onMessage(h.sockets[0], helloOkResJson(h.connectId(0), tickIntervalMs = 7_000))
+        runCurrent()
+        assertEquals(ConnState.Connected, h.connection.state.value)
+
+        // `systemctl restart openclaw-gateway`: the gateway closes first, so OkHttp calls onClosing
+        // and stops. Before the onClosing override this class learned nothing here and kept
+        // reporting Connected until the watchdog fired at 2 * 7_000ms.
+        deliverOnClosedWhenClientCloses(h.sockets[0], h.listeners[0])
+        h.listeners[0].onClosing(h.sockets[0], 1008, "policy violation")
+        runCurrent()
+
+        // Verified with exact arguments, not just a state flip: the fix is "flush the client's own
+        // close frame", and a state change alone would not have completed the close handshake.
+        verify { h.sockets[0].close(1000, null) }
+        assertEquals(ConnState.Failed, h.connection.state.value)
+        assertEquals("SOCKET_CLOSED", h.connection.lastError.value?.code)
+
+        // ...and the retry lands on the normal 1s backoff, nowhere near the 14_000ms watchdog.
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(2, h.sockets.size)
+    }
+
+    @Test
+    fun `two failures within one attempt consume only one step of the backoff curve`() = runTest {
+        val h = newMultiHarness(scope = backgroundScope)
+        h.connection.connect()
+        runCurrent()
+
+        // The shape this guards: a `res` error (or the watchdog's own close(4000)) followed by the
+        // socket actually dying. Both reach fail() for the same generation; without the
+        // already-settled early-out the curve becomes 1s, 4s, 16s instead of 1s, 2s, 4s.
+        h.listeners[0].onFailure(h.sockets[0], IOException("boom"), null)
+        runCurrent()
+        h.listeners[0].onFailure(h.sockets[0], IOException("and the socket dies too"), null)
+        runCurrent()
+        assertEquals(ConnState.Failed, h.connection.state.value)
+        assertEquals("the first failure is the one reported", "boom", h.connection.lastError.value?.message)
+
+        advanceTimeBy(999)
+        runCurrent()
+        assertEquals(1, h.sockets.size)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals("the second failure must not have consumed another backoff step", 2, h.sockets.size)
+    }
+
+    @Test
+    fun `a device identity store that throws fails the connection instead of killing the process`() = runTest {
+        // The production trigger: a truncated or undecryptable identity file. Before the handshake
+        // was wrapped, this threw out of a root coroutine on an app-lifetime scope — process death,
+        // repeated on every reconnect. Here it surfaces as an ordinary, retryable failure.
+        val throwingStore = object : DeviceIdentityStore {
+            override suspend fun loadOrCreate(): DeviceIdentity =
+                throw IllegalArgumentException("Illegal base64 character 21")
+        }
+        val h = newMultiHarness(scope = backgroundScope, deviceIdentityStore = throwingStore)
+
+        h.connection.connect()
+        h.listeners[0].onMessage(h.sockets[0], challengeJson("n1", 1L))
+        runCurrent()
+
+        assertEquals(ConnState.Failed, h.connection.state.value)
+        assertEquals("HANDSHAKE_ERROR", h.connection.lastError.value?.code)
+        assertTrue(
+            "the cause must be legible in the surfaced error, not swallowed",
+            h.connection.lastError.value?.message?.contains("Illegal base64 character") == true,
+        )
+
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals("a handshake exception must still schedule a retry", 2, h.sockets.size)
+    }
+
+    @Test
+    fun `a server URL OkHttp cannot parse fails the connection instead of throwing at the caller`() = runTest {
+        // Boss types `100.64.0.1:18789` into the debug screen with no scheme. connect() runs on the
+        // main thread from the CONNECT button, so Request.Builder().url() throwing was a crash.
+        val factory = mockk<WebSocket.Factory>()
+        val connection = GatewayConnection(
+            role = GatewayClientInfo.ROLE_OPERATOR,
+            mode = GatewayClientInfo.MODE_OPERATOR,
+            scopes = listOf("operator.read"),
+            serverUrl = "100.64.0.1:18789",
+            clientVersion = "0.1-A1",
+            platform = "Android",
+            deviceFamily = "SM-A057F",
+            webSocketFactory = factory,
+            deviceIdentityStore = FakeDeviceIdentityStore(Ed25519.generate()),
+            tokenStore = FakeTokenStore(),
+            scope = backgroundScope,
+        )
+
+        connection.connect() // must not throw
+
+        assertEquals(ConnState.Failed, connection.state.value)
+        assertEquals("INVALID_URL", connection.lastError.value?.code)
+        // No socket was ever requested — a strict mock with no stubbing would have thrown if it had.
+        verify(exactly = 0) { factory.newWebSocket(any(), any()) }
+
+        // And no pointless retry loop: serverUrl is fixed for this instance, so a timer can never
+        // heal it. The CONNECT button is the retry.
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(ConnState.Failed, connection.state.value)
     }
 
     @Test

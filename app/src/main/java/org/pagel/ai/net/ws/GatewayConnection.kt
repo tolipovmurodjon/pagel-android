@@ -1,5 +1,6 @@
 package org.pagel.ai.net.ws
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -66,7 +67,16 @@ data class ConnectAuth(
     val token: String? = null,
     val bootstrapToken: String? = null,
     val deviceToken: String? = null,
-)
+) {
+    // Never print token material — same rule (and same reason) as DeviceIdentity.toString(): the
+    // first `Timber.d("connect: $params")` someone adds would otherwise put a live device token in
+    // logcat and in every crash report. Serialization uses the generated serializer, not toString(),
+    // so redacting here cannot affect the wire format.
+    override fun toString(): String =
+        "ConnectAuth(token=${token.redactedIfPresent()}, bootstrapToken=${bootstrapToken.redactedIfPresent()}, deviceToken=${deviceToken.redactedIfPresent()})"
+}
+
+private fun String?.redactedIfPresent(): String = if (this == null) "null" else "<redacted>"
 
 @Serializable
 data class ConnectDevice(
@@ -154,26 +164,38 @@ data class HelloOk(
  * **Stale-attempt safety.** [connect] can be called again (Task 5's reconnect loop is exactly this,
  * on a timer) while a previous attempt's socket is still unwinding — a late `onFailure`/`onClosed`
  * from a superseded socket, or that attempt's own [challengeTimeoutMs]/[rpcTimeoutMs] elapsing,
- * must never mutate state that now belongs to a newer attempt. Every attempt is tagged with the
- * value [generation] held at the moment it started; [Listener] and every internal mutator
- * ([fail], [handleHelloOk], [handleEvent], [sendReq]) take that captured value and no-op if it no
- * longer matches [generation]'s current value. [connect] and [disconnect] additionally cancel the
- * previous attempt's [handshakeJob] outright, so a superseded attempt's coroutine stops making
- * forward progress (including sending frames) as soon as possible rather than merely being ignored
- * once it gets there.
+ * must never mutate state that now belongs to a newer attempt. Every attempt is one [Attempt]
+ * value, created by [connect] and carrying its own [generation] tag, `connect.challenge` deferred,
+ * and [GatewayRpc]; [Listener] and every internal mutator ([fail], [enterAwaitingApproval],
+ * [handleHelloOk], [handleEvent], [armWatchdog]) is handed that [Attempt] and no-ops if its
+ * [Attempt.gen] no longer matches [generation]'s current value. Because each of those touches only
+ * *its own* attempt's deferred and RPC, a late callback can never cancel a newer attempt's
+ * `connect.challenge` wait (which would surface as a bare [CancellationException] inside
+ * [runHandshake] — no [fail], and so no retry ever scheduled). [connect] and [disconnect]
+ * additionally cancel the previous attempt's [handshakeJob] outright, so a superseded attempt's
+ * coroutine stops making forward progress (including sending frames) as soon as possible rather
+ * than merely being ignored once it gets there.
  *
  * **Thread safety.** [connect] and [disconnect] are plain (non-suspend) functions that can be called
  * from different threads (e.g. a UI thread calling [connect] while a lifecycle callback calls
- * [disconnect]), and [Listener]'s callbacks run on OkHttp's own dispatcher thread. The
- * check-then-act in [connect] (read [state], then decide whether to start a new attempt) is made
- * atomic with `synchronized(this)` around both [connect] and [disconnect] — cheap here since neither
- * body does I/O or suspends. [generation], [webSocket], [rpc], [challengeDeferred], and
- * [handshakeJob] are `@Volatile`/[AtomicInteger] so a read from any other thread (in particular,
- * [Listener]'s callbacks, which are *not* themselves synchronized, to avoid blocking OkHttp's
- * dispatcher on this object's lock) always sees the latest write rather than a stale cached value.
- * No code path needs more than one of those fields to be consistent with another at the instant it's
- * read — each attempt's own [generation] value, captured once as an immutable constructor/closure
- * parameter, is what ties a callback back to "its" attempt, not the shared fields' relative timing.
+ * [disconnect]), and [Listener]'s callbacks run on OkHttp's own dispatcher thread. Every mutator of
+ * the `_state`/`_lastError`/`currentAttempt`/`webSocket` group — [connect], [disconnect], [fail],
+ * [enterAwaitingApproval], [handleHelloOk] — takes `synchronized(this)` around *both* its generation
+ * check and its writes, so the check-then-act can't be interleaved with a [connect] that rewrites
+ * the same fields from another thread. It is cheap to hold: no body does I/O, suspends, or blocks
+ * (`CompletableDeferred.cancel`/`GatewayRpc.cancelAll` dispatch their waiters rather than running
+ * them inline, and `scope.launch` only schedules), so an OkHttp dispatcher thread never waits long
+ * on this lock. [generation], [webSocket], [currentAttempt], and [handshakeJob] are
+ * `@Volatile`/[AtomicInteger] so reads from the paths that deliberately stay outside the lock
+ * ([Listener.onMessage], [sendReq], [armWatchdog]'s timer) see the latest write rather than a stale
+ * cached value.
+ *
+ * **Exceptions.** [runHandshake] is a root coroutine on an app-lifetime scope: an escaping throwable
+ * would reach Android's default handler and kill the process. Everything after the challenge wait —
+ * [DeviceIdentityStore.loadOrCreate] on a corrupt/unreadable identity file, [GatewayDeviceTokenStore.get]
+ * on a corrupt DataStore, signing — is therefore wrapped and reported as a `HANDSHAKE_ERROR`
+ * [fail], which retries on the normal backoff. [CancellationException] is rethrown untouched:
+ * a cancelled attempt is [disconnect]/[connect] doing its job, not a failure.
  */
 class GatewayConnection(
     private val role: String,
@@ -216,9 +238,11 @@ class GatewayConnection(
     private val generation = AtomicInteger(0)
 
     @Volatile private var webSocket: WebSocket? = null
-    @Volatile private var rpc: GatewayRpc? = null
-    @Volatile private var challengeDeferred: CompletableDeferred<ChallengePayload>? = null
     @Volatile private var handshakeJob: Job? = null
+
+    /** The attempt [connect] most recently started. Only [disconnect] reads it — everything else is
+     *  handed its own [Attempt] directly, which is the whole point (see "Stale-attempt safety"). */
+    @Volatile private var currentAttempt: Attempt? = null
 
     /** The pending [scheduleReconnect] timer, if any. Deliberately *not* touched by [connect] or
      *  [disconnect] — see [scheduleReconnect]'s doc for why: the `gen != generation.get()` check
@@ -244,26 +268,45 @@ class GatewayConnection(
 
     private data class ChallengePayload(val nonce: String, val ts: Long)
 
-    /** Opens the socket and runs the handshake once. No-op if already connecting/connected. */
+    /** One [connect] attempt's private state: the generation tag that identifies it, the deferred
+     *  its `connect.challenge` arrives on, and the [GatewayRpc] that owns its in-flight `connect`
+     *  req. Handed whole to [Listener] and every internal mutator so none of them has to read a
+     *  shared field that a newer attempt may already have replaced. */
+    private inner class Attempt(val gen: Int) {
+        val challengeDeferred = CompletableDeferred<ChallengePayload>()
+        val rpc = GatewayRpc(send = { req -> sendReq(gen, req) }, nextId = idGenerator, timeoutMs = rpcTimeoutMs)
+    }
+
+    /** Opens the socket and runs the handshake once. No-op if already connecting/connected.
+     *
+     *  A [serverUrl] OkHttp can't parse (Boss typing `100.64.0.1:18789` with no scheme into the
+     *  debug screen) lands in [ConnState.Failed] with an `INVALID_URL` [lastError] instead of
+     *  throwing out of this call — which, since [connect] runs on the caller's thread (the main
+     *  thread, from the CONNECT button), used to mean an app crash. Deliberately *not*
+     *  [scheduleReconnect]ed: [serverUrl] is fixed for the lifetime of this instance, so no amount
+     *  of retrying can heal it — the CONNECT button is the retry. */
     fun connect() {
         synchronized(this) {
             if (_state.value == ConnState.Connecting || _state.value == ConnState.Connected) return
+            val request = runCatching { Request.Builder().url(serverUrl).build() }.getOrNull()
+            if (request == null) {
+                _lastError.value = GatewayError("INVALID_URL", "not a URL OkHttp can open: \"$serverUrl\"")
+                _state.value = ConnState.Failed
+                return
+            }
             handshakeJob?.cancel() // any leftover attempt (e.g. one that just failed) stops here, not later
             watchdogJob?.cancel() // the previous attempt's watchdog, if any, belongs to a dead generation
             watchdogJob = null
-            val myGeneration = generation.incrementAndGet()
+
+            val attempt = Attempt(generation.incrementAndGet())
+            currentAttempt = attempt
 
             lastSeq = null // seq is per-socket (docs/gateway/protocol.md §1.5) — this is a new socket
             _lastError.value = null
             _state.value = ConnState.Connecting
 
-            val cd = CompletableDeferred<ChallengePayload>()
-            challengeDeferred = cd
-            val rpcForThisAttempt = GatewayRpc(send = { req -> sendReq(myGeneration, req) }, nextId = idGenerator, timeoutMs = rpcTimeoutMs)
-            rpc = rpcForThisAttempt
-            webSocket = webSocketFactory.newWebSocket(Request.Builder().url(serverUrl).build(), Listener(myGeneration))
-
-            handshakeJob = scope.launch { runHandshake(myGeneration, cd, rpcForThisAttempt) }
+            webSocket = webSocketFactory.newWebSocket(request, Listener(attempt))
+            handshakeJob = scope.launch { runHandshake(attempt) }
         }
     }
 
@@ -278,18 +321,30 @@ class GatewayConnection(
             watchdogJob = null
             webSocket?.close(1000, "client disconnect")
             webSocket = null
-            rpc = null
-            challengeDeferred?.cancel()
-            challengeDeferred = null
+            currentAttempt?.challengeDeferred?.cancel()
+            currentAttempt = null
             _state.value = ConnState.Disconnected
         }
     }
 
-    private suspend fun runHandshake(myGeneration: Int, cd: CompletableDeferred<ChallengePayload>, activeRpc: GatewayRpc) {
+    /** See the class doc's "Exceptions" section for why the whole body is wrapped. */
+    private suspend fun runHandshake(attempt: Attempt) {
+        try {
+            runHandshakeOrThrow(attempt)
+        } catch (e: CancellationException) {
+            throw e // a superseded/disconnected attempt, not a failure — must stay ordinary cancellation
+        } catch (t: Throwable) {
+            fail(attempt, GatewayError("HANDSHAKE_ERROR", "${t.javaClass.simpleName}: ${t.message ?: "no message"}"))
+        }
+    }
+
+    private suspend fun runHandshakeOrThrow(attempt: Attempt) {
         val challenge = try {
-            withTimeout(challengeTimeoutMs) { cd.await() }
+            // TimeoutCancellationException is a CancellationException, so this catch has to sit
+            // inside runHandshake's rethrow, not after it.
+            withTimeout(challengeTimeoutMs) { attempt.challengeDeferred.await() }
         } catch (e: TimeoutCancellationException) {
-            fail(myGeneration, GatewayError("CHALLENGE_TIMEOUT", "no connect.challenge within ${challengeTimeoutMs}ms"))
+            fail(attempt, GatewayError("CHALLENGE_TIMEOUT", "no connect.challenge within ${challengeTimeoutMs}ms"))
             return
         }
 
@@ -340,31 +395,35 @@ class GatewayConnection(
             auth = presentedToken?.let { ConnectAuth(deviceToken = it) },
         )
 
-        val result = activeRpc.call("connect", GatewayJson.encodeToJsonElement(ConnectParams.serializer(), params))
+        val result = attempt.rpc.call("connect", GatewayJson.encodeToJsonElement(ConnectParams.serializer(), params))
         result.fold(
-            onSuccess = { helloOkPayload -> handleHelloOk(myGeneration, identity.deviceId, helloOkPayload) },
+            onSuccess = { helloOkPayload -> handleHelloOk(attempt, identity.deviceId, helloOkPayload) },
             onFailure = { t ->
                 val error = errorFrom(t)
-                if (isPairingRequired(error)) enterAwaitingApproval(myGeneration, error) else fail(myGeneration, error)
+                if (isPairingRequired(error)) enterAwaitingApproval(attempt, error) else fail(attempt, error)
             },
         )
     }
 
-    private fun handleHelloOk(gen: Int, deviceId: String, payload: JsonElement?) {
-        if (gen != generation.get()) return // superseded before hello-ok arrived — not our state to set
+    private fun handleHelloOk(attempt: Attempt, deviceId: String, payload: JsonElement?) {
         val obj = payload as? JsonObject
         val hello = obj?.let { runCatching { GatewayJson.decodeFromJsonElement(HelloOk.serializer(), it) }.getOrNull() }
         if (hello == null) {
-            fail(gen, GatewayError("INVALID_HELLO_OK", "hello-ok payload was missing or malformed"))
+            fail(attempt, GatewayError("INVALID_HELLO_OK", "hello-ok payload was missing or malformed"))
             return
         }
-        hello.auth.deviceToken?.let { token ->
-            scope.launch { tokenStore.put(deviceId, role, token) }
+        synchronized(this) {
+            if (attempt.gen != generation.get()) return // superseded before hello-ok arrived — not our state to set
+            reconnectAttempt = 0 // a successful handshake resets the backoff curve for the *next* failure
+            tickIntervalMs = hello.policy.tickIntervalMs
+            armWatchdog(attempt)
+            _state.value = ConnState.Connected
         }
-        reconnectAttempt = 0 // a successful handshake resets the backoff curve for the *next* failure
-        tickIntervalMs = hello.policy.tickIntervalMs
-        armWatchdog(gen)
-        _state.value = ConnState.Connected
+        hello.auth.deviceToken?.let { token ->
+            // Another root coroutine: a DataStore write that throws (corrupt file, disk full) must
+            // not reach Android's default handler. Losing the token costs one re-approval, nothing more.
+            scope.launch { runCatching { tokenStore.put(deviceId, role, token) } }
+        }
     }
 
     private fun errorFrom(t: Throwable): GatewayError = when (t) {
@@ -404,32 +463,50 @@ class GatewayConnection(
      *  the pending `connect.challenge` wait and any in-flight RPC — rather than leaving them to
      *  discover the failure only when their own [challengeTimeoutMs]/[rpcTimeoutMs] independently
      *  elapse. Safe to call more than once per attempt: cancelling an already-completed
-     *  [challengeDeferred] and clearing an already-empty [GatewayRpc] pending map are both no-ops.
-     *  A no-op entirely if [gen] no longer names the current attempt — see the class doc. Schedules
-     *  the next attempt via [scheduleReconnect]: per the plan's Done-when #5 ("killing the network
-     *  and restoring it reconnects without a restart"), every failure here is worth retrying — this
-     *  task doesn't special-case the troubleshooting table's "stop and surface" codes
-     *  (`AUTH_TOKEN_MISMATCH`, `NOT_LINKED`, ...); see the Task 5 report. */
-    private fun fail(gen: Int, error: GatewayError) {
-        if (gen != generation.get()) return
-        _lastError.value = error
-        _state.value = ConnState.Failed
-        challengeDeferred?.cancel()
-        rpc?.cancelAll(error)
-        scheduleReconnect(gen, error)
+     *  [Attempt.challengeDeferred] and clearing an already-empty [GatewayRpc] pending map are both
+     *  no-ops. A no-op entirely if [attempt] no longer names the current attempt — see the class
+     *  doc. Schedules the next attempt via [scheduleReconnect]: per the plan's Done-when #5
+     *  ("killing the network and restoring it reconnects without a restart"), every failure here is
+     *  worth retrying — this task doesn't special-case the troubleshooting table's "stop and
+     *  surface" codes (`AUTH_TOKEN_MISMATCH`, `NOT_LINKED`, ...); see the Task 5 report.
+     *
+     *  Also idempotent per attempt via [alreadySettled]: one real failure usually arrives twice (a
+     *  `res` error and *then* the socket dying, or [armWatchdog]'s own `close(4000)` coming back as
+     *  a close callback). Without the early-out the second one consumes another step of the backoff
+     *  curve, turning 1s, 2s, 4s into 1s, 4s, 16s. */
+    private fun fail(attempt: Attempt, error: GatewayError) {
+        synchronized(this) {
+            if (attempt.gen != generation.get() || alreadySettled()) return
+            _lastError.value = error
+            _state.value = ConnState.Failed
+            attempt.challengeDeferred.cancel()
+            attempt.rpc.cancelAll(error)
+            scheduleReconnect(attempt.gen, error)
+        }
     }
 
     /** Like [fail], but for [isPairingRequired] errors: lands in [ConnState.AwaitingApproval]
      *  instead of [ConnState.Failed] — not terminal, still retries via [scheduleReconnect] so the
      *  UI can show "waiting for Boss to run `openclaw devices approve`" rather than a dead end. */
-    private fun enterAwaitingApproval(gen: Int, error: GatewayError) {
-        if (gen != generation.get()) return
-        _lastError.value = error
-        _state.value = ConnState.AwaitingApproval
-        challengeDeferred?.cancel()
-        rpc?.cancelAll(error)
-        scheduleReconnect(gen, error)
+    private fun enterAwaitingApproval(attempt: Attempt, error: GatewayError) {
+        synchronized(this) {
+            if (attempt.gen != generation.get() || alreadySettled()) return
+            _lastError.value = error
+            _state.value = ConnState.AwaitingApproval
+            attempt.challengeDeferred.cancel()
+            attempt.rpc.cancelAll(error)
+            scheduleReconnect(attempt.gen, error)
+        }
     }
+
+    /** True when the current attempt has already ended *and* already scheduled its retry. Both
+     *  [ConnState.Failed] and [ConnState.AwaitingApproval] count: every [generation] bump is
+     *  followed, inside the same lock, by a `Connecting`/`Disconnected` write, so observing either
+     *  of these under a matching generation means *this* attempt settled, never an older one.
+     *  Covering [ConnState.AwaitingApproval] as well is what keeps Task 5's stickiness intact if a
+     *  socket failure lands after the gateway's `NOT_PAIRED` + 1008 sequence. Callers hold the lock. */
+    private fun alreadySettled(): Boolean =
+        _state.value == ConnState.Failed || _state.value == ConnState.AwaitingApproval
 
     /**
      * Schedules the next [connect] attempt after this attempt's failure. Honours
@@ -464,14 +541,14 @@ class GatewayConnection(
      *  then re-armed by [Listener.onMessage] on every subsequent inbound frame so genuine liveness
      *  keeps resetting the clock. Expiry closes the socket with 4000 and runs the same [fail] ->
      *  [scheduleReconnect] path as any other failure. */
-    private fun armWatchdog(gen: Int) {
+    private fun armWatchdog(attempt: Attempt) {
         watchdogJob?.cancel()
         watchdogJob = scope.launch {
             val budgetMs = tickIntervalMs * 2
             delay(budgetMs)
-            if (gen != generation.get()) return@launch
+            if (attempt.gen != generation.get()) return@launch
             webSocket?.close(4000, "tick timeout: no inbound frame within ${budgetMs}ms")
-            fail(gen, GatewayError("TICK_TIMEOUT", "no inbound frame within ${budgetMs}ms"))
+            fail(attempt, GatewayError("TICK_TIMEOUT", "no inbound frame within ${budgetMs}ms"))
         }
     }
 
@@ -481,13 +558,13 @@ class GatewayConnection(
         return socket.send(GatewayJson.encodeToString(GatewayFrame.Req.serializer(), req))
     }
 
-    private fun handleEvent(gen: Int, frame: GatewayFrame.Event) {
-        if (gen != generation.get()) return
+    private fun handleEvent(attempt: Attempt, frame: GatewayFrame.Event) {
+        if (attempt.gen != generation.get()) return
         if (frame.event == "connect.challenge") {
             val obj = frame.payload as? JsonObject
             val nonce = (obj?.get("nonce") as? JsonPrimitive)?.takeIf { it.isString }?.content
             val ts = (obj?.get("ts") as? JsonPrimitive)?.content?.toLongOrNull() ?: clock()
-            if (nonce != null) challengeDeferred?.complete(ChallengePayload(nonce, ts))
+            if (nonce != null) attempt.challengeDeferred.complete(ChallengePayload(nonce, ts))
             return // handshake-internal — not surfaced on the public events flow
         }
         frame.seq?.let(::checkSeqGap)
@@ -503,39 +580,59 @@ class GatewayConnection(
         lastSeq = seq
     }
 
-    /** One per [connect] attempt, tagged with the [generation] value that was current when it was
-     *  created ([myGeneration]) — every callback checks that value against the *current*
-     *  [generation] before touching shared state, so a callback arriving from a socket that's since
-     *  been superseded (a new [connect], or [disconnect]) is a no-op. See the class doc. */
-    private inner class Listener(private val myGeneration: Int) : WebSocketListener() {
+    /** One per [connect] attempt, holding that attempt's [Attempt] — every callback checks
+     *  [Attempt.gen] against the *current* [generation] before touching shared state, so a callback
+     *  arriving from a socket that's since been superseded (a new [connect], or [disconnect]) is a
+     *  no-op, and every mutation it does make targets its own attempt's deferred/RPC rather than
+     *  whatever the newest attempt happens to have installed. See the class doc. */
+    private inner class Listener(private val attempt: Attempt) : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             // Nothing to do: the handshake proceeds once connect.challenge arrives.
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            if (myGeneration != generation.get()) return
+            if (attempt.gen != generation.get()) return
             // Any inbound frame is liveness: reset the tick-timeout watchdog, once armed (post
             // hello-ok — see armWatchdog's doc for why not before).
-            if (_state.value == ConnState.Connected) armWatchdog(myGeneration)
+            if (_state.value == ConnState.Connected) armWatchdog(attempt)
             when (val frame = parseGatewayFrame(text)) {
-                is GatewayFrame.Event -> handleEvent(myGeneration, frame)
-                is GatewayFrame.Res -> rpc?.onResponse(frame)
+                is GatewayFrame.Event -> handleEvent(attempt, frame)
+                is GatewayFrame.Res -> attempt.rpc.onResponse(frame)
                 is GatewayFrame.Req, null -> Unit // gateway never sends req to the client; unknown types are ignored
             }
         }
 
+        /**
+         * The gateway closed first (`systemctl restart openclaw-gateway`, a bare 1008 auth
+         * rejection, a preauth timeout). OkHttp 4.12's `RealWebSocket.onReadClose` delivers
+         * [onClosed] *only* if the client has already enqueued its own close frame; otherwise it
+         * calls this and stops. Without this override — [WebSocketListener]'s default is a no-op —
+         * a server-initiated close was invisible to this class, and [state] kept reading
+         * [ConnState.Connected] until [armWatchdog] fired 2x `tickIntervalMs` (30-60s) later.
+         *
+         * Flushing our own close is all that's needed: it completes the close handshake, and OkHttp
+         * then delivers [onClosed], which already handles every case correctly. Deliberately *not*
+         * routed straight into [fail] — on the gateway's `NOT_PAIRED`-then-1008 sequence that would
+         * clobber [ConnState.AwaitingApproval], which [onClosed]'s guard exists to preserve.
+         */
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            webSocket.close(1000, null)
+        }
+
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            if (myGeneration != generation.get()) return
-            fail(myGeneration, GatewayError("SOCKET_FAILURE", t.message ?: "socket failure"))
+            fail(attempt, GatewayError("SOCKET_FAILURE", t.message ?: "socket failure"))
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            if (myGeneration != generation.get()) return
+            if (attempt.gen != generation.get()) return
             // A close while we were still mid-handshake or live is the server (or the network)
             // ending the connection out from under us — e.g. code 1008 policy violation — not a
             // clean shutdown. [disconnect] already sets Disconnected (and bumps [generation])
             // before closing the socket, so a close that follows our own [disconnect] call never
             // reaches here at all.
+            //
+            // Reached in production only because [onClosing] flushes the client's close frame; a
+            // server-initiated close never gets here on its own (OkHttp 4.12 `onReadClose`).
             //
             // The gateway's own unpaired-connect handling (`message-handler-CzwI6JjW.js`) always
             // sends the `NOT_PAIRED` `res` *before* the 1008 close, never a bare close alone — so by
@@ -547,7 +644,7 @@ class GatewayConnection(
             // [ConnState.Failed] via the `Connecting`/`Connected` branch below, same as any other
             // unexplained close.
             if (_state.value == ConnState.Connecting || _state.value == ConnState.Connected) {
-                fail(myGeneration, GatewayError("SOCKET_CLOSED", "socket closed (code=$code): ${reason.ifBlank { "no reason given" }}"))
+                fail(attempt, GatewayError("SOCKET_CLOSED", "socket closed (code=$code): ${reason.ifBlank { "no reason given" }}"))
             } else if (_state.value != ConnState.Failed && _state.value != ConnState.AwaitingApproval) {
                 _state.value = ConnState.Disconnected
             }

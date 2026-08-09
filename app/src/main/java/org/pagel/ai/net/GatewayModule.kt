@@ -2,6 +2,7 @@ package org.pagel.ai.net
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
@@ -10,6 +11,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -61,10 +63,20 @@ object GatewayModule {
 
     /** [GatewayManager] must keep retrying across navigation, not just while the debug screen is
      *  on screen — an app-lifetime scope, not a screen-lifetime one. [SupervisorJob] so one
-     *  connection failing can't cancel the sibling connection's coroutines. */
+     *  connection failing can't cancel the sibling connection's coroutines.
+     *
+     *  The [CoroutineExceptionHandler] is a backstop, not the fix: a [SupervisorJob] scope routes
+     *  anything a root coroutine throws to the handler, and *without* one that means Android's
+     *  default handler and process death. Every known throwing path
+     *  (`GatewayConnection.runHandshake`, the `tokenStore.put` launch) already catches its own
+     *  exceptions — this only exists so a future one can't kill the app before anyone notices. */
     @Provides
     @Singleton
-    fun provideGatewayScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    fun provideGatewayScope(): CoroutineScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, t ->
+            Log.e("GatewayScope", "unhandled exception in a gateway coroutine", t)
+        },
+    )
 
     /**
      * Read once, synchronously, when Hilt first builds the [GatewayManager] singleton (normally
