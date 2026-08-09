@@ -216,12 +216,15 @@ class GatewayManagerTest {
         val opParams = h.connectParams(opIdx)
         val nodeParams = h.connectParams(nodeIdx)
 
-        assertEquals(GatewayClientInfo.ROLE_OPERATOR, opParams.role)
-        assertEquals(GatewayClientInfo.MODE_OPERATOR, opParams.client.mode) // "ui", never "operator"
+        assertEquals("operator", opParams.role)
+        // Literal, not GatewayClientInfo.MODE_OPERATOR: the constant and this assertion must not
+        // both silently drift to the stale protocol.md:61 value ("operator") together — pin the
+        // actual wire value the server needs.
+        assertEquals("ui", opParams.client.mode)
         assertEquals(listOf("operator.read", "operator.write"), opParams.scopes)
 
-        assertEquals(GatewayClientInfo.ROLE_NODE, nodeParams.role)
-        assertEquals(GatewayClientInfo.MODE_NODE, nodeParams.client.mode)
+        assertEquals("node", nodeParams.role)
+        assertEquals("node", nodeParams.client.mode)
         assertTrue("node pairing eligibility requires an empty scope list", nodeParams.scopes.isEmpty())
     }
 
