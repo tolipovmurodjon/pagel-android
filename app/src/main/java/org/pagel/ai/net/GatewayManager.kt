@@ -11,6 +11,7 @@ import org.pagel.ai.net.ws.ConnState
 import org.pagel.ai.net.ws.GatewayClientInfo
 import org.pagel.ai.net.ws.GatewayConnection
 import org.pagel.ai.net.ws.GatewayDeviceTokenStore
+import org.pagel.ai.net.ws.GatewayError
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -97,6 +98,13 @@ class GatewayManager @Inject constructor(
 
     val operatorState: StateFlow<ConnState> = operatorConnection.state
     val nodeState: StateFlow<ConnState> = nodeConnection.state
+
+    /** Added for Task 8's debug screen: "operator `Connected` while node is still
+     *  `AwaitingApproval`" (see this class's doc) is exactly the case where Boss needs to see
+     *  *which* half's error to act on — a single collapsed error would hide that. Delegates
+     *  straight to each connection's own [GatewayConnection.lastError]; no new state here. */
+    val operatorLastError: StateFlow<GatewayError?> = operatorConnection.lastError
+    val nodeLastError: StateFlow<GatewayError?> = nodeConnection.lastError
 
     /** See the class doc's "Exposed status" section. */
     val status: StateFlow<GatewayStatus> =

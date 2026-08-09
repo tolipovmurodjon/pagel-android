@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Task 8 (gateway wiring): the default gateway URL is ws://100.64.0.1:18789 — plain WebSocket
+  over the private Headscale tailnet, not the public internet. targetSdk 36 blocks all cleartext
+  traffic by default, and OkHttp enforces that for ws:// exactly like http://, so without this
+  file every CONNECT tap would fail immediately with a network-security-policy error before a
+  single frame reaches the gateway. Cleartext is permitted ONLY to this one tailnet IP; every
+  other host on this app stays cleartext-blocked. wss://100.64.0.1:8443 (the TLS alternative,
+  also editable from the debug screen) does not need this exception.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">100.64.0.1</domain>
+    </domain-config>
+</network-security-config>

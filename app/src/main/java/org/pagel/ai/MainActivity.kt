@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
+import org.pagel.ai.ui.gateway.GatewayDebugScreen
 import org.pagel.ai.ui.hud.JarvisCore
 import org.pagel.ai.ui.settings.SettingsScreen
 import org.pagel.ai.ui.theme.Cyan
@@ -130,9 +131,11 @@ private fun AwarenessApp(voiceRequested: androidx.compose.runtime.MutableState<B
     when (screen) {
         "settings" -> SettingsScreen(onBack = { screen = "dash" })
         "voice" -> VoiceScreen(onBack = { screen = "dash" }, autostart = autostartVoice)
+        "gateway" -> GatewayDebugScreen(onBack = { screen = "dash" })
         else -> DigitalWellbeingScreen(
             onSettings = { screen = "settings" },
             onVoice = { autostartVoice = false; screen = "voice" },
+            onGateway = { screen = "gateway" },
         )
     }
 }

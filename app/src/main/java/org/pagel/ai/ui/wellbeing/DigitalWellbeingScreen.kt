@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -53,6 +54,7 @@ import org.pagel.ai.ui.theme.MonoFamily
 fun DigitalWellbeingScreen(
     onSettings: () -> Unit = {},
     onVoice: () -> Unit = {},
+    onGateway: () -> Unit = {},
     vm: WellbeingViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsState()
@@ -77,6 +79,7 @@ fun DigitalWellbeingScreen(
                     onRefresh = { vm.harvestAndRefresh() },
                     onSettings = onSettings,
                     onVoice = onVoice,
+                    onGateway = onGateway,
                 )
                 val list = state.snapshot?.apps.orEmpty()
                 val maxMs = (list.firstOrNull()?.totalMs ?: 1L).coerceAtLeast(1L)
@@ -119,6 +122,7 @@ private fun Header(
     onRefresh: () -> Unit,
     onSettings: () -> Unit,
     onVoice: () -> Unit,
+    onGateway: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 22.dp, bottom = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -130,6 +134,9 @@ private fun Header(
             }
             IconButton(onClick = onVoice) {
                 Icon(Icons.Rounded.Mic, contentDescription = "Talk to PAGEL", tint = MaterialTheme.colorScheme.primary)
+            }
+            IconButton(onClick = onGateway) {
+                Icon(Icons.Rounded.Wifi, contentDescription = "Gateway", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onSettings) {
                 Icon(Icons.Rounded.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant)

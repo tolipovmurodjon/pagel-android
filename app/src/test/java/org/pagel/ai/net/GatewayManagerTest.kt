@@ -201,6 +201,10 @@ class GatewayManagerTest {
         assertEquals(ConnState.Connected, h.manager.operatorState.value)
         assertEquals(ConnState.AwaitingApproval, h.manager.nodeState.value)
         assertEquals(GatewayStatus(ConnState.Connected, ConnState.AwaitingApproval), h.manager.status.value)
+        // Task 8's debug screen reads these directly — prove the manager exposes the *right*
+        // connection's error under each name, not a collapsed/shared one.
+        assertEquals(null, h.manager.operatorLastError.value)
+        assertEquals("NOT_PAIRED", h.manager.nodeLastError.value?.code)
     }
 
     @Test
