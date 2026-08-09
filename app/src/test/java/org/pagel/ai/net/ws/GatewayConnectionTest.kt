@@ -8,6 +8,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -24,7 +25,9 @@ import org.pagel.ai.net.identity.DeviceIdentity
 import org.pagel.ai.net.identity.DeviceIdentityStore
 import org.pagel.ai.net.identity.Ed25519
 import org.pagel.ai.net.identity.buildDeviceAuthPayloadV3
+import java.io.IOException
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicInteger
 
 class GatewayConnectionTest {
 
@@ -120,6 +123,53 @@ class GatewayConnectionTest {
 
     private fun Harness.sentConnectFrame(): GatewayFrame.Req =
         GatewayJson.decodeFromString(GatewayFrame.Req.serializer(), sent.single { it.contains("\"method\":\"connect\"") })
+
+    /** Like [Harness], but the mock factory hands out a *fresh* socket + listener on every
+     *  [connect]/reconnect, so a test can drive two attempts independently — needed to prove a
+     *  stale attempt's socket can't touch a newer attempt's state (see the generation-guard test). */
+    private data class MultiHarness(
+        val connection: GatewayConnection,
+        val sockets: List<WebSocket>,
+        val listeners: List<WebSocketListener>,
+        val sentPerAttempt: List<List<String>>,
+    )
+
+    private fun newMultiHarness(
+        scope: CoroutineScope,
+        identity: DeviceIdentity = Ed25519.generate(),
+        tokenStore: FakeTokenStore = FakeTokenStore(),
+    ): MultiHarness {
+        val sockets = mutableListOf<WebSocket>()
+        val listeners = mutableListOf<WebSocketListener>()
+        val sentPerAttempt = mutableListOf<MutableList<String>>()
+        val factory = mockk<WebSocket.Factory>()
+        every { factory.newWebSocket(any(), any()) } answers {
+            listeners.add(secondArg())
+            val sentForThisAttempt = mutableListOf<String>()
+            sentPerAttempt.add(sentForThisAttempt)
+            val fakeSocket = mockk<WebSocket>(relaxed = true)
+            every { fakeSocket.send(capture(sentForThisAttempt)) } returns true
+            sockets.add(fakeSocket)
+            fakeSocket
+        }
+
+        val idCounter = AtomicInteger(0)
+        val connection = GatewayConnection(
+            role = GatewayClientInfo.ROLE_OPERATOR,
+            mode = GatewayClientInfo.MODE_OPERATOR,
+            scopes = listOf("operator.read", "operator.write"),
+            serverUrl = "wss://gateway.test/ws",
+            clientVersion = "0.1-A1",
+            platform = "Android",
+            deviceFamily = "SM-A057F",
+            webSocketFactory = factory,
+            deviceIdentityStore = FakeDeviceIdentityStore(identity),
+            tokenStore = tokenStore,
+            scope = scope,
+            idGenerator = { "connect-${idCounter.incrementAndGet()}" },
+        )
+        return MultiHarness(connection, sockets, listeners, sentPerAttempt)
+    }
 
     @Test
     fun `completes the handshake and reaches Connected on hello-ok`() = runTest {
@@ -241,5 +291,61 @@ class GatewayConnectionTest {
 
             assertEquals("tick", awaitItem().event)
         }
+    }
+
+    @Test
+    fun `no frames are sent before the challenge is delivered`() = runTest {
+        val h = newHarness(scope = this)
+
+        h.connection.connect()
+        runCurrent()
+
+        assertTrue("connect() must not send anything before connect.challenge arrives", h.sent.isEmpty())
+    }
+
+    @Test
+    fun `a stale attempt cannot hijack a newer one`() = runTest {
+        val identity = Ed25519.generate()
+        val tokenStore = FakeTokenStore()
+        val h = newMultiHarness(scope = this, identity = identity, tokenStore = tokenStore)
+
+        // Attempt #1: opens a socket, never receives a challenge — stalls indefinitely.
+        h.connection.connect()
+        runCurrent()
+        assertEquals(1, h.sockets.size)
+
+        // Torn down before it ever completes its handshake.
+        h.connection.disconnect()
+
+        // Attempt #2: a fresh socket, full successful handshake.
+        h.connection.connect()
+        runCurrent()
+        assertEquals(2, h.sockets.size)
+
+        h.listeners[1].onMessage(h.sockets[1], challengeJson("nonce-2", 2L))
+        runCurrent()
+        val attempt2Id = GatewayJson.decodeFromString(
+            GatewayFrame.Req.serializer(),
+            h.sentPerAttempt[1].single { it.contains("\"method\":\"connect\"") },
+        ).id
+        h.listeners[1].onMessage(h.sockets[1], helloOkResJson(attempt2Id, deviceToken = "tok-attempt-2"))
+        runCurrent()
+
+        assertEquals(ConnState.Connected, h.connection.state.value)
+
+        // A late failure from the dead attempt #1 socket must not be able to touch attempt #2's state.
+        h.listeners[0].onFailure(h.sockets[0], IOException("stale socket died"), null)
+        runCurrent()
+        assertEquals(ConnState.Connected, h.connection.state.value)
+
+        // Advancing time past attempt #1's 15s challenge budget must also leave attempt #2 untouched
+        // (belt-and-suspenders: disconnect() already cancels attempt #1's coroutine outright, so by
+        // this point there may be nothing left to time out at all — the assertion holds either way).
+        advanceTimeBy(15_001)
+        advanceUntilIdle()
+        assertEquals(ConnState.Connected, h.connection.state.value)
+
+        // And attempt #2's token — not some artifact of attempt #1 — is what's persisted.
+        assertEquals("tok-attempt-2", tokenStore.snapshot()[identity.deviceId to GatewayClientInfo.ROLE_OPERATOR])
     }
 }
