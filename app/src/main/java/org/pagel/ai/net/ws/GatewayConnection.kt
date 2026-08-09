@@ -416,8 +416,19 @@ class GatewayConnection(
             platform = platform,
             deviceFamily = deviceFamily,
         )
-        _lastSignedPayload.value = redactTokenSlot(payload, presentedToken)
         val signature = Ed25519.sign(identity.privateKeyRaw, payload.toByteArray(Charsets.UTF_8))
+        // Payload + public key + signature together are exactly the three inputs the gateway feeds
+        // to `crypto.verify`. Emitting all three lets that verification be reproduced off-device,
+        // which splits `device signature invalid` into its only two possible causes: either Node
+        // rejects this triple (our encoding is wrong somewhere BouncyCastle tolerates), or it
+        // accepts it (the gateway is rebuilding a different payload string). None of the three is
+        // secret — the public key and signature both travel the wire in clear, and the token slot
+        // is redacted below.
+        _lastSignedPayload.value = buildString {
+            append(redactTokenSlot(payload, presentedToken))
+            append("\n\npub  ").append(identity.publicKeyB64Url())
+            append("\nsig  ").append(base64UrlNoPad(signature))
+        }
         val device = DeviceAuthBlock(
             id = identity.deviceId,
             publicKey = identity.publicKeyB64Url(),
