@@ -4,72 +4,34 @@ import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import org.pagel.ai.data.room.AwarenessDao
-import org.pagel.ai.data.room.AwarenessEventEntity
-import org.pagel.ai.domain.EventType
-import javax.inject.Inject
 
 /**
- * The one anchor foreground service. It keeps PAGEL alive to (a) capture real-time screen on/off /
- * unlock events the OS doesn't retain for UsageStats, and (b) ensure the WorkManager harvest is
- * scheduled. Type=specialUse (account-safe, deterministic — no LLM in here).
+ * The one anchor foreground service.
+ *
+ * It holds the process alive so the gateway's operator and node connections (both `@Singleton`s,
+ * scoped to the process) survive backgrounding, and it is what makes a backgrounded `location.get`
+ * legal — see [foregroundServiceType]. The official OpenClaw app keeps an equivalent persistent
+ * notification for exactly this reason.
+ *
+ * It used to also record screen on/off events into a Room table for the on-device usage dashboard;
+ * that whole feature was removed when the app became a pure OpenClaw client, so the service no
+ * longer injects or stores anything. Type=specialUse (deterministic, no LLM in here).
  */
-@AndroidEntryPoint
 class AnchorService : Service() {
-
-    @Inject lateinit var dao: AwarenessDao
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    private val screenReceiver = object : BroadcastReceiver() {
-        override fun onReceive(c: Context?, intent: Intent?) {
-            val type = when (intent?.action) {
-                Intent.ACTION_SCREEN_ON -> EventType.SCREEN_ON
-                Intent.ACTION_SCREEN_OFF -> EventType.SCREEN_OFF
-                Intent.ACTION_USER_PRESENT -> EventType.UNLOCK
-                else -> return
-            }
-            val ts = System.currentTimeMillis()
-            scope.launch { dao.insertEvents(listOf(AwarenessEventEntity(ts = ts, type = type.name))) }
-        }
-    }
 
     override fun onCreate() {
         super.onCreate()
         goForeground()
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_SCREEN_ON)
-            addAction(Intent.ACTION_SCREEN_OFF)
-            addAction(Intent.ACTION_USER_PRESENT)
-        }
-        // SCREEN_ON/OFF/USER_PRESENT are protected system broadcasts — register without an export
-        // flag (the 2-arg form is exempt from the Android 14 flag requirement and guarantees delivery).
-        registerReceiver(screenReceiver, filter)
-        WorkScheduler.ensure(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
-
-    override fun onDestroy() {
-        runCatching { unregisterReceiver(screenReceiver) }
-        scope.cancel()
-        super.onDestroy()
-    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -77,13 +39,13 @@ class AnchorService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         if (nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "PAGEL awareness", NotificationManager.IMPORTANCE_MIN),
+                NotificationChannel(CHANNEL, "PAGEL", NotificationManager.IMPORTANCE_MIN),
             )
         }
         val n = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
             .setContentTitle("PAGEL")
-            .setContentText("Aware — sensing your phone, on-device.")
+            .setContentText("Connected to your gateway.")
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
@@ -95,14 +57,15 @@ class AnchorService : Service() {
     }
 
     /**
-     * `specialUse` always applies — it is what keeps this service alive as the catch-all awareness
+     * `specialUse` always applies — it is what keeps this service alive as the catch-all anchor
      * service and must never be silently dropped. `location` is OR'd in only when foreground location
      * permission is *currently* granted: Android 14+ throws a `SecurityException` from
      * `startForeground()` if a declared type's required permission isn't held at call time, and this
-     * service can start at boot (`BootReceiver`) before Boss has granted anything. The manifest's
-     * `specialUse|location` is the ceiling; passing a subset here (just `specialUse`, pre-grant) is
-     * legal and does not need the service to restart once location is later granted — `location.get`
-     * itself gates on the real permission (`LocationGetCommand`), not on this service's declared type.
+     * service starts the moment the app opens, before Boss has necessarily granted anything. The
+     * manifest's `specialUse|location` is the ceiling; passing a subset here (just `specialUse`,
+     * pre-grant) is legal and does not need the service to restart once location is later granted —
+     * `location.get` itself gates on the real permission (`LocationGetCommand`), not on this
+     * service's declared type.
      */
     private fun foregroundServiceType(): Int {
         val hasLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
@@ -115,7 +78,7 @@ class AnchorService : Service() {
     }
 
     companion object {
-        private const val CHANNEL = "pagel.awareness"
+        private const val CHANNEL = "pagel.anchor"
         private const val NOTIF_ID = 4201
     }
 }

@@ -34,8 +34,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 /** Backs [DataStoreGatewayDeviceTokenStore] — per-`(deviceId, role)` hello-ok tokens. Its own
- *  DataStore file, distinct from [GatewaySettings]'s `"pagel_gateway_settings"` and
- *  `org.pagel.ai.data.sync.SyncSettings`'s `"pagel_sync"`. */
+ *  DataStore file, distinct from [GatewaySettings]'s `"pagel_gateway_settings"`. */
 private val Context.gatewayTokenDataStore: DataStore<Preferences> by preferencesDataStore(name = "pagel_gateway")
 
 /** Wires Task 1-6's gateway classes (identity, connections, [GatewayManager]) into the app: the

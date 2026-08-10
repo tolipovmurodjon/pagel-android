@@ -16,8 +16,7 @@ import javax.inject.Singleton
  * and never overwrite each other — the exact property `DataStoreGatewayDeviceTokenStoreTest`
  * exists to prove.
  *
- * Takes an injected [DataStore] rather than a `Context` directly (unlike
- * [org.pagel.ai.data.sync.SyncSettings]'s `Context.syncDataStore` pattern) so this class stays
+ * Takes an injected [DataStore] rather than a `Context` directly so this class stays
  * unit-testable on the plain JVM: this project has no Robolectric, and the mockable-Android jar
  * (`unitTests.isReturnDefaultValues`) returns default values for real `Context` methods, so a
  * `Context`-coupled DataStore can't be exercised in a plain `@Test`. [GatewayModule] supplies the

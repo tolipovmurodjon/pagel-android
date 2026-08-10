@@ -15,9 +15,8 @@ private val Context.gatewaySettingsDataStore by preferencesDataStore(name = "pag
 /**
  * The gateway server URL, editable from `GatewayDebugScreen` so a different host (e.g. the TLS
  * alternative `wss://100.64.0.1:8443`) can be tried without a Gradle rebuild. Own DataStore file,
- * deliberately distinct from both [org.pagel.ai.data.sync.SyncSettings]'s `"pagel_sync"` and
- * [DataStoreGatewayDeviceTokenStore]'s `"pagel_gateway"` — three unrelated concerns, three files,
- * no key collisions possible.
+ * deliberately distinct from [DataStoreGatewayDeviceTokenStore]'s `"pagel_gateway"` — two unrelated
+ * concerns, two files, no key collisions possible.
  *
  * **Read at Hilt construction only for a hypothetical connection attempt before the debug screen
  * ever runs.** `GatewayModule.provideGatewayConnectionConfig` still reads [currentUrl] synchronously

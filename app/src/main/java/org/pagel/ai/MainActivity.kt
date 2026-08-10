@@ -10,8 +10,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import org.pagel.ai.service.AnchorService
-import org.pagel.ai.service.WakeService
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -47,14 +45,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
+import org.pagel.ai.service.AnchorService
 import org.pagel.ai.ui.gateway.GatewayDebugScreen
 import org.pagel.ai.ui.hud.JarvisCore
-import org.pagel.ai.ui.settings.SettingsScreen
 import org.pagel.ai.ui.theme.Cyan
 import org.pagel.ai.ui.theme.CyanBright
 import org.pagel.ai.ui.theme.PagelTheme
-import org.pagel.ai.ui.voice.VoiceScreen
-import org.pagel.ai.ui.wellbeing.DigitalWellbeingScreen
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -62,37 +58,17 @@ class MainActivity : ComponentActivity() {
     private val notifPerm =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
-    private val voiceRequest = mutableStateOf(false)
-
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         ensureNotifPermission()
         ContextCompat.startForegroundService(this, Intent(this, AnchorService::class.java))
-        handleVoiceIntent(intent)
         setContent {
             PagelTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    AwarenessApp(voiceRequest)
+                    PagelRoot()
                 }
             }
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        handleVoiceIntent(intent)
-    }
-
-    /** A "Hey PAGEL" wake hands off here — show over the lockscreen and jump to the voice surface. */
-    private fun handleVoiceIntent(intent: Intent?) {
-        if (intent?.getBooleanExtra(WakeService.EXTRA_START_VOICE, false) == true) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                setShowWhenLocked(true)
-                setTurnScreenOn(true)
-            }
-            voiceRequest.value = true
         }
     }
 
@@ -106,9 +82,16 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** Brief branded boot splash, then the live awareness dashboard. */
+/**
+ * Brief branded boot splash, then the gateway connection surface.
+ *
+ * The connection screen is the *whole* app right now, deliberately: everything that used to live
+ * here — usage dashboard, spend, voice, the humopedia brain-sync settings — was removed so this
+ * becomes a true OpenClaw client rather than a parallel private pipe. Chat is the next surface to
+ * land, and it lands on top of a connection that is already proven.
+ */
 @Composable
-private fun AwarenessApp(voiceRequested: androidx.compose.runtime.MutableState<Boolean>) {
+private fun PagelRoot() {
     var ready by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(1600)
@@ -118,26 +101,8 @@ private fun AwarenessApp(voiceRequested: androidx.compose.runtime.MutableState<B
         BootScreen()
         return
     }
-    var screen by remember { mutableStateOf("dash") }
-    var autostartVoice by remember { mutableStateOf(false) }
-    // A "Hey PAGEL" wake (or relaunch with the extra) jumps straight to voice and auto-starts it.
-    LaunchedEffect(voiceRequested.value) {
-        if (voiceRequested.value) {
-            autostartVoice = true
-            screen = "voice"
-            voiceRequested.value = false
-        }
-    }
-    when (screen) {
-        "settings" -> SettingsScreen(onBack = { screen = "dash" })
-        "voice" -> VoiceScreen(onBack = { screen = "dash" }, autostart = autostartVoice)
-        "gateway" -> GatewayDebugScreen(onBack = { screen = "dash" })
-        else -> DigitalWellbeingScreen(
-            onSettings = { screen = "settings" },
-            onVoice = { autostartVoice = false; screen = "voice" },
-            onGateway = { screen = "gateway" },
-        )
-    }
+    // No back destination yet — the connection screen is the root until Chat arrives.
+    GatewayDebugScreen(onBack = { })
 }
 
 @Composable
@@ -176,7 +141,7 @@ private fun BootScreen() {
             LiveChip()
         }
         Text(
-            text = "v0.1 · WEDGE A · AWARENESS",
+            text = "v0.1 · GATEWAY",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier

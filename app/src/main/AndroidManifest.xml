@@ -2,21 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- A1: usage awareness + the anchor foreground service -->
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
-        tools:ignore="ProtectedPermissions" />
+    <!-- The anchor foreground service + the gateway WebSocket. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- Wedge B: voice — mic for real-time talk to the brain (runtime-requested) -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <!-- Slice 3: "Hey PAGEL" wake word — on-device mic foreground service -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Phase D Task 5: location.get — a fix obtainable while the app is closed and the phone is
          locked. ACCESS_BACKGROUND_LOCATION is the whole point: the Play-Store build of the official
          OpenClaw app never declares it, so Android never offers "Allow all the time" for it at all —
@@ -46,33 +36,15 @@
             </intent-filter>
         </activity>
 
-        <!-- "Hey PAGEL" wake-word listener: on-device mic foreground service. -->
-        <service
-            android:name=".service.WakeService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
-
-        <!-- Quick-Settings tile: one tap (even from lock screen) → talk to PAGEL. -->
-        <service
-            android:name=".service.VoiceTile"
-            android:exported="true"
-            android:icon="@android:drawable/ic_btn_speak_now"
-            android:label="PAGEL"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
-            <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE" />
-            </intent-filter>
-        </service>
-
-        <!-- Anchor foreground service: real-time screen events, keeps the harvest scheduled, and
-             (Phase D Task 5) is where a backgrounded location.get fix gets obtained. The manifest
-             attribute is the *ceiling*; a startForeground() call may pass any subset of it, so
-             declaring both bits here is safe even on the cold-boot path before Boss has granted
-             location — see AnchorService.foregroundServiceType() for the runtime subset choice.
-             specialUse and location are not documented as mutually exclusive (unlike shortService,
-             which the platform explicitly demotes when combined with another type), so both are kept:
-             specialUse is what keeps this catch-all awareness service alive and must never be
-             silently dropped, and location is what lets a fix be obtained while backgrounded. -->
+        <!-- Anchor foreground service: holds the process (and therefore both gateway connections)
+             alive, and (Phase D Task 5) is where a backgrounded location.get fix gets obtained. The
+             manifest attribute is the *ceiling*; a startForeground() call may pass any subset of it,
+             so declaring both bits here is safe even before Boss has granted location — see
+             AnchorService.foregroundServiceType() for the runtime subset choice. specialUse and
+             location are not documented as mutually exclusive (unlike shortService, which the
+             platform explicitly demotes when combined with another type), so both are kept:
+             specialUse is what keeps this catch-all anchor service alive and must never be silently
+             dropped, and location is what lets a fix be obtained while backgrounded. -->
         <service
             android:name=".service.AnchorService"
             android:exported="false"
@@ -81,37 +53,5 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="continuous owner life-logging for a personal AI assistant" />
         </service>
-
-        <!-- Re-arm periodic harvest after reboot. -->
-        <receiver
-            android:name=".service.BootReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Reads bank notifications to capture spend amounts (special access, granted in Settings). -->
-        <service
-            android:name=".data.spend.SpendNotificationListener"
-            android:exported="false"
-            android:label="PAGEL spend"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
-
-        <!-- We provide WorkManager config via PagelApp (Hilt); remove the default initializer. -->
-        <provider
-            android:name="androidx.startup.InitializationProvider"
-            android:authorities="${applicationId}.androidx-startup"
-            android:exported="false"
-            tools:node="merge">
-            <meta-data
-                android:name="androidx.work.WorkManagerInitializer"
-                android:value="androidx.startup"
-                tools:node="remove" />
-        </provider>
     </application>
 </manifest>

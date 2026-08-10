@@ -21,8 +21,7 @@ android {
         versionName = "0.1-A1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
-        // Ship only the ABIs we run on (real Samsung = arm64, emulator = x86_64). The voice SDK's
-        // WebRTC native libs are large; this trims the APK from ~117MB to ~40MB.
+        // Ship only the ABIs we run on (real Samsung = arm64, emulator = x86_64).
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
@@ -43,10 +42,6 @@ android {
         compose = true
         buildConfig = true
     }
-    androidResources {
-        // KWS onnx models are mmap-loaded by sherpa-onnx — must stay uncompressed in the APK.
-        noCompress += "onnx"
-    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -64,11 +59,6 @@ kotlin {
     }
 }
 
-ksp {
-    // Persist Room schemas for migration tracking (committed to git).
-    arg("room.schemaLocation", "$projectDir/schemas")
-}
-
 dependencies {
     // AndroidX core
     implementation(libs.androidx.core.ktx)
@@ -82,7 +72,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
+    // material-icons-*core* only (arrives with material3). The *extended* set was ~66 MB of dex in
+    // the debug APK — thousands of vector icons for the single Icons.Rounded.ArrowBack we use.
+    // Re-add it only if a screen genuinely needs an icon outside core's set.
     implementation(libs.androidx.compose.ui.text.google.fonts)
 
     // Navigation
@@ -92,37 +84,23 @@ dependencies {
     // DI
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-    // WorkManager + Hilt (@HiltWorker)
-    implementation(libs.androidx.hilt.work)
-    ksp(libs.androidx.hilt.compiler)
 
     // Persistence
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
-    implementation(libs.androidx.work.runtime.ktx)
 
     // Async / serialization
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 
-    // Animation / logging
-    implementation(libs.airbnb.lottie.compose)
+    // Logging
     implementation(libs.jakewharton.timber)
-
-    // Voice — ElevenLabs Conversational-AI (real-time talk to the brain over WebRTC)
-    implementation(libs.elevenlabs.android)
-
-    // Wake word — sherpa-onnx on-device KWS ("Hey PAGEL"); local AAR bundles JNI .so + Kotlin API
-    implementation(files("libs/sherpa-onnx-1.13.2.aar"))
 
     // Gateway device identity — Ed25519 keypair (BouncyCastle lightweight API, since minSdk 30
     // predates platform Ed25519 at API 33) persisted encrypted at rest.
     implementation(libs.bouncycastle)
     implementation(libs.androidx.security.crypto)
 
-    // Gateway WebSocket transport (net/ws) — promoted from a transitive elevenlabs-android dep.
+    // Gateway WebSocket transport (net/ws).
     implementation(libs.okhttp)
 
     // Charts/shimmer deferred to the dashboard (Task 7): Vico 3.x needs Kotlin 2.3 and breaks
@@ -134,10 +112,9 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.cash.turbine)
-    // Local loopback HTTP server — lets BrainSyncTest capture the exact JSON bytes buildJson()
-    // produces through the real push() seam, without opening a socket to anything but localhost.
+    // Local loopback WebSocket server — lets GatewayConnectionSocketTest drive the real handshake
+    // over a real socket, without opening one to anything but localhost.
     testImplementation(libs.okhttp.mockwebserver)
-    testImplementation(libs.org.json)
 
     // Instrumented test
     androidTestImplementation(libs.androidx.junit)

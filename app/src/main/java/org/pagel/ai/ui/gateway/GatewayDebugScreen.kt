@@ -243,9 +243,9 @@ private fun StateChip(state: ConnState) {
     }
 }
 
-/** Verbatim copy of `DigitalWellbeingScreen`'s private `Modifier.scanlines()` — that one is file-
- *  private, and this is only the second use site, so duplicating a ~10-line modifier beats adding
- *  a shared abstraction for it (see the project's "build it three times" rule). */
+/** The HUD scanline overlay. Was duplicated from `DigitalWellbeingScreen` while both existed; that
+ *  screen is gone, so this is now the only copy. Promote it to a shared modifier when a second
+ *  surface needs it — Chat is the likely first. */
 private fun Modifier.scanlines(): Modifier = drawWithContent {
     drawContent()
     val gap = 3.5.dp.toPx()
@@ -256,8 +256,8 @@ private fun Modifier.scanlines(): Modifier = drawWithContent {
     }
 }
 
-/** Verbatim copy of `DigitalWellbeingScreen`'s private `Modifier.hudCorners()` — see [scanlines]'s
- *  doc for why this is a duplicate rather than a shared util. */
+/** The HUD corner brackets — see [scanlines] for why this still lives here rather than in a
+ *  shared util. */
 private fun Modifier.hudCorners(color: Color, len: Dp = 9.dp, stroke: Dp = 1.5.dp): Modifier =
     drawBehind {
         val l = len.toPx()

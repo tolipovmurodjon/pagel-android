@@ -1,6 +1,7 @@
 package org.pagel.ai.net.node.commands
 
 import android.app.ActivityManager
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
@@ -9,13 +10,13 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
 import android.os.PowerManager
+import android.os.Process
 import android.os.StatFs
 import android.os.SystemClock
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.pm.PackageInfoCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
-import org.pagel.ai.data.usage.UsagePermission
 import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -120,12 +121,32 @@ class AndroidDeviceInfoSource @Inject constructor(
             notificationListener = NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName),
             postNotifications = NotificationManagerCompat.from(ctx).areNotificationsEnabled(),
             activityRecognition = hasPermission(android.Manifest.permission.ACTIVITY_RECOGNITION),
-            usageStats = UsagePermission.hasAccess(ctx),
+            usageStats = hasUsageStatsAccess(),
         )
     }
 
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(ctx, permission) == PackageManager.PERMISSION_GRANTED
+
+    /**
+     * Usage-stats is a *special access* granted in Settings, not a runtime permission, so it can
+     * only be read through [AppOpsManager] — `checkSelfPermission` always reports denied for it.
+     *
+     * Reports `false` today: the on-device usage feature and its `PACKAGE_USAGE_STATS` declaration
+     * were both removed when the app became a pure OpenClaw client. It stays in the report because
+     * `camera`, `microphone` and `activityRecognition` are reported on the same terms — undeclared
+     * and therefore false — and because screen-time is planned to return as a node command, at
+     * which point this starts answering truthfully with no wire-shape change.
+     */
+    private fun hasUsageStatsAccess(): Boolean {
+        val appOps = ctx.getSystemService(AppOpsManager::class.java) ?: return false
+        val mode = appOps.unsafeCheckOpNoThrow(
+            AppOpsManager.OPSTR_GET_USAGE_STATS,
+            Process.myUid(),
+            ctx.packageName,
+        )
+        return mode == AppOpsManager.MODE_ALLOWED
+    }
 
     companion object {
         /** [BatteryManager.BATTERY_PROPERTY_STATUS] -> the three-value wire shape ([BatteryChargeState]).
