@@ -7,6 +7,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- device.status reads ConnectivityManager for the network block (AndroidDeviceInfoSource.network()).
+         Without this, the whole command dies at the framework boundary with
+         "Neither user NNNNN nor current process has android.permission.ACCESS_NETWORK_STATE" —
+         a live failure on the first real `nodes invoke` of `device.status`, 2026-08-10. It had
+         been latent since Task D4 because the node declared no commands, so nothing was ever
+         invokable. Normal (non-dangerous) permission: granted at install, no runtime prompt.
+         Unit tests cannot catch this class of bug — DeviceStatusCommandTest drives a fake source, so
+         only a real device exercises the manifest. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Phase D Task 5: location.get — a fix obtainable while the app is closed and the phone is
          locked. ACCESS_BACKGROUND_LOCATION is the whole point: the Play-Store build of the official
          OpenClaw app never declares it, so Android never offers "Allow all the time" for it at all —
