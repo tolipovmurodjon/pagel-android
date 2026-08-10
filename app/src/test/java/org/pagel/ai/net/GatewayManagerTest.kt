@@ -236,9 +236,10 @@ class GatewayManagerTest {
         assertEquals("ui", opParams.client.mode)
         // Exactly read+write. NOT operator.approvals (a later phase) and NOT operator.talk.secrets
         // (voice, deleted) — every unused scope is one more thing a stolen device token could do.
-        // This list is only safe against a *fresh* pairing: the gateway blanks scopes the pairing
-        // record doesn't bind (`clearUnboundScopes`) and then verifies the signature against the
-        // blanked list, surfacing as `device signature invalid`. See GatewayManager.OPERATOR_SCOPES.
+        // This list is only accepted against a *fresh* pairing: for an already-paired device,
+        // scopesWithinApprovedDeviceBaseline() rejects anything outside the record's approvedScopes
+        // with reason "scope-mismatch", and ours currently holds []. Approving a pending request
+        // does the opposite — it binds pending.scopes as the new baseline. See OPERATOR_SCOPES.
         assertEquals(
             "operator must request exactly the scopes a fresh pairing will bind",
             listOf("operator.read", "operator.write"),

@@ -195,38 +195,52 @@ class GatewayManager @Inject constructor(
 
     private companion object {
         /**
-         * `operator.read` + `operator.write` — and the timing of *when* these may be requested is
-         * load-bearing, so read this before changing either the list or the pairing flow.
+         * `operator.read` + `operator.write`. **This list is only accepted against a *fresh*
+         * pairing** — read the mechanism below before changing it or the pairing flow.
          *
-         * An earlier revision requested exactly this list and the live gateway rejected the
-         * handshake with `device signature invalid`, while its own log showed the frame was
-         * otherwise perfect (`client=openclaw-android ui role=operator scopes=2 device=yes`).
-         * The cause is server-side scope rewriting: `message-handler`'s connect path holds `scopes`
-         * in a `let` and can blank it *before* verifying:
+         * ### Why it was empty, and why that reason was wrong
          *
-         * ```js
-         * const clearUnboundScopes = () => { if (scopes.length > 0) { scopes = []; connectParams.scopes = scopes; } };
-         * ```
+         * An earlier revision requested exactly this list, the gateway answered
+         * `device signature invalid`, and `d6c30d4` emptied the list to get past it, blaming
+         * `clearUnboundScopes()` — which blanks `scopes` and then lets the gateway verify the
+         * signature against the blanked value.
          *
-         * That same variable is then passed to `resolveDeviceSignaturePayloadVersion(...)`, so the
-         * gateway rebuilds the signed string with `scopes=""` while we signed the real list. The
-         * strings differ, Ed25519 fails, and the error points at the crypto rather than at the
-         * scopes — two live rounds to find. The list was then emptied to get past it.
+         * That diagnosis does not survive reading the bundle. `clearUnboundScopes()` has exactly
+         * **one** call site, inside `handleMissingDeviceIdentity()`, guarded by `!device`
+         * (`message-handler-CzwI6JjW.js`) — it fires only for a connect frame carrying **no device
+         * identity block**. Every frame we send carries one, and the gateway's own log confirms it
+         * on every attempt (`device=yes`). So it never applied to us. The signature failure was
+         * almost certainly the auth-token slot bug fixed later in `fc364ab` ("auth.token wins the
+         * signature slot"); emptying the scopes was a speculative change that happened to precede
+         * the real fix and then looked like it.
          *
-         * **Emptying it was a workaround, not the fix.** It made every connect succeed with
-         * `approvedScopes: []`, i.e. an operator that cannot read anything — no chat, no health, no
+         * Emptying it was therefore a workaround for the wrong problem, and it cost real function:
+         * every connect succeeded as an operator that can read nothing — no chat, no health, no
          * sessions. The 2026-08-10 audit found exactly that on Boss's paired row.
          *
-         * The real invariant: **request only what the pairing record already binds, and a *fresh*
-         * pairing binds whatever it was asked for.** `clearUnboundScopes` fires on the mismatch, not
-         * on the request. So this list is safe precisely when the device pairs fresh — which is why
-         * the stale zero-scope pairing must be removed (`openclaw devices remove <deviceId>`) before
-         * a build carrying this list first connects. Reusing the old record re-creates the mismatch.
+         * ### The real constraint
+         *
+         * For an **already-paired** device, `scopesWithinApprovedDeviceBaseline()` rejects any
+         * requested scope outside the record's `approvedScopes`, returning
+         * `reason: "scope-mismatch"`, and `ensureDeviceToken()` returns `null` on the same test
+         * (`device-pairing-Dw7KWdQ7.js`). Our row holds `approvedScopes: []`, so *any* non-empty
+         * request mismatches.
+         *
+         * On approving a **pending** request the flow is the opposite:
+         * `resolveApprovedTokenScopes()` takes `pending.scopes` whenever it is non-empty, and
+         * `buildApprovedPairedDevice()` writes it to **both** `scopes` and `approvedScopes`. Scopes
+         * are role-filtered on the way through (`resolveRoleScopedDeviceTokenScopes` keeps only
+         * `operator.*` for the operator role), so both of ours survive.
+         *
+         * Hence: the stale zero-scope pairing must be removed (`openclaw devices remove <deviceId>`,
+         * plus `openclaw nodes remove`) **before** a build carrying this list first connects, so the
+         * fresh request's scopes *become* the approved baseline instead of being measured against an
+         * empty one.
          *
          * Requesting scopes also forfeits pairing auto-approval (see [nodeConnection]'s doc: the
-         * eligibility rule is "a fresh `role: node` request with **no** requested scopes"), so this
-         * connection now lands in the pending queue and Boss approves it once — which is exactly
-         * what binds the scopes. `A05s` holds four scopes by that same route.
+         * eligibility rule is "a fresh request with **no** requested scopes"), so expect a pending
+         * request Boss approves once. Observe that rather than assuming it — if it still
+         * auto-approves, check whether it bound the scopes or granted empty.
          *
          * Deliberately excluded: `operator.approvals` (a later phase) and `operator.talk.secrets`
          * (voice, deleted). Ask for nothing that isn't used yet — every extra scope is one more
