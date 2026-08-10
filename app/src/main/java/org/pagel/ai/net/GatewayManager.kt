@@ -252,8 +252,21 @@ class GatewayManager @Inject constructor(
          *  See [org.pagel.ai.net.ws.ConnectClientInfo.displayName]. */
         const val DISPLAY_NAME = "PAGEL"
 
-        /** See the node connection's construction above for why this is `["location"]` and nothing
-         *  more — most importantly, why `"talk"` is not in it. */
-        val NODE_CAPS = listOf("location")
+        /**
+         * The capability categories this node advertises, kept in step with [NodeCommands.DECLARED].
+         *
+         * Caps are informational to the allowlist with exactly one exception, and it is a trap:
+         * declaring **`talk`** makes `hasTalkSurface` (`node-command-policy-CO8bCAnE.js:234`)
+         * unconditionally widen the server's permitted set to all four `talk.ptt.*` commands. Voice
+         * was deleted from this app in `ffec6df`, so nothing would serve them. **Never add `talk`.**
+         *
+         * `screen` is ours rather than OpenClaw's vocabulary — it pairs with the `screen.context` /
+         * `screen.act` accessibility commands that only exist because of Boss's
+         * `gateway.nodes.allowCommands` entry.
+         */
+        val NODE_CAPS = listOf(
+            "device", "location", "notifications", "motion", "calendar",
+            "contacts", "camera", "photos", "reminders", "system", "screen",
+        )
     }
 }

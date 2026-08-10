@@ -2,41 +2,74 @@ package org.pagel.ai.net.node
 
 /**
  * The single source of truth for what this device advertises in the node connection's
- * `connect.commands` list — and, by construction, the ceiling of what Task 3's dispatcher may ever
- * serve (it rejects anything not in here). Every entry must satisfy two independent things:
+ * `connect.commands` list — and, by construction, the ceiling of what the dispatcher may ever serve
+ * (it rejects anything not in here).
  *
- * 1. It is in the Android platform's server-side default allowlist
- *    (`protocol-reference-node-commands.md` §3.1, `PLATFORM_DEFAULTS.android`) — declaring a command
- *    outside it is rejected by the gateway's own policy regardless of what we send.
- * 2. A [org.pagel.ai.net.node.NodeCommand] implementation for it actually exists (Phase D Tasks 4-6).
- *    Declaring a command we cannot serve routes an invoke straight to a dropped/`TIMEOUT` result on
- *    Boss's end for no reason.
+ * ### The gateway silently drops anything outside its own allowlist
  *
- * **Deliberately excluded**, though present in the Android default-allowed 17 and thus *legal* to
- * declare — none has an implementing task in this phase:
- * - `system.notify`, `camera.list`, `device.apps`, `notifications.actions`, `calendar.events`,
- *   `reminders.list` — no `NodeCommand` for any of them anywhere in Tasks 4-6's file list.
- * - `contacts.search`, `callLog.search`, `photos.latest` — same reason, *and* they need contacts /
- *   call-log / photos access, which Boss has deliberately denied on this phone (`CLAUDE.md` §5) —
- *   declaring them would be a privacy overreach even if a command existed.
+ * `resolveNodeCommandAllowlistInternal` (`dist/node-command-policy-CO8bCAnE.js:237`) builds the
+ * permitted set as `PLATFORM_DEFAULTS[platform] + talk (if declared) + plugins + approved + extra`,
+ * and `normalizeDeclaredNodeCommands` (:283) then **filters our declared list down to that set**.
+ * A name outside it does not error — it simply never reaches the pairing record, which is why
+ * inventing plausible-sounding names is worse than useless.
  *
- * Also excluded, and *not* legal to declare regardless of implementation status: `camera.snap`,
- * `camera.clip`, `screen.record`, `sms.send`, `sms.search`, `contacts.add`, `calendar.add`,
- * `reminders.add` — §3.2's `DEFAULT_DANGEROUS_NODE_COMMANDS`, which need an explicit
- * `gateway.nodes.allowCommands` opt-in on the server that Boss has not made.
+ * `PLATFORM_DEFAULTS.android` (:85-97) is exactly these 17:
+ * `camera.list` · `location.get` · `notifications.list` · `notifications.actions` · `system.notify` ·
+ * `device.info` · `device.status` · `device.permissions` · `device.health` · `device.apps` ·
+ * `contacts.search` · `calendar.events` · `callLog.search` · `reminders.list` · `photos.latest` ·
+ * `motion.activity` · `motion.pedometer`
+ *
+ * ### The five extras below are NOT platform defaults
+ *
+ * `camera.snap`, `calendar.add` and `contacts.add` are in `DEFAULT_DANGEROUS_NODE_COMMANDS` (:64);
+ * `screen.context` and `screen.act` are not OpenClaw commands at all — they are ours, for the
+ * accessibility surface. All five reach us only because Boss added them to
+ * `gateway.nodes.allowCommands` on 2026-08-10, which `extra` merges in unconditionally (:250, :260).
+ * **If that config key is ever cleared, these five vanish from the pairing record silently.**
+ *
+ * ### Changing this list costs a re-pair
+ *
+ * Any change to the declared set invalidates the pairing and Boss must approve the device *and* the
+ * node again, separately. That is why commands with no implementation yet are declared here anyway:
+ * one re-pair now beats four later. An invoke of an unimplemented one gets an honest
+ * `INVALID_REQUEST: unknown command "..."` from [NodeCommandDispatcher] rather than a silent
+ * timeout — see [org.pagel.ai.net.GatewayManager]'s note on the same trade-off.
+ *
+ * ### Deliberately NOT declared
+ * - `callLog.search` — Boss parked call log and SMS ("I will allow after thinking", 2026-08-10).
+ * - `sms.send` / `sms.search` — same, and dangerous-class besides.
+ * - `screen.record`, `camera.clip`, `reminders.add` — dangerous-class, and nothing implements them.
+ * - `talk.ptt.*` — declaring the `talk` cap unconditionally widens the server allowlist to all four
+ *   PTT commands (`hasTalkSurface`, :234) and voice was deleted from this app in `ffec6df`.
  */
 object NodeCommands {
     val DECLARED: List<String> = listOf(
-        // Task 4 — DeviceStatusCommand / DeviceInfoCommand / DeviceHealthCommand / DevicePermissionsCommand
+        // --- Implemented (Phase D Tasks 4-5) ---
         "device.status",
         "device.info",
         "device.health",
         "device.permissions",
-        // Task 5 — LocationGetCommand
         "location.get",
-        // Task 6 — NotificationsListCommand / MotionActivityCommand / MotionPedometerCommand
+
+        // --- Platform defaults, implementations land in Wave 2 ---
         "notifications.list",
+        "notifications.actions",
         "motion.activity",
         "motion.pedometer",
+        "calendar.events",
+        "contacts.search",
+        "photos.latest",
+        "reminders.list",
+        "device.apps",
+        "camera.list",
+        "system.notify",
+
+        // --- Allowed only by gateway.nodes.allowCommands; see the class doc ---
+        "camera.snap",
+        "calendar.add",
+        "contacts.add",
+        // Ours, not OpenClaw's — the accessibility surface (Wave 3).
+        "screen.context",
+        "screen.act",
     )
 }

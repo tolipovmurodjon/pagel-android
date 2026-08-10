@@ -176,9 +176,19 @@ class NodeCommandDispatcherTest {
 
     @Test
     fun `constructing with a NodeCommand not in NodeCommands DECLARED fails fast`() {
-        val rogueCommand = FakeNodeCommand(name = "camera.snap") // Android-dangerous, never declared
+        // This used to use "camera.snap" as the never-declared example. Wave 1 declared it (Boss
+        // unlocked it via gateway.nodes.allowCommands), and the test silently stopped testing
+        // anything - it passed construction and failed only on the missing throw. Any real command
+        // name can be declared later, so pick one that cannot be, and assert that precondition
+        // rather than trusting it.
+        val undeclared = "pagel.test.never.declared"
+        assertTrue(
+            "fixture must name a command NodeCommands.DECLARED does not contain, or this test " +
+                "proves nothing about the dispatcher's guard",
+            undeclared !in NodeCommands.DECLARED,
+        )
         assertThrows(IllegalArgumentException::class.java) {
-            NodeCommandDispatcher(listOf(rogueCommand))
+            NodeCommandDispatcher(listOf(FakeNodeCommand(name = undeclared)))
         }
     }
 

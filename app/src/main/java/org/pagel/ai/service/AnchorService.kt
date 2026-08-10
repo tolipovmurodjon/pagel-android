@@ -29,6 +29,7 @@ class AnchorService : Service() {
     override fun onCreate() {
         super.onCreate()
         goForeground()
+        AnchorWatchdogWorker.ensureScheduled(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -58,19 +59,34 @@ class AnchorService : Service() {
 
     /**
      * `specialUse` always applies — it is what keeps this service alive as the catch-all anchor
-     * service and must never be silently dropped. `location` is OR'd in only when foreground location
-     * permission is *currently* granted: Android 14+ throws a `SecurityException` from
-     * `startForeground()` if a declared type's required permission isn't held at call time, and this
-     * service starts the moment the app opens, before Boss has necessarily granted anything. The
-     * manifest's `specialUse|location` is the ceiling; passing a subset here (just `specialUse`,
-     * pre-grant) is legal and does not need the service to restart once location is later granted —
-     * `location.get` itself gates on the real permission (`LocationGetCommand`), not on this
-     * service's declared type.
+     * service and must never be silently dropped. The manifest's `specialUse|location` is the
+     * *ceiling*; passing a subset here is legal, and the service does not need restarting when
+     * permissions later change — `location.get` gates on the real permission
+     * (`LocationGetCommand`), never on this service's declared type.
+     *
+     * ### Why the `location` bit is gated on BACKGROUND, not foreground
+     *
+     * The obvious version of this check tests foreground location, and it was written that way
+     * while [MainActivity][org.pagel.ai.MainActivity] was the only caller — a foreground start, for
+     * which foreground permission is sufficient.
+     *
+     * [BootReceiver] changed that. A boot start is by definition a **background** start, and
+     * Android 14+ refuses a background-started foreground service that claims the `location` type
+     * unless `ACCESS_BACKGROUND_LOCATION` is held — it throws from `startForeground()`, killing the
+     * service, with a logcat line about location/camera/microphone access rather than anything that
+     * names the real cause. Boss granting only "While using the app" would therefore have made
+     * every reboot silently lose PAGEL — the precise feature the boot receiver exists to deliver.
+     *
+     * Gating on background permission is correct for both callers: it is strictly stronger than
+     * foreground (Android will not grant background without foreground), so the foreground path
+     * loses nothing real.
      */
     private fun foregroundServiceType(): Int {
-        val hasLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        return if (hasLocation) {
+        val hasBackgroundLocation = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        return if (hasBackgroundLocation) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         } else {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE

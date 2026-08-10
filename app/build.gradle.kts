@@ -88,6 +88,10 @@ dependencies {
     // Persistence
     implementation(libs.androidx.datastore.preferences)
 
+    // AnchorWatchdogWorker (service/) — plain CoroutineWorker, so no androidx.hilt:hilt-work and no
+    // Configuration.Provider; the default WorkManager initializer is in play.
+    implementation(libs.androidx.work.runtime.ktx)
+
     // Async / serialization
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

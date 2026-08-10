@@ -291,11 +291,22 @@ class GatewayManagerTest {
         // advertise exactly NodeCommands.DECLARED, the single source of truth the dispatcher itself
         // reads from, not a hand-copied literal that could drift from it.
         assertEquals(NodeCommands.DECLARED, nodeParams.commands)
-        // "location" is the only documented cap (protocol-reference-node-commands.md §2.3) backed by
-        // an implemented command (location.get); "talk" is deliberately omitted - it's the one cap
-        // with real server behavior (widens the allowlist to talk.ptt.* independent of platform),
-        // and we implement no talk.ptt.* command to serve it.
-        assertEquals(listOf("location"), nodeParams.caps)
+        // A literal, not a reference to the production constant - same reasoning as the declared-
+        // command allowlist test below: a careless edit to NODE_CAPS should fail here rather than
+        // silently change what we advertise to the gateway.
+        assertEquals(
+            listOf(
+                "device", "location", "notifications", "motion", "calendar",
+                "contacts", "camera", "photos", "reminders", "system", "screen",
+            ),
+            nodeParams.caps,
+        )
+        // "talk" is the single cap with real server behavior: hasTalkSurface
+        // (node-command-policy-CO8bCAnE.js:234) widens the allowlist to all four talk.ptt.*
+        // commands independent of platform, and voice was deleted from this app in ffec6df, so
+        // nothing would serve them.
+        assertTrue("declaring the talk cap widens the server allowlist to talk.ptt.* for nothing",
+            "talk" !in nodeParams.caps)
 
         // The operator connection is not a node - `docs/nodes/index.md`'s allowlist only ever
         // applies to a node-role session, and declaring commands here would be meaningless at best.
@@ -328,14 +339,37 @@ class GatewayManagerTest {
             "motion.activity",
             "motion.pedometer",
         )
+        // These five are NOT platform defaults and reach us only because Boss added them to
+        // `gateway.nodes.allowCommands` on 2026-08-10 (node-command-policy-CO8bCAnE.js:250 merges
+        // `extra` in unconditionally). camera.snap/calendar.add/contacts.add are dangerous-class
+        // (:64); screen.context/screen.act are ours, not OpenClaw's, for the accessibility surface.
+        // Listed separately and deliberately: if that server key is ever cleared these vanish from
+        // the pairing record with NO error, so anything landing here must be a conscious decision
+        // paired with a server change - not something a future session drifts into.
+        val serverUnlockedOnly = setOf(
+            "camera.snap",
+            "calendar.add",
+            "contacts.add",
+            "screen.context",
+            "screen.act",
+        )
+        val permitted = androidDefaultAllowed + serverUnlockedOnly
         assertTrue(
-            "every declared command must be Android-default-allowed, or the gateway refuses it " +
-                "regardless of what the connect frame says",
-            androidDefaultAllowed.containsAll(NodeCommands.DECLARED),
+            "every declared command must be an Android platform default or explicitly unlocked via " +
+                "gateway.nodes.allowCommands - otherwise normalizeDeclaredNodeCommands drops it SILENTLY " +
+                "and the command simply never works: " + (NodeCommands.DECLARED - permitted),
+            permitted.containsAll(NodeCommands.DECLARED),
         )
         assertTrue(
             "must actually declare something - this whole task exists to fix commands: []",
             NodeCommands.DECLARED.isNotEmpty(),
+        )
+        // callLog.search is Android-default-allowed, so the assertion above would happily accept it.
+        // Boss parked call log and SMS on 2026-08-10 pending a decision; pin that intent here so it
+        // cannot be reintroduced by someone reading only the allowlist.
+        assertTrue(
+            "callLog.search is allowed by the platform but Boss deliberately parked call log/SMS",
+            "callLog.search" !in NodeCommands.DECLARED,
         )
     }
 

@@ -16,6 +16,15 @@
          Unit tests cannot catch this class of bug — DeviceStatusCommandTest drives a fake source, so
          only a real device exercises the manifest. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Wave 1: survive reboot and app-update. BootReceiver starts AnchorService; Android 15 blocks
+         only dataSync/camera/mediaPlayback/phoneCall/mediaProjection/microphone from BOOT_COMPLETED,
+         and ours is specialUse|location. Normal permission, granted at install. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Load-bearing, not a nicety: exempting PAGEL from battery optimisation is Android's
+         exemption 13 for starting a foreground service from the background, which is the ONLY
+         reason AnchorWatchdogWorker can restart the service after a kill. Boss grants it from the
+         setup checklist; the permission alone does nothing. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Phase D Task 5: location.get — a fix obtainable while the app is closed and the phone is
          locked. ACCESS_BACKGROUND_LOCATION is the whole point: the Play-Store build of the official
          OpenClaw app never declares it, so Android never offers "Allow all the time" for it at all —
@@ -62,5 +71,17 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="continuous owner life-logging for a personal AI assistant" />
         </service>
+
+        <!-- Restart the anchor service after a reboot or an app update. exported=true is required:
+             these are system broadcasts, delivered from outside the app. -->
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
