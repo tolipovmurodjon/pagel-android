@@ -91,6 +91,7 @@ class GatewayManager @Inject constructor(
         platform = config.platform,
         deviceFamily = config.deviceFamily,
         modelIdentifier = config.modelIdentifier,
+        displayName = DISPLAY_NAME,
         // caps/commands: left at GatewayConnection's empty defaults, deliberately. The operator
         // connection is not a node — `docs/nodes/index.md`'s command allowlist only ever applies to
         // a node-role session — so declaring either here would be meaningless at best.
@@ -124,6 +125,7 @@ class GatewayManager @Inject constructor(
         platform = config.platform,
         deviceFamily = config.deviceFamily,
         modelIdentifier = config.modelIdentifier,
+        displayName = DISPLAY_NAME,
         // "location" is the only documented cap (protocol-reference-node-commands.md §2.3) backed by
         // an implemented command (location.get, Task 5). "talk" is deliberately omitted — it's the
         // one cap with real server behavior (unconditionally widens the allowlist to talk.ptt.*,
@@ -193,31 +195,48 @@ class GatewayManager @Inject constructor(
 
     private companion object {
         /**
-         * Empty — deliberately, and this is not the obvious choice.
+         * `operator.read` + `operator.write` — and the timing of *when* these may be requested is
+         * load-bearing, so read this before changing either the list or the pairing flow.
          *
-         * We originally requested `["operator.read", "operator.write"]`. The live gateway then
-         * rejected the handshake with `device signature invalid`, while its own log showed our frame
-         * was otherwise perfect (`client=openclaw-android ui role=operator scopes=2 device=yes`).
-         *
-         * The cause is server-side scope rewriting. `message-handler`'s connect path holds `scopes`
-         * in a `let` and can blank it before verifying:
+         * An earlier revision requested exactly this list and the live gateway rejected the
+         * handshake with `device signature invalid`, while its own log showed the frame was
+         * otherwise perfect (`client=openclaw-android ui role=operator scopes=2 device=yes`).
+         * The cause is server-side scope rewriting: `message-handler`'s connect path holds `scopes`
+         * in a `let` and can blank it *before* verifying:
          *
          * ```js
          * const clearUnboundScopes = () => { if (scopes.length > 0) { scopes = []; connectParams.scopes = scopes; } };
          * ```
          *
-         * That same `scopes` variable is then passed to `resolveDeviceSignaturePayloadVersion(...)`,
-         * so the gateway rebuilds the signed string with `scopes=""` while we signed
-         * `"operator.read,operator.write"`. The strings differ, the Ed25519 check fails, and the
-         * reported error points at the signature rather than at the scopes — which is why this cost
-         * two live rounds to find. The node connection never hit it precisely because it already
-         * sent an empty list.
+         * That same variable is then passed to `resolveDeviceSignaturePayloadVersion(...)`, so the
+         * gateway rebuilds the signed string with `scopes=""` while we signed the real list. The
+         * strings differ, Ed25519 fails, and the error points at the crypto rather than at the
+         * scopes — two live rounds to find. The list was then emptied to get past it.
          *
-         * Requesting nothing is also the correct model regardless: scopes are *granted* by the
-         * device-pairing record, not claimed by the connect frame. Boss's paired row already reads
-         * `operator.write`, and asking for more than the pairing binds is what triggers the rewrite.
+         * **Emptying it was a workaround, not the fix.** It made every connect succeed with
+         * `approvedScopes: []`, i.e. an operator that cannot read anything — no chat, no health, no
+         * sessions. The 2026-08-10 audit found exactly that on Boss's paired row.
+         *
+         * The real invariant: **request only what the pairing record already binds, and a *fresh*
+         * pairing binds whatever it was asked for.** `clearUnboundScopes` fires on the mismatch, not
+         * on the request. So this list is safe precisely when the device pairs fresh — which is why
+         * the stale zero-scope pairing must be removed (`openclaw devices remove <deviceId>`) before
+         * a build carrying this list first connects. Reusing the old record re-creates the mismatch.
+         *
+         * Requesting scopes also forfeits pairing auto-approval (see [nodeConnection]'s doc: the
+         * eligibility rule is "a fresh `role: node` request with **no** requested scopes"), so this
+         * connection now lands in the pending queue and Boss approves it once — which is exactly
+         * what binds the scopes. `A05s` holds four scopes by that same route.
+         *
+         * Deliberately excluded: `operator.approvals` (a later phase) and `operator.talk.secrets`
+         * (voice, deleted). Ask for nothing that isn't used yet — every extra scope is one more
+         * thing a stolen device token could do.
          */
-        val OPERATOR_SCOPES = emptyList<String>()
+        val OPERATOR_SCOPES = listOf("operator.read", "operator.write")
+
+        /** What Boss sees in `openclaw devices list` / `nodes list` instead of a 64-char hex id.
+         *  See [org.pagel.ai.net.ws.ConnectClientInfo.displayName]. */
+        const val DISPLAY_NAME = "PAGEL"
 
         /** See the node connection's construction above for why this is `["location"]` and nothing
          *  more — most importantly, why `"talk"` is not in it. */

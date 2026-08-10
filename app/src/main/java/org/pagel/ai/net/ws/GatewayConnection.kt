@@ -66,6 +66,19 @@ data class ConnectClientInfo(
      *  NOT one of `buildDeviceAuthPayloadV3`'s eleven signed fields — putting the model here instead
      *  of in `deviceFamily` is exactly Task 1's fix. */
     val modelIdentifier: String? = null,
+    /**
+     * The friendly name Boss sees in `openclaw devices list` / `nodes list`.
+     *
+     * The gateway stores `connectParams.client.displayName` straight onto the pairing record's
+     * `display_name` (`message-handler-CzwI6JjW.js`), falling back to
+     * `displayName ?? connectParams.client.id ?? os.hostname()`. Sending nothing is why our row read
+     * `displayName: null` and Boss saw a 64-character hex device id where the official app shows
+     * "A05s".
+     *
+     * Not one of [buildDeviceAuthPayloadV3]'s eleven signed fields, so adding it cannot affect the
+     * signature — unlike `deviceFamily`, which is signed and cost us a live round.
+     */
+    val displayName: String? = null,
 )
 
 /** `{ token?, bootstrapToken?, deviceToken?, password?, ... }` — two independent gates, both
@@ -280,6 +293,9 @@ class GatewayConnection(
      *  never fed into [buildDeviceAuthPayloadV3]. Defaulted, unlike [deviceFamily], because it is
      *  new: every pre-existing call site that doesn't care about it should keep compiling untouched. */
     private val modelIdentifier: String? = null,
+    /** See [ConnectClientInfo.displayName] — the friendly name on the pairing record. Unsigned, so
+     *  it can be changed freely; it does still form part of the pairing surface Boss approves. */
+    private val displayName: String? = null,
     /** High-level capability categories (`docs/gateway/protocol.md` §2.3) and the exact-match
      *  command names (§2.2) this connection's `connect` frame advertises. Neither is fed into
      *  [buildDeviceAuthPayloadV3] — they're outside its eleven signed fields — but both *are* part
@@ -545,6 +561,8 @@ class GatewayConnection(
                 // NOT fed into buildDeviceAuthPayloadV3 above — modelIdentifier is not one of its
                 // eleven signed fields. See ConnectClientInfo.modelIdentifier's doc.
                 modelIdentifier = modelIdentifier,
+                // Also unsigned. See ConnectClientInfo.displayName's doc.
+                displayName = displayName,
             ),
             role = role,
             scopes = scopes,

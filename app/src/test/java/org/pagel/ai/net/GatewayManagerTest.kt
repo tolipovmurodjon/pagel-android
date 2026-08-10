@@ -234,19 +234,26 @@ class GatewayManagerTest {
         // both silently drift to the stale protocol.md:61 value ("operator") together — pin the
         // actual wire value the server needs.
         assertEquals("ui", opParams.client.mode)
-        // Empty, not ["operator.read","operator.write"]. Requesting scopes the device pairing does
-        // not bind makes the gateway blank them server-side (`clearUnboundScopes`) and then verify
-        // the signature against the *blanked* list, while we signed the requested one — reported as
-        // `device signature invalid`, which points at the wrong thing entirely. Scopes are granted by
-        // the pairing record, not claimed in the connect frame. See GatewayManager.OPERATOR_SCOPES.
-        assertTrue(
-            "operator must request no scopes — asking for unbound scopes breaks signature verification",
-            opParams.scopes.isEmpty(),
+        // Exactly read+write. NOT operator.approvals (a later phase) and NOT operator.talk.secrets
+        // (voice, deleted) — every unused scope is one more thing a stolen device token could do.
+        // This list is only safe against a *fresh* pairing: the gateway blanks scopes the pairing
+        // record doesn't bind (`clearUnboundScopes`) and then verifies the signature against the
+        // blanked list, surfacing as `device signature invalid`. See GatewayManager.OPERATOR_SCOPES.
+        assertEquals(
+            "operator must request exactly the scopes a fresh pairing will bind",
+            listOf("operator.read", "operator.write"),
+            opParams.scopes,
         )
 
         assertEquals("node", nodeParams.role)
         assertEquals("node", nodeParams.client.mode)
+        // Stays empty: node pairing auto-approve eligibility is "a fresh role:node request with no
+        // requested scopes". The operator gives that up deliberately; the node must not.
         assertTrue("node pairing eligibility requires an empty scope list", nodeParams.scopes.isEmpty())
+
+        // Without this the pairing row stores display_name = null and Boss sees a 64-char hex id.
+        assertEquals("PAGEL", opParams.client.displayName)
+        assertEquals("PAGEL", nodeParams.client.displayName)
     }
 
     @Test
