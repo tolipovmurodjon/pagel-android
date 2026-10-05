@@ -25,6 +25,7 @@ object UsageMath {
     ): Map<String, Long> {
         val open = HashMap<String, Long>()
         val total = HashMap<String, Long>()
+        val seen = HashSet<String>()      // packages that already had an event inside the window
         fun add(pkg: String, from: Long, to: Long) {
             val ms = to.coerceAtMost(endMs) - from.coerceAtLeast(startMs)
             if (ms > 0) total[pkg] = (total[pkg] ?: 0L) + ms
@@ -41,10 +42,20 @@ object UsageMath {
                 SCREEN_OFF, SHUTDOWN -> closeAll(e.atMs)
                 RESUMED -> {
                     closeAll(e.atMs, except = e.pkg)         // one app in front at a time
+                    seen.add(e.pkg)
                     if (e.pkg !in exclude && !open.containsKey(e.pkg)) open[e.pkg] = e.atMs
                 }
-                // A pause with no resume in the window means the app was already in front when the window began.
-                PAUSED -> if (e.pkg !in exclude) add(e.pkg, open.remove(e.pkg) ?: startMs, e.atMs)
+                PAUSED -> if (e.pkg !in exclude) {
+                    val from = open.remove(e.pkg)
+                    when {
+                        from != null -> add(e.pkg, from, e.atMs)
+                        // First event for this app in the window is a pause: it was already in front at the start.
+                        seen.add(e.pkg) -> add(e.pkg, startMs, e.atMs)
+                        // Otherwise a newer RESUMED already closed it (Android often orders B-resumed before
+                        // A-paused). Counting from the window start here was the 2026-10-05 bug: 397 h in a 12.8 h day.
+                        else -> Unit
+                    }
+                }
             }
         }
         closeAll(endMs)

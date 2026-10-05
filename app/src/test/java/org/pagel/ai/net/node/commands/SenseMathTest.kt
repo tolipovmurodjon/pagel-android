@@ -122,4 +122,35 @@ class SenseMathTest {
         )
         assertTrue(UsageMath.foregroundMs(ev, 0, 1_000).values.sum() <= 1_000)
     }
+
+    @Test fun `Android orders the next resume before the previous pause and that must not double count`() {
+        // The exact order seen on a real phone: A on, B resumed (closes A), then A's late PAUSED.
+        val ev = listOf(
+            UsageEvent("a", UsageMath.RESUMED, 1_000),
+            UsageEvent("b", UsageMath.RESUMED, 2_000),
+            UsageEvent("a", UsageMath.PAUSED, 2_000),
+            UsageEvent("b", UsageMath.PAUSED, 5_000),
+            UsageEvent("a", UsageMath.RESUMED, 5_000),
+            UsageEvent("b", UsageMath.PAUSED, 5_000),
+            UsageEvent("a", UsageMath.PAUSED, 8_000),
+        )
+        val m = UsageMath.foregroundMs(ev, 0, 10_000)
+        assertEquals(4_000L, m["a"])      // 1000-2000 and 5000-8000
+        assertEquals(3_000L, m["b"])      // 2000-5000
+        assertTrue(m.values.sum() <= 10_000)
+    }
+
+    @Test fun `many quick app switches never beat the length of the window`() {
+        val ev = ArrayList<UsageEvent>()
+        var t = 0L
+        repeat(200) { i ->
+            val a = if (i % 2 == 0) "a" else "b"
+            val prev = if (i % 2 == 0) "b" else "a"
+            ev.add(UsageEvent(a, UsageMath.RESUMED, t))
+            ev.add(UsageEvent(prev, UsageMath.PAUSED, t))   // late pause, after the new resume
+            t += 50
+        }
+        val m = UsageMath.foregroundMs(ev, 0, 10_000)
+        assertTrue("sum was ${m.values.sum()}", m.values.sum() <= 10_000)
+    }
 }
