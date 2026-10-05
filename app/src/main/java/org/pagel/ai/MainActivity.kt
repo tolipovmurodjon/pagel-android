@@ -47,6 +47,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import org.pagel.ai.service.AnchorService
 import org.pagel.ai.ui.gateway.GatewayDebugScreen
+import org.pagel.ai.ui.home.HomeScreen
 import org.pagel.ai.ui.hud.JarvisCore
 import org.pagel.ai.ui.theme.Cyan
 import org.pagel.ai.ui.theme.CyanBright
@@ -101,8 +102,9 @@ private fun PagelRoot() {
         BootScreen()
         return
     }
-    // No back destination yet — the connection screen is the root until Chat arrives.
-    GatewayDebugScreen(onBack = { })
+    var showGateway by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = showGateway) { showGateway = false }
+    if (showGateway) GatewayDebugScreen(onBack = { showGateway = false }) else HomeScreen(onOpenGateway = { showGateway = true })
 }
 
 @Composable
