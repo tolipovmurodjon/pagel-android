@@ -1,6 +1,7 @@
 package org.pagel.ai.ui.gateway
 
 import androidx.compose.foundation.background
+import org.pagel.ai.ui.senses.SensesCard
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,6 +82,8 @@ fun GatewayDebugScreen(onBack: () -> Unit, vm: GatewayViewModel = hiltViewModel(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.height(20.dp))
+            SensesCard()
             Spacer(Modifier.height(20.dp))
 
             OutlinedTextField(

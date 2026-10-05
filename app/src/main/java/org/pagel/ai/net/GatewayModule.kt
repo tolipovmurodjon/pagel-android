@@ -26,7 +26,11 @@ import org.pagel.ai.net.node.commands.DeviceInfoCommand
 import org.pagel.ai.net.node.commands.DeviceInfoSource
 import org.pagel.ai.net.node.commands.AndroidLocationSource
 import org.pagel.ai.net.node.commands.DevicePermissionsCommand
+import org.pagel.ai.net.node.commands.DeviceAppsCommand
 import org.pagel.ai.net.node.commands.DeviceStatusCommand
+import org.pagel.ai.net.node.commands.MotionActivityCommand
+import org.pagel.ai.net.node.commands.MotionPedometerCommand
+import org.pagel.ai.net.node.commands.NotificationsListCommand
 import org.pagel.ai.net.node.commands.LocationGetCommand
 import org.pagel.ai.net.node.commands.LocationSource
 import org.pagel.ai.net.ws.GatewayDeviceTokenStore
@@ -110,7 +114,14 @@ object GatewayModule {
         deviceHealth: DeviceHealthCommand,
         devicePermissions: DevicePermissionsCommand,
         locationGet: LocationGetCommand,
-    ): List<NodeCommand> = listOf(deviceStatus, deviceInfo, deviceHealth, devicePermissions, locationGet)
+        motionPedometer: MotionPedometerCommand,
+        motionActivity: MotionActivityCommand,
+        notificationsList: NotificationsListCommand,
+        deviceApps: DeviceAppsCommand,
+    ): List<NodeCommand> = listOf(
+        deviceStatus, deviceInfo, deviceHealth, devicePermissions, locationGet,
+        motionPedometer, motionActivity, notificationsList, deviceApps,
+    )
 
     /** [GatewayManager] must keep retrying across navigation, not just while the debug screen is
      *  on screen — an app-lifetime scope, not a screen-lifetime one. [SupervisorJob] so one
