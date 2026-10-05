@@ -122,6 +122,12 @@ class AndroidDeviceInfoSource @Inject constructor(
             postNotifications = NotificationManagerCompat.from(ctx).areNotificationsEnabled(),
             activityRecognition = hasPermission(android.Manifest.permission.ACTIVITY_RECOGNITION),
             usageStats = hasUsageStatsAccess(),
+            calendar = hasPermission(android.Manifest.permission.READ_CALENDAR) &&
+                hasPermission(android.Manifest.permission.WRITE_CALENDAR),
+            callLog = hasPermission(android.Manifest.permission.READ_CALL_LOG),
+            batteryUnrestricted = ctx.getSystemService(PowerManager::class.java)
+                ?.isIgnoringBatteryOptimizations(ctx.packageName) == true,
+            installPackages = ctx.packageManager.canRequestPackageInstalls(),
         )
     }
 

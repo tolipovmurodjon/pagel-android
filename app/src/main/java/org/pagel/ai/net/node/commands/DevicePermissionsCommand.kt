@@ -35,6 +35,10 @@ class DevicePermissionsCommand @Inject constructor(
             put("postNotifications", permissions.postNotifications)
             put("activityRecognition", permissions.activityRecognition)
             put("usageStats", permissions.usageStats)
+            put("calendar", permissions.calendar)
+            put("callLog", permissions.callLog)
+            put("batteryUnrestricted", permissions.batteryUnrestricted)
+            put("installPackages", permissions.installPackages)
         }
     }
 }

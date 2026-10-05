@@ -87,4 +87,19 @@ class DevicePermissionsCommandTest {
         assertTrue(result["activityRecognition"]!!.jsonPrimitive.content.toBoolean())
         assertTrue(result["usageStats"]!!.jsonPrimitive.content.toBoolean())
     }
+
+    @Test fun `the extra permission keys are reported and default to false`() = kotlinx.coroutines.test.runTest {
+        val permissions = DevicePermissionsSnapshot(
+            location = LocationPermissionSnapshot(foreground = false, background = false),
+            camera = false, microphone = false, notificationListener = false,
+            postNotifications = false, activityRecognition = false, usageStats = false,
+            calendar = true, batteryUnrestricted = true,
+        )
+        val result = DevicePermissionsCommand(FakeDeviceInfoSource(permissions = permissions))
+            .invoke(kotlinx.serialization.json.JsonObject(emptyMap())) as kotlinx.serialization.json.JsonObject
+        assertTrue(result["calendar"]!!.jsonPrimitive.content.toBoolean())
+        assertTrue(result["batteryUnrestricted"]!!.jsonPrimitive.content.toBoolean())
+        assertTrue(!result["callLog"]!!.jsonPrimitive.content.toBoolean())
+        assertTrue(!result["installPackages"]!!.jsonPrimitive.content.toBoolean())
+    }
 }

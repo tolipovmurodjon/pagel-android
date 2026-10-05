@@ -82,6 +82,11 @@ data class DevicePermissionsSnapshot(
     val postNotifications: Boolean,
     val activityRecognition: Boolean,
     val usageStats: Boolean,
+    // Added 2026-10-05 so the whole PERMISSIONS list can be audited from the server. Defaults keep old callers valid.
+    val calendar: Boolean = false,
+    val callLog: Boolean = false,
+    val batteryUnrestricted: Boolean = false,
+    val installPackages: Boolean = false,
 )
 
 /**
