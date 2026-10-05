@@ -5,6 +5,8 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -50,13 +52,27 @@ fun SensesCard() {
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
     val askSteps = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { tick++ }
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
     // `tick` is read so the row states below recompute after every resume or grant result.
     val steps = tick >= 0 && hasSteps(ctx)
     val usage = tick >= 0 && hasUsage(ctx)
     val notif = tick >= 0 && hasNotifAccess(ctx)
+    val fine = tick >= 0 && has(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
+    val always = fine && (Build.VERSION.SDK_INT < 29 || has(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION))
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("SENSES", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
+        SenseRow("Location, all the time", always) {
+            if (!fine) {
+                askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            } else {
+                // Android 11+ gives "Allow all the time" only from Settings, never from a dialog.
+                ctx.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }
+        }
         SenseRow("Steps and movement", steps) { askSteps.launch(Manifest.permission.ACTIVITY_RECOGNITION) }
         SenseRow("Screen time", usage) { openSettings(ctx, Settings.ACTION_USAGE_ACCESS_SETTINGS) }
         SenseRow("Notification access", notif) { openSettings(ctx, Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS) }
@@ -89,6 +105,9 @@ private fun SenseRow(label: String, granted: Boolean, onGrant: () -> Unit) {
 private fun openSettings(ctx: Context, action: String) {
     ctx.startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
+
+private fun has(ctx: Context, permission: String): Boolean =
+    ContextCompat.checkSelfPermission(ctx, permission) == PackageManager.PERMISSION_GRANTED
 
 private fun hasSteps(ctx: Context): Boolean =
     ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
