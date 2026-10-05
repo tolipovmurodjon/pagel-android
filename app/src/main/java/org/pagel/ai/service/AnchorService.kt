@@ -11,6 +11,9 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import dagger.hilt.android.AndroidEntryPoint
+import org.pagel.ai.net.GatewayManager
+import javax.inject.Inject
 
 /**
  * The one anchor foreground service.
@@ -24,12 +27,19 @@ import androidx.core.content.ContextCompat
  * that whole feature was removed when the app became a pure OpenClaw client, so the service no
  * longer injects or stores anything. Type=specialUse (deterministic, no LLM in here).
  */
+@AndroidEntryPoint
 class AnchorService : Service() {
+
+    @Inject lateinit var gateway: GatewayManager
 
     override fun onCreate() {
         super.onCreate()
         goForeground()
         AnchorWatchdogWorker.ensureScheduled(this)
+        // Found 2026-10-05: nothing started the gateway except the CONNECT button, so after any restart (an
+        // update, a reboot, a kill) PAGEL sat disconnected until Boss opened the app. Start it here, with the
+        // saved URL and token. connect() does nothing while a connection is already live.
+        gateway.start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
