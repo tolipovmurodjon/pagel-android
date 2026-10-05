@@ -163,8 +163,9 @@ class DeviceAppsCommand @Inject constructor(@ApplicationContext private val ctx:
             val e = UsageEvents.Event()
             while (q.hasNextEvent()) {
                 q.getNextEvent(e)
-                if (e.eventType == UsageMath.RESUMED || e.eventType == UsageMath.PAUSED) {
-                    events.add(UsageEvent(e.packageName, e.eventType, e.timeStamp))
+                val t = e.eventType
+                if (t == UsageMath.RESUMED || t == UsageMath.PAUSED || t == UsageMath.SCREEN_OFF || t == UsageMath.SHUTDOWN) {
+                    events.add(UsageEvent(e.packageName ?: "", t, e.timeStamp))
                 }
             }
         } catch (se: SecurityException) {

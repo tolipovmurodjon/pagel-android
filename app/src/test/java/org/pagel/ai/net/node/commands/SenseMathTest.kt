@@ -2,6 +2,7 @@ package org.pagel.ai.net.node.commands
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SenseMathTest {
@@ -81,5 +82,44 @@ class SenseMathTest {
             listOf(UsageEvent("a", UsageMath.RESUMED, 500), UsageEvent("a", UsageMath.PAUSED, 20_000)), 1_000, 10_000,
         )
         assertEquals(9_000L, m["a"])
+    }
+
+    @Test fun `a new app in front closes the previous one even with no pause event`() {
+        val ev = listOf(
+            UsageEvent("a", UsageMath.RESUMED, 1_000),
+            UsageEvent("b", UsageMath.RESUMED, 2_000),
+            UsageEvent("b", UsageMath.PAUSED, 5_000),
+        )
+        val m = UsageMath.foregroundMs(ev, 0, 10_000)
+        assertEquals(1_000L, m["a"])
+        assertEquals(3_000L, m["b"])
+        assertTrue("the total can never exceed the window", m.values.sum() <= 10_000)
+    }
+
+    @Test fun `screen off closes whatever was open`() {
+        val ev = listOf(UsageEvent("a", UsageMath.RESUMED, 1_000), UsageEvent("", UsageMath.SCREEN_OFF, 4_000))
+        val m = UsageMath.foregroundMs(ev, 0, 10_000)
+        assertEquals(3_000L, m["a"])
+    }
+
+    @Test fun `own app in front stops the previous app but is not counted`() {
+        val ev = listOf(
+            UsageEvent("a", UsageMath.RESUMED, 1_000),
+            UsageEvent("me", UsageMath.RESUMED, 3_000),
+            UsageEvent("me", UsageMath.PAUSED, 6_000),
+        )
+        val m = UsageMath.foregroundMs(ev, 0, 10_000, exclude = setOf("me"))
+        assertEquals(2_000L, m["a"])
+        assertNull(m["me"])
+    }
+
+    @Test fun `a messy day never adds up to more than the day`() {
+        val ev = listOf(
+            UsageEvent("a", UsageMath.RESUMED, 0), UsageEvent("b", UsageMath.RESUMED, 100),
+            UsageEvent("c", UsageMath.RESUMED, 150), UsageEvent("a", UsageMath.RESUMED, 400),
+            UsageEvent("b", UsageMath.RESUMED, 450), UsageEvent("", UsageMath.SCREEN_OFF, 700),
+            UsageEvent("c", UsageMath.RESUMED, 800), UsageEvent("c", UsageMath.PAUSED, 900),
+        )
+        assertTrue(UsageMath.foregroundMs(ev, 0, 1_000).values.sum() <= 1_000)
     }
 }
