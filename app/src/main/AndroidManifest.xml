@@ -38,6 +38,8 @@
     <!-- Senses (2026-10-05). ACTIVITY_RECOGNITION is a runtime prompt (step counter for motion.*).
          PACKAGE_USAGE_STATS is "special access": no dialog, Boss flips it in Settings > Usage access, which is
          why lint is told it is protected. Notification access is the listener service below, same idea. -->
+    <!-- Self-update: lets PAGEL hand its own signed APK to the package installer. Special access, Boss flips it once. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 
@@ -77,6 +79,8 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="continuous owner life-logging for a personal AI assistant" />
         </service>
+
+        <receiver android:name=".update.InstallResultReceiver" android:exported="false" />
 
         <!-- Lists PAGEL under Settings > Notification access; notifications.list reads through it. -->
         <service

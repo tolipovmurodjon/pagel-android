@@ -17,16 +17,32 @@ android {
         applicationId = "org.pagel.ai"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1-A1"
+        // CI passes -PpagelVersionCode=<run number>; a local build stays at 1. The updater only moves forward.
+        versionCode = (project.findProperty("pagelVersionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("pagelVersionName") as String?) ?: "0.1-A1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         // Ship only the ABIs we run on (real Samsung = arm64, emulator = x86_64).
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
+    // Release signing comes only from the environment CI sets; the key never sits in the repo.
+    signingConfigs {
+        val ks = System.getenv("PAGEL_KEYSTORE_FILE")
+        if (ks != null) {
+            create("pagel") {
+                storeFile = file(ks)
+                storeType = "pkcs12"
+                storePassword = System.getenv("PAGEL_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("PAGEL_KEY_ALIAS")
+                keyPassword = System.getenv("PAGEL_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfigs.findByName("pagel")?.let { signingConfig = it }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

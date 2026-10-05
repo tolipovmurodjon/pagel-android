@@ -1,0 +1,71 @@
+name: release
+
+# Builds the PAGEL APK signed with the stable PAGEL key, checks the signature, and publishes it as a GitHub release
+# plus latest.json. The server pulls it and serves it on the tailnet; the app updates itself from there.
+# The key lives only in GitHub Secrets and is deleted from the runner at the end.
+on:
+  push:
+    branches: [main, "feat/senses-and-self-update"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  # Public SHA-256 of the PAGEL signing certificate (created 2026-10-05). A build signed by any other key fails here.
+  EXPECTED_CERT_SHA256: "39:F5:4A:AA:80:9A:9C:72:96:93:9C:D3:30:B0:0C:46:2D:7B:7A:41:EB:D0:9F:FC:42:76:8E:18:D6:54:87:78"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Put the key in place
+        env:
+          KS_B64: ${{ secrets.PAGEL_KEYSTORE_B64 }}
+        run: |
+          [ -n "$KS_B64" ] || { echo "missing secret PAGEL_KEYSTORE_B64"; exit 1; }
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/pagel-release.p12"
+      - name: Unit tests and signed release build
+        env:
+          PAGEL_KEYSTORE_FILE: ${{ runner.temp }}/pagel-release.p12
+          PAGEL_KEYSTORE_PASSWORD: ${{ secrets.PAGEL_KEYSTORE_PASSWORD }}
+          PAGEL_KEY_ALIAS: ${{ secrets.PAGEL_KEY_ALIAS }}
+        run: ./gradlew testDebugUnitTest assembleRelease -PpagelVersionCode=${{ github.run_number }} -PpagelVersionName=0.2.${{ github.run_number }}
+      - name: Check the signature is the PAGEL key
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          GOT=$(keytool -printcert -jarfile "$APK" | grep 'SHA256:' | head -1 | sed 's/.*SHA256: *//')
+          echo "signed with: $GOT"
+          [ "$GOT" = "$EXPECTED_CERT_SHA256" ] || { echo "WRONG SIGNING KEY"; exit 1; }
+      - name: Name the files and write latest.json
+        id: pack
+        run: |
+          CODE=${{ github.run_number }}
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          mkdir -p dist && cp "$APK" "dist/pagel-$CODE.apk"
+          SHA=$(sha256sum "dist/pagel-$CODE.apk" | cut -d' ' -f1)
+          NOTES=$(git log -1 --format=%s | sed 's/"/\\"/g')
+          printf '{"versionCode":%s,"versionName":"0.2.%s","apk":"pagel-%s.apk","sha256":"%s","builtAt":"%s","notes":"%s"}\n' \
+            "$CODE" "$CODE" "$CODE" "$SHA" "$(date -u +%FT%TZ)" "$NOTES" > dist/latest.json
+          cat dist/latest.json
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRE=""; [ "${{ github.ref }}" = "refs/heads/main" ] || PRE="--prerelease"
+          gh release create "v0.2.${{ github.run_number }}" dist/pagel-${{ github.run_number }}.apk dist/latest.json \
+            --title "PAGEL 0.2.${{ github.run_number }}" --notes "$(git log -1 --format=%s)" --target "${{ github.sha }}" $PRE
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pagel-release.p12"

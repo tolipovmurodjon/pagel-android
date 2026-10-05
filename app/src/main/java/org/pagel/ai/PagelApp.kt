@@ -2,6 +2,7 @@ package org.pagel.ai
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
+import org.pagel.ai.update.UpdateWorker
 
 /**
  * Application root and Hilt entry point.
@@ -12,4 +13,9 @@ import dagger.hilt.android.HiltAndroidApp
  * back — add it then, with the workers that need it, not before.
  */
 @HiltAndroidApp
-class PagelApp : Application()
+class PagelApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        UpdateWorker.schedule(this)
+    }
+}
