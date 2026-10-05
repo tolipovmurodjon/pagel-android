@@ -91,13 +91,8 @@ private val PERMS: List<Perm> = listOf(
         granted = { c -> c.packageManager.canRequestPackageInstalls() },
         grant = { c, _ -> settings(c, Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, true) }),
     runtime("Calendar", "events, leave-now (not used yet)", Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR),
-    runtime("Contacts", "people memory (not used yet)", Manifest.permission.READ_CONTACTS),
-    runtime("Camera", "snap on request (not used yet)", Manifest.permission.CAMERA),
+    runtime("Camera", "only when you ask, never always on (not used yet)", Manifest.permission.CAMERA),
     runtime("Microphone", "voice (not used yet)", Manifest.permission.RECORD_AUDIO),
-    Perm("Photos", "latest photos (not used yet)",
-        granted = { c -> has(c, if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE) },
-        grant = { _, ask -> ask(arrayOf(if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE)) }),
-    runtime("SMS", "bank texts, money view (not used yet)", Manifest.permission.READ_SMS),
     runtime("Call log", "who you talked to (not used yet)", Manifest.permission.READ_CALL_LOG),
 )
 

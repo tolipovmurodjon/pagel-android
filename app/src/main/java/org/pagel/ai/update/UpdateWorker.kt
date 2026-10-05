@@ -11,7 +11,8 @@ import androidx.work.WorkerParameters
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
-/** Every 6 hours, on any network: ask the update host, install if newer. Silent when there is nothing to do. */
+/** Every 30 minutes (WorkManager's floor is 15), on any network: ask the update host, install if newer. One tiny
+ *  request over the tailnet; silent when there is nothing to do. */
 class UpdateWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
         val updater = Updater(applicationContext)
@@ -28,10 +29,10 @@ class UpdateWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
 
     companion object {
         fun schedule(ctx: Context) {
-            val req = PeriodicWorkRequestBuilder<UpdateWorker>(6, TimeUnit.HOURS)
+            val req = PeriodicWorkRequestBuilder<UpdateWorker>(30, TimeUnit.MINUTES)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .build()
-            WorkManager.getInstance(ctx).enqueueUniquePeriodicWork("pagel-self-update", ExistingPeriodicWorkPolicy.KEEP, req)
+            WorkManager.getInstance(ctx).enqueueUniquePeriodicWork("pagel-self-update", ExistingPeriodicWorkPolicy.UPDATE, req)
         }
     }
 }
