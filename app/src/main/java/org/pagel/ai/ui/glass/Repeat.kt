@@ -2,7 +2,8 @@ package org.pagel.ai.ui.glass
 
 /**
  * Repeats, as the web writes them (dashboard lib/repeat.ts): "day", "weekday", "week", "month", a day name
- * ("monday") or a set of days ("tue,thu,sun"). Day numbers are the web's getDay(): Sunday 0 … Saturday 6.
+ * ("monday"), a set of days ("tue,thu,sun") or days of the month ("month 1,15", "month 15,last"; server d8be98c).
+ * Day numbers are the web's getDay(): Sunday 0 … Saturday 6. In a month, [LAST] stands for "last".
  */
 object Repeat {
     private val SHORT = listOf("sun", "mon", "tue", "wed", "thu", "fri", "sat")
@@ -19,11 +20,28 @@ object Repeat {
 
     fun daySet(days: Collection<Int>): String = WEEK.filter { it in days }.joinToString(",") { SHORT[it] }
 
+    /** "last" in a month's days. */
+    const val LAST = 32
+    private val MONTH_DAYS = Regex("^month (([1-9]|[12][0-9]|3[01]|last)(,([1-9]|[12][0-9]|3[01]|last))*)$")
+
+    fun isMonthly(every: String?): Boolean = every == "month" || (every != null && MONTH_DAYS.matches(every))
+
+    /** The days of the month a repeat falls on; plain "month" = none chosen (it keeps its date's day). */
+    fun monthDays(every: String?): List<Int> = MONTH_DAYS.find(every.orEmpty())?.groupValues?.get(1)?.split(",")?.map { if (it == "last") LAST else it.toInt() }.orEmpty()
+
+    /** A day of the month toggled: none left = plain monthly. Days in order, "last" at the end. */
+    fun toggleMonthDay(every: String?, day: Int): String {
+        val on = monthDays(every)
+        val next = (if (day in on) on - day else on + day).sorted()
+        return if (next.isEmpty()) "month" else "month " + next.joinToString(",") { if (it == LAST) "last" else it.toString() }
+    }
+
     fun label(every: String): String = when {
         every == "day" -> "Daily"
         every == "weekday" -> "Weekdays"
         every == "week" -> "Weekly"
         every == "month" -> "Monthly"
+        MONTH_DAYS.matches(every) -> "Monthly · " + monthDays(every).joinToString(", ") { if (it == LAST) "Last" else it.toString() }
         DAY_SET.matches(every) -> "Every " + WEEK.filter { it in daysOf(every) }.joinToString(", ") { NICE[it] }
         else -> "Every $every"
     }

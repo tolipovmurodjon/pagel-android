@@ -69,6 +69,8 @@ fun GlassChip(
     tint: Color? = null,
     description: String? = null,
     leading: (@Composable () -> Unit)? = null,
+    /** A one-of choice (won't-do kinds): the chosen chip also carries a ✓. */
+    checked: Boolean = false,
     onClick: () -> Unit,
 ) {
     val press = remember { MutableInteractionSource() }
@@ -92,6 +94,7 @@ fun GlassChip(
             if (leading != null) leading() else Icon(icon, contentDescription = null, tint = tint ?: if (set) Glass.Primary else Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(7.dp))
             Text(label, style = MaterialTheme.typography.labelLarge, color = if (set) Glass.Ink else Glass.Ink.copy(alpha = 0.82f), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            if (checked) { Spacer(Modifier.width(6.dp)); Icon(TabIcons.Check, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(16.dp)) }
         }
     }
 }

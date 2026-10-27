@@ -162,6 +162,35 @@ class TaskSystemScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-date-time.png")
     }
 
+    /** Boss 2026-10-28: the time is a wheel, and the date sheet fits a 360×800 phone. */
+    @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun timeWheelOnANarrowPhone() {
+        var picked: String? = null
+        show { DateContent("2026-10-29 15:30", day) { d, _ -> picked = d } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-date-360.png")
+        compose.onNodeWithContentDescription("Time 15:30").performClick()
+        compose.onNodeWithContentDescription("Time wheel 15:30").assertIsDisplayed()
+        compose.onNodeWithContentDescription("No time").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-time-wheel-360.png")
+        compose.onNodeWithContentDescription("No time").performClick()
+        assertEquals("2026-10-29", picked)
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun timeWheelLargeFont() {
+        show(1.5f) { DateContent("2026-10-29 15:30", day) { _, _ -> } }
+        compose.onNodeWithContentDescription("Time 15:30").performClick()
+        compose.onNodeWithContentDescription("Time wheel 15:30").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-time-wheel-360-font-1.5.png")
+    }
+
+    @Test fun repeatMonthlyOnChosenDays() {
+        var got: String? = "x"
+        show { RepeatContent("month 1,15") { v, _ -> got = v } }
+        compose.onNodeWithText("Monthly · 1, 15").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Last day of the month").performClick()
+        assertEquals("month 1,15,last", got)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-repeat-monthly.png")
+    }
+
     @Test fun priorityMenu() {
         show { Box(Modifier.padding(24.dp)) { MenuContent(priorityItems(1)) {} } }
         compose.onNodeWithText("this week").assertIsDisplayed()

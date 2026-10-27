@@ -12,6 +12,7 @@ import org.pagel.ai.ui.add.planOf
 import org.pagel.ai.ui.add.whereOf
 import org.pagel.ai.ui.glass.DatePick
 import org.pagel.ai.ui.glass.Repeat
+import org.pagel.ai.ui.glass.TimeWheelMath
 import org.pagel.ai.ui.projects.projectGroups
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -123,5 +124,32 @@ class TaskLogicTest {
         // No NOW phase yet (a new project): the phone's task gets a pane of its own.
         val fresh = projectGroups(listOf(t("phone_2", "", 0, false)))
         assertEquals(listOf("Tasks" to true), fresh.map { it.title to it.now })
+    }
+
+    @Test fun theTimeWheelTurnsRoundAndSnapsToFives() {
+        assertEquals(15 to 6, TimeWheelMath.split("15:32")) // nearest 5: :30
+        assertEquals(15 to 11, TimeWheelMath.split("15:58")) // stays in its hour: :55
+        assertEquals(7 to 1, TimeWheelMath.split("07:07"))
+        assertEquals(9 to 0, TimeWheelMath.split("")) // no time yet: the wheel opens on 09:00
+        assertEquals("09:05", TimeWheelMath.value(9, 1))
+        assertEquals("23:55", TimeWheelMath.value(23, 11))
+        // Each column is a long loop that starts in its middle: past 23 comes 00, before 00 comes 23.
+        val h = TimeWheelMath.start(23, TimeWheelMath.HOURS)
+        assertEquals(23, TimeWheelMath.rowOf(h, TimeWheelMath.HOURS))
+        assertEquals(0, TimeWheelMath.rowOf(h + 1, TimeWheelMath.HOURS))
+        assertEquals(23, TimeWheelMath.rowOf(TimeWheelMath.start(0, TimeWheelMath.HOURS) - 1, TimeWheelMath.HOURS))
+        assertEquals(11, TimeWheelMath.rowOf(-1, TimeWheelMath.MINUTES))
+    }
+
+    @Test fun monthlyOnChosenDaysMatchesTheServer() {
+        // The server's grammar (dashboard lib/repeat.ts, d8be98c): "month 1,15", "month 15,last".
+        assertEquals("Monthly · 1, 15, Last", Repeat.label("month 1,15,last"))
+        assertEquals(listOf(1, 15, Repeat.LAST), Repeat.monthDays("month 1,15,last"))
+        assertEquals("month 1,15", Repeat.toggleMonthDay("month", 15).let { Repeat.toggleMonthDay(it, 1) })
+        assertEquals("month 15,last", Repeat.toggleMonthDay("month 15", Repeat.LAST))
+        assertEquals("month", Repeat.toggleMonthDay("month 15", 15)) // none left: plain monthly, on its date
+        assertEquals(true, Repeat.isMonthly("month 1,15"))
+        assertEquals(false, Repeat.isMonthly("month 32"))
+        assertEquals(emptyList<Int>(), Repeat.monthDays("month"))
     }
 }

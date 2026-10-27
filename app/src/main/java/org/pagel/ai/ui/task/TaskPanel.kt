@@ -230,7 +230,7 @@ private fun StopForm(onCancel: () -> Unit, onSave: (String, String) -> String?) 
             Spacer(Modifier.height(12.dp))
             // All three kinds in view, wrapping if the words are large; never a row cut at "Not wor" (checker 2026-10-27).
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (s in STOP) GlassChip(s.icon, s.label, set = why == s.kind, modifier = Modifier.semantics { selected = why == s.kind }) {
+                for (s in STOP) GlassChip(s.icon, s.label, set = why == s.kind, checked = why == s.kind, modifier = Modifier.semantics { selected = why == s.kind }) {
                     haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); why = s.kind; bad = ""
                 }
             }
@@ -408,7 +408,7 @@ private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (Strin
                             val press = remember { MutableInteractionSource() }
                             Row(
                                 Modifier.heightIn(min = TouchMin).widthIn(min = TouchMin).pressScale(press)
-                                    .background(if (on) PriorityColors[p].copy(alpha = 0.12f) else Color.Transparent, RoundedCornerShape(12.dp))
+                                    .then(if (on) Modifier.background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(12.dp)).border(1.dp, PriorityColors[p], RoundedCornerShape(12.dp)) else Modifier)
                                     .clickable(press, indication = null, role = Role.RadioButton) { if (!on) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); a.onPriority(p) } }
                                     .semantics { contentDescription = "P${p + 1}"; selected = on }
                                     .padding(horizontal = 7.dp),
@@ -443,7 +443,7 @@ private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (Strin
 }
 
 @Composable
-private fun Why(text: String) = Text(text, style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+private fun Why(text: String) = Text(text, style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
 @Composable
 private fun Line() = HorizontalDivider(Modifier.padding(start = 47.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))

@@ -7,7 +7,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,9 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -106,8 +105,10 @@ private fun Divider(start: Int = 50) = HorizontalDivider(Modifier.padding(start 
 
 /**
  * The web's date popover, as a sheet: quick days with their weekday, a Monday-first month (past days off, today
- * ringed, the chosen day filled mint), and a time: half-hour slots or any typed time. A day closes the sheet; a time
- * applies at once and leaves it open. [onPick] gets the new due (null = no date) and whether to close.
+ * ringed, the chosen day filled mint), and a time row. A day closes the sheet. The time is Apple's wheel (Boss
+ * 2026-10-28: the slot chips and the typed box were "2005 style"): it takes the calendar's place while it is open, so
+ * the sheet fits a 360×800 phone, and a turned wheel applies at once. A small keyboard keeps the web's typed time.
+ * [onPick] gets the new due (null = no date) and whether to close.
  */
 @Composable
 fun DateContent(value: String?, today: LocalDate, onPick: (String?, Boolean) -> Unit) {
@@ -115,8 +116,9 @@ fun DateContent(value: String?, today: LocalDate, onPick: (String?, Boolean) -> 
     val chosenDay = value?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     var month by remember(value) { mutableStateOf(YearMonth.from(chosenDay ?: today)) }
     val time = value?.drop(11).orEmpty()
-    var slots by rememberSaveable { mutableStateOf(false) }
+    var timeMode by rememberSaveable { mutableStateOf("") } // "" calendar · "wheel" · "type"
     fun pickDay(d: LocalDate) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onPick(DatePick.due(d, time), true) }
+    fun setTime(t: String?) = onPick(DatePick.due(chosenDay ?: today, t), false)
 
     Column(Modifier.fillMaxWidth()) {
         SheetTitle("Date", DatePick.dueText(value, today).takeIf { value != null })
@@ -135,37 +137,56 @@ fun DateContent(value: String?, today: LocalDate, onPick: (String?, Boolean) -> 
         }
         Spacer(Modifier.height(12.dp))
         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(DatePick.monthTitle(month), style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                    GlassIconButton(TabIcons.ChevronLeft, "Previous month", size = 36.dp) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); month = month.minusMonths(1) }
-                    GlassIconButton(TabIcons.ChevronRight, "Next month", size = 36.dp) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); month = month.plusMonths(1) }
+            Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 8.dp)) {
+                when (timeMode) {
+                    "wheel" -> TimeWheel(time.ifEmpty { "09:00" }, onChange = { setTime(it) }, modifier = Modifier.padding(vertical = 6.dp))
+                    "type" -> TypedTime { t -> haptics.performHapticFeedback(HapticFeedbackType.Confirm); setTime(t); timeMode = "wheel" }
+                    else -> MonthGrid(month, today, chosenDay, onMonth = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); month = it }, onPick = ::pickDay)
                 }
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth()) {
-                    for (l in listOf("M", "T", "W", "T", "F", "S", "S")) {
-                        Text(l, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                DatePick.cells(month).chunked(7).forEach { week ->
-                    Row(Modifier.fillMaxWidth()) {
-                        for (d in week) DayCell(d, inMonth = d.month == month.month, today = today, chosen = d == chosenDay, modifier = Modifier.weight(1f)) { pickDay(d) }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
                 HorizontalDivider(thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
-                Spacer(Modifier.height(10.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GlassChip(TabIcons.Clock, time.ifEmpty { "Add time" }, set = time.isNotEmpty(), description = if (time.isEmpty()) "Add time" else "Time $time") { slots = !slots }
-                    if (time.isNotEmpty()) {
-                        Spacer(Modifier.width(6.dp))
-                        GlassIconButton(TabIcons.Close, "No time", size = 36.dp) { onPick(chosenDay?.toString() ?: today.toString(), false) }
+                // The time row: the time (or "Add time") opens the wheel; "No time" clears it; the keyboard types one.
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    GlassChip(TabIcons.Clock, time.ifEmpty { "Add time" }, set = time.isNotEmpty(), description = if (time.isEmpty()) "Add time" else "Time $time") {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        if (time.isEmpty()) setTime("09:00")
+                        timeMode = if (time.isEmpty() || timeMode == "") "wheel" else ""
                     }
+                    if (time.isNotEmpty()) {
+                        Spacer(Modifier.width(8.dp))
+                        GlassChip(TabIcons.Close, "No time", set = false, description = "No time") {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); setTime(null); timeMode = ""
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    GlassIconButton(TabIcons.Keyboard, "Type a time", on = timeMode == "type", size = 36.dp, plain = true) { timeMode = if (timeMode == "type") "wheel" else "type" }
                 }
-                if (slots) TimeSlots(time) { t -> haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick(DatePick.due(chosenDay ?: today, t), false); slots = false }
             }
         }
+    }
+}
+
+/** The month: a title with its arrows, the weekday letters, and the days. */
+@Composable
+private fun MonthGrid(month: YearMonth, today: LocalDate, chosenDay: LocalDate?, onMonth: (YearMonth) -> Unit, onPick: (LocalDate) -> Unit) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(DatePick.monthTitle(month), style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.weight(1f).padding(start = 8.dp))
+            GlassIconButton(TabIcons.ChevronLeft, "Previous month", size = 36.dp) { onMonth(month.minusMonths(1)) }
+            GlassIconButton(TabIcons.ChevronRight, "Next month", size = 36.dp) { onMonth(month.plusMonths(1)) }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth()) {
+            for (l in listOf("M", "T", "W", "T", "F", "S", "S")) {
+                Text(l, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        DatePick.cells(month).chunked(7).forEach { week ->
+            Row(Modifier.fillMaxWidth()) {
+                for (d in week) DayCell(d, inMonth = d.month == month.month, today = today, chosen = d == chosenDay, modifier = Modifier.weight(1f)) { onPick(d) }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -195,40 +216,19 @@ private fun DayCell(d: LocalDate, inMonth: Boolean, today: LocalDate, chosen: Bo
     }
 }
 
-/** 48 half-hour capsules in one row (the chosen one, or 09:00, in view) and a box for any exact time. */
+/** The web's typed time ("9:05", "2:45pm"), behind the small keyboard: Done applies it. */
 @Composable
-private fun TimeSlots(time: String, onPick: (String) -> Unit) {
-    val start = DatePick.SLOTS.indexOf(time).takeIf { it >= 0 } ?: 18
-    val list = rememberLazyListState(initialFirstVisibleItemIndex = (start - 2).coerceAtLeast(0))
+private fun TypedTime(onPick: (String) -> Unit) {
     var typed by remember { mutableStateOf("") }
     val exact = DatePick.parseTime(typed)
-    Spacer(Modifier.height(10.dp))
-    LazyRow(Modifier.fadeEnd({ list.canScrollForward }), state = list, contentPadding = PaddingValues(end = 24.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        items(DatePick.SLOTS, key = { it }) { t ->
-            val on = t == time
-            val press = remember { MutableInteractionSource() }
-            Box(
-                Modifier.height(40.dp).pressScale(press)
-                    .background(if (on) Glass.Primary else Color.White.copy(alpha = 0.72f), RoundedCornerShape(20.dp))
-                    .border(1.dp, if (on) SolidColor(Glass.Primary) else SolidColor(Glass.Ink.copy(alpha = 0.10f)), RoundedCornerShape(20.dp))
-                    .clickable(press, indication = null, role = Role.Button) { onPick(t) }
-                    .semantics { selected = on }
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text(t, style = MaterialTheme.typography.labelSmall, color = if (on) Color.White else Glass.Ink) }
-        }
-    }
-    Spacer(Modifier.height(10.dp))
     val bad = typed.isNotEmpty() && exact == null
     Row(
-        Modifier.fillMaxWidth().height(44.dp)
-            .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(22.dp))
-            .border(1.dp, if (bad) SolidColor(Glass.Risk) else SolidColor(Glass.Ink.copy(alpha = 0.10f)), RoundedCornerShape(22.dp))
-            .padding(horizontal = 14.dp),
+        Modifier.fillMaxWidth().padding(vertical = 10.dp).height(48.dp)
+            .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(24.dp))
+            .border(1.dp, if (bad) SolidColor(Glass.Risk) else SolidColor(Glass.Ink.copy(alpha = 0.10f)), RoundedCornerShape(24.dp))
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(TabIcons.Clock, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(8.dp))
         BasicTextField(
             value = typed,
             onValueChange = { typed = it.take(8) },
@@ -236,11 +236,11 @@ private fun TimeSlots(time: String, onPick: (String) -> Unit) {
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = Glass.Ink),
             cursorBrush = SolidColor(Glass.Primary),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { exact?.let { onPick(it); typed = "" } }),
+            keyboardActions = KeyboardActions(onDone = { exact?.let(onPick) }),
             modifier = Modifier.weight(1f).semantics { contentDescription = "Exact time" },
-            decorationBox = { inner -> Box { if (typed.isEmpty()) Text("Type a time: 9:05", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
+            decorationBox = { inner -> Box { if (typed.isEmpty()) Text("9:05", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
         )
-        if (exact != null) Text(exact, style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk)
+        if (exact != null) Text(exact, style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk)
     }
 }
 
@@ -248,54 +248,95 @@ private fun TimeSlots(time: String, onPick: (String) -> Unit) {
 @Composable
 fun DateSheet(value: String?, today: LocalDate, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
     GlassSheet(onDismiss) {
-        DateContent(value, today) { due, close -> onPick(due); if (close) onDismiss() }
-        Spacer(Modifier.height(SheetBottom))
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            DateContent(value, today) { due, close -> onPick(due); if (close) onDismiss() }
+            Spacer(Modifier.height(SheetBottom))
+        }
     }
 }
 
 // ── Repeat ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * The web's repeat popover: a preset in one tap, or any days of the week as toggles. A change applies at once and the
- * sheet stays (days can be added); "Never" closes it.
+ * The web's repeat popover: a preset in one tap, then the days that fit it: weekdays for a weekly repeat (or none yet),
+ * days of the month (1-31 and Last) for a monthly one, nothing for every day / weekdays. A change applies at once and
+ * the sheet stays; "Never" closes it.
  */
 @Composable
 fun RepeatContent(value: String?, onChange: (String?, Boolean) -> Unit) {
     val haptics = LocalHapticFeedback.current
     val v = value.orEmpty()
+    val monthly = Repeat.isMonthly(value)
     Column(Modifier.fillMaxWidth()) {
         SheetTitle("Repeat", value?.let(Repeat::label))
         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Column(Modifier.padding(vertical = 4.dp)) {
                 Repeat.PRESETS.forEachIndexed { i, (key, label) ->
                     if (i > 0) Divider()
-                    PickRow(RepeatIcons[key], label, chosen = v == key) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onChange(key.ifEmpty { null }, key.isEmpty()) }
+                    val chosen = if (key == "month") monthly else v == key
+                    PickRow(RepeatIcons[key], label, chosen = chosen) {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        if (!(key == "month" && monthly)) onChange(key.ifEmpty { null }, key.isEmpty())
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        SheetLabel("On these days", Modifier.padding(start = 16.dp))
-        val lit = Repeat.litDays(value)
-        // Seven days share the width; each touch box is the full share × 48 dp, the drawn circle 42 dp.
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Repeat.WEEK.forEachIndexed { i, d ->
-                val on = d in lit
-                val press = remember { MutableInteractionSource() }
-                Box(
-                    Modifier.weight(1f).height(TouchMin).pressScale(press)
-                        .clickable(press, indication = null, role = Role.Checkbox) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onChange(Repeat.toggle(value, d), false) }
-                        .semantics { contentDescription = Repeat.NAMES[d]; selected = on },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(
-                        Modifier.size(42.dp)
-                            .background(if (on) Glass.Primary else Color.White.copy(alpha = 0.72f), CircleShape)
-                            .border(1.dp, if (on) SolidColor(Glass.Primary) else SolidColor(Glass.Ink.copy(alpha = 0.10f)), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) { Text("MTWTFSS"[i].toString(), style = MaterialTheme.typography.labelLarge, color = if (on) Color.White else Glass.Ink) }
-                }
+        when {
+            monthly -> {
+                Spacer(Modifier.height(12.dp))
+                Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { MonthDays(value) { d -> haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onChange(Repeat.toggleMonthDay(value, d), false) } }
+            }
+            v != "day" && v != "weekday" -> {
+                Spacer(Modifier.height(12.dp))
+                WeekDays(value) { d -> haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onChange(Repeat.toggle(value, d), false) }
             }
         }
+    }
+}
+
+/** Seven days share the width; each touch box is the full share × 48 dp, the drawn circle 42 dp. */
+@Composable
+private fun WeekDays(value: String?, onToggle: (Int) -> Unit) {
+    val lit = Repeat.litDays(value)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        Repeat.WEEK.forEachIndexed { i, d ->
+            DayDot("MTWTFSS"[i].toString(), Repeat.NAMES[d], on = d in lit, size = 42.dp, glass = true, modifier = Modifier.weight(1f)) { onToggle(d) }
+        }
+    }
+}
+
+/** Days of the month: 1-31 and Last in a 7-column grid, the chosen ones filled mint. */
+@Composable
+private fun MonthDays(value: String?, onToggle: (Int) -> Unit) {
+    val lit = Repeat.monthDays(value)
+    Column(Modifier.padding(horizontal = 6.dp, vertical = 6.dp)) {
+        ((1..31) + Repeat.LAST).chunked(7).forEach { week ->
+            Row(Modifier.fillMaxWidth()) {
+                for (d in week) {
+                    val word = if (d == Repeat.LAST) "Last" else d.toString()
+                    DayDot(word, if (d == Repeat.LAST) "Last day of the month" else "Day $d", on = d in lit, size = 40.dp, glass = false, modifier = Modifier.weight(1f)) { onToggle(d) }
+                }
+                repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** One toggle day: a 48 dp touch box with a [size] circle, filled mint when on. [glass] draws the off circle too. */
+@Composable
+private fun DayDot(text: String, spoken: String, on: Boolean, size: androidx.compose.ui.unit.Dp, glass: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Box(
+        modifier.height(TouchMin).pressScale(press)
+            .clickable(press, indication = null, role = Role.Checkbox, onClick = onClick)
+            .semantics { contentDescription = spoken; selected = on },
+        contentAlignment = Alignment.Center,
+    ) {
+        val off = if (glass) Modifier.background(Color.White.copy(alpha = 0.72f), CircleShape).border(1.dp, Glass.Ink.copy(alpha = 0.10f), CircleShape) else Modifier
+        Box(
+            Modifier.size(size).then(if (on) Modifier.background(Glass.Primary, CircleShape) else off),
+            contentAlignment = Alignment.Center,
+        ) { Text(text, style = MaterialTheme.typography.labelLarge, color = if (on) Color.White else Glass.Ink, maxLines = 1, softWrap = false) }
     }
 }
 
@@ -307,8 +348,10 @@ private val RepeatIcons = mapOf(
 @Composable
 fun RepeatSheet(value: String?, onChange: (String?) -> Unit, onDismiss: () -> Unit) {
     GlassSheet(onDismiss) {
-        RepeatContent(value) { every, close -> onChange(every); if (close) onDismiss() }
-        Spacer(Modifier.height(SheetBottom))
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            RepeatContent(value) { every, close -> onChange(every); if (close) onDismiss() }
+            Spacer(Modifier.height(SheetBottom))
+        }
     }
 }
 
