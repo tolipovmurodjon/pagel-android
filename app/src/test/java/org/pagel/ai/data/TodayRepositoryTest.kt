@@ -36,6 +36,8 @@ class TodayRepositoryTest {
     private lateinit var db: PagelDatabase
     private val patches = CopyOnWriteArrayList<String>()
     @Volatile private var patchCode = 200
+    private val posts = CopyOnWriteArrayList<String>()
+    @Volatile private var postCode = 201
     private var kicks = 0
 
     private fun task(id: String, status: String) =
@@ -52,6 +54,11 @@ class TodayRepositoryTest {
                 return when {
                     path.startsWith("/api/v1/sync") -> MockResponse().setBody(full)
                     path == "/api/v1/today" -> MockResponse().setBody("""{"day":"2026-10-27","shown_at_once":3,"tasks":[{"id":"t_b"},{"id":"t_a"}]}""")
+                    request.method == "POST" && path == "/api/v1/tasks" -> {
+                        posts += request.body.readUtf8()
+                        if (postCode == 201) MockResponse().setResponseCode(201).setBody("""{"id":"t_new","project":"me","text":"Call Aziz","status":"open"}""")
+                        else MockResponse().setResponseCode(postCode).setBody("""{"error":"One short task line, 20 words at most."}""")
+                    }
                     request.method == "PATCH" -> {
                         patches += "$path ${request.body.readUtf8()}"
                         if (patchCode == 200) MockResponse().setBody("""{"id":"t_a","status":"done"}""")
@@ -144,5 +151,58 @@ class TodayRepositoryTest {
         assertEquals("synced", statusOf("t_a").syncStatus)
         assertEquals(SendResult.ALL_SENT, OutboxSender(api, db.dao()).sendAll(account))
         assertTrue("pagel.uz never saw it", patches.isEmpty())
+    }
+
+    private suspend fun todayIds() = db.dao().todayTasks().first().map { it.id }
+
+    @Test fun anAddedTaskShowsAtOnceAndGetsItsRealIdWhenSent() = runBlocking {
+        SyncEngine(api, db.dao()).syncOnce(account)
+        val id = repo().add("Call Aziz", "me", priority = 0, due = "2026-10-27 15:00", every = null, onToday = true)
+        assertTrue(id.startsWith("local_"))
+        assertEquals(listOf("t_b", "t_a", id), todayIds())
+        assertEquals(1, kicks)
+        assertEquals(SendResult.ALL_SENT, OutboxSender(api, db.dao()).sendAll(account))
+        assertEquals(listOf("""{"project":"me","text":"Call Aziz","priority":0,"due":"2026-10-27 15:00"}"""), posts.toList())
+        assertEquals(listOf("t_b", "t_a", "t_new"), todayIds())
+        assertTrue(db.dao().waitingOutbox().isEmpty())
+        assertEquals("synced", statusOf("t_new").syncStatus)
+    }
+
+    @Test fun aSyncBeforeSendingKeepsTheNewTaskOnToday() = runBlocking {
+        val sync = SyncEngine(api, db.dao())
+        sync.syncOnce(account)
+        val id = repo().add("Call Aziz", "me", 2, "2026-10-27", null, onToday = true)
+        sync.syncOnce(account)
+        assertEquals(listOf("t_b", "t_a", id), todayIds())
+    }
+
+    @Test fun aTickOnATaskNotYetSentFollowsItsNewId() = runBlocking {
+        SyncEngine(api, db.dao()).syncOnce(account)
+        val r = repo()
+        val id = r.add("Call Aziz", "me", 2, "2026-10-27", null, onToday = true)
+        r.tick(id, done = true)
+        r.tick(id, done = false) // undo takes back the tick, never the add
+        r.tick(id, done = true)
+        assertEquals(SendResult.ALL_SENT, OutboxSender(api, db.dao()).sendAll(account))
+        assertEquals(1, posts.size)
+        assertEquals(listOf("/api/v1/tasks/t_new {\"done\":true}"), patches.toList())
+    }
+
+    @Test fun aRefusedAddLeavesThePhoneAndIsShown() = runBlocking {
+        SyncEngine(api, db.dao()).syncOnce(account)
+        val r = repo()
+        val id = r.add("Call Aziz", "me", 2, "2026-10-27", null, onToday = true)
+        postCode = 400
+        assertEquals(SendResult.ALL_SENT, OutboxSender(api, db.dao()).sendAll(account))
+        assertEquals(listOf("t_b", "t_a"), todayIds())
+        assertEquals(null, db.dao().taskOnce(id))
+        assertEquals("One short task line, 20 words at most.", r.refused.first().single().refused)
+    }
+
+    @Test fun aTaskForAnotherDayIsSavedButNotOnToday() = runBlocking {
+        SyncEngine(api, db.dao()).syncOnce(account)
+        val id = repo().add("Plan sprint", "me", 2, "2026-11-02", null, onToday = false)
+        assertEquals(listOf("t_b", "t_a"), todayIds())
+        assertEquals("Plan sprint", db.dao().taskOnce(id)!!.text)
     }
 }

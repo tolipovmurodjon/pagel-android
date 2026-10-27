@@ -174,7 +174,7 @@ fun TodayScreen(
             }
         }
         for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = contentPadding.calculateBottomPadding() + 4.dp, start = 12.dp, end = 12.dp)) { data ->
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = contentPadding.calculateBottomPadding() + 76.dp, start = 12.dp, end = 12.dp)) { data ->
             // The web's toast: an ink pill; the action in light mint, which reads on ink (contrast > 7:1).
             Snackbar(data, containerColor = Glass.Ink, contentColor = Color.White, actionColor = Glass.Aurora1, shape = MaterialTheme.shapes.extraLarge)
         }

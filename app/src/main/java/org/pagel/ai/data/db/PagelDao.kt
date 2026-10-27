@@ -34,10 +34,60 @@ abstract class PagelDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun insertTodayOrder(rows: List<TodayOrderEntity>)
 
+    /** Tasks added on the phone and not yet on pagel.uz, in the order they sit on Today. */
+    @Query("SELECT taskId FROM today_order WHERE instr(taskId, '${LOCAL_ID}') = 1 ORDER BY position")
+    abstract suspend fun localTodayIds(): List<String>
+
+    /** The server's order, with the phone's unsent tasks kept at the end until pagel.uz has them. */
     @Transaction
     open suspend fun replaceTodayOrder(ids: List<String>) {
+        val unsent = localTodayIds()
         clearTodayOrder()
-        insertTodayOrder(ids.mapIndexed { i, id -> TodayOrderEntity(i, id) })
+        insertTodayOrder((ids + unsent).mapIndexed { i, id -> TodayOrderEntity(i, id) })
+    }
+
+    @Query("INSERT INTO today_order(position, taskId) VALUES((SELECT COALESCE(MAX(position), -1) + 1 FROM today_order), :taskId)")
+    abstract suspend fun appendToToday(taskId: String)
+
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    abstract suspend fun taskOnce(id: String): TaskEntity?
+
+    @Query("UPDATE outbox SET taskId = :new WHERE taskId = :old")
+    abstract suspend fun renameInOutbox(old: String, new: String)
+
+    @Query("DELETE FROM today_order WHERE taskId = :old AND EXISTS (SELECT 1 FROM today_order WHERE taskId = :new)")
+    abstract suspend fun dropOrderIfServerHasIt(old: String, new: String)
+
+    @Query("UPDATE today_order SET taskId = :new WHERE taskId = :old")
+    abstract suspend fun renameInToday(old: String, new: String)
+
+    @Query("DELETE FROM today_order WHERE taskId = :taskId")
+    abstract suspend fun removeFromToday(taskId: String)
+
+    @Query("DELETE FROM outbox WHERE taskId = :taskId AND refused IS NULL AND id != :keep")
+    abstract suspend fun dropWaitingExcept(taskId: String, keep: Long)
+
+    /**
+     * pagel.uz created the task the phone added: the local row takes the server's id everywhere (task, Today, waiting
+     * ticks), so a tick made before sending reaches the right task. A sync that already brought the server's row wins
+     * its place on Today.
+     */
+    @Transaction
+    open suspend fun adoptServerId(old: String, new: String) {
+        val local = taskOnce(old) ?: return
+        renameInOutbox(old, new)
+        deleteTasks(listOf(old))
+        upsertTasks(listOf(local.copy(id = new)))
+        dropOrderIfServerHasIt(old, new)
+        renameInToday(old, new)
+    }
+
+    /** pagel.uz refused a task the phone added: it leaves the phone (task, Today, its waiting ticks); [keep] says why. */
+    @Transaction
+    open suspend fun dropLocalTask(taskId: String, keep: Long) {
+        deleteTasks(listOf(taskId))
+        removeFromToday(taskId)
+        dropWaitingExcept(taskId, keep)
     }
 
     @Query("UPDATE tasks SET status = :status, doneAt = :doneAt, syncStatus = 'pending', lastModified = :at WHERE id = :id")
@@ -65,7 +115,7 @@ abstract class PagelDao {
     abstract suspend fun markRefused(id: Long, message: String)
 
     /** Undo before it was sent: the waiting change is simply taken back. Returns how many rows went. */
-    @Query("DELETE FROM outbox WHERE taskId = :taskId AND refused IS NULL")
+    @Query("DELETE FROM outbox WHERE taskId = :taskId AND refused IS NULL AND op != '${OutboxEntity.ADD}'")
     abstract suspend fun takeBackWaiting(taskId: String): Int
 
     @Query("SELECT id FROM tasks WHERE syncStatus = 'pending'")

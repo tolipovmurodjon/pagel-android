@@ -4,6 +4,9 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+/** The id prefix of a task made on the phone and not yet on pagel.uz (it gets the server's id once sent). */
+const val LOCAL_ID = "local_"
+
 /** How a row stands against the server. Phase 1 only reads (everything is SYNCED); local edits arrive with Today. */
 object SyncStatus {
     const val SYNCED = "synced"
@@ -83,5 +86,7 @@ data class OutboxEntity(
     companion object {
         const val DONE = "done"
         const val UNDONE = "undone"
+        /** A task made on the phone; its row in `tasks` holds what is sent. */
+        const val ADD = "add"
     }
 }

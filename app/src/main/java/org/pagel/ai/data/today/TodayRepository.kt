@@ -4,9 +4,12 @@ import kotlinx.coroutines.flow.Flow
 import org.pagel.ai.data.account.Account
 import org.pagel.ai.data.DataError
 import org.pagel.ai.data.Outcome
+import org.pagel.ai.data.api.NewTaskBody
 import org.pagel.ai.data.api.PagelApi
 import org.pagel.ai.data.db.OutboxEntity
+import org.pagel.ai.data.db.LOCAL_ID
 import org.pagel.ai.data.db.PagelDao
+import org.pagel.ai.data.db.SyncStatus
 import org.pagel.ai.data.db.TaskEntity
 
 /** Wakes the outbox sender (WorkManager in the app, a counter in tests). */
@@ -40,6 +43,24 @@ class TodayRepository(
         scheduler.kick()
     }
 
+    /**
+     * A new task (Add task fast): it is on the phone at once, on Today when [onToday], and waits in the outbox; once sent
+     * it takes pagel.uz's id. Returns the phone's id for it.
+     */
+    suspend fun add(text: String, project: String, priority: Int, due: String?, every: String?, onToday: Boolean): String {
+        val now = clock()
+        val id = LOCAL_ID + java.util.UUID.randomUUID().toString().replace("-", "").take(12)
+        dao.upsertTasks(listOf(TaskEntity(
+            id = id, project = project, phase = "", sort = Double.MAX_VALUE, text = text, title = null, status = "open",
+            priority = priority, star = false, due = due, every = every, doneWhen = null, doneAt = null,
+            updatedAt = java.time.Instant.ofEpochMilli(now).toString(), serverVersion = 0, syncStatus = SyncStatus.PENDING, lastModified = now,
+        )))
+        if (onToday) dao.appendToToday(id)
+        dao.addToOutbox(OutboxEntity(taskId = id, op = OutboxEntity.ADD, createdAt = now))
+        scheduler.kick()
+        return id
+    }
+
     /** Boss saw the "could not save" notice: the refused change leaves the outbox. */
     suspend fun acknowledge(op: OutboxEntity) {
         dao.removeFromOutbox(op.id)
@@ -58,6 +79,13 @@ class OutboxSender(private val api: PagelApi, private val dao: PagelDao, private
     suspend fun sendAll(account: Account): SendResult {
         for (op in dao.waitingOutbox()) {
             dao.countAttempt(op.id)
+            if (op.op == OutboxEntity.ADD) {
+                // An add renames (or drops) the changes queued after it, so the rest is read again, fresh.
+                return when (val r = sendAdd(account, op)) {
+                    SendResult.ALL_SENT -> sendAll(account)
+                    else -> r
+                }
+            }
             when (val out = api.setDone(account.serverUrl, account.token, op.taskId, op.op == OutboxEntity.DONE)) {
                 is Outcome.Ok -> {
                     dao.removeFromOutbox(op.id)
@@ -76,5 +104,27 @@ class OutboxSender(private val api: PagelApi, private val dao: PagelDao, private
             }
         }
         return SendResult.ALL_SENT
+    }
+
+    /** One new task: created → it takes the server's id; refused → it leaves the phone and the UI says why. */
+    private suspend fun sendAdd(account: Account, op: OutboxEntity): SendResult {
+        val t = dao.taskOnce(op.taskId) ?: run { dao.removeFromOutbox(op.id); return SendResult.ALL_SENT }
+        return when (val out = api.addTask(account.serverUrl, account.token, NewTaskBody(t.project, t.text, t.priority, t.due, t.every))) {
+            is Outcome.Ok -> {
+                dao.adoptServerId(op.taskId, out.value.id)
+                dao.removeFromOutbox(op.id)
+                dao.markSyncedIfIdle(out.value.id)
+                SendResult.ALL_SENT
+            }
+            is Outcome.Failed -> when (val e = out.error) {
+                is DataError.Refused -> {
+                    dao.dropLocalTask(op.taskId, keep = op.id)
+                    dao.markRefused(op.id, e.message)
+                    SendResult.ALL_SENT
+                }
+                DataError.Unauthorized -> SendResult.SIGNED_OUT
+                else -> SendResult.TRY_LATER
+            }
+        }
     }
 }

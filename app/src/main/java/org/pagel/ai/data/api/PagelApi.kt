@@ -48,6 +48,12 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(TaskStatusDto.serializer(), it) } }
     }
 
+    suspend fun addTask(baseUrl: String, token: String, task: NewTaskBody): Outcome<CreatedTaskDto> = call {
+        val body = json.encodeToString(NewTaskBody.serializer(), task).toRequestBody(JSON)
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/tasks")).post(body), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(CreatedTaskDto.serializer(), it) } }
+    }
+
     /**
      * Opens `GET /api/v1/stream?since=` and calls [onEvent] for every event until the stream ends or the coroutine is
      * cancelled. Returns why it ended; a normal close is [DataError.Network], so the caller reconnects.

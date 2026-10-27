@@ -61,5 +61,13 @@ data class TodayResponse(val day: String = "", @SerialName("shown_at_once") val 
 @Serializable
 data class DonePatch(val done: Boolean)
 
+/** `POST /api/v1/tasks`: null fields are left out (the JSON writer skips defaults), as the server expects. */
+@Serializable
+data class NewTaskBody(val project: String, val text: String, val priority: Int, val due: String? = null, val every: String? = null)
+
+/** The created task; only its id is needed here, the next sync brings the rest. */
+@Serializable
+data class CreatedTaskDto(val id: String)
+
 @Serializable
 data class TaskStatusDto(val id: String, val status: String = "")

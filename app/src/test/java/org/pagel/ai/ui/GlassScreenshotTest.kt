@@ -39,7 +39,11 @@ import org.pagel.ai.ui.pair.PairUiState
 import org.pagel.ai.ui.projects.ProjectsScreen
 import org.pagel.ai.ui.projects.ProjectsUiState
 import org.pagel.ai.ui.shell.Tab
+import org.pagel.ai.ui.add.AddTaskContent
+import org.pagel.ai.ui.add.Saved
 import org.pagel.ai.ui.today.TodayRow
+import java.time.LocalDateTime
+import androidx.compose.ui.test.performTextInput
 import org.pagel.ai.ui.today.TodayScreen
 import org.pagel.ai.ui.today.TodayUiState
 import java.time.LocalDate
@@ -155,5 +159,19 @@ class GlassScreenshotTest {
         showToday(today, fontScale = 1.5f)
         compose.onNodeWithText("Ship the native Today screen").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-font-1.5.png")
+    }
+
+    @Test fun addTaskReadsTheLine() {
+        val now = LocalDateTime.of(2026, 10, 26, 10, 0)
+        compose.setContent {
+            GlassTheme { AuroraBackground(Modifier.fillMaxSize()) {
+                AddTaskContent(projects, listOf(Saved(0, "Weigh in", "Me · Today, in line")), now = { now }, onSave = { _, _ -> true })
+            } }
+        }
+        compose.onNodeWithContentDescription("New task").performTextInput("Call the bank tomorrow 3pm #humopedia p1")
+        compose.onNodeWithText("Tomorrow 15:00").assertIsDisplayed()
+        compose.onNodeWithText("⚑ P1").assertIsDisplayed()
+        compose.onNodeWithText("Add task").assertIsEnabled()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/add-task.png")
     }
 }

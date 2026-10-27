@@ -46,6 +46,13 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/v1/devices/pair":
             code = json.loads(body or "{}").get("code")
             return self.send(201, {"id": "d_ci", "name": "CI emulator", "token": TOKEN}) if code == CODE else self.send(401, {"error": "Wrong code. 4 tries left."})
+        if self.path == "/api/v1/tasks":
+            if not self.authed():
+                return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+            b = json.loads(body or "{}")
+            if not b.get("project") or not b.get("text"):
+                return self.send(400, {"error": "Send {project, text}."})
+            return self.send(201, {"id": "t_ci6", "project": b["project"], "text": b["text"], "status": "open"})
         if self.path == "/api/v1/app/crash":
             return self.send(201, {"ok": True}) if self.authed() else self.send(401, {"error": "Send Authorization: Bearer <token>."})
         self.send(404, {"error": "Unknown path."})

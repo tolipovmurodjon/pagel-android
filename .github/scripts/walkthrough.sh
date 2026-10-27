@@ -56,6 +56,15 @@ grep -q 'text="Measure the drone' "$OUT/$(printf '%02d' $N)-after-fold.xml" || {
 for i in $(seq 1 30); do grep -q "PATCH /api/v1/tasks/t_ci1 {\"done\":true} auth=True" "$FAKE_LOG" && break; sleep 1; done
 grep -q "PATCH /api/v1/tasks/t_ci1" "$FAKE_LOG" || { log "WALKTHROUGH: the tick never reached pagel.uz (no PATCH in the fake log)"; exit 1; }
 log "   tick reached pagel.uz after ~${i} s"
+
+log "-- add a task fast: + → type the line → Add task → it reaches pagel.uz with project and priority read from it"
+tap "Add a task" && shot add-sheet 2
+$T adb shell "input text 'Call%sAziz%stomorrow%s3pm%s#me%sp1'"; shot add-typed 1.5
+tap "Add task" && shot add-saved 1.5
+for i in $(seq 1 30); do grep -q 'POST /api/v1/tasks .*"text":"Call Aziz"' "$FAKE_LOG" && break; sleep 1; done
+grep -q 'POST /api/v1/tasks {"project":"me","text":"Call Aziz","priority":0,"due":"[0-9-]* 15:00"}' "$FAKE_LOG"   || { log "WALKTHROUGH: the added task never reached pagel.uz as {me, Call Aziz, P0, tomorrow 15:00}"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   added task reached pagel.uz after ~${i} s"
+$T adb shell input keyevent 4; sleep 1; $T adb shell input keyevent 4; shot after-add 1.5
 $T adb shell input swipe 540 1700 540 600 300; shot today-scrolled
 tap Today && shot today-retap-top
 $T adb shell input keyevent 4; shot after-back

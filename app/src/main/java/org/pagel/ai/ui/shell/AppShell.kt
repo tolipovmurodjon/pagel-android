@@ -54,7 +54,20 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import com.kyant.shapes.Capsule
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import org.pagel.ai.ui.add.AddTaskSheet
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import org.pagel.ai.data.account.AccountState
 import org.pagel.ai.ui.glass.AuroraBackground
@@ -94,6 +107,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     val stack = stacks[selected]
     val backdrop = rememberLayerBackdrop()
     val onTop = stack.lastOrNull() == Tab.entries[selected].root
+    var adding by rememberSaveable { mutableStateOf(false) }
 
     // A light tick when the tab changes, never on the first frame (Apple HIG playing haptics: one per action).
     val haptics = LocalHapticFeedback.current
@@ -156,6 +170,42 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     }
                 }
             }
+        }
+        if (onTop && selected == 0) {
+            AddButton(
+                backdrop,
+                Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.navigationBars).padding(end = 20.dp, bottom = 8.dp + 64.dp + 14.dp),
+            ) { adding = true }
+        }
+    }
+    if (adding) AddTaskSheet(onClose = { adding = false })
+}
+
+/**
+ * Add a task: a glass drop tinted mint, cut from the same backdrop as the bar, so it bends the page under it too
+ * (rules/liquid-glass-navbar: glass on chrome only). Sits above the bar on Today, where the web has its Add row.
+ */
+@Composable
+private fun AddButton(backdrop: Backdrop, modifier: Modifier, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Box(
+        modifier
+            .size(56.dp)
+            .pressScale(press)
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { Capsule() },
+                effects = { vibrancy(); blur(8f.dp.toPx()); lens(16f.dp.toPx(), 16f.dp.toPx()) },
+                onDrawSurface = { drawRect(Glass.Primary.copy(alpha = 0.82f)) },
+            )
+            .clickable(press, indication = null, role = Role.Button) { onClick() }
+            .semantics { contentDescription = "Add a task" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(20.dp)) {
+            val w = 2.4.dp.toPx()
+            drawLine(Color.White, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), w, StrokeCap.Round)
+            drawLine(Color.White, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), w, StrokeCap.Round)
         }
     }
 }
