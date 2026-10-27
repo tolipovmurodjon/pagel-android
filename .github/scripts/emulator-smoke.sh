@@ -65,10 +65,22 @@ $T adb exec-out screencap -p > "$OUT/pair-screen.png"
 $T adb shell input text 482913
 sleep 1
 $T adb shell input keyevent 66
-sleep 6
+# Wait on the real signal (the app opened the live stream), not a fixed sleep: the emulator draws in software.
+for i in $(seq 1 40); do grep -q "GET /api/v1/stream" "$OUT/fake-pagel.log" && break; sleep 1; done
+# 2026-10-27: the first frame after pairing froze the main thread ~13 s. Dump every thread's stack 3 s in, so the
+# freeze names its own cause (debuggable build: debuggerd -j prints the Java stacks).
+APP=$($T adb shell pidof "$PKG" | tr -d '\r')
+sleep 3
+[ -n "$APP" ] && $T adb shell debuggerd -j "$APP" > "$OUT/stacks-after-pair.txt" 2>&1
+grep -A25 '"main"' "$OUT/stacks-after-pair.txt" | head -40
+# Then up to 40 s for the project list to be on screen (uiautomator needs an idle app, so retry).
+for i in $(seq 1 8); do
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  timeout 20 adb exec-out cat /sdcard/ui.xml > "$OUT/paired-ui.xml" < /dev/null
+  grep -q 'text="Projects"' "$OUT/paired-ui.xml" && break
+  sleep 5
+done
 $T adb exec-out screencap -p > "$OUT/paired-projects.png"
-$T adb shell uiautomator dump /sdcard/ui.xml > /dev/null
-$T adb exec-out cat /sdcard/ui.xml > "$OUT/paired-ui.xml" < /dev/null
 for want in Projects Humopedia ABABIL Today Inbox More; do
   grep -q "text=\"$want\"" "$OUT/paired-ui.xml" || fail "after pairing the screen has no \"$want\""
 done
