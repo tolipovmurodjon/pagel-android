@@ -94,7 +94,8 @@ class TaskPanelViewModel @Inject constructor(
         go { taskId ->
             tasks.due(taskId, v)
             val day = v?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-            if (day != null && day.isAfter(today) && cur.every == null) {
+            // A starred task stays on Today whatever its date (views.ts): only say "moved" when it really left.
+            if (day != null && day.isAfter(today) && cur.every == null && !cur.star) {
                 val where = if (day == today.plusDays(1)) "tomorrow" else "${DatePick.weekday(day)} ${DatePick.dueText(v, today)}"
                 toasts.show("Moved to $where", action = "Undo") { viewModelScope.launch { tasks.due(taskId, before) } }
             }

@@ -41,6 +41,33 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v6 · PHASE 1 OF 10 = THE FULL TASK SYSTEM (2026-10-27 ~23:00 Tashkent, builder agent)
+Plan: `C:\Users\Murodjon\.claude\plans\tranquil-wondering-melody.md` (10 phases) + detail
+`tranquil-wondering-melody-agent-aceb5252743b532f2.md`. Phase 1 built end to end:
+- **Server (deployed to pagel.uz)**: dashboard `feat/gtd-core` 0fdaefc: `PATCH /api/v1/tasks/<id>` also takes `title` (column
+  + the web's card), `every`, `remove`, `restore`, `not_doing {kind, reason}` (excuse → 400 before any change); the reply
+  carries `applied` (fields understood). Sync tasks carry `phase_sort`, `phase_now` and the card title. vitest
+  `task-api.test.ts` 7 + `sync.test.ts` +1. Backup `~/pagel-data/backups/pagel-pre-app-api-v2-20261027-2128.db`; built in a
+  worktree with the service's own env; live `.next` kept as `.next.old-20261027-2128` for rollback.
+- **Phone data**: Room v3 (AutoMigration 2→3, `MigrationTest` builds a real v2 file from `2.json`), `data/tasks/TaskRepository.kt`
+  (each edit: Room first, one outbox PATCH `{set, was}`; new fields in their own op; older server = waits, cloud-off mark;
+  refused = exact rollback + red toast; delete holds 5 s for Undo; won't do checks the excuse on the phone),
+  `OutboxSender` PATCH path, `takeBackWaiting` only takes back ticks.
+- **Glass kit** `ui/glass/`: GlassSheet, GlassChip, GlassIconButton, InlineField, GlassMenu, ToastCenter/ToastHost,
+  Pickers (date: quick days + Monday-first month + half-hour slots + typed time; priority flags; repeat presets + day
+  toggles; project search), DatePick + Repeat (the web's rules, tested).
+- **Screens**: task panel from any task row (Today, project pages): project capsule, copy prompt, won't do, delete+Undo,
+  ring, title, finish line, steps + bar, Date/Repeat/Priority/Today rows, full note. Add sheet rebuilt (52 dp capsule +
+  44 dp mint send; chips open the pickers; toast "Added · Today" / "Added · Upcoming, Fri 30 Oct"). More → Projects →
+  a project: phases, NOW first; + adds into it. Toasts live in the shell; title capsule flips after 24 dp.
+- **Checks**: Roborazzi `panel*.png`, `picker-*.png`, `add-*.png`, `project.png`; walkthrough opens a task, ticks a step,
+  sets P1, picks today+2 in the calendar and asserts the 3 PATCH bodies in the fake log.
+- **CI**: run 40546542662 build ✅ (282 tests) / smoke ❌ (panel sheet stuck at its placeholder height; a leftover fake
+  server held the job 35 min) → fixed in f1be6c2 → run 40554876982 build ✅ + smoke ✅ (31 steps; the 3 PATCH bodies
+  asserted). Then the "Moved to …" toast no longer shows for a starred task (it stays on Today).
+- **Not in Phase 1 (web has it)**: move a task to another project, step reorder, read-only plan notes, focus mode.
+- **NEXT**: checker agent on the CI screenshots; Boss's notes; then Phase 2 (Inbox sorting).
+
 ## START HERE v5 · WEB PARITY 1:1 (saved 2026-10-27 ~20:25 Tashkent, context 55 %)
 Boss's last words (on 0.3.15, Add sheet screenshots): "it opened good, but that dialog: liquid, clean · select
 priority with icons, select date with calendar view, and repeat, many more not working · when I click Add task, after
