@@ -17,6 +17,8 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -39,6 +41,7 @@ import org.pagel.ai.ui.glass.AuroraBackground
 import org.pagel.ai.ui.glass.DateContent
 import org.pagel.ai.ui.glass.GlassTheme
 import org.pagel.ai.ui.glass.MenuContent
+import org.pagel.ai.ui.glass.PriorityContent
 import org.pagel.ai.ui.glass.ProjectContent
 import org.pagel.ai.ui.glass.RepeatContent
 import org.pagel.ai.ui.glass.ToastCenter
@@ -133,7 +136,7 @@ class TaskSystemScreenshotTest {
         show { TaskPanelContent(panel, day, PanelActions(onNotDoing = { _, r -> org.pagel.ai.data.tasks.NotDoing.check(r).also { if (it == null) saved = true } }), stopFirst = true) }
         compose.onNodeWithContentDescription("The real reason").performTextInput("too tired")
         compose.onNodeWithText("Save reason").performClick()
-        compose.onNodeWithText("Write the real reason in a few words: what blocks it, or why it no longer matters.").assertIsDisplayed()
+        compose.onNodeWithText("Name what blocks it, in a few words.").assertIsDisplayed()
         assertEquals(false, saved)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-wont-do.png")
     }
@@ -185,6 +188,34 @@ class TaskSystemScreenshotTest {
         compose.onNodeWithContentDescription("Time 15:30").performClick()
         compose.onNodeWithContentDescription("Time wheel 15:30").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-time-wheel-360-font-1.5.png")
+    }
+
+    /** Checker 2026-10-28 #5: opening the wheel writes nothing; the day chip goes back; a tap on the shown time saves it. */
+    @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun timeWheelSavesNothingUntilAsked() {
+        val picks = mutableListOf<String?>()
+        show { DateContent("2026-10-29", day) { d, _ -> picks += d } }
+        // October 2026 needs five weeks: no sixth row (2-8 November) under it.
+        compose.onAllNodesWithContentDescription("2 November 2026").assertCountEquals(0)
+        compose.onNodeWithContentDescription("1 November 2026").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add time").performClick()
+        compose.onNodeWithContentDescription("Time wheel 09:00").assertIsDisplayed()
+        assertEquals(emptyList<String?>(), picks)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-wheel-unsaved-360.png")
+        compose.onNodeWithContentDescription("Back to the calendar").performClick()
+        compose.onNodeWithText("October 2026").assertIsDisplayed()
+        assertEquals(emptyList<String?>(), picks)
+        compose.onNodeWithContentDescription("Add time").performClick()
+        compose.onNodeWithContentDescription("Set 09:00").performClick()
+        assertEquals(listOf<String?>("2026-10-29 09:00"), picks)
+    }
+
+    @Test fun prioritySheet() {
+        var got = -1
+        show { PriorityContent(1) { got = it } }
+        compose.onNodeWithText("this week").assertIsDisplayed()
+        compose.onNodeWithContentDescription("P1").performClick()
+        assertEquals(0, got)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-priority-sheet.png")
     }
 
     @Test fun repeatMonthlyOnChosenDays() {

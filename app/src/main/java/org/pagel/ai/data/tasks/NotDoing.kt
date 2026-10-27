@@ -14,11 +14,14 @@ object NotDoing {
     )
     private val EXCUSE_RU = Regex("(лень|устал|нет времени|не хочу|нет настроения)", RegexOption.IGNORE_CASE)
 
-    /** Null when the reason is a real one; otherwise the web's own words for what is wrong. */
+    /**
+     * Null when the reason is a real one; otherwise what is wrong, in one short line (checker 2026-10-28: the web's two-line
+     * sentences wrapped under the field on a phone). Same rules as the web; shorter words.
+     */
     fun check(reason: String): String? {
         val r = reason.replace(Regex("""\s+"""), " ").trim()
-        if (r.split(" ").count { it.isNotEmpty() } < 4) return "Write the real reason in a few words: what blocks it, or why it no longer matters."
-        if (EXCUSE.containsMatchIn(r) || EXCUSE_RU.containsMatchIn(r)) return "That sounds like an excuse (bahona), not a block. Name the fact that stops it, or keep the task."
+        if (r.split(" ").count { it.isNotEmpty() } < 4) return "Name what blocks it, in a few words."
+        if (EXCUSE.containsMatchIn(r) || EXCUSE_RU.containsMatchIn(r)) return "Sounds like an excuse (bahona). Name the block."
         return null
     }
 }

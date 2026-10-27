@@ -93,3 +93,8 @@ Installed plugins (laptop, 2026-10-27; server: `claude plugin marketplace add an
 - Boss's words stay in his language. No secret printed. The maker never checks its own work: CI, screenshots, a
   fresh reviewer, and Boss's eyes for feel.
 - Releases only from `main` or an `app-v*` tag; the app asks before installing an update.
+- **Light only, for now.** The native screens ignore the system dark mode on purpose (walk 30 shows light); the dark
+  theme is Phase 9. Do not report "dark ignored" as a bug before then.
+- **Type:** words in Inter Tight (headings) and Schibsted Grotesk (body, labels); Departure Mono only on a number
+  that stands alone (`Glass.NumberText`: counts, "2/3", "+2", the pairing code), as the web keeps it "for numbers".
+- **Landscape:** the tab bar is 48 dp, icon beside word, at most 440 dp wide and centred; the + sits beside it.

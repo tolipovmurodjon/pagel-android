@@ -1,13 +1,13 @@
 package org.pagel.ai.ui.glass
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,12 +26,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -44,7 +41,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
-import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * The wheel's arithmetic, apart from the drawing so it is tested: hours 00-23, minutes in steps of 5, each column a
@@ -73,13 +71,18 @@ object TimeWheelMath {
     fun rowOf(index: Int, size: Int): Int = ((index % size) + size) % size
 }
 
-private val RowHeight = 36.dp
-private const val VISIBLE = 5
+/** iOS UIDatePicker proportions (checker 2026-10-28 #4): 7 rows of 34 dp, drums ~104 dp wide, no ":" between them. */
+private val RowHeight = 34.dp
+private const val VISIBLE = 7
+private val DrumWidth = 104.dp
+/** The drum's turn per row: rows sit on a cylinder of radius rowHeight / step, so they bunch up as they turn away. */
+private const val STEP_DEG = 20f
 
 /**
  * Apple's time wheel (UIDatePicker .wheels): two drums, hours and minutes, that fling and snap; the chosen row sits
- * in a fixed white-glass band with a thin mint rim; rows away from it fade, shrink and tilt back like a drum. A light
- * tick on every notch; [onChange] gets "HH:mm" once the drum comes to rest.
+ * in a fixed light-ink band (no border: Apple's band is a fill, the outlined one read as a text field); rows away from
+ * it turn back on a cylinder, fade and bunch up. A light tick on every notch; [onChange] gets "HH:mm" once the drum
+ * comes to rest after Boss turned it (never on opening).
  */
 @Composable
 fun TimeWheel(time: String, onChange: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -100,21 +103,22 @@ fun TimeWheel(time: String, onChange: (String) -> Unit, modifier: Modifier = Mod
         modifier.fillMaxWidth().height(RowHeight * VISIBLE).semantics { contentDescription = "Time wheel $now" },
         contentAlignment = Alignment.Center,
     ) {
-        // The selection band: fixed, the numbers turn through it.
-        Box(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(RowHeight + 4.dp)
-                .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(12.dp))
-                .border(1.dp, Glass.Primary, RoundedCornerShape(12.dp)),
-        )
+        // The selection band: fixed, the numbers turn through it. Ink at 6 %, radius 10, as iOS.
+        Box(Modifier.fillMaxWidth().padding(horizontal = 6.dp).height(RowHeight).background(Glass.Ink.copy(alpha = 0.06f), RoundedCornerShape(10.dp)))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Drum(hours, TimeWheelMath.HOURS) { "%02d".format(it) }
-            Text(":", style = WheelText, color = Glass.Ink, modifier = Modifier.padding(horizontal = 6.dp).clearAndSetSemantics {})
+            Spacer(Modifier.width(8.dp))
             Drum(minutes, TimeWheelMath.MINUTES) { "%02d".format(it * 5) }
         }
     }
 }
 
-private val WheelText: TextStyle @Composable get() = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 22.sp, fontFeatureSettings = "tnum")
+/** The wheel's numbers: grow with the phone's font up to 1.2x, then stop (a drum row is a fixed 34 dp). */
+private val WheelText: TextStyle @Composable get() {
+    val scale = LocalDensity.current.fontScale
+    val size = 22f * minOf(scale, 1.2f) / scale
+    return TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Medium, fontSize = size.sp, lineHeight = (size + 4f).sp, fontFeatureSettings = "tnum")
+}
 
 /**
  * Where the drum stands, in rows: the first row's index plus how far it has scrolled off. Read from the scroll
@@ -134,8 +138,10 @@ private fun Drum(state: LazyListState, size: Int, label: (Int) -> String) {
     LaunchedEffect(state, rowPx) {
         snapshotFlow { centre(state, rowPx) }.distinctUntilChanged().drop(1).collect { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
     }
+    val step = Math.toRadians(STEP_DEG.toDouble()).toFloat()
+    val radius = rowPx / step
     LazyColumn(
-        Modifier.width(72.dp).height(RowHeight * VISIBLE),
+        Modifier.width(DrumWidth).height(RowHeight * VISIBLE),
         state = state,
         flingBehavior = rememberSnapFlingBehavior(state, SnapPosition.Center),
     ) {
@@ -145,13 +151,13 @@ private fun Drum(state: LazyListState, size: Int, label: (Int) -> String) {
             Box(
                 Modifier.fillMaxWidth().height(RowHeight)
                     .graphicsLayer {
-                        // Distance from the band in rows, read while drawing: the drum's fade, shrink and tilt.
+                        // Distance from the band in rows, read while drawing: the row's angle on the drum.
                         val d = i - position(state, rowPx) - VISIBLE / 2
-                        val far = abs(d).coerceAtMost(2.5f)
-                        alpha = (1f - far * 0.32f).coerceAtLeast(0.18f)
-                        scaleX = 1f - far * 0.08f
-                        scaleY = 1f - far * 0.08f
-                        rotationX = (-d * 20f).coerceIn(-50f, 50f)
+                        val angle = (d * step).coerceIn(-1.45f, 1.45f)
+                        translationY = radius * sin(angle) - d * rowPx
+                        rotationX = -Math.toDegrees(angle.toDouble()).toFloat()
+                        cameraDistance = 8f * density
+                        alpha = (cos(angle) * cos(angle)).coerceIn(0.12f, 1f)
                     }
                     .clickable(press, indication = null) { scope.launch { state.animateScrollToItem((i - VISIBLE / 2).coerceAtLeast(0)) } },
                 contentAlignment = Alignment.Center,

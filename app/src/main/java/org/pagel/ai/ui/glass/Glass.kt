@@ -38,6 +38,12 @@ object Glass {
     val Heading = FontFamily(variable(R.font.inter_tight, FontWeight.SemiBold), variable(R.font.inter_tight, FontWeight.Bold), variable(R.font.inter_tight, FontWeight.ExtraBold))
     val Body = FontFamily(variable(R.font.schibsted_grotesk, FontWeight.Normal), variable(R.font.schibsted_grotesk, FontWeight.Medium), variable(R.font.schibsted_grotesk, FontWeight.SemiBold), variable(R.font.schibsted_grotesk, FontWeight.Bold))
     val Numbers = FontFamily(Font(R.font.departure_mono))
+
+    /**
+     * Departure Mono, only where the text is a number (a count, "2/3", "+2", a pairing code): the web keeps it "for
+     * numbers" (dashboard layout.tsx). On words it read as a pixel face, "2005 style" (checker 2026-10-28 #6).
+     */
+    val NumberText = TextStyle(fontFamily = Numbers, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.sp)
 }
 
 private val GlassTypography = Typography(
@@ -47,7 +53,8 @@ private val GlassTypography = Typography(
     bodyLarge = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 22.sp),
     bodyMedium = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp),
     labelLarge = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Medium, fontSize = 15.sp, lineHeight = 20.sp),
-    labelSmall = TextStyle(fontFamily = Glass.Numbers, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.sp),
+    // Small words (meta, hints, dates) in the body face; numbers alone use Glass.NumberText.
+    labelSmall = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Medium, fontSize = 12.5.sp, lineHeight = 16.sp, letterSpacing = 0.1.sp),
 )
 
 private val GlassColors = lightColorScheme(

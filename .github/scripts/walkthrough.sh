@@ -88,6 +88,8 @@ SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date -d '+2 days' '+%-d %B %Y')
 tap "Call the bank about the report" && shot panel-open 2.5
 grep -q 'Find the account number' "$OUT/$(printf '%02d' $N)-panel-open.xml" || { log "WALKTHROUGH: the task panel did not open with its steps"; exit 1; }
 tap "Done: Find the account number" && shot panel-step-ticked 1.5
+# Priority is a row like Date and Repeat (checker 2026-10-28 #8): it opens its sheet, P1 picks and closes it.
+tap "Priority: P[1-4]" && shot panel-priority-sheet 2
 tap "P1" && shot panel-p1 1.5
 tap "Date: None" && shot panel-date-sheet 2.5
 grep -q "content-desc=\"$SPOKEN\"" "$OUT/$(printf '%02d' $N)-panel-date-sheet.xml" || { log "WALKTHROUGH: the calendar has no day \"$SPOKEN\""; exit 1; }

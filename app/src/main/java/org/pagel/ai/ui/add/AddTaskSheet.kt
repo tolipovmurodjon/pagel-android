@@ -68,6 +68,8 @@ import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.glass.ProjectTile
 import org.pagel.ai.ui.glass.TouchMin
 import org.pagel.ai.ui.glass.fadeEnd
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
 import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.glass.priorityItems
 import org.pagel.ai.ui.projects.shortName
@@ -147,6 +149,11 @@ fun AddTaskContent(
                 .padding(start = 18.dp, end = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // A long line ends in a soft fade, never a hard cut (checker 2026-10-28), except while typing, when the end
+            // is where the cursor is.
+            var fieldFocused by remember { mutableStateOf(false) }
+            var textRight by remember { mutableStateOf(0f) }
+            var fieldWidth by remember { mutableStateOf(0) }
             BasicTextField(
                 value = typed,
                 onValueChange = { typed = it.replace('\n', ' ') },
@@ -155,7 +162,10 @@ fun AddTaskContent(
                 cursorBrush = SolidColor(Glass.Primary),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { submit() }),
-                modifier = Modifier.weight(1f).focusRequester(focus).semantics { contentDescription = "New task" },
+                onTextLayout = { textRight = if (it.lineCount > 0) it.getLineRight(0) else 0f },
+                modifier = Modifier.weight(1f).onSizeChanged { fieldWidth = it.width }
+                    .fadeEnd({ textRight > fieldWidth + 1f && !fieldFocused }, 32.dp).focusRequester(focus)
+                    .onFocusChanged { fieldFocused = it.isFocused }.semantics { contentDescription = "New task" },
                 decorationBox = { inner -> Box { if (typed.isEmpty()) Text("Call the bank tomorrow 3pm #me p1", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, maxLines = 1); inner() } },
             )
             Spacer(Modifier.width(8.dp))
@@ -178,7 +188,7 @@ fun AddTaskContent(
         Spacer(Modifier.height(12.dp))
         // What Enter will make, as chips that are also the pickers.
         val chipsScroll = rememberScrollState()
-        Row(Modifier.fadeEnd({ chipsScroll.canScrollForward }).horizontalScroll(chipsScroll).padding(start = 16.dp, end = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fadeEnd({ chipsScroll.canScrollForward }, 48.dp).horizontalScroll(chipsScroll).padding(start = 16.dp, end = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GlassChip(TabIcons.Calendar, DatePick.dueText(plan.due, today).let { if (it == "Date" && !toToday) "Date" else it }, set = plan.due != null, description = "Date") { sheet = "date" }
             Box {
                 GlassChip(if (priority != null) TabIcons.FlagFilled else TabIcons.Flag, "P${plan.priority + 1}", set = plan.priority != 2 || priority != null,

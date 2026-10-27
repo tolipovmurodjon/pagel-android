@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -85,6 +84,7 @@ import org.pagel.ai.ui.glass.Pane
 import org.pagel.ai.ui.glass.PriorityColors
 import org.pagel.ai.ui.glass.ProjectTile
 import org.pagel.ai.ui.glass.Repeat
+import org.pagel.ai.ui.glass.PrioritySheet
 import org.pagel.ai.ui.glass.RepeatSheet
 import org.pagel.ai.ui.glass.SheetBottom
 import org.pagel.ai.ui.glass.TabIcons
@@ -170,6 +170,7 @@ fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: 
     }
     if (picker == "date") DateSheet(ui.due, today, onPick = a.onDue, onDismiss = { picker = "" })
     if (picker == "repeat") RepeatSheet(ui.every, onChange = a.onEvery, onDismiss = { picker = "" })
+    if (picker == "priority") PrioritySheet(ui.priority, onPick = { if (it != ui.priority) a.onPriority(it) }, onDismiss = { picker = "" })
 }
 
 @Composable
@@ -226,7 +227,6 @@ private fun StopForm(onCancel: () -> Unit, onSave: (String, String) -> String?) 
     Pane(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
         Column(Modifier.padding(16.dp)) {
             Text("Why not?", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
-            Text("The real reason, saved in the brain", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
             Spacer(Modifier.height(12.dp))
             // All three kinds in view, wrapping if the words are large; never a row cut at "Not wor" (checker 2026-10-27).
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -251,7 +251,11 @@ private fun StopForm(onCancel: () -> Unit, onSave: (String, String) -> String?) 
             }
             Spacer(Modifier.height(8.dp))
             // One line: what happens to the task; the error takes its place when the reason is refused.
-            if (bad.isNotEmpty()) Text(bad, style = MaterialTheme.typography.bodyMedium, color = Glass.Risk)
+            if (bad.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(TabIcons.Ban, contentDescription = null, tint = Glass.Risk, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(bad, style = MaterialTheme.typography.bodyMedium, color = Glass.Risk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             else Text(
                 when (why) { "drop" -> "Leaves the plan."; "someday" -> "Goes to P4, off Today."; else -> "Stays in the plan, off Today." },
                 style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -331,7 +335,7 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
         Column(Modifier.padding(vertical = 10.dp)) {
             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Steps", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
-                if (texts.isNotEmpty()) { Spacer(Modifier.width(8.dp)); Text("${ticked.size}/${texts.size}", style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk) }
+                if (texts.isNotEmpty()) { Spacer(Modifier.width(8.dp)); Text("${ticked.size}/${texts.size}", style = Glass.NumberText, color = Glass.PrimaryInk) }
             }
             if (texts.isNotEmpty()) {
                 val frac = ticked.size.toFloat() / texts.size
@@ -395,34 +399,8 @@ private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (Strin
             Line()
             PropRow(TabIcons.Habits, "Repeat", ui.every?.let(Repeat::label) ?: "Never", set = ui.every != null) { onPick("repeat") }
             Line()
-            // "Priority" wrapped into "Prior/ity" beside four flags (checker 2026-10-27): the word keeps one line, and on a
-            // narrow phone or at large font the flags take a line of their own under it.
-            Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(TabIcons.Flag, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
-                Spacer(Modifier.width(12.dp))
-                FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Priority", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp))
-                    Row(Modifier.align(Alignment.CenterVertically)) {
-                        for (p in 0..3) {
-                            val on = ui.priority == p
-                            val press = remember { MutableInteractionSource() }
-                            Row(
-                                Modifier.heightIn(min = TouchMin).widthIn(min = TouchMin).pressScale(press)
-                                    .then(if (on) Modifier.background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(12.dp)).border(1.dp, PriorityColors[p], RoundedCornerShape(12.dp)) else Modifier)
-                                    .clickable(press, indication = null, role = Role.RadioButton) { if (!on) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); a.onPriority(p) } }
-                                    .semantics { contentDescription = "P${p + 1}"; selected = on }
-                                    .padding(horizontal = 7.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(if (on) TabIcons.FlagFilled else TabIcons.Flag, contentDescription = null, tint = PriorityColors[p], modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(3.dp))
-                                Text("P${p + 1}", style = MaterialTheme.typography.labelSmall, color = if (on) Glass.Ink else Glass.Muted, maxLines = 1, softWrap = false)
-                            }
-                        }
-                    }
-                }
-            }
+            // One row family, one selection mark (checker 2026-10-28 #8): Priority opens its own sheet, as Date and Repeat do.
+            PropRow(TabIcons.Flag, "Priority", "P${ui.priority + 1}", set = true, valueColor = PriorityColors.getOrNull(ui.priority)) { onPick("priority") }
             Line()
             Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 16.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(TabIcons.Star, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
@@ -432,9 +410,10 @@ private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (Strin
                 // is only for a task with no date, as on the web.
                 val day = ui.due?.take(10)
                 when {
-                    ui.every != null -> Why("On Habits, by its repeat")
-                    day != null && day <= today.toString() -> Why("On Today, by its date")
-                    day != null -> Why("Shows on its date")
+                    // Short: the date or the repeat decides (checker: "Shows on its date" was a sentence).
+                    ui.every != null -> Why("By repeat")
+                    day != null && day <= today.toString() -> Why("By date")
+                    day != null -> Why("From " + DatePick.dueText(day, today).let { if (it == "Tomorrow") "tomorrow" else it })
                     else -> GlassSwitch(ui.star, if (ui.star) "On today" else "Not today") { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); a.onStar(!ui.star) }
                 }
             }
@@ -449,7 +428,7 @@ private fun Why(text: String) = Text(text, style = MaterialTheme.typography.body
 private fun Line() = HorizontalDivider(Modifier.padding(start = 47.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
 
 @Composable
-private fun PropRow(icon: ImageVector, label: String, value: String, set: Boolean, onClick: () -> Unit) {
+private fun PropRow(icon: ImageVector, label: String, value: String, set: Boolean, valueColor: Color? = null, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp).pressScale(press)
@@ -460,8 +439,11 @@ private fun PropRow(icon: ImageVector, label: String, value: String, set: Boolea
     ) {
         Icon(icon, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
         Spacer(Modifier.width(12.dp))
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f))
-        Text(value, style = MaterialTheme.typography.labelSmall, color = if (set) Glass.PrimaryInk else Glass.Muted)
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, softWrap = false)
+        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(12.dp))
+        if (valueColor != null) { Icon(TabIcons.FlagFilled, contentDescription = null, tint = valueColor, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(5.dp)) }
+        Text(value, style = MaterialTheme.typography.bodyMedium, color = if (set) Glass.PrimaryInk else Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.width(4.dp))
         Icon(TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(16.dp))
     }
@@ -489,11 +471,7 @@ private fun GlassSwitch(on: Boolean, label: String, onToggle: () -> Unit) {
 private fun Note(ui: PanelUi, a: PanelActions) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Full note", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
-                Spacer(Modifier.width(8.dp))
-                Text("what the AI reads", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
-            }
+            Text("Note", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
             Spacer(Modifier.height(8.dp))
             InlineField(ui.text, "Write the task", "Full note", MaterialTheme.typography.bodyMedium, Modifier.fillMaxWidth(), onSave = a.onText)
         }

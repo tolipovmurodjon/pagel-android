@@ -59,7 +59,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -153,7 +152,7 @@ fun TodayScreen(
                             }
                             if (ui.waiting > 0) {
                                 // "+2" waiting: one capsule, not a sentence (Boss: one icon beats many words).
-                                Text("+${ui.waiting}", style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk,
+                                Text("+${ui.waiting}", style = Glass.NumberText, color = Glass.PrimaryInk,
                                     modifier = Modifier.padding(start = 54.dp, top = 4.dp, bottom = 10.dp).background(Glass.PrimarySoft, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(horizontal = 9.dp, vertical = 3.dp)
                                         .semantics { contentDescription = "${ui.waiting} more after these" })
                             }
@@ -229,8 +228,8 @@ private fun TaskRow(row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boo
 
 @Composable
 private fun Meta(row: TodayRow, today: LocalDate) {
-    // The web Habits card's meta line: mono, 12.5 sp (Boss 8/10).
-    val small = MaterialTheme.typography.labelSmall.copy(fontSize = 12.5.sp, lineHeight = 16.sp)
+    // The web Habits card's meta line, 12.5 sp, in the body face (mono only on numbers, checker 2026-10-28 #6).
+    val small = MaterialTheme.typography.labelSmall
     Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         dueLabel(row.due, today)?.let { d ->
             val c = when (d.tone) { DueTone.LATE -> Glass.Risk; DueTone.TODAY -> Glass.Primary; else -> Glass.Muted }
@@ -240,7 +239,10 @@ private fun Meta(row: TodayRow, today: LocalDate) {
             Spacer(Modifier.width(10.dp))
         }
         row.every?.let {
-            Text("↻ ${when (it) { "day" -> "daily"; "weekday" -> "weekdays"; else -> it }}", style = small, color = Glass.Muted)
+            // The same words as the project page and the panel ("Weekly", "Every Tue, Thu"), not the raw "↻ week".
+            androidx.compose.material3.Icon(TabIcons.Habits, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(13.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(org.pagel.ai.ui.glass.Repeat.label(it), style = small, color = Glass.Muted, maxLines = 1)
             Spacer(Modifier.width(10.dp))
         }
         ProjectTile(row.project, row.projectColor, row.projectTitle, size = 16.dp)

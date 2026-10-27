@@ -94,7 +94,7 @@ private fun ProjectRow(p: ProjectEntity, onOpen: () -> Unit) {
         ProjectTile(p.name, p.color, p.title)
         Spacer(Modifier.width(14.dp))
         Text(shortName(p.name, p.title), style = MaterialTheme.typography.titleMedium, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Text(p.openCount.toString(), style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk,
+        Text(p.openCount.toString(), style = Glass.NumberText, color = Glass.PrimaryInk,
             modifier = Modifier.background(Glass.PrimarySoft, RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
     }
 }

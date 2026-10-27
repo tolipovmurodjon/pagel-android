@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -94,8 +97,11 @@ import org.pagel.ai.ui.task.TaskPanelSheet
 import org.pagel.ai.ui.tasks.TasksScreen
 import org.pagel.ai.ui.today.TodayRoute as TodayScreenRoute
 
-/** Height of the glass bar plus its gap above the system bar, so lists end above it, not under it. */
-private val BarSpace = 64.dp + 16.dp
+/** The glass bar: 64 dp, or 48 dp on a landscape phone, where 64 dp took 30 % of the height (checker 2026-10-28 #10). */
+private val BarTall = 64.dp
+private val BarCompact = 48.dp
+/** A landscape bar keeps to the middle (as iPhone's does), so the + button sits beside it, not on the list. */
+private val BarCompactWidth = 440.dp
 
 /** The native app's root (NATIVE-PLAN Phase 1): pair once, then five tabs on a real liquid-glass bar. */
 @Composable
@@ -146,6 +152,12 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         }
     }
     LaunchedEffect(selected, stack.size) { scrolled = 0f; titleShown = false }
+    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480
+    val barHeight = if (compact) BarCompact else BarTall
+    // Height of the glass bar plus its gap above the system bar, so lists end above it, not under it.
+    val barSpace = barHeight + 16.dp
+    // Where the + button and the toast line sit: above a tall bar, beside a compact one.
+    val fabBottom = if (compact) 8.dp else 8.dp + barHeight + 14.dp
 
     // A light tick when the tab changes, never on the first frame (Apple HIG playing haptics: one per action).
     val haptics = LocalHapticFeedback.current
@@ -159,7 +171,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         AuroraBackground(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-            val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + BarSpace
+            val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + barSpace
             val padding = PaddingValues(top = top, bottom = bottom)
             // Tabs are peers: switching never slides (emilkowalski/skills animate-expo). Each tab gets its own
             // NavDisplay, so only pushes inside a tab animate.
@@ -200,17 +212,23 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 onTabSelected = { selected = it },
                 backdrop = backdrop,
                 tabsCount = Tab.entries.size,
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                barHeight = barHeight,
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .then(if (compact) Modifier.widthIn(max = BarCompactWidth) else Modifier)
+                    .fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
             ) {
                 Tab.entries.forEachIndexed { i, tab ->
                     LiquidBottomTab(onClick = { if (selected == i) reselect++ else selected = i }) {
                         // Ink on the glass, never pale grey: the first emulator screenshot showed unselected tabs at
                         // almost no contrast. The selected tab is tinted mint by the bar's own top layer.
-                        Icon(tab.icon, contentDescription = null, tint = Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(22.dp))
-                        // The words grow with the phone's font up to 1.2x, then stop (as iOS tab bars do): at 1.5x
-                        // "Notebook" was cut to "Notebo" (walk 29). The icon carries the meaning.
-                        val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
-                        Text(tab.label, fontSize = (11f * minOf(scale, 1.2f) / scale).sp, maxLines = 1, softWrap = false, color = Glass.Ink.copy(alpha = 0.72f))
+                        if (compact) Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(tab.icon, contentDescription = null, tint = Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(6.dp))
+                            TabLabel(tab.label)
+                        } else {
+                            Icon(tab.icon, contentDescription = null, tint = Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(22.dp))
+                            TabLabel(tab.label)
+                        }
                     }
                 }
             }
@@ -233,7 +251,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         if ((onTop && selected == 0) || inProject != null) {
             AddButton(
                 backdrop,
-                Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.navigationBars).padding(end = 20.dp, bottom = if (onTop) 8.dp + 64.dp + 14.dp else 16.dp),
+                Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.navigationBars).padding(end = 20.dp, bottom = if (onTop) fabBottom else 16.dp),
             ) { adding = inProject?.name ?: "" }
         }
         // The toast line lives here, over the real list, so its glass bends what is under it (audit #8). While a sheet is
@@ -242,7 +260,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             ToastHost(
                 toasts,
                 Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(start = 12.dp, end = 12.dp, bottom = if (onTop) 8.dp + 64.dp + 14.dp + 56.dp + 10.dp else 16.dp + 56.dp + 10.dp),
+                    .padding(start = 12.dp, end = 12.dp, bottom = if (onTop) fabBottom + 56.dp + 10.dp else 16.dp + 56.dp + 10.dp),
                 backdrop = backdrop,
             )
         }
@@ -254,6 +272,22 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             TaskPanelSheet(id, onClose = { openTask = null }, onOpenProject = { name -> openTask = null; if (top != ProjectPageRoute(name)) stack.add(ProjectPageRoute(name)) })
         }
     }
+}
+
+/**
+ * A tab's word: grows with the phone's font up to 1.2x (as iOS tab bars do), then shrinks to fit its slot, down to
+ * 8 dp, so it is never cut ("Noteboo'" at 1.5x on a 320 dp phone, walk 29, checker 2026-10-28 #1).
+ */
+@Composable
+private fun TabLabel(label: String) {
+    val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    androidx.compose.foundation.text.BasicText(
+        label,
+        style = MaterialTheme.typography.labelSmall.copy(color = Glass.Ink.copy(alpha = 0.72f), fontSize = (11f * minOf(scale, 1.2f) / scale).sp, lineHeight = (14f * minOf(scale, 1.2f) / scale).sp),
+        maxLines = 1,
+        softWrap = false,
+        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = (8f / scale).sp, maxFontSize = (11f * minOf(scale, 1.2f) / scale).sp, stepSize = (0.25f / scale).sp),
+    )
 }
 
 /**

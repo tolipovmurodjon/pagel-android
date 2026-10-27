@@ -100,6 +100,9 @@ fun Pane(modifier: Modifier = Modifier, radius: Dp = 24.dp, content: @Composable
                 // shadow carry the edge. Muted text stays ≥ 4.5:1 on the darkest cloud (checked with cr.py on CI shots).
                 drawRect(Color.White.copy(alpha = 0.32f))
                 drawRect(Brush.radialGradient(listOf(Glass.Aurora1.copy(alpha = 0.30f), Color.Transparent), center = Offset.Zero, radius = size.minDimension * 0.9f))
+                // A second, softer light from the bottom-right: over the page's white middle a tall pane's foot read as
+                // plain white card (checker 2026-10-28, today.png, project-folds-open.png). Light mint only, text stays ink.
+                drawRect(Brush.radialGradient(listOf(Glass.Aurora2.copy(alpha = 0.34f), Color.Transparent), center = Offset(size.width, size.height), radius = size.minDimension * 1.1f))
             },
         )
     }

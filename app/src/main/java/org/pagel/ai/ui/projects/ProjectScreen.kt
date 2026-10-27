@@ -56,7 +56,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -208,7 +207,7 @@ private fun NowPhase(g: PhaseGroup, project: String, today: LocalDate, onOpenTas
             Text("NOW", style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk,
                 modifier = Modifier.background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(8.dp)).border(1.dp, Glass.Primary, RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 2.dp))
             Spacer(Modifier.width(8.dp))
-            Text("${g.rows.size}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+            Text("${g.rows.size}", style = Glass.NumberText, color = Glass.Muted)
         }
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 4.dp)) {
@@ -348,7 +347,7 @@ private fun TaskLine(r: ProjectRow, today: LocalDate, onOpen: () -> Unit, onTick
             Text(r.title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val d = r.due
             if (d != null || r.every != null) Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                val small = MaterialTheme.typography.labelSmall.copy(fontSize = 12.5.sp)
+                val small = MaterialTheme.typography.labelSmall
                 if (d != null) {
                     val day = d.take(10)
                     val c = if (day < today.toString()) Glass.Risk else if (day == today.toString()) Glass.Primary else Glass.Muted
