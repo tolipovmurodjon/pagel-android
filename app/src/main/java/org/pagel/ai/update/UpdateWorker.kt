@@ -11,15 +11,21 @@ import androidx.work.WorkerParameters
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 
-/** Every 30 minutes (WorkManager's floor is 15), on any network: ask the update host, install if newer. One tiny
- *  request over the tailnet; silent when there is nothing to do. */
+/** Every 30 minutes (WorkManager's floor is 15), on any network: ask the update host; if newer, download and verify
+ *  it, then post "PAGEL x ready · Tap to install". It never installs by itself: an install closes the app, so it
+ *  waits for Boss's tap (2026-10-27, crash cause #1). Silent when there is nothing to do. */
 class UpdateWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
         val updater = Updater(applicationContext)
         return when (val s = updater.check()) {
             is UpdateState.Available -> {
-                val err = updater.downloadAndInstall(s.manifest)
-                if (err != null) Timber.w("self-update skipped: %s", err)
+                val err = updater.download(s.manifest)
+                if (err != null) {
+                    Timber.w("update download skipped: %s", err)
+                } else {
+                    updater.rememberReady(s.manifest)
+                    updater.notifyReady(s.manifest)
+                }
                 Result.success()
             }
             is UpdateState.Failed -> { Timber.d("update check failed: %s", s.reason); Result.success() }

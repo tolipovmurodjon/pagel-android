@@ -3,9 +3,12 @@ name: release
 # Builds the PAGEL APK signed with the stable PAGEL key, checks the signature, and publishes it as a GitHub release
 # plus latest.json. The server pulls it and serves it on the tailnet; the app updates itself from there.
 # The key lives only in GitHub Secrets and is deleted from the runner at the end.
+# Publishes ONLY from main or an app-v* tag (2026-10-27: a release on every feat push, auto-installed while Boss
+# used the app, was crash cause #1). Feature branches run build.yml only.
 on:
   push:
-    branches: [main, "feat/senses-and-self-update"]
+    branches: [main]
+    tags: ["app-v*"]
   workflow_dispatch:
 
 concurrency:
@@ -21,6 +24,8 @@ env:
 
 jobs:
   release:
+    # A manual run from a feature branch must not publish either.
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/app-v')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -41,7 +46,7 @@ jobs:
           PAGEL_KEYSTORE_FILE: ${{ runner.temp }}/pagel-release.p12
           PAGEL_KEYSTORE_PASSWORD: ${{ secrets.PAGEL_KEYSTORE_PASSWORD }}
           PAGEL_KEY_ALIAS: ${{ secrets.PAGEL_KEY_ALIAS }}
-        run: ./gradlew testDebugUnitTest assembleRelease -PpagelVersionCode=${{ github.run_number }} -PpagelVersionName=0.2.${{ github.run_number }}
+        run: ./gradlew testDebugUnitTest assembleRelease -PpagelVersionCode=${{ github.run_number }} -PpagelVersionName=0.3.${{ github.run_number }}
       - name: Check the signature is the PAGEL key
         run: |
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
@@ -61,7 +66,7 @@ jobs:
           mkdir -p dist && cp "$APK" "dist/pagel-$CODE.apk"
           SHA=$(sha256sum "dist/pagel-$CODE.apk" | cut -d' ' -f1)
           NOTES=$(git log -1 --format=%s | sed 's/"/\\"/g')
-          printf '{"versionCode":%s,"versionName":"0.2.%s","apk":"pagel-%s.apk","sha256":"%s","builtAt":"%s","notes":"%s"}\n' \
+          printf '{"versionCode":%s,"versionName":"0.3.%s","apk":"pagel-%s.apk","sha256":"%s","builtAt":"%s","notes":"%s"}\n' \
             "$CODE" "$CODE" "$CODE" "$SHA" "$(date -u +%FT%TZ)" "$NOTES" > dist/latest.json
           cat dist/latest.json
       - name: Publish the release
@@ -69,8 +74,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           PRE=""; [ "${{ github.ref }}" = "refs/heads/main" ] || PRE="--prerelease"
-          gh release create "v0.2.${{ github.run_number }}" dist/pagel-${{ github.run_number }}.apk dist/latest.json \
-            --title "PAGEL 0.2.${{ github.run_number }}" --notes "$(git log -1 --format=%s)" --target "${{ github.sha }}" $PRE
+          gh release create "v0.3.${{ github.run_number }}" dist/pagel-${{ github.run_number }}.apk dist/latest.json \
+            --title "PAGEL 0.3.${{ github.run_number }}" --notes "$(git log -1 --format=%s)" --target "${{ github.sha }}" $PRE
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP/pagel-release.p12"

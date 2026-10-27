@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -20,13 +22,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.pagel.ai.service.AnchorService
 import org.pagel.ai.ui.gateway.GatewayDebugScreen
 import org.pagel.ai.ui.home.HomeScreen
 import org.pagel.ai.ui.hud.BootScreen
 import org.pagel.ai.ui.tasks.TasksScreen
 import org.pagel.ai.ui.theme.PagelTheme
+import org.pagel.ai.update.Updater
+import timber.log.Timber
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -39,12 +47,40 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         ensureNotifPermission()
         ContextCompat.startForegroundService(this, Intent(this, AnchorService::class.java))
+        handle(intent)
         setContent {
             PagelTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     PagelRoot()
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handle(intent)
+    }
+
+    private fun handle(intent: Intent?) {
+        if (intent?.action == Updater.ACTION_INSTALL) {
+            // Boss tapped "PAGEL x ready": hand the verified download to Android's confirm screen, off the main thread.
+            val updater = Updater(applicationContext)
+            lifecycleScope.launch(Dispatchers.IO) {
+                val m = updater.readyManifest() ?: return@launch
+                val err = updater.installDownloaded(m) ?: return@launch
+                Timber.w("update install skipped: %s", err)
+                if (!updater.canInstall()) {
+                    runCatching {
+                        startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                    }
+                }
+            }
+        }
+        // Debug builds only: the CI smoke test forces a crash to prove CrashRecorder writes it down.
+        if (BuildConfig.DEBUG && intent?.getBooleanExtra(EXTRA_TEST_CRASH, false) == true) {
+            lifecycleScope.launch { delay(500); throw IllegalStateException("PAGEL test crash") }
         }
     }
 
@@ -62,6 +98,8 @@ class MainActivity : ComponentActivity() {
  * Tasks first (Boss 2026-10-27): the app opens straight into pagel.uz with no splash wait. The phone screen
  * (gateway, senses, updates) opens on top from More → Phone, and Back returns to the tasks, which stay loaded.
  */
+private const val EXTRA_TEST_CRASH = "pagel.test_crash"
+
 @Composable
 private fun PagelRoot() {
     var showPhone by remember { mutableStateOf(false) }

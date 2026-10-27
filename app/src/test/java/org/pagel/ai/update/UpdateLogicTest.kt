@@ -47,4 +47,23 @@ class UpdateLogicTest {
         assertTrue(UpdateLogic.sameHash(h.uppercase(), h))
         assertFalse(UpdateLogic.sameHash(h, h.replaceFirst('b', 'c')))
     }
+
+    @Test fun `a download counts as ready only when its bytes match the published hash`() {
+        val dir = createTempDirFor("ready")
+        val m = UpdateManifest(13, "0.3.13", "pagel-13.apk", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+        assertNull("nothing downloaded yet", UpdateLogic.verifiedApk(dir, m))
+        File(dir, "pagel-13.apk").writeText("abd")
+        assertNull("a corrupt or swapped file is never installed", UpdateLogic.verifiedApk(dir, m))
+        File(dir, "pagel-13.apk").writeText("abc")
+        assertEquals(File(dir, "pagel-13.apk"), UpdateLogic.verifiedApk(dir, m))
+        assertNull("an unsafe name is refused even when the file exists", UpdateLogic.verifiedApk(dir, m.copy(apk = "../pagel-13.apk")))
+    }
+
+    @Test fun `the ready manifest round-trips through its file text`() {
+        val m = UpdateManifest(13, "0.3.13", "pagel-13.apk", "ff", "2026-10-27", "notes")
+        assertEquals(m, UpdateLogic.parse(UpdateLogic.encode(m)))
+    }
+
+    private fun createTempDirFor(name: String): File =
+        File.createTempFile("pagel-$name", "").let { it.delete(); it.mkdirs(); it.deleteOnExit(); it }
 }

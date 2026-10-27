@@ -15,7 +15,6 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.WebSocket
 import org.pagel.ai.BuildConfig
@@ -141,11 +140,10 @@ object GatewayModule {
     )
 
     /**
-     * Read once, synchronously, when Hilt first builds the [GatewayManager] singleton (normally
-     * when `GatewayViewModel` is first created) — only relevant if a connection attempt somehow
-     * happens before the debug screen ever runs its own [GatewayManager.start] overload, which reads
-     * the current URL/token live on every CONNECT tap (see [GatewaySettings]'s doc). `runBlocking`
-     * here is a single main-thread DataStore read at cold start, not a hot path.
+     * Starts at [GatewaySettings.defaultUrl], with no disk read: Hilt builds this on Main (inside
+     * `AnchorService.onCreate`), and the `runBlocking` DataStore read that used to sit here froze the
+     * cold start (2026-10-27). Every real connection retargets first: `AnchorService` and the CONNECT
+     * tap both call [GatewayManager.start] with the saved URL and token, read on a background thread.
      */
     /**
      * `deviceFamily = "Android"`, NOT `Build.MODEL`. The gateway's `platformMatchesDeviceFamily`
@@ -159,7 +157,7 @@ object GatewayModule {
     @Singleton
     fun provideGatewayConnectionConfig(settings: GatewaySettings): GatewayConnectionConfig =
         GatewayConnectionConfig(
-            serverUrl = runBlocking { settings.currentUrl() },
+            serverUrl = settings.defaultUrl,
             clientVersion = BuildConfig.VERSION_NAME,
             platform = "Android",
             deviceFamily = "Android",

@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.pagel.ai.BuildConfig
+import org.pagel.ai.MainActivity
 import timber.log.Timber
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -26,7 +27,7 @@ sealed interface UpdateState {
 /**
  * Self-update. The release pipeline publishes `latest.json` + the signed APK on a private host that is reachable
  * only over the tailnet. This checks it, downloads the APK, verifies its SHA-256, and hands it to Android's
- * PackageInstaller. Android itself refuses any APK that is not signed with the SAME key as the installed app,
+ * PackageInstaller, always behind Android's own confirm screen. Android itself refuses any APK that is not signed with the SAME key as the installed app,
  * so a wrong or tampered file cannot replace PAGEL even if the hash check were bypassed.
  */
 class Updater(private val ctx: Context) {
@@ -51,26 +52,33 @@ class Updater(private val ctx: Context) {
 
     fun canInstall(): Boolean = ctx.packageManager.canRequestPackageInstalls()
 
-    /** Download, verify, install. Returns null on success of hand-off, or a human reason for failure. */
-    fun downloadAndInstall(m: UpdateManifest): String? {
-        if (!canInstall()) return "Install unknown apps is off for PAGEL"
-        val dir = File(ctx.cacheDir, "updates").apply { mkdirs() }
-        dir.listFiles()?.forEach { it.delete() }
-        val file = File(dir, m.apk)
+    /** Downloads the APK into the cache and checks its SHA-256. Returns null when a verified file is ready, or a
+     *  human reason. Never installs: that waits for Boss's tap ([installDownloaded]). */
+    fun download(m: UpdateManifest): String? {
+        if (UpdateLogic.verifiedApk(dir(), m) != null) return null
+        dir().listFiles()?.forEach { it.delete() }
+        val file = File(dir(), m.apk)
         try {
             http.newCall(Request.Builder().url(BASE + m.apk).build()).execute().use { r ->
                 if (!r.isSuccessful) return "download answered ${r.code}"
-                r.body!!.byteStream().use { input -> file.outputStream().use { input.copyTo(it) } }
+                val body = r.body ?: return "download had no body"
+                body.byteStream().use { input -> file.outputStream().use { input.copyTo(it) } }
             }
         } catch (e: Exception) {
             file.delete()
             return "download failed: ${e.message}"
         }
-        val actual = UpdateLogic.sha256Hex(file)
-        if (!UpdateLogic.sameHash(actual, m.sha256)) {
+        if (UpdateLogic.verifiedApk(dir(), m) == null) {
             file.delete()
             return "checksum mismatch, file discarded"
         }
+        return null
+    }
+
+    /** Hands the verified APK to Android, which shows its own "Update PAGEL?" screen. Only called after a tap. */
+    fun installDownloaded(m: UpdateManifest): String? {
+        if (!canInstall()) return "Install unknown apps is off for PAGEL"
+        val file = UpdateLogic.verifiedApk(dir(), m) ?: return "no verified download, check again"
         return try {
             install(file)
             null
@@ -79,12 +87,45 @@ class Updater(private val ctx: Context) {
         }
     }
 
+    /** The manual path from the Phone screen: Boss tapped, so download then hand over. */
+    fun downloadAndInstall(m: UpdateManifest): String? = download(m) ?: installDownloaded(m)
+
+    /** Tells Boss a verified update is waiting; the tap opens PAGEL, which starts the install. */
+    fun notifyReady(m: UpdateManifest) {
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "PAGEL updates", NotificationManager.IMPORTANCE_DEFAULT))
+        val open = Intent(ctx, MainActivity::class.java)
+            .setAction(ACTION_INSTALL)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val tap = PendingIntent.getActivity(ctx, NOTIF_READY, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val n = NotificationCompat.Builder(ctx, CHANNEL)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("PAGEL ${m.versionName} ready")
+            .setContentText("Tap to install")
+            .setContentIntent(tap)
+            .setAutoCancel(true)
+            .build()
+        runCatching { nm.notify(NOTIF_READY, n) }
+    }
+
+    /** The newest manifest that was downloaded and verified, so a tap can install without asking the host again. */
+    fun readyManifest(): UpdateManifest? {
+        val m = runCatching { UpdateLogic.parse(File(dir(), MANIFEST).readText()) }.getOrNull() ?: return null
+        return m.takeIf { UpdateLogic.isNewer(BuildConfig.VERSION_CODE, it) && UpdateLogic.verifiedApk(dir(), it) != null }
+    }
+
+    fun rememberReady(m: UpdateManifest) {
+        File(dir(), MANIFEST).writeText(UpdateLogic.encode(m))
+    }
+
+    private fun dir() = File(ctx.cacheDir, "updates").apply { mkdirs() }
+
     private fun install(file: File) {
         val installer = ctx.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         if (Build.VERSION.SDK_INT >= 31) {
-            // Android 12+: an app that installed itself before may update without a prompt, when the platform allows.
-            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            // Always Android's own confirm screen: an update never replaces the app without Boss saying yes.
+            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
         }
         val id = installer.createSession(params)
         installer.openSession(id).use { session ->
@@ -95,6 +136,7 @@ class Updater(private val ctx: Context) {
                 }
             }
             val intent = Intent(ctx, InstallResultReceiver::class.java).setAction(ACTION_RESULT)
+            // MUTABLE is required here: the installer fills in the status extras. The intent is explicit.
             val pending = PendingIntent.getBroadcast(
                 ctx, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
             )
@@ -106,6 +148,10 @@ class Updater(private val ctx: Context) {
         /** Tailnet-only host; cleartext to this exact IP is already allowed in network_security_config. */
         const val BASE = "http://100.64.0.1:8788/"
         const val ACTION_RESULT = "org.pagel.ai.INSTALL_RESULT"
+        const val ACTION_INSTALL = "org.pagel.ai.INSTALL_UPDATE"
+        const val CHANNEL = "pagel_updates"
+        private const val MANIFEST = "ready.json"
+        private const val NOTIF_READY = 8
     }
 }
 
@@ -119,6 +165,8 @@ class InstallResultReceiver : BroadcastReceiver() {
                 @Suppress("DEPRECATION")
                 val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT) ?: return
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // Boss just tapped Install, so PAGEL is in front and may open Android's confirm screen itself.
+                if (runCatching { context.startActivity(confirm) }.isSuccess) return
                 val nm = context.getSystemService(NotificationManager::class.java)
                 nm.createNotificationChannel(NotificationChannel(CHANNEL, "PAGEL updates", NotificationManager.IMPORTANCE_DEFAULT))
                 val tap = PendingIntent.getActivity(context, 7, confirm, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -137,6 +185,6 @@ class InstallResultReceiver : BroadcastReceiver() {
     }
 
     private companion object {
-        const val CHANNEL = "pagel_updates"
+        const val CHANNEL = Updater.CHANNEL
     }
 }

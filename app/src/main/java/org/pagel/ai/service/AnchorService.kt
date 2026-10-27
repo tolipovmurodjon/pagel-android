@@ -12,7 +12,14 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import org.pagel.ai.net.GatewayAuthTokenStore
 import org.pagel.ai.net.GatewayManager
+import org.pagel.ai.net.GatewaySettings
 import javax.inject.Inject
 
 /**
@@ -31,6 +38,10 @@ import javax.inject.Inject
 class AnchorService : Service() {
 
     @Inject lateinit var gateway: GatewayManager
+    @Inject lateinit var settings: GatewaySettings
+    @Inject lateinit var authTokenStore: GatewayAuthTokenStore
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -38,8 +49,17 @@ class AnchorService : Service() {
         AnchorWatchdogWorker.ensureScheduled(this)
         // Found 2026-10-05: nothing started the gateway except the CONNECT button, so after any restart (an
         // update, a reboot, a kill) PAGEL sat disconnected until Boss opened the app. Start it here, with the
-        // saved URL and token. connect() does nothing while a connection is already live.
-        gateway.start()
+        // saved URL and token, both read here on IO (never on Main).
+        scope.launch {
+            val url = settings.currentUrl()
+            val token = authTokenStore.get()?.trim()?.ifEmpty { null }
+            gateway.start(url, token)
+        }
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY

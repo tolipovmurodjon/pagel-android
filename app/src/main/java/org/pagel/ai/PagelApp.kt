@@ -2,6 +2,7 @@ package org.pagel.ai
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
+import org.pagel.ai.crash.CrashRecorder
 import org.pagel.ai.update.UpdateWorker
 
 /**
@@ -16,6 +17,7 @@ import org.pagel.ai.update.UpdateWorker
 class PagelApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        CrashRecorder.install(this)
         UpdateWorker.schedule(this)
     }
 }

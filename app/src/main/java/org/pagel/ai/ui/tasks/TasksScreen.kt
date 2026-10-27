@@ -48,6 +48,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -65,6 +70,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 private const val HOME = "https://pagel.uz/today"
 private const val HOST = "pagel.uz"
@@ -81,7 +88,9 @@ private val Ink = Color(0xFF0B2A22)
 @Composable
 fun TasksScreen(onOpenPhone: () -> Unit) {
     val context = LocalContext.current
-    val signIn = remember { SavedSignIn(context) }
+    val scope = rememberCoroutineScope()
+    // Opened on IO before the page starts, so the first password ask already knows the saved one.
+    val signIn by produceState<Opened?>(null) { value = Opened(SavedSignIn.open(context)) }
     var progress by remember { mutableFloatStateOf(0f) }
     var offline by remember { mutableStateOf(false) }
     var canGoBack by remember { mutableStateOf(false) }
@@ -94,10 +103,16 @@ fun TasksScreen(onOpenPhone: () -> Unit) {
         pickFiles = null
     }
 
-    val web = remember(generation) {
+    var web by remember { mutableStateOf<WebView?>(null) }
+    var webBroken by remember { mutableStateOf(false) }
+    LaunchedEffect(generation, signIn != null) {
+        if (signIn == null) return@LaunchedEffect
+        // The paper-coloured first frame paints before the WebView starts: no white flash, no frozen launch.
+        withFrameNanos { }
         // A saved password is tried once per page load; a second ask means it is wrong, so Boss is asked again.
         var triedSaved = false
-        WebView(context).apply {
+        // Building a WebView throws when the system WebView is missing or mid-update: show "Try again", never crash.
+        web = runCatching { WebView(context).apply {
             WebView.setWebContentsDebuggingEnabled(context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
             setBackgroundColor(android.graphics.Color.rgb(0xF4, 0xFB, 0xF8))
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -125,7 +140,7 @@ fun TasksScreen(onOpenPhone: () -> Unit) {
                 override fun onReceivedHttpAuthRequest(view: WebView, handler: HttpAuthHandler, host: String, realm: String) {
                     // The saved password belongs to pagel.uz only; any other site asking gets nothing.
                     if (host.removePrefix("www.") != HOST) { handler.cancel(); return }
-                    val saved = signIn.get()
+                    val saved = signIn?.store?.get()
                     if (saved != null && !triedSaved) { triedSaved = true; handler.proceed(saved.first, saved.second); return }
                     askWrong = saved != null
                     asking = handler
@@ -143,6 +158,7 @@ fun TasksScreen(onOpenPhone: () -> Unit) {
                 override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
                     (view.parent as? ViewGroup)?.removeView(view)
                     view.destroy()
+                    web = null
                     generation++
                     return true
                 }
@@ -156,24 +172,33 @@ fun TasksScreen(onOpenPhone: () -> Unit) {
                 }
             }
             loadUrl(HOME)
-        }
+        } }.getOrNull()
+        webBroken = web == null
     }
-    DisposableEffect(web) { onDispose { CookieManager.getInstance().flush() } }
+    DisposableEffect(web) { onDispose { runCatching { CookieManager.getInstance().flush() } } }
 
-    BackHandler(enabled = canGoBack) { web.goBack() }
+    BackHandler(enabled = canGoBack) { web?.goBack() }
 
     Box(Modifier.fillMaxSize().background(Paper).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        AndroidView(factory = { (web.parent as? ViewGroup)?.removeView(web); web }, modifier = Modifier.fillMaxSize())
+        web?.let { page ->
+            key(page) { AndroidView(factory = { (page.parent as? ViewGroup)?.removeView(page); page }, modifier = Modifier.fillMaxSize()) }
+        }
         AnimatedVisibility(visible = progress < 1f, enter = fadeIn(), exit = fadeOut()) {
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(2.dp), color = Mint, trackColor = Color.Transparent)
         }
-        if (offline) Offline(onRetry = { offline = false; web.reload() })
+        if (offline) Offline(onRetry = { offline = false; web?.reload() })
+        if (webBroken) Offline(title = "The page could not start", hint = "Android's WebView is updating or missing.", onRetry = { webBroken = false; generation++ })
     }
 
     asking?.let { handler ->
         SignInDialog(
             wrong = askWrong,
-            onSignIn = { user, pass -> signIn.save(user, pass); asking = null; handler.proceed(user, pass) },
+            onSignIn = { user, pass ->
+                asking = null
+                handler.proceed(user, pass)
+                val store = signIn?.store
+                scope.launch(Dispatchers.IO) { runCatching { store?.save(user, pass) } }
+            },
             onCancel = { asking = null; handler.cancel(); offline = true },
         )
     }
@@ -190,16 +215,23 @@ private fun openOutside(context: Context, url: Uri) {
     runCatching { context.startActivity(intent) }
 }
 
+/** The saved sign-in once opening it has finished; [store] is null when the Keystore refused. */
+private class Opened(val store: SavedSignIn?)
+
 @Composable
-private fun Offline(onRetry: () -> Unit) {
+private fun Offline(
+    title: String = "Can't reach pagel.uz",
+    hint: String = "Check the internet, then try again.",
+    onRetry: () -> Unit,
+) {
     Column(
         Modifier.fillMaxSize().background(Paper).padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Can't reach pagel.uz", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text(title, color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        Text("Check the internet, then try again.", color = Ink.copy(alpha = .6f), fontSize = 15.sp)
+        Text(hint, color = Ink.copy(alpha = .6f), fontSize = 15.sp)
         Spacer(Modifier.height(22.dp))
         Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = Mint), shape = RoundedCornerShape(28.dp)) { Text("Try again") }
     }

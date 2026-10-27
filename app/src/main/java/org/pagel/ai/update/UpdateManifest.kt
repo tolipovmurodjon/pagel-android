@@ -46,4 +46,13 @@ object UpdateLogic {
     }
 
     fun sameHash(a: String, b: String): Boolean = a.trim().equals(b.trim(), ignoreCase = true)
+
+    fun encode(m: UpdateManifest): String = json.encodeToString(UpdateManifest.serializer(), m)
+
+    /** The downloaded APK for [m] in [dir], only if its name is safe and its bytes match the published hash. */
+    fun verifiedApk(dir: File, m: UpdateManifest): File? {
+        if (!safeApkName(m.apk)) return null
+        val f = File(dir, m.apk)
+        return f.takeIf { it.isFile && sameHash(sha256Hex(it), m.sha256) }
+    }
 }
