@@ -9,11 +9,18 @@ CODE, TOKEN = "482913", "ci-device-token"
 LOG = open(sys.argv[2] if len(sys.argv) > 2 else "fake-pagel.log", "a", buffering=1)
 PROJECTS = [("humopedia", "Humopedia", 41), ("ababil", "ABABIL", 27), ("pagel", "PAGEL", 58), ("uzcosmos", "UzCosmos", 4), ("me", "Me", 12), ("labs", "Labs", 6)]
 
+# Today's five stars, dealt in this order by /api/v1/today (the app shows 3 at a time; the 4th comes after a tick).
+TODAY = [("t_ci1", "pagel", "Ship the native app", 0, "2026-10-27 15:00"), ("t_ci2", "me", "Call the bank about the report", 1, None),
+         ("t_ci3", "humopedia", "Record the fractions lesson", 2, None), ("t_ci4", "ababil", "Measure the drone's hover time", 1, None),
+         ("t_ci5", "me", "Weigh in", 3, None)]
+DONE = set()
+
 def sync_body():
     return {"cursor": 10, "full": True,
             "projects": [{"name": n, "title": t, "color": None, "sort": i, "open": o} for i, (n, t, o) in enumerate(PROJECTS)],
-            "tasks": [{"id": "t_ci1", "project": "pagel", "phase": "Now", "sort": 1, "text": "Ship the native app", "status": "open",
-                       "priority": 1, "star": True, "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": []}],
+            "tasks": [{"id": i, "project": p, "phase": "Now", "sort": k, "text": text, "status": "done" if i in DONE else "open",
+                       "priority": pr, "star": True, "due": due, "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": []}
+                      for k, (i, p, text, pr, due) in enumerate(TODAY)],
             "removed": []}
 
 class H(BaseHTTPRequestHandler):
@@ -43,10 +50,24 @@ class H(BaseHTTPRequestHandler):
             return self.send(201, {"ok": True}) if self.authed() else self.send(401, {"error": "Send Authorization: Bearer <token>."})
         self.send(404, {"error": "Unknown path."})
 
+    def do_PATCH(self):
+        body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode()
+        LOG.write(f"PATCH {self.path} {body[:300]} auth={self.authed()}\n")
+        if not self.authed():
+            return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+        tid = self.path.rsplit("/", 1)[-1]
+        if not self.path.startswith("/api/v1/tasks/") or tid not in {i for i, *_ in TODAY}:
+            return self.send(404, {"error": "No such task."})
+        done = json.loads(body or "{}").get("done") is True
+        (DONE.add if done else DONE.discard)(tid)
+        self.send(200, {"id": tid, "status": "done" if done else "open"})
+
     def do_GET(self):
         LOG.write(f"GET {self.path} auth={self.authed()}\n")
         if not self.authed():
             return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+        if self.path == "/api/v1/today":
+            return self.send(200, {"day": "2026-10-27", "shown_at_once": 3, "tasks": [{"id": i} for i, *_ in TODAY if i not in DONE]})
         if self.path.startswith("/api/v1/sync"):
             return self.send(200, sync_body())
         if self.path.startswith("/api/v1/stream"):

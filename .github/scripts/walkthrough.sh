@@ -7,6 +7,7 @@ set -u
 T="timeout 60"
 PKG=org.pagel.ai
 OUT=smoke-out/walk
+FAKE_LOG=${FAKE_LOG:-smoke-out/fake-pagel.log}
 mkdir -p "$OUT"
 N=0
 log() { echo "$*" | tee -a "$OUT/steps.txt"; }
@@ -39,10 +40,22 @@ REC=$!
 sleep 1
 
 shot home
-for tab in Today Inbox Habits Notebook More Projects; do
+for tab in Today Inbox Habits Notebook More; do
   tap "$tab" && shot "tab-$tab"
 done
+log "-- projects live under More now"
+tap Projects && shot projects
+grep -q 'text="Humopedia"' "$OUT/$(printf '%02d' $N)-projects.xml" || { log "WALKTHROUGH: Projects under More shows no projects"; exit 1; }
+$T adb shell input keyevent 4; shot back-to-more
 tap Today && shot today-again
+
+log "-- tick the first task: ring fills, confetti, the row folds, the 4th task is dealt, the tick reaches pagel.uz"
+tap "Done: Ship the native app" && shot ticked 0.3
+shot after-fold 2.5
+grep -q 'text="Measure the drone' "$OUT/$(printf '%02d' $N)-after-fold.xml" || { log "WALKTHROUGH: after the tick the 4th task was not dealt"; exit 1; }
+for i in $(seq 1 30); do grep -q "PATCH /api/v1/tasks/t_ci1 {\"done\":true} auth=True" "$FAKE_LOG" && break; sleep 1; done
+grep -q "PATCH /api/v1/tasks/t_ci1" "$FAKE_LOG" || { log "WALKTHROUGH: the tick never reached pagel.uz (no PATCH in the fake log)"; exit 1; }
+log "   tick reached pagel.uz after ~${i} s"
 $T adb shell input swipe 540 1700 540 600 300; shot today-scrolled
 tap Today && shot today-retap-top
 $T adb shell input keyevent 4; shot after-back

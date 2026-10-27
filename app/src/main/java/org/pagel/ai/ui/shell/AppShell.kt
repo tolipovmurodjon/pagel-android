@@ -67,6 +67,7 @@ import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.pair.PairRoute
 import org.pagel.ai.ui.projects.ProjectsRoute
 import org.pagel.ai.ui.tasks.TasksScreen
+import org.pagel.ai.ui.today.TodayRoute as TodayScreenRoute
 
 /** Height of the glass bar plus its gap above the system bar, so lists end above it, not under it. */
 private val BarSpace = 64.dp + 16.dp
@@ -127,11 +128,12 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 onBack = { stack.removeLastOrNull() },
                 entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator<NavKey>(), rememberViewModelStoreNavEntryDecorator<NavKey>()),
                 entryProvider = entryProvider<NavKey> {
-                    entry<TodayRoute> { ProjectsRoute(padding, reselect) }
+                    entry<TodayRoute> { TodayScreenRoute(padding, reselect) }
                     entry<InboxRoute> { Coming("Inbox", "/learn", padding) { stack.add(WebRoute(it)) } }
                     entry<HabitsRoute> { Coming("Habits", "/habits", padding) { stack.add(WebRoute(it)) } }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
-                    entry<MoreRoute> { More(padding, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect) }
+                    entry<MoreRoute> { More(padding, onOpenProjects = { stack.add(ProjectListRoute) }, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect) }
+                    entry<ProjectListRoute> { ProjectsRoute(padding, 0) }
                     entry<WebRoute> { r -> TasksScreen(onOpenPhone = onOpenPhone, startPath = r.path) }
                 },
             ) }
@@ -177,12 +179,13 @@ private fun Coming(title: String, path: String, padding: PaddingValues, onOpenWe
 }
 
 @Composable
-private fun More(padding: PaddingValues, onOpenWeb: () -> Unit, onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
+private fun More(padding: PaddingValues, onOpenProjects: () -> Unit, onOpenWeb: () -> Unit, onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(padding).padding(20.dp)) {
         Text("More", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         Spacer(Modifier.height(16.dp))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 6.dp)) {
+                TextButton(onClick = onOpenProjects, modifier = Modifier.fillMaxWidth()) { Text("Projects", color = Glass.Ink, modifier = Modifier.fillMaxWidth()) }
                 TextButton(onClick = onOpenWeb, modifier = Modifier.fillMaxWidth()) { Text("pagel.uz", color = Glass.Ink, modifier = Modifier.fillMaxWidth()) }
                 TextButton(onClick = onOpenPhone, modifier = Modifier.fillMaxWidth()) { Text("Phone (gateway, senses, updates)", color = Glass.Ink, modifier = Modifier.fillMaxWidth()) }
                 TextButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) { Text("Disconnect this phone", color = Glass.Risk, modifier = Modifier.fillMaxWidth()) }

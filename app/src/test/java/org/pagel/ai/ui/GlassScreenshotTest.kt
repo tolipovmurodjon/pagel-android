@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.assertIsDisplayed
@@ -38,6 +39,10 @@ import org.pagel.ai.ui.pair.PairUiState
 import org.pagel.ai.ui.projects.ProjectsScreen
 import org.pagel.ai.ui.projects.ProjectsUiState
 import org.pagel.ai.ui.shell.Tab
+import org.pagel.ai.ui.today.TodayRow
+import org.pagel.ai.ui.today.TodayScreen
+import org.pagel.ai.ui.today.TodayUiState
+import java.time.LocalDate
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -106,5 +111,49 @@ class GlassScreenshotTest {
         }
         compose.onNodeWithText("Humopedia").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/projects-font-1.5.png")
+    }
+
+    private val day = LocalDate.of(2026, 10, 27)
+    private fun row(id: String, title: String, p: Int, due: String?, project: String, done: Boolean = false, every: String? = null) =
+        TodayRow(id, title, p, due, every, project, projects.first { it.name == project }.title, null, done)
+    private val rows = listOf(
+        row("t1", "Ship the native Today screen", 0, "2026-10-27 15:00", "pagel"),
+        row("t2", "Call the bank about the IT-Park report", 1, "2026-10-25", "me"),
+        row("t3", "Weigh in", 3, "2026-10-27", "me", every = "week"),
+    )
+    private val today = TodayUiState(loading = false, rows = rows, open = 5, waiting = 2, status = "Live")
+
+    private fun showToday(ui: TodayUiState, fontScale: Float = 1f) = compose.setContent {
+        val d = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale = fontScale)) {
+            GlassTheme { AuroraBackground(Modifier.fillMaxSize()) { TodayScreen(ui, PaddingValues(top = 24.dp, bottom = 96.dp), today = day) } }
+        }
+    }
+
+    @Test fun todayThreeAtATime() {
+        showToday(today)
+        compose.onNodeWithText("Ship the native Today screen").assertIsDisplayed()
+        compose.onNodeWithText("5 tasks today, 3 at a time · Live").assertIsDisplayed()
+        compose.onNodeWithText("2 more after these", substring = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Done: Weigh in").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today.png")
+    }
+
+    @Test fun todayTickedRowFills() {
+        showToday(today.copy(rows = listOf(rows[0].copy(done = true)) + rows.drop(1)))
+        compose.onNodeWithContentDescription("Done: Ship the native Today screen").assertIsNotEnabled()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-ticked.png")
+    }
+
+    @Test fun todayAllDone() {
+        showToday(TodayUiState(loading = false, allDone = true, status = "Live"))
+        compose.onNodeWithText("All done for today ✓").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-all-done.png")
+    }
+
+    @Test fun todayLargeFont() {
+        showToday(today, fontScale = 1.5f)
+        compose.onNodeWithText("Ship the native Today screen").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-font-1.5.png")
     }
 }
