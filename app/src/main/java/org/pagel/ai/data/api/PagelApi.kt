@@ -37,6 +37,17 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(SyncResponse.serializer(), it) } }
     }
 
+    suspend fun today(baseUrl: String, token: String): Outcome<TodayResponse> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/today")), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(TodayResponse.serializer(), it) } }
+    }
+
+    suspend fun setDone(baseUrl: String, token: String, id: String, done: Boolean): Outcome<TaskStatusDto> = call {
+        val body = json.encodeToString(DonePatch.serializer(), DonePatch(done)).toRequestBody(JSON)
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/tasks/$id")).patch(body), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(TaskStatusDto.serializer(), it) } }
+    }
+
     /**
      * Opens `GET /api/v1/stream?since=` and calls [onEvent] for every event until the stream ends or the coroutine is
      * cancelled. Returns why it ended; a normal close is [DataError.Network], so the caller reconnects.

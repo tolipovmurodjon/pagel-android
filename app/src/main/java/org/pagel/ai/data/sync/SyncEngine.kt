@@ -51,7 +51,12 @@ class SyncEngine(
     suspend fun syncOnce(account: Account): Outcome<SyncResponse> = lock.withLock {
         val since = dao.syncState()?.cursor ?: 0L
         val out = api.sync(account.serverUrl, account.token, since)
-        if (out is Outcome.Ok) apply(out.value)
+        if (out is Outcome.Ok) {
+            apply(out.value)
+            // Today's order comes from pagel.uz (the web's own dealing), so phone and web never disagree. If only
+            // this call fails, the last saved order stays: Today still works offline.
+            (api.today(account.serverUrl, account.token) as? Outcome.Ok)?.let { t -> dao.replaceTodayOrder(t.value.tasks.map { it.id }) }
+        }
         out
     }
 

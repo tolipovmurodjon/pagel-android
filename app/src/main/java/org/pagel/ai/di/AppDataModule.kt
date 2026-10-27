@@ -18,6 +18,9 @@ import org.pagel.ai.data.api.PagelApi
 import org.pagel.ai.data.db.PagelDao
 import org.pagel.ai.data.db.PagelDatabase
 import org.pagel.ai.data.sync.SyncEngine
+import org.pagel.ai.data.today.OutboxSender
+import org.pagel.ai.data.today.OutboxWorker
+import org.pagel.ai.data.today.TodayRepository
 import java.util.concurrent.TimeUnit
 import javax.inject.Qualifier
 import javax.inject.Singleton
@@ -53,7 +56,7 @@ object AppDataModule {
 
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): PagelDatabase =
-        // Version 1 has no migrations yet; from version 2 on, each step gets a Migration and a test.
+        // v1 → v2 is an AutoMigration (two new tables, PagelDatabase); each later step gets a Migration and a test.
         Room.databaseBuilder(ctx, PagelDatabase::class.java, PagelDatabase.NAME).build()
 
     @Provides
@@ -61,6 +64,13 @@ object AppDataModule {
 
     @Provides @Singleton
     fun provideSyncEngine(api: PagelApi, dao: PagelDao): SyncEngine = SyncEngine(api, dao)
+
+    @Provides @Singleton
+    fun provideOutboxSender(api: PagelApi, dao: PagelDao): OutboxSender = OutboxSender(api, dao)
+
+    @Provides @Singleton
+    fun provideTodayRepository(@ApplicationContext ctx: Context, dao: PagelDao): TodayRepository =
+        TodayRepository(dao, OutboxWorker.scheduler(ctx))
 
     @Provides @Singleton
     fun provideAccountStore(store: EncryptedAccountStore): AccountStore = store

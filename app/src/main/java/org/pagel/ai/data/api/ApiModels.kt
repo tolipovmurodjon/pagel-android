@@ -49,3 +49,17 @@ data class SyncResponse(
     val tasks: List<SyncTaskDto> = emptyList(),
     val removed: List<String> = emptyList(),
 )
+
+/** `GET /api/v1/today`: the web's Today in its dealt order (overdue, due soon, stars; it shows 3 at a time). */
+@Serializable
+data class TodayItemDto(val id: String)
+
+@Serializable
+data class TodayResponse(val day: String = "", @SerialName("shown_at_once") val shownAtOnce: Int = 3, val tasks: List<TodayItemDto> = emptyList())
+
+/** `PATCH /api/v1/tasks/<id>`: done true finishes a task (on a habit: today's tick), false opens it again. */
+@Serializable
+data class DonePatch(val done: Boolean)
+
+@Serializable
+data class TaskStatusDto(val id: String, val status: String = "")

@@ -61,3 +61,27 @@ data class SyncStateEntity(
         const val ID = "pagel"
     }
 }
+
+/** Today's order exactly as pagel.uz deals it (`GET /api/v1/today`), so the phone and the web never disagree. */
+@Entity(tableName = "today_order")
+data class TodayOrderEntity(
+    @PrimaryKey val position: Int,
+    val taskId: String,
+)
+
+/** A change made on the phone, waiting to reach pagel.uz. Sent in order by [org.pagel.ai.data.today.OutboxWorker]. */
+@Entity(tableName = "outbox", indices = [Index("taskId")])
+data class OutboxEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val taskId: String,
+    val op: String,
+    val createdAt: Long,
+    val attempts: Int = 0,
+    /** null while waiting; a message once pagel.uz refused it (the change was rolled back and the UI tells Boss). */
+    val refused: String? = null,
+) {
+    companion object {
+        const val DONE = "done"
+        const val UNDONE = "undone"
+    }
+}

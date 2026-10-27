@@ -24,6 +24,56 @@ abstract class PagelDao {
     @Query("SELECT * FROM steps WHERE taskId = :taskId ORDER BY position")
     abstract fun steps(taskId: String): Flow<List<StepEntity>>
 
+    /** Today in the server's order; a just-ticked task stays in the list (status done) so the screen can fold it. */
+    @Query("SELECT t.* FROM today_order o JOIN tasks t ON t.id = o.taskId ORDER BY o.position")
+    abstract fun todayTasks(): Flow<List<TaskEntity>>
+
+    @Query("DELETE FROM today_order")
+    abstract suspend fun clearTodayOrder()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun insertTodayOrder(rows: List<TodayOrderEntity>)
+
+    @Transaction
+    open suspend fun replaceTodayOrder(ids: List<String>) {
+        clearTodayOrder()
+        insertTodayOrder(ids.mapIndexed { i, id -> TodayOrderEntity(i, id) })
+    }
+
+    @Query("UPDATE tasks SET status = :status, doneAt = :doneAt, syncStatus = 'pending', lastModified = :at WHERE id = :id")
+    abstract suspend fun setStatusLocal(id: String, status: String, doneAt: String?, at: Long)
+
+    @Query("UPDATE tasks SET syncStatus = 'synced' WHERE id = :id AND NOT EXISTS (SELECT 1 FROM outbox WHERE taskId = :id)")
+    abstract suspend fun markSyncedIfIdle(id: String)
+
+    @Insert
+    abstract suspend fun addToOutbox(row: OutboxEntity): Long
+
+    @Query("SELECT * FROM outbox WHERE refused IS NULL ORDER BY id")
+    abstract suspend fun waitingOutbox(): List<OutboxEntity>
+
+    @Query("SELECT * FROM outbox WHERE refused IS NOT NULL ORDER BY id")
+    abstract fun refusedOutbox(): Flow<List<OutboxEntity>>
+
+    @Query("DELETE FROM outbox WHERE id = :id")
+    abstract suspend fun removeFromOutbox(id: Long)
+
+    @Query("UPDATE outbox SET attempts = attempts + 1 WHERE id = :id")
+    abstract suspend fun countAttempt(id: Long)
+
+    @Query("UPDATE outbox SET refused = :message WHERE id = :id")
+    abstract suspend fun markRefused(id: Long, message: String)
+
+    /** Undo before it was sent: the waiting change is simply taken back. Returns how many rows went. */
+    @Query("DELETE FROM outbox WHERE taskId = :taskId AND refused IS NULL")
+    abstract suspend fun takeBackWaiting(taskId: String): Int
+
+    @Query("SELECT id FROM tasks WHERE syncStatus = 'pending'")
+    abstract suspend fun pendingIds(): List<String>
+
+    @Query("DELETE FROM tasks WHERE syncStatus != 'pending'")
+    abstract suspend fun deleteSyncedTasks()
+
     @Query("SELECT COUNT(*) FROM tasks")
     abstract suspend fun taskCount(): Int
 
@@ -66,14 +116,18 @@ abstract class PagelDao {
     open suspend fun applySync(full: Boolean, projects: List<ProjectEntity>, tasks: List<TaskEntity>, steps: List<StepEntity>, removed: List<String>, state: SyncStateEntity) {
         upsertProjects(projects)
         deleteProjectsExcept(projects.map { it.name })
+        // Conflict rule (RULES.md): a task with a tick still waiting in the outbox keeps the phone's version until
+        // pagel.uz has it; the server's copy wins on the next sync after that.
+        val pending = pendingIds().toSet()
+        val incoming = tasks.filter { it.id !in pending }
         if (full) {
-            deleteAllTasks()
+            deleteSyncedTasks()
             deleteAllSteps()
         } else {
             removed.chunked(MAX_IDS).forEach { deleteTasks(it); deleteStepsOf(it) }
             tasks.map { it.id }.chunked(MAX_IDS).forEach { deleteStepsOf(it) }
         }
-        upsertTasks(tasks)
+        upsertTasks(incoming)
         upsertSteps(steps)
         saveSyncState(state)
     }
