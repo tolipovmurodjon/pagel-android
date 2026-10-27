@@ -123,6 +123,8 @@ fun TasksScreen(onOpenPhone: () -> Unit) {
                     return true
                 }
                 override fun onReceivedHttpAuthRequest(view: WebView, handler: HttpAuthHandler, host: String, realm: String) {
+                    // The saved password belongs to pagel.uz only; any other site asking gets nothing.
+                    if (host.removePrefix("www.") != HOST) { handler.cancel(); return }
                     val saved = signIn.get()
                     if (saved != null && !triedSaved) { triedSaved = true; handler.proceed(saved.first, saved.second); return }
                     askWrong = saved != null
@@ -180,8 +182,10 @@ fun TasksScreen(onOpenPhone: () -> Unit) {
 private fun versionOf(context: Context): String =
     runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "0"
 
+// Only plain web, mail and phone links leave the app; intent:// and other schemes could start any app, so they are refused.
 private fun openOutside(context: Context, url: Uri) {
-    val intent = if (url.scheme == "intent") Intent.parseUri(url.toString(), Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, url)
+    if (url.scheme !in listOf("http", "https", "mailto", "tel")) return
+    val intent = Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE)
     if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     runCatching { context.startActivity(intent) }
 }
