@@ -14,6 +14,9 @@ mkdir -p "$OUT"
 APK=$(ls apk/*.apk | head -1)
 fail() { echo "SMOKE FAILED: $*"; timeout 30 adb logcat -d > "$OUT/logcat-at-failure.txt"; exit 1; }
 
+echo "== root adb (google_apis image): debuggerd -j needs it to dump the freeze stacks"
+$T adb root; $T adb wait-for-device
+
 echo "== install $APK"
 $T adb install -r -g "$APK" || fail "install"
 
@@ -97,6 +100,8 @@ sleep 5
 grep -q "POST /api/v1/app/crash .*PAGEL test crash" "$OUT/fake-pagel.log" || fail "the forced crash never reached /api/v1/app/crash"
 [ -z "$($T adb shell run-as "$PKG" ls files/crashes 2>/dev/null | tr -d '\r')" ] || fail "the crash file was not deleted after upload"
 echo "ok: the forced crash reached the crash endpoint and left the phone"
+$T adb logcat -c
+bash .github/scripts/walkthrough.sh || fail "the critic walkthrough crashed (see walk/logcat-walk.txt)"
 kill $FAKE 2>/dev/null
 cat "$OUT/fake-pagel.log"
 echo "SMOKE PASSED"
