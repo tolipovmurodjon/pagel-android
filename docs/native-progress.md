@@ -41,6 +41,29 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v4 · DESIGN AUDIT FIXES (saved 2026-10-27 ~20:00 Tashkent)
+Boss's words: "everything liquid glass with our colour theory mint" · "one icon beats many words" · "no Syncing, no
+spinners, skeleton" · "tasks must be mine, fast" · web Habits cards = 8/10 reference · 0.3.14 was 1/10 (flat bar,
+Undo broken, black toast). Standing rule: **tag `app-v*` after each green CI run** (never main). Replies short.
+Shipped today: app-v0.4.0 (Today + widget, v0.3.14), app-v0.4.1 = 532b2e3 (Add task fast, clear glass bar + rim,
+Undo restores the star, light toast, More icon tiles, widget white/ink, update check on open, silent sync + skeleton,
+scroll-aware glass title). Pushed after it: 15775b3 glass panes (needs CI → tag).
+Skills installed: emilkowalski/skills (15, MIT) — use apple-design, emil-design-eng, review-animations,
+find-animation-opportunities for every UI change. dickwu/apple-design-skill skipped (no licence).
+**Audit (Opus, read-only) — do in this order, one push per CI cycle:**
+1. Projects in one glass Pane, 1 dp Ink@0.07 dividers from 70 dp, rows pressScale + open web, count in a mint capsule (`ProjectsScreen.kt:65`).
+2. Today = Habits look: meta in Glass.Numbers 12.5 sp, Today/late in Primary + calendar 13 dp, dividers from 54 dp, date line as mono eyebrow (`TodayScreen.kt:190,245`).
+3. Fewer words: "+2" capsule + layers icon instead of "2 more after these…"; header "5 today"; offline = cloud-off icon; notes ≤ 6 words (Today, AddTask, Projects, Pair, More).
+4. Add sheet glass: transparent sheet, scrim Ink@0.18, AuroraBackground { Pane(28 dp) }, 52 dp capsule field, 44 dp mint arrow-up send inside it, icons not ⚑↻✓ characters.
+5. Pair spinner → label at 0.55 alpha, then AnimatedContent to a check (no spinner left; drop unused imports).
+6. Press on touch-down in lists: pressScale from pointerInput awaitFirstDown (clickable stays for the tap).
+7. Delete TopFade; fade content top inside the existing offscreen mask (0 at status bar → 1 at +20 dp); header top 20 dp.
+8. SnackbarHost moved to the shell so the toast bends the real list; enter slideIn from bottom 240 ms, exit same path 160 ms; swipe down to dismiss.
+9. Title capsule: flip only after 24 dp in the new direction; fade 160 ms + scaleIn 0.94 from top; exit fade 120 ms.
+10. Panes: drop blur (keep vibrancy + lens); keep blur on bar/capsules; measure gfxinfo janky % before/after on the phone.
+Animations to add: animateItem on skeleton→list; "All done" pane spring(0.8, 380) + check draw; open count AnimatedContent; hold-to-disconnect 1 s fill. Calm: new-row enter → tween 260 EaseOutStrong, 10 dp, no overshoot.
+Then: voice add + Share → PAGEL (Boss's own tasks fast), Habits + reminders, Inbox sorting.
+
 ## ✅ 2026-10-27 13:27 UTC · Today screen native, CI green (run 40509697013, c9df153)
 - `ui/today/`: `TodayDeal.kt` (3 at a time; a ticked row keeps its slot until its fold ends; headline + due labels =
   the web's), `TodayViewModel.kt` (Room only, `finishing` set, tick/undo/acknowledge), `TodayScreen.kt` (Todoist flag
