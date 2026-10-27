@@ -1,0 +1,31 @@
+name: build
+
+# The Oracle server is ARM and Android's build tools run only on x86, so CI is where PAGEL compiles and tests.
+on:
+  pull_request:
+  push:
+    branches: [main, "feat/**"]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests and debug build
+        run: ./gradlew testDebugUnitTest assembleDebug
+      - name: Keep the debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pagel-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7

@@ -1,22 +1,21 @@
 package org.pagel.ai
 
 import android.app.Application
-import androidx.hilt.work.HiltWorkerFactory
-import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
-import javax.inject.Inject
+import org.pagel.ai.update.UpdateWorker
 
 /**
- * Application root. Hilt entry point, and the WorkManager [Configuration.Provider] so our
- * @HiltWorker harvest/rollup jobs can be constructed with injected dependencies.
+ * Application root and Hilt entry point.
+ *
+ * It used to also supply a WorkManager [androidx.work.Configuration] for the @HiltWorker
+ * harvest/rollup/sync jobs; those jobs were removed with the on-device usage feature, so there is
+ * nothing left to schedule. Chat's offline send queue is the next thing likely to want WorkManager
+ * back — add it then, with the workers that need it, not before.
  */
 @HiltAndroidApp
-class PagelApp : Application(), Configuration.Provider {
-
-    @Inject lateinit var workerFactory: HiltWorkerFactory
-
-    override val workManagerConfiguration: Configuration
-        get() = Configuration.Builder()
-            .setWorkerFactory(workerFactory)
-            .build()
+class PagelApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        UpdateWorker.schedule(this)
+    }
 }

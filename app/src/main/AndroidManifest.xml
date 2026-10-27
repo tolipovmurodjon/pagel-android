@@ -2,43 +2,115 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- A1: usage awareness + the anchor foreground service -->
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
-        tools:ignore="ProtectedPermissions" />
+    <!-- The anchor foreground service + the gateway WebSocket. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- device.status reads ConnectivityManager for the network block (AndroidDeviceInfoSource.network()).
+         Without this, the whole command dies at the framework boundary with
+         "Neither user NNNNN nor current process has android.permission.ACCESS_NETWORK_STATE" —
+         a live failure on the first real `nodes invoke` of `device.status`, 2026-08-10. It had
+         been latent since Task D4 because the node declared no commands, so nothing was ever
+         invokable. Normal (non-dangerous) permission: granted at install, no runtime prompt.
+         Unit tests cannot catch this class of bug — DeviceStatusCommandTest drives a fake source, so
+         only a real device exercises the manifest. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Wave 1: survive reboot and app-update. BootReceiver starts AnchorService; Android 15 blocks
+         only dataSync/camera/mediaPlayback/phoneCall/mediaProjection/microphone from BOOT_COMPLETED,
+         and ours is specialUse|location. Normal permission, granted at install. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
+    <!-- Load-bearing, not a nicety: exempting PAGEL from battery optimisation is Android's
+         exemption 13 for starting a foreground service from the background, which is the ONLY
+         reason AnchorWatchdogWorker can restart the service after a kill. Boss grants it from the
+         setup checklist; the permission alone does nothing. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Phase D Task 5: location.get — a fix obtainable while the app is closed and the phone is
+         locked. ACCESS_BACKGROUND_LOCATION is the whole point: the Play-Store build of the official
+         OpenClaw app never declares it, so Android never offers "Allow all the time" for it at all —
+         a manifest ceiling no setting can work around. Declaring it here is what makes that option
+         exist; Boss still has to grant it himself in Settings (no runtime dialog can, Android 11+). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- Senses (2026-10-05). ACTIVITY_RECOGNITION is a runtime prompt (step counter for motion.*).
+         PACKAGE_USAGE_STATS is "special access": no dialog, Boss flips it in Settings > Usage access, which is
+         why lint is told it is protected. Notification access is the listener service below, same idea. -->
+    <!-- Self-update: lets PAGEL hand its own signed APK to the package installer. Special access, Boss flips it once. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <!-- Declared so Boss can grant them from the PERMISSIONS list; none is used until its command is built. Contacts, photos and SMS are NOT declared on purpose (Boss, 2026-10-05: not now). Admin rights are never requested. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 
     <application
         android:name=".PagelApp"
         android:allowBackup="false"
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="PAGEL"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.Pagel">
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- We provide WorkManager config via PagelApp (Hilt); remove the default initializer. -->
-        <provider
-            android:name="androidx.startup.InitializationProvider"
-            android:authorities="${applicationId}.androidx-startup"
+        <!-- Anchor foreground service: holds the process (and therefore both gateway connections)
+             alive, and (Phase D Task 5) is where a backgrounded location.get fix gets obtained. The
+             manifest attribute is the *ceiling*; a startForeground() call may pass any subset of it,
+             so declaring both bits here is safe even before Boss has granted location — see
+             AnchorService.foregroundServiceType() for the runtime subset choice. specialUse and
+             location are not documented as mutually exclusive (unlike shortService, which the
+             platform explicitly demotes when combined with another type), so both are kept:
+             specialUse is what keeps this catch-all anchor service alive and must never be silently
+             dropped, and location is what lets a fix be obtained while backgrounded. -->
+        <service
+            android:name=".service.AnchorService"
             android:exported="false"
-            tools:node="merge">
-            <meta-data
-                android:name="androidx.work.WorkManagerInitializer"
-                android:value="androidx.startup"
-                tools:node="remove" />
-        </provider>
+            android:foregroundServiceType="specialUse|location">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="continuous owner life-logging for a personal AI assistant" />
+        </service>
+
+        <receiver android:name=".update.InstallResultReceiver" android:exported="false" />
+
+        <!-- Lists PAGEL under Settings > Notification access; notifications.list reads through it. -->
+        <service
+            android:name=".service.PagelNotificationListener"
+            android:exported="true"
+            android:label="PAGEL"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Restart the anchor service after a reboot or an app update. exported=true is required:
+             these are system broadcasts, delivered from outside the app. -->
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

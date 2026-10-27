@@ -17,14 +17,32 @@ android {
         applicationId = "org.pagel.ai"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1-A1"
+        // CI passes -PpagelVersionCode=<run number>; a local build stays at 1. The updater only moves forward.
+        versionCode = (project.findProperty("pagelVersionCode") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("pagelVersionName") as String?) ?: "0.1-A1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        // Ship only the ABIs we run on (real Samsung = arm64, emulator = x86_64).
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+    }
+
+    // Release signing comes only from the environment CI sets; the key never sits in the repo.
+    signingConfigs {
+        val ks = System.getenv("PAGEL_KEYSTORE_FILE")
+        if (ks != null) {
+            create("pagel") {
+                storeFile = file(ks)
+                storeType = "pkcs12"
+                storePassword = System.getenv("PAGEL_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("PAGEL_KEY_ALIAS")
+                keyPassword = System.getenv("PAGEL_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfigs.findByName("pagel")?.let { signingConfig = it }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -57,11 +75,6 @@ kotlin {
     }
 }
 
-ksp {
-    // Persist Room schemas for migration tracking (committed to git).
-    arg("room.schemaLocation", "$projectDir/schemas")
-}
-
 dependencies {
     // AndroidX core
     implementation(libs.androidx.core.ktx)
@@ -75,7 +88,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
+    // material-icons-*core* only (arrives with material3). The *extended* set was ~66 MB of dex in
+    // the debug APK — thousands of vector icons for the single Icons.Rounded.ArrowBack we use.
+    // Re-add it only if a screen genuinely needs an icon outside core's set.
     implementation(libs.androidx.compose.ui.text.google.fonts)
 
     // Navigation
@@ -85,24 +100,28 @@ dependencies {
     // DI
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-    // WorkManager + Hilt (@HiltWorker)
-    implementation(libs.androidx.hilt.work)
-    ksp(libs.androidx.hilt.compiler)
 
     // Persistence
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.datastore.preferences)
+
+    // AnchorWatchdogWorker (service/) — plain CoroutineWorker, so no androidx.hilt:hilt-work and no
+    // Configuration.Provider; the default WorkManager initializer is in play.
     implementation(libs.androidx.work.runtime.ktx)
 
     // Async / serialization
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 
-    // Animation / logging
-    implementation(libs.airbnb.lottie.compose)
+    // Logging
     implementation(libs.jakewharton.timber)
+
+    // Gateway device identity — Ed25519 keypair (BouncyCastle lightweight API, since minSdk 30
+    // predates platform Ed25519 at API 33) persisted encrypted at rest.
+    implementation(libs.bouncycastle)
+    implementation(libs.androidx.security.crypto)
+
+    // Gateway WebSocket transport (net/ws).
+    implementation(libs.okhttp)
 
     // Charts/shimmer deferred to the dashboard (Task 7): Vico 3.x needs Kotlin 2.3 and breaks
     // this Kotlin-2.0.21 toolchain. Re-add then via Vico 2.x (Kotlin-2.0 safe) or a deliberate
@@ -113,6 +132,9 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.cash.turbine)
+    // Local loopback WebSocket server — lets GatewayConnectionSocketTest drive the real handshake
+    // over a real socket, without opening one to anything but localhost.
+    testImplementation(libs.okhttp.mockwebserver)
 
     // Instrumented test
     androidTestImplementation(libs.androidx.junit)
