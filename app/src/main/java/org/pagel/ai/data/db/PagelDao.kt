@@ -15,8 +15,39 @@ abstract class PagelDao {
     @Query("SELECT * FROM projects ORDER BY sort")
     abstract fun projects(): Flow<List<ProjectEntity>>
 
-    @Query("SELECT * FROM tasks WHERE project = :project AND status = 'open' ORDER BY sort")
+    /** A project's open tasks, its NOW phase first, then in plan order (the web's plan page). */
+    @Query("SELECT * FROM tasks WHERE project = :project AND status = 'open' ORDER BY phaseNow DESC, phaseSort, sort")
     abstract fun openTasks(project: String): Flow<List<TaskEntity>>
+
+    @Query("SELECT * FROM steps WHERE taskId = :taskId ORDER BY position")
+    abstract suspend fun stepsOnce(taskId: String): List<StepEntity>
+
+    /** A task's steps rewritten as one list (the panel always sends the whole list with its ticks). */
+    @Transaction
+    open suspend fun replaceSteps(taskId: String, steps: List<StepEntity>) {
+        deleteStepsOf(listOf(taskId))
+        upsertSteps(steps)
+    }
+
+    @Query("UPDATE tasks SET syncStatus = 'pending', lastModified = :at WHERE id = :id")
+    abstract suspend fun markPending(id: String, at: Long)
+
+    /** Edits of this task an older pagel.uz did not understand yet: the panel shows a cloud-off mark while any wait. */
+    @Query("SELECT COUNT(*) FROM outbox WHERE taskId = :taskId AND waitsForServer = 1 AND refused IS NULL")
+    abstract fun heldCount(taskId: String): Flow<Int>
+
+    @Query("UPDATE outbox SET waitsForServer = 1 WHERE id = :id")
+    abstract suspend fun markWaitsForServer(id: Long)
+
+    /** One waiting change taken back before it left (a delete's Undo inside its 5 s). Returns 1 if it was still here. */
+    @Query("DELETE FROM outbox WHERE id = :id AND refused IS NULL")
+    abstract suspend fun takeBackOp(id: Long): Int
+
+    @Query("SELECT * FROM outbox WHERE id = :id")
+    abstract suspend fun outboxRow(id: Long): OutboxEntity?
+
+    @Query("SELECT COUNT(*) FROM today_order WHERE taskId = :taskId")
+    abstract suspend fun onTodayCount(taskId: String): Int
 
     @Query("SELECT * FROM tasks WHERE id = :id")
     abstract fun task(id: String): Flow<TaskEntity?>
@@ -122,8 +153,11 @@ abstract class PagelDao {
     @Query("UPDATE outbox SET refused = :message WHERE id = :id")
     abstract suspend fun markRefused(id: Long, message: String)
 
-    /** Undo before it was sent: the waiting change is simply taken back. Returns how many rows went. */
-    @Query("DELETE FROM outbox WHERE taskId = :taskId AND refused IS NULL AND op != '${OutboxEntity.ADD}'")
+    /**
+     * Undo of a tick before it was sent: the waiting tick is simply taken back. Only ticks: a panel edit waiting for the
+     * same task stays. Returns how many rows went.
+     */
+    @Query("DELETE FROM outbox WHERE taskId = :taskId AND refused IS NULL AND op IN ('${OutboxEntity.DONE}', '${OutboxEntity.UNDONE}')")
     abstract suspend fun takeBackWaiting(taskId: String): Int
 
     @Query("SELECT id FROM tasks WHERE syncStatus = 'pending'")
@@ -162,8 +196,9 @@ abstract class PagelDao {
     @Query("DELETE FROM tasks")
     abstract suspend fun deleteAllTasks()
 
-    @Query("DELETE FROM steps")
-    abstract suspend fun deleteAllSteps()
+    /** Every step except those of a task with a change still waiting (its steps are the phone's until sent). */
+    @Query("DELETE FROM steps WHERE taskId NOT IN (SELECT id FROM tasks WHERE syncStatus = 'pending')")
+    abstract suspend fun deleteSyncedSteps()
 
     /**
      * Applies one server answer in a single transaction, so the UI never sees half a sync. A full copy replaces
@@ -179,14 +214,14 @@ abstract class PagelDao {
         val pending = pendingIds().toSet()
         val incoming = tasks.filter { it.id !in pending }
         if (full) {
+            deleteSyncedSteps()
             deleteSyncedTasks()
-            deleteAllSteps()
         } else {
             removed.chunked(MAX_IDS).forEach { deleteTasks(it); deleteStepsOf(it) }
-            tasks.map { it.id }.chunked(MAX_IDS).forEach { deleteStepsOf(it) }
+            incoming.map { it.id }.chunked(MAX_IDS).forEach { deleteStepsOf(it) }
         }
         upsertTasks(incoming)
-        upsertSteps(steps)
+        upsertSteps(steps.filter { it.taskId !in pending })
         saveSyncState(state)
     }
 

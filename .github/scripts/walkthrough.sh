@@ -35,7 +35,7 @@ tap() {
 
 log "== critic walkthrough"
 $T adb shell dumpsys gfxinfo "$PKG" reset > /dev/null
-$T adb shell screenrecord --time-limit 170 /sdcard/walk.mp4 &
+$T adb shell screenrecord --time-limit 179 /sdcard/walk.mp4 &
 REC=$!
 sleep 1
 
@@ -67,6 +67,23 @@ for i in $(seq 1 30); do grep -q 'POST /api/v1/tasks .*"text":"Call Aziz"' "$FAK
 grep -q 'POST /api/v1/tasks {"project":"me","text":"Call Aziz","priority":0,"due":"[0-9-]* 15:00"}' "$FAKE_LOG"   || { log "WALKTHROUGH: the added task never reached pagel.uz as {me, Call Aziz, P0, tomorrow 15:00}"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   added task reached pagel.uz after ~${i} s"
 $T adb shell input keyevent 4; sleep 1; $T adb shell input keyevent 4; shot after-add 1.5
+
+log "-- the task panel (Phase 1): tap a row → its panel; tick step 1, set P1, pick a day 2 days ahead in the calendar"
+DAY=$(TZ=Asia/Tashkent date -d '+2 days' +%Y-%m-%d)
+SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date -d '+2 days' '+%-d %B %Y')
+tap "Call the bank about the report" && shot panel-open 2.5
+grep -q 'Find the account number' "$OUT/$(printf '%02d' $N)-panel-open.xml" || { log "WALKTHROUGH: the task panel did not open with its steps"; exit 1; }
+tap "Done: Find the account number" && shot panel-step-ticked 1.5
+tap "P1" && shot panel-p1 1.5
+tap "Date: None" && shot panel-date-sheet 2.5
+grep -q "content-desc=\"$SPOKEN\"" "$OUT/$(printf '%02d' $N)-panel-date-sheet.xml" || { log "WALKTHROUGH: the calendar has no day \"$SPOKEN\""; exit 1; }
+tap "$SPOKEN" && shot panel-day-picked 2.5
+for want in '{"steps":["Find the account number","Call at 10"],"ticked":[0]}' '{"priority":0}' "{\"due\":\"$DAY\"}"; do
+  for i in $(seq 1 30); do grep -qF "PATCH /api/v1/tasks/t_ci2 $want auth=True" "$FAKE_LOG" && break; sleep 1; done
+  grep -qF "PATCH /api/v1/tasks/t_ci2 $want auth=True" "$FAKE_LOG" || { log "WALKTHROUGH: pagel.uz never got $want"; grep "PATCH" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+  log "   pagel.uz got $want"
+done
+$T adb shell input keyevent 4; shot panel-closed 1.5
 $T adb shell input swipe 540 1700 540 600 300; shot today-scrolled
 tap Today && shot today-retap-top
 $T adb shell input keyevent 4; shot after-back

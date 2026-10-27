@@ -48,6 +48,12 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(TaskStatusDto.serializer(), it) } }
     }
 
+    /** Any panel edit: [body] holds only the fields that change, in the server's wire names. */
+    suspend fun patchTask(baseUrl: String, token: String, id: String, body: kotlinx.serialization.json.JsonObject): Outcome<PatchReply> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/tasks/$id")).patch(body.toString().toRequestBody(JSON)), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(PatchReply.serializer(), it) } }
+    }
+
     suspend fun addTask(baseUrl: String, token: String, task: NewTaskBody): Outcome<CreatedTaskDto> = call {
         val body = json.encodeToString(NewTaskBody.serializer(), task).toRequestBody(JSON)
         val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/tasks")).post(body), token).build()

@@ -35,16 +35,18 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import org.pagel.ai.ui.glass.SkeletonRows
+import org.pagel.ai.ui.glass.pressOnTouch
+import androidx.compose.foundation.clickable
 
 @Composable
-fun ProjectsRoute(contentPadding: PaddingValues, reselect: Int, vm: ProjectsViewModel = hiltViewModel()) {
+fun ProjectsRoute(contentPadding: PaddingValues, reselect: Int, onOpenProject: (String) -> Unit = {}, vm: ProjectsViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    ProjectsScreen(ui, contentPadding, reselect)
+    ProjectsScreen(ui, contentPadding, reselect, onOpenProject)
 }
 
 /** Phase 1's proof screen: every project from pagel.uz, live. Today's real list replaces it in Phase 2. */
 @Composable
-fun ProjectsScreen(ui: ProjectsUiState, contentPadding: PaddingValues, reselect: Int = 0) {
+fun ProjectsScreen(ui: ProjectsUiState, contentPadding: PaddingValues, reselect: Int = 0, onOpenProject: (String) -> Unit = {}) {
     val list = rememberLazyListState()
     // Re-tapping the tab scrolls back to the top (RULES.md, navigation).
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
@@ -72,7 +74,7 @@ fun ProjectsScreen(ui: ProjectsUiState, contentPadding: PaddingValues, reselect:
                 Column(Modifier.padding(vertical = 4.dp)) {
                     ui.projects.forEachIndexed { i, p ->
                         if (i > 0) HorizontalDivider(Modifier.padding(start = 70.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
-                        ProjectRow(p)
+                        ProjectRow(p) { onOpenProject(p.name) }
                     }
                 }
             }
@@ -81,8 +83,14 @@ fun ProjectsScreen(ui: ProjectsUiState, contentPadding: PaddingValues, reselect:
 }
 
 @Composable
-private fun ProjectRow(p: ProjectEntity) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+private fun ProjectRow(p: ProjectEntity, onOpen: () -> Unit) {
+    val press = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().pressOnTouch()
+            .clickable(press, indication = null, role = androidx.compose.ui.semantics.Role.Button, onClick = onOpen)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         ProjectTile(p.name, p.color, p.title)
         Spacer(Modifier.width(14.dp))
         Text(shortName(p.name, p.title), style = MaterialTheme.typography.titleMedium, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))

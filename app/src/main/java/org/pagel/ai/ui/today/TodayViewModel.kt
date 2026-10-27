@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import org.pagel.ai.data.db.OutboxEntity
 import org.pagel.ai.data.db.ProjectEntity
 import org.pagel.ai.data.session.Session
 import org.pagel.ai.data.sync.LiveStatus
@@ -40,8 +39,6 @@ data class TodayUiState(
     val waiting: Int = 0,
     val allDone: Boolean = false,
     val status: String = "",
-    /** A tick pagel.uz refused: already rolled back in Room; the screen says why once, then [TodayViewModel.acknowledge]. */
-    val refused: OutboxEntity? = null,
 )
 
 /** Today (NATIVE-PLAN Phase 2): reads Room only; a tick answers in one frame and reaches pagel.uz through the outbox. */
@@ -49,7 +46,8 @@ data class TodayUiState(
 class TodayViewModel @Inject constructor(private val repo: TodayRepository, session: Session) : ViewModel() {
     private val finishing = MutableStateFlow<Set<String>>(emptySet())
 
-    val ui: StateFlow<TodayUiState> = combine(repo.today, repo.refused, finishing, session.projects(), session.live) { tasks, refused, folding, projects, live ->
+    // A refused tick is said by the shell (ShellViewModel), for every screen at once.
+    val ui: StateFlow<TodayUiState> = combine(repo.today, finishing, session.projects(), session.live) { tasks, folding, projects, live ->
         val byName = projects.associateBy(ProjectEntity::name)
         val dealt = dealToday(tasks, folding)
         TodayUiState(
@@ -63,7 +61,6 @@ class TodayViewModel @Inject constructor(private val repo: TodayRepository, sess
             waiting = dealt.waiting,
             allDone = dealt.allDone,
             status = live.line(),
-            refused = refused.firstOrNull(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState())
 
@@ -81,10 +78,6 @@ class TodayViewModel @Inject constructor(private val repo: TodayRepository, sess
     fun undo(id: String) {
         finishing.update { it - id }
         viewModelScope.launch { repo.tick(id, done = false) }
-    }
-
-    fun acknowledge(op: OutboxEntity) {
-        viewModelScope.launch { repo.acknowledge(op) }
     }
 
     companion object {

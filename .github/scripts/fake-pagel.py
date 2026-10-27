@@ -14,12 +14,16 @@ TODAY = [("t_ci1", "pagel", "Ship the native app", 0, "2026-10-27 15:00"), ("t_c
          ("t_ci3", "humopedia", "Record the fractions lesson", 2, None), ("t_ci4", "ababil", "Measure the drone's hover time", 1, None),
          ("t_ci5", "me", "Weigh in", 3, None)]
 DONE = set()
+# Panel edits the app sent (Phase 1), applied like pagel.uz does, so the next sync shows them.
+STEPS = {"t_ci2": [["Find the account number", False], ["Call at 10", False]]}
+EDITS = {}
 
 def sync_body():
     return {"cursor": 10, "full": True,
             "projects": [{"name": n, "title": t, "color": None, "sort": i, "open": o} for i, (n, t, o) in enumerate(PROJECTS)],
-            "tasks": [{"id": i, "project": p, "phase": "Now", "sort": k, "text": text, "status": "done" if i in DONE else "open",
-                       "priority": pr, "star": True, "due": due, "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": []}
+            "tasks": [{"id": i, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": k, "text": text, "status": "done" if i in DONE else "open",
+                       "priority": pr, "star": True, "due": due, "updated_at": "2026-10-27T10:00:00Z", "version": 1,
+                       "steps": [{"text": t, "done": d} for t, d in STEPS.get(i, [])], **EDITS.get(i, {})}
                       for k, (i, p, text, pr, due) in enumerate(TODAY)],
             "removed": []}
 
@@ -65,9 +69,17 @@ class H(BaseHTTPRequestHandler):
         tid = self.path.rsplit("/", 1)[-1]
         if not self.path.startswith("/api/v1/tasks/") or tid not in {i for i, *_ in TODAY}:
             return self.send(404, {"error": "No such task."})
-        done = json.loads(body or "{}").get("done") is True
-        (DONE.add if done else DONE.discard)(tid)
-        self.send(200, {"id": tid, "status": "done" if done else "open"})
+        b = json.loads(body or "{}")
+        if "done" in b:
+            (DONE.add if b["done"] is True else DONE.discard)(tid)
+        if "steps" in b:
+            ticked = set(b.get("ticked", []))
+            STEPS[tid] = [[t, n in ticked] for n, t in enumerate(b["steps"])]
+        for k in ("priority", "due", "title", "every", "star", "text", "done_when"):
+            if k in b:
+                EDITS.setdefault(tid, {})[k] = b[k]
+        # The new pagel.uz names the fields it understood (task-api.ts `applied`).
+        self.send(200, {"id": tid, "status": "done" if tid in DONE else "open", "applied": list(b.keys())})
 
     def do_GET(self):
         LOG.write(f"GET {self.path} auth={self.authed()}\n")

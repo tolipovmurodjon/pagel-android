@@ -13,6 +13,8 @@ import org.pagel.ai.ui.glass.TabIcons
 @Serializable data object MoreRoute : NavKey
 /** Every project from pagel.uz, opened from More (it was the Today tab until the native Today landed). */
 @Serializable data object ProjectListRoute : NavKey
+/** One project's open tasks by phase, opened from Projects or from a task panel's project capsule. */
+@Serializable data class ProjectPageRoute(val name: String) : NavKey
 /** pagel.uz itself in the kept-alive WebView, until each native feature replaces its page. */
 @Serializable data class WebRoute(val path: String) : NavKey
 

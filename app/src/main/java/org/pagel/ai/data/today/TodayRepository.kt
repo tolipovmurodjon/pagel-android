@@ -11,6 +11,11 @@ import org.pagel.ai.data.db.LOCAL_ID
 import org.pagel.ai.data.db.PagelDao
 import org.pagel.ai.data.db.SyncStatus
 import org.pagel.ai.data.db.TaskEntity
+import org.pagel.ai.data.tasks.NEW_FIELDS
+import org.pagel.ai.data.tasks.UNDO_WINDOW_MS
+import org.pagel.ai.data.tasks.applyWas
+import org.pagel.ai.data.tasks.sentOf
+import org.pagel.ai.data.tasks.wasOf
 
 /** Wakes the outbox sender (WorkManager in the app, a counter in tests). */
 fun interface OutboxScheduler {
@@ -75,10 +80,22 @@ enum class SendResult { ALL_SENT, TRY_LATER, SIGNED_OUT }
 /**
  * Sends waiting changes to pagel.uz in the order they were made. Stops at the first network or server failure so
  * the order holds (WorkManager retries with backoff); a refusal (4xx) rolls that one change back and goes on.
+ * A delete inside its Undo window holds only its own task's later changes, never the whole queue.
  */
 class OutboxSender(private val api: PagelApi, private val dao: PagelDao, private val clock: () -> Long = System::currentTimeMillis) {
     suspend fun sendAll(account: Account): SendResult {
+        val held = mutableSetOf<String>()
         for (op in dao.waitingOutbox()) {
+            if (op.taskId in held) continue
+            if (op.op == OutboxEntity.PATCH) {
+                when (sendPatch(account, op)) {
+                    Patch.SENT -> {}
+                    Patch.HOLD -> held += op.taskId
+                    Patch.SIGNED_OUT -> return SendResult.SIGNED_OUT
+                    Patch.TRY_LATER -> return SendResult.TRY_LATER
+                }
+                continue
+            }
             dao.countAttempt(op.id)
             if (op.op == OutboxEntity.ADD) {
                 // An add renames (or drops) the changes queued after it, so the rest is read again, fresh.
@@ -107,7 +124,44 @@ class OutboxSender(private val api: PagelApi, private val dao: PagelDao, private
                 }
             }
         }
-        return SendResult.ALL_SENT
+        // A delete still inside its Undo window: come back for it (WorkManager's first retry is ~10 s later).
+        return if (held.isEmpty()) SendResult.ALL_SENT else SendResult.TRY_LATER
+    }
+
+    private enum class Patch { SENT, HOLD, SIGNED_OUT, TRY_LATER }
+
+    /**
+     * One panel edit. Sent → gone from the outbox, unless it carried a new field the server did not name in `applied`
+     * (an older pagel.uz): then it stays, marked as waiting for the server, never rolled back. Refused → the phone
+     * goes back to `was` and the row stays so the shell can say why.
+     */
+    private suspend fun sendPatch(account: Account, op: OutboxEntity): Patch {
+        val set = sentOf(op) ?: run { dao.removeFromOutbox(op.id); return Patch.SENT }
+        if ("remove" in set && clock() - op.createdAt < UNDO_WINDOW_MS) return Patch.HOLD
+        // Still the phone's own id: its add has not reached pagel.uz yet (it goes first and renames this op).
+        if (op.taskId.startsWith(LOCAL_ID)) return Patch.HOLD
+        dao.countAttempt(op.id)
+        return when (val out = api.patchTask(account.serverUrl, account.token, op.taskId, set)) {
+            is Outcome.Ok -> {
+                val understood = out.value.applied
+                if (understood == null && set.keys.any { it in NEW_FIELDS }) {
+                    if (!op.waitsForServer) dao.markWaitsForServer(op.id)
+                } else {
+                    dao.removeFromOutbox(op.id)
+                    dao.markSyncedIfIdle(op.taskId)
+                }
+                Patch.SENT
+            }
+            is Outcome.Failed -> when (val e = out.error) {
+                is DataError.Refused -> {
+                    wasOf(op)?.let { dao.applyWas(op.taskId, it, clock()) }
+                    dao.markRefused(op.id, e.message)
+                    Patch.SENT
+                }
+                DataError.Unauthorized -> Patch.SIGNED_OUT
+                else -> Patch.TRY_LATER
+            }
+        }
     }
 
     private fun tashkentDay() = java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.of("Asia/Tashkent")).toLocalDate().toString()

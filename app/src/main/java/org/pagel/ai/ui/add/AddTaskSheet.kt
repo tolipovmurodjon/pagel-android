@@ -1,34 +1,30 @@
 package org.pagel.ai.ui.add
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,121 +36,150 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.pagel.ai.data.db.ProjectEntity
+import org.pagel.ai.ui.glass.DatePick
+import org.pagel.ai.ui.glass.DateSheet
 import org.pagel.ai.ui.glass.Glass
-import org.pagel.ai.ui.glass.ProjectTile
+import org.pagel.ai.ui.glass.GlassChip
+import org.pagel.ai.ui.glass.GlassMenu
+import org.pagel.ai.ui.glass.GlassSheet
+import org.pagel.ai.ui.glass.PriorityColors
+import org.pagel.ai.ui.glass.ProjectSheet
+import org.pagel.ai.ui.glass.Repeat
+import org.pagel.ai.ui.glass.RepeatSheet
+import org.pagel.ai.ui.glass.SheetBottom
+import org.pagel.ai.ui.glass.SheetTitle
+import org.pagel.ai.ui.glass.TabIcons
+import org.pagel.ai.ui.glass.TileColors
+import org.pagel.ai.ui.glass.pressScale
+import org.pagel.ai.ui.glass.priorityItems
 import org.pagel.ai.ui.projects.shortName
-import org.pagel.ai.ui.today.dueLabel
 import java.time.LocalDateTime
 
-/** Todoist's flag colours, as the web's chips: P1 red, P2 orange, P3 blue, P4 grey (PAGEL's P0-P3). */
-private val FLAG = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE0), Glass.Muted)
-
-/** Add task fast (NATIVE-PLAN Phase 3): a sheet over Today; Enter saves and keeps the field open for the next one. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Add task fast (NATIVE-PLAN Phase 1): a glass sheet over Today, or over a project when [project] is set (the task
+ * joins that project, not Today). Enter or the mint arrow saves; the field clears and stays open for the next one.
+ */
 @Composable
-fun AddTaskSheet(onClose: () -> Unit, vm: AddTaskViewModel = hiltViewModel()) {
+fun AddTaskSheet(onClose: () -> Unit, project: String? = null, vm: AddTaskViewModel = hiltViewModel()) {
     val projects by vm.projects.collectAsStateWithLifecycle()
-    val saved by vm.saved.collectAsStateWithLifecycle()
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Glass.Page) {
-        AddTaskContent(projects, saved, now = vm::now, onSave = vm::save)
+    GlassSheet(onClose) {
+        AddTaskContent(projects, home = project ?: "me", toToday = project == null, now = vm::now, onSave = vm::save)
+        Spacer(Modifier.height(SheetBottom))
     }
 }
 
+private val FieldRim = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.55f)))
+
+/**
+ * The web's add-task.tsx, for the thumb: a 52 dp capsule field with a 44 dp mint send inside it, then chips that open
+ * the pickers (date with a calendar, priority with flags, repeat, project with search). The typed line is read live
+ * ("Call the bank tomorrow 3pm #me p1"); a pick beats what was typed, a typed #project beats the picked one.
+ */
 @Composable
-fun AddTaskContent(projects: List<ProjectEntity>, saved: List<Saved>, now: () -> LocalDateTime, onSave: (String, String) -> Boolean) {
-    var typed by rememberSaveable { mutableStateOf("") }
-    var pick by rememberSaveable { mutableStateOf("me") }
+fun AddTaskContent(
+    projects: List<ProjectEntity>,
+    home: String = "me",
+    toToday: Boolean = true,
+    now: () -> LocalDateTime,
+    initial: String = "",
+    initialPicks: Picks = Picks(),
+    autoFocus: Boolean = true,
+    onSave: (String, String, Picks, Boolean) -> Boolean,
+) {
+    var typed by rememberSaveable { mutableStateOf(initial) }
+    var pick by rememberSaveable { mutableStateOf(home) }
+    var dueSet by rememberSaveable { mutableStateOf(initialPicks.dueSet) }
+    var due by rememberSaveable { mutableStateOf(initialPicks.due) }
+    var everySet by rememberSaveable { mutableStateOf(initialPicks.everySet) }
+    var every by rememberSaveable { mutableStateOf(initialPicks.every) }
+    var priority by rememberSaveable { mutableStateOf(initialPicks.priority) }
+    var sheet by rememberSaveable { mutableStateOf("") }
+    var flags by remember { mutableStateOf(false) }
+    val picks = Picks(dueSet, due, everySet, every, priority)
     val names = projects.map { it.name }
-    val plan = remember(typed, pick, names) { planOf(typed, pick, names, now()) }
+    val clock = now()
+    val plan = remember(typed, pick, names, picks, toToday) { planOf(typed, pick, names, clock, picks, toToday) }
+    val today = clock.toLocalDate()
     val focus = remember { FocusRequester() }
     val haptics = LocalHapticFeedback.current
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { if (autoFocus) runCatching { focus.requestFocus() } }
+    val ready = plan.text.isNotBlank() && !plan.tooLong
 
     fun submit() {
-        if (onSave(typed, pick)) {
+        if (onSave(typed, pick, picks, toToday)) {
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-            typed = ""
+            typed = ""; dueSet = false; due = null; everySet = false; every = null; priority = null
         } else if (plan.tooLong) haptics.performHapticFeedback(HapticFeedbackType.Reject)
     }
 
-    Column(Modifier.fillMaxWidth().imePadding().padding(start = 20.dp, end = 20.dp, bottom = 20.dp)) {
-        Text("Add a task", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
-            value = typed,
-            onValueChange = { typed = it },
-            modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "New task" },
-            placeholder = { Text("Call the bank tomorrow 3pm #me p1", color = Glass.Muted) },
-            singleLine = true,
-            shape = RoundedCornerShape(16.dp),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { submit() }),
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Glass.Primary, cursorColor = Glass.Primary, focusedTextColor = Glass.Ink, unfocusedTextColor = Glass.Ink),
-        )
-        Spacer(Modifier.height(10.dp))
-        // What Enter will make, read live from the line (the web's chips).
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val today = now().toLocalDate()
-            Chip(dueLabel(plan.due, today)?.text ?: plan.due, Glass.Primary)
-            Chip("⚑ P${plan.priority + 1}", FLAG[plan.priority.coerceIn(0, 3)])
-            plan.every?.let { Chip("↻ ${when (it) { "day" -> "daily"; "weekday" -> "weekdays"; else -> it }}", Glass.Muted) }
+    Column(Modifier.fillMaxWidth()) {
+        SheetTitle("New task", if (toToday) null else shortName(plan.project, projects.firstOrNull { it.name == plan.project }?.title ?: plan.project))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(52.dp)
+                .background(Color.White.copy(alpha = 0.84f), RoundedCornerShape(26.dp))
+                .border(1.dp, if (plan.tooLong) SolidColor(Glass.Risk) else FieldRim, RoundedCornerShape(26.dp))
+                .padding(start = 18.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicTextField(
+                value = typed,
+                onValueChange = { typed = it.replace('\n', ' ') },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Glass.Ink),
+                cursorBrush = SolidColor(Glass.Primary),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { submit() }),
+                modifier = Modifier.weight(1f).focusRequester(focus).semantics { contentDescription = "New task" },
+                decorationBox = { inner -> Box { if (typed.isEmpty()) Text("Call the bank tomorrow 3pm #me p1", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, maxLines = 1); inner() } },
+            )
+            val press = remember { MutableInteractionSource() }
+            val fill by animateColorAsState(if (ready) Glass.Primary else Glass.Primary.copy(alpha = 0.32f), label = "send")
+            Box(
+                Modifier.size(44.dp).pressScale(press).background(fill, CircleShape)
+                    .clickable(press, indication = null, enabled = ready, role = Role.Button) { submit() }
+                    .semantics { contentDescription = "Add task" },
+                contentAlignment = Alignment.Center,
+            ) { Icon(TabIcons.ArrowUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp)) }
         }
         Spacer(Modifier.height(12.dp))
-        // The project: tap one, or type #name (then the typed one wins and is shown).
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(projects, key = { it.name }) { p -> ProjectChip(p, selected = p.name == plan.project) { pick = p.name } }
+        // What Enter will make, as chips that are also the pickers.
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GlassChip(TabIcons.Calendar, DatePick.dueText(plan.due, today).let { if (it == "Date" && !toToday) "Date" else it }, set = plan.due != null, description = "Date") { sheet = "date" }
+            Box {
+                GlassChip(if (priority != null) TabIcons.FlagFilled else TabIcons.Flag, "P${plan.priority + 1}", set = plan.priority != 2 || priority != null,
+                    tint = PriorityColors[plan.priority.coerceIn(0, 3)], description = "Priority") { flags = true }
+                if (flags) GlassMenu(priorityItems(plan.priority), onPick = { priority = it; flags = false }, onDismiss = { flags = false })
+            }
+            GlassChip(TabIcons.Habits, plan.every?.let(Repeat::label) ?: "Repeat", set = plan.every != null, description = "Repeat") { sheet = "repeat" }
+            val p = projects.firstOrNull { it.name == plan.project }
+            GlassChip(
+                TabIcons.forProject(plan.project), shortName(plan.project, p?.title ?: plan.project), set = true,
+                tint = TileColors.stops(plan.project, p?.color).second, description = "Project",
+            ) { sheet = "project" }
         }
         if (plan.tooLong) {
-            Spacer(Modifier.height(8.dp))
-            Text("One short line, $MAX_WORDS words at most. Put the detail in steps on pagel.uz.", style = MaterialTheme.typography.bodyMedium, color = Glass.Risk)
+            Spacer(Modifier.height(10.dp))
+            Text("One short line, $MAX_WORDS words at most. Put the detail in steps.", style = MaterialTheme.typography.bodyMedium, color = Glass.Risk, modifier = Modifier.padding(horizontal = 20.dp))
         }
-        for (s in saved) {
-            Spacer(Modifier.height(8.dp))
-            Text("✓ ${s.text}  ·  ${s.where}", style = MaterialTheme.typography.bodyMedium, color = Glass.Primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        Spacer(Modifier.height(16.dp))
-        Button(
-            onClick = { submit() },
-            enabled = plan.text.isNotBlank() && !plan.tooLong,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(26.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Glass.Primary),
-        ) { Text("Add task") }
+        Spacer(Modifier.height(8.dp))
     }
-}
-
-@Composable
-private fun Chip(text: String, color: Color) {
-    Text(text, style = MaterialTheme.typography.bodyMedium, color = color,
-        modifier = Modifier.background(color.copy(alpha = 0.10f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp))
-}
-
-@Composable
-private fun ProjectChip(p: ProjectEntity, selected: Boolean, onPick: () -> Unit) {
-    val shape = RoundedCornerShape(14.dp)
-    Row(
-        Modifier
-            .border(BorderStroke(if (selected) 1.5.dp else 1.dp, if (selected) Glass.Primary else Glass.Muted.copy(alpha = 0.25f)), shape)
-            .background(if (selected) Glass.PrimarySoft else Color.White.copy(alpha = 0.6f), shape)
-            .clickable(onClick = onPick)
-            .padding(start = 6.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ProjectTile(p.name, p.color, p.title, size = 20.dp)
-        Spacer(Modifier.width(6.dp))
-        Text(shortName(p.name, p.title), style = MaterialTheme.typography.bodyMedium, color = Glass.Ink)
+    when (sheet) {
+        "date" -> DateSheet(plan.due, today, onPick = { dueSet = true; due = it }, onDismiss = { sheet = "" })
+        "repeat" -> RepeatSheet(plan.every, onChange = { everySet = true; every = it }, onDismiss = { sheet = "" })
+        "project" -> ProjectSheet(projects, plan.project, onPick = { pick = it }, onDismiss = { sheet = "" })
     }
 }

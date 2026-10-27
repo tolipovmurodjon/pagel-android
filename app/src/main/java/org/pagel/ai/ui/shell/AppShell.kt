@@ -86,6 +86,11 @@ import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.pair.PairRoute
 import org.pagel.ai.ui.projects.ProjectsRoute
+import org.pagel.ai.ui.projects.ProjectRoute as ProjectScreenRoute
+import org.pagel.ai.ui.glass.LocalToasts
+import org.pagel.ai.ui.glass.ToastHost
+import org.pagel.ai.ui.task.LocalTaskOpener
+import org.pagel.ai.ui.task.TaskPanelSheet
 import org.pagel.ai.ui.tasks.TasksScreen
 import org.pagel.ai.ui.today.TodayRoute as TodayScreenRoute
 
@@ -101,7 +106,9 @@ fun AppShell(onOpenPhone: () -> Unit, vm: ShellViewModel = hiltViewModel()) {
             // Reading the account off Main takes a few ms; the page colour paints at once, no white flash.
             null -> AuroraBackground(Modifier.fillMaxSize()) {}
             AccountState.SignedOut -> PairRoute()
-            is AccountState.Paired -> Tabs(onOpenPhone = onOpenPhone, onDisconnect = vm::disconnect)
+            is AccountState.Paired -> androidx.compose.runtime.CompositionLocalProvider(LocalToasts provides vm.toasts) {
+                Tabs(onOpenPhone = onOpenPhone, onDisconnect = vm::disconnect)
+            }
         }
     }
 }
@@ -114,17 +121,26 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     val stack = stacks[selected]
     val backdrop = rememberLayerBackdrop()
     val onTop = stack.lastOrNull() == Tab.entries[selected].root
-    var adding by rememberSaveable { mutableStateOf(false) }
+    // The Add sheet's target: null = closed, "" = Today, a name = that project. The open task panel's task id.
+    var adding by rememberSaveable { mutableStateOf<String?>(null) }
+    var openTask by rememberSaveable { mutableStateOf<String?>(null) }
+    val toasts = LocalToasts.current
+    val top = stack.lastOrNull()
 
     // Scroll-aware top (X, YouTube): scrolling down gives the content all the room; scrolling up brings a small glass
     // title back. [scrolled] is how far the list is from its top, so the title only shows once the big one is gone.
     var scrolled by remember { mutableFloatStateOf(0f) }
     var titleShown by remember { mutableStateOf(false) }
-    val scrollWatch = remember {
+    // The capsule flips only after 24 dp in the new direction (audit #9): a finger's wobble never makes it flicker.
+    val flip = with(androidx.compose.ui.platform.LocalDensity.current) { 24.dp.toPx() }
+    val scrollWatch = remember(flip) {
         object : NestedScrollConnection {
+            var run = 0f
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 scrolled = (scrolled - consumed.y).coerceAtLeast(0f)
-                if (consumed.y < -1f) titleShown = false else if (consumed.y > 1f) titleShown = true
+                val dy = consumed.y
+                if (dy != 0f) run = if (run * dy > 0f) run + dy else dy
+                if (run < -flip) titleShown = false else if (run > flip) titleShown = true
                 return Offset.Zero
             }
         }
@@ -139,6 +155,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     // Back leaves a tab's own stack first, then returns to Today, then leaves the app (RULES.md, navigation).
     BackHandler(enabled = selected != 0 && stack.size == 1) { selected = 0 }
 
+    androidx.compose.runtime.CompositionLocalProvider(LocalTaskOpener provides { id: String -> openTask = id }) {
     Box(Modifier.fillMaxSize()) {
         AuroraBackground(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -170,7 +187,8 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     entry<HabitsRoute> { Coming("Habits", "/habits", padding) { stack.add(WebRoute(it)) } }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
                     entry<MoreRoute> { More(padding, onOpenProjects = { stack.add(ProjectListRoute) }, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect) }
-                    entry<ProjectListRoute> { ProjectsRoute(padding, reselect) }
+                    entry<ProjectListRoute> { ProjectsRoute(padding, reselect, onOpenProject = { stack.add(ProjectPageRoute(it)) }) }
+                    entry<ProjectPageRoute> { r -> ProjectScreenRoute(r.name, padding, reselect, onOpenTask = { openTask = it }) }
                     entry<WebRoute> { r -> TasksScreen(onOpenPhone = onOpenPhone, startPath = r.path) }
                 },
             ) }
@@ -194,8 +212,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 }
             }
         }
-        val top = stack.lastOrNull()
-        val pageTitle = when (top) { ProjectListRoute -> "Projects"; is WebRoute -> null; else -> Tab.entries[selected].label }
+        val pageTitle = when (top) { ProjectListRoute -> "Projects"; is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label }
         val density = androidx.compose.ui.platform.LocalDensity.current
         // Read through derivedStateOf: the shell redraws when a switch flips, not on every scrolled pixel.
         val moved by remember(density) { derivedStateOf { scrolled > with(density) { 8.dp.toPx() } } }
@@ -209,14 +226,31 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 modifier = Modifier.align(Alignment.TopCenter),
             ) { reselect++ }
         }
-        if (onTop && selected == 0) {
+        val inProject = top as? ProjectPageRoute
+        if ((onTop && selected == 0) || inProject != null) {
             AddButton(
                 backdrop,
-                Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.navigationBars).padding(end = 20.dp, bottom = 8.dp + 64.dp + 14.dp),
-            ) { adding = true }
+                Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.navigationBars).padding(end = 20.dp, bottom = if (onTop) 8.dp + 64.dp + 14.dp else 16.dp),
+            ) { adding = inProject?.name ?: "" }
+        }
+        // The toast line lives here, over the real list, so its glass bends what is under it (audit #8). While a sheet is
+        // open the sheet shows it instead.
+        if (toasts.sheets == 0) {
+            ToastHost(
+                toasts,
+                Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(start = 12.dp, end = 12.dp, bottom = if (onTop) 8.dp + 64.dp + 14.dp + 56.dp + 10.dp else 16.dp + 56.dp + 10.dp),
+                backdrop = backdrop,
+            )
         }
     }
-    if (adding) AddTaskSheet(onClose = { adding = false })
+    }
+    adding?.let { target -> AddTaskSheet(onClose = { adding = null }, project = target.ifEmpty { null }) }
+    openTask?.let { id ->
+        androidx.compose.runtime.key(id) {
+            TaskPanelSheet(id, onClose = { openTask = null }, onOpenProject = { name -> openTask = null; if (top != ProjectPageRoute(name)) stack.add(ProjectPageRoute(name)) })
+        }
+    }
 }
 
 /**

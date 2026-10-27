@@ -30,6 +30,34 @@ object TabIcons {
     val Done = icon("circle-check", "M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0", "m16 9-5.5 5.5L8 12")
     val Calendar = icon("calendar-days", "M8 2v3", "M16 2v3", "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2z", "M3 9h18", "M8 13h.01", "M12 13h.01", "M16 13h.01", "M8 17h.01", "M12 17h.01", "M16 17h.01")
 
+    // The task panel, the pickers and the Add sheet (Phase 1, 2026-10-27): the same Lucide 1.49 icons the web's
+    // task-panel.tsx and pickers.tsx use, from lucide-react's own data (scratch lucide_paths.js).
+    private const val FLAG = "M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"
+    val Flag = icon("flag", FLAG)
+    /** The chosen priority: the same flag, filled in its colour (the web fills the picked one). */
+    val FlagFilled = icon("flag-filled", FLAG, fill = true)
+    val CalendarX = icon("calendar-x", "M8 2v3", "M16 2v3", "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2z", "M3 9h18", "m14 13-4 4", "m10 13 4 4")
+    val Sun = icon("sun", "M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0", "M12 2v2", "M12 20v2", "m4.93 4.93 1.41 1.41", "m17.66 17.66 1.41 1.41", "M2 12h2", "M20 12h2", "m6.34 17.66-1.41 1.41", "m19.07 4.93-1.41 1.41")
+    val Sunrise = icon("sunrise", "M12 2v8", "m4.93 10.93 1.41 1.41", "M2 18h2", "M20 18h2", "m19.07 10.93-1.41 1.41", "M22 22H2", "m8 6 4-4 4 4", "M16 18a4 4 0 0 0-8 0")
+    val Sofa = icon("sofa", "M20 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v3", "M2 16a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v1.5a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5V11a2 2 0 0 0-4 0z", "M4 18v2", "M20 18v2", "M12 4v9")
+    val Clock = icon("clock", "M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0", "M12 6v6l4 2")
+    val ChevronLeft = icon("chevron-left", "m15 18-6-6 6-6")
+    val ChevronRight = icon("chevron-right", "m9 18 6-6-6-6")
+    val ChevronDown = icon("chevron-down", "m6 9 6 6 6-6")
+    val Check = icon("check", "M20 6 9 17l-5-5")
+    val Close = icon("x", "M18 6 6 18", "m6 6 12 12")
+    val Plus = icon("plus", "M5 12h14", "M12 5v14")
+    val Search = icon("search", "m21 21-4.34-4.34", "M3 11a8 8 0 1 0 16 0a8 8 0 1 0 -16 0")
+    val Star = icon("star", "M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z")
+    val Trash = icon("trash-2", "M10 11v6", "M14 11v6", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M3 6h18", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2")
+    val Ban = icon("ban", "M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0", "M4.929 4.929 19.07 19.071")
+    val Hourglass = icon("hourglass", "M5 22h14", "M5 2h14", "M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22", "M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2")
+    val Moon = icon("moon", "M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401")
+    val ArrowUp = icon("arrow-up", "m5 12 7-7 7 7", "M12 19V5")
+    val CloudOff = icon("cloud-off", "M10.94 5.274A7 7 0 0 1 15.71 10h1.79a4.5 4.5 0 0 1 4.222 6.057", "M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78", "m2 2 20 20")
+    val ExternalLink = icon("external-link", "M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6")
+    val Copy = icon("copy", "M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2v-10a2 2 0 0 1 2 -2z", "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2")
+
     /**
      * Project tiles carry a white line icon, never a letter (brain rules/gradient-project-icons, colour theory #19).
      * The same map and the same Lucide 1.49 shapes as the web (dashboard src/app/project-icon.tsx), generated from
@@ -58,11 +86,12 @@ object TabIcons {
 
     fun forProject(project: String): ImageVector = projects[project] ?: projects.getValue("folder")
 
-    private fun icon(name: String, vararg paths: String): ImageVector {
+    private fun icon(name: String, vararg paths: String, fill: Boolean = false): ImageVector {
         val b = ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         for (d in paths) {
             b.addPath(
                 pathData = PathParser().parsePathString(d).toNodes(),
+                fill = if (fill) SolidColor(Color.Black) else null,
                 stroke = SolidColor(Color.Black),
                 strokeLineWidth = 2f,
                 strokeLineCap = StrokeCap.Round,

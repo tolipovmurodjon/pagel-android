@@ -1,5 +1,6 @@
 package org.pagel.ai.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -42,6 +43,9 @@ data class TaskEntity(
     val serverVersion: Int,
     val syncStatus: String = SyncStatus.SYNCED,
     val lastModified: Long,
+    /** The phase's place in its plan and whether it is the NOW phase (v3): the project screen groups by them. */
+    @ColumnInfo(defaultValue = "0") val phaseSort: Int = 0,
+    @ColumnInfo(defaultValue = "0") val phaseNow: Boolean = false,
 )
 
 @Entity(tableName = "steps", primaryKeys = ["taskId", "position"], indices = [Index("taskId")])
@@ -82,11 +86,20 @@ data class OutboxEntity(
     val attempts: Int = 0,
     /** null while waiting; a message once pagel.uz refused it (the change was rolled back and the UI tells Boss). */
     val refused: String? = null,
+    /** A [PATCH]'s JSON `{"set": {wire fields}, "was": {the phone's values before}}` (v3); `was` rolls a refusal back. */
+    val body: String? = null,
+    /**
+     * pagel.uz answered 200 without naming the new fields in `applied`: an older server ignored them. The change stays
+     * here ("waits for pagel.uz"), is tried again on the next pass, and is never rolled back or dropped.
+     */
+    @ColumnInfo(defaultValue = "0") val waitsForServer: Boolean = false,
 ) {
     companion object {
         const val DONE = "done"
         const val UNDONE = "undone"
         /** A task made on the phone; its row in `tasks` holds what is sent. */
         const val ADD = "add"
+        /** Any edit from the task panel: `PATCH /api/v1/tasks/<id>` with [body]'s `set`. */
+        const val PATCH = "patch"
     }
 }

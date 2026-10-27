@@ -23,6 +23,8 @@ data class SyncTaskDto(
     val id: String,
     val project: String,
     val phase: String = "",
+    @SerialName("phase_sort") val phaseSort: Int = 0,
+    @SerialName("phase_now") val phaseNow: Boolean = false,
     val sort: Double = 0.0,
     val text: String,
     val title: String? = null,
@@ -71,3 +73,10 @@ data class CreatedTaskDto(val id: String)
 
 @Serializable
 data class TaskStatusDto(val id: String, val status: String = "")
+
+/**
+ * The reply to a panel edit: the task plus `applied`, the fields this pagel.uz understood (dashboard task-api.ts).
+ * An older server has no `applied` and ignores fields it does not know, so null means "not understood yet".
+ */
+@Serializable
+data class PatchReply(val id: String = "", val status: String = "", val applied: List<String>? = null)

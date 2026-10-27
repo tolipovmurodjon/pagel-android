@@ -40,7 +40,6 @@ import org.pagel.ai.ui.projects.ProjectsScreen
 import org.pagel.ai.ui.projects.ProjectsUiState
 import org.pagel.ai.ui.shell.Tab
 import org.pagel.ai.ui.add.AddTaskContent
-import org.pagel.ai.ui.add.Saved
 import org.pagel.ai.ui.today.TodayRow
 import java.time.LocalDateTime
 import androidx.compose.ui.test.performTextInput
@@ -165,13 +164,13 @@ class GlassScreenshotTest {
         val now = LocalDateTime.of(2026, 10, 26, 10, 0)
         compose.setContent {
             GlassTheme { AuroraBackground(Modifier.fillMaxSize()) {
-                AddTaskContent(projects, listOf(Saved(0, "Weigh in", "Me · Today, in line")), now = { now }, onSave = { _, _ -> true })
+                AddTaskContent(projects, now = { now }, autoFocus = false, onSave = { _, _, _, _ -> true })
             } }
         }
         compose.onNodeWithContentDescription("New task").performTextInput("Call the bank tomorrow 3pm #humopedia p1")
         compose.onNodeWithText("Tomorrow 15:00").assertIsDisplayed()
-        compose.onNodeWithText("⚑ P1").assertIsDisplayed()
-        compose.onNodeWithText("Add task").assertIsEnabled()
+        compose.onNodeWithText("P1").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Add task").assertIsEnabled()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/add-task.png")
     }
 }

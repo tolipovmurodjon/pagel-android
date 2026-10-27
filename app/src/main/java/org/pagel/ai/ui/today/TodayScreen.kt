@@ -24,11 +24,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,13 +65,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.pagel.ai.data.db.OutboxEntity
 import org.pagel.ai.ui.glass.EaseOutStrong
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.Pane
 import org.pagel.ai.ui.glass.SkeletonRows
 import org.pagel.ai.ui.glass.ProjectTile
 import org.pagel.ai.ui.glass.pressScale
+import org.pagel.ai.ui.glass.pressOnTouch
+import org.pagel.ai.ui.glass.LocalToasts
+import org.pagel.ai.ui.task.LocalTaskOpener
 import org.pagel.ai.ui.projects.shortName
 import java.time.LocalDate
 import java.time.ZoneId
@@ -96,7 +93,7 @@ private val RingDone = Color(0xFF058527)
 @Composable
 fun TodayRoute(contentPadding: PaddingValues, reselect: Int, vm: TodayViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, onAcknowledge = vm::acknowledge)
+    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo)
 }
 
 /** Today, native (NATIVE-PLAN Phase 2): the web's 3 at a time, a ring tick with ding, confetti and fold, undo. */
@@ -107,13 +104,13 @@ fun TodayScreen(
     reselect: Int = 0,
     onTick: (String) -> Unit = {},
     onUndo: (String) -> Unit = {},
-    onAcknowledge: (OutboxEntity) -> Unit = {},
     today: LocalDate = LocalDate.now(TASHKENT),
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    val snackbar = remember { SnackbarHostState() }
+    val toasts = LocalToasts.current
+    val openTask = LocalTaskOpener.current
     val reduce = remember { reducedMotion(ctx) }
     val bursts = remember { mutableStateListOf<Burst>() }
     var nextBurst by remember { mutableLongStateOf(0L) }
@@ -125,28 +122,13 @@ fun TodayScreen(
 
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
 
-    // pagel.uz refused a tick: Room is already rolled back; say why once, then let it go.
-    LaunchedEffect(ui.refused?.id) {
-        val op = ui.refused ?: return@LaunchedEffect
-        // The screen's scope, not this effect's: acknowledging clears ui.refused, which restarts this effect.
-        scope.launch {
-            snackbar.currentSnackbarData?.dismiss()
-            snackbar.showSnackbar("Not saved on pagel.uz: ${op.refused}", duration = SnackbarDuration.Long)
-        }
-        onAcknowledge(op)
-    }
-
     fun finish(row: TodayRow, ringCentre: Offset) {
         // Respond first (rules/respond-first-save-after): feel, sound and picture now, the save goes behind.
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         scope.launch(Dispatchers.Default) { Ding.play() }
         if (!reduce) bursts += Burst(nextBurst++, ringCentre - overlayAt)
         onTick(row.id)
-        scope.launch {
-            snackbar.currentSnackbarData?.dismiss()
-            val r = snackbar.showSnackbar("Done", actionLabel = "Undo", duration = SnackbarDuration.Short)
-            if (r == SnackbarResult.ActionPerformed) onUndo(row.id)
-        }
+        toasts.show("Done", action = "Undo") { onUndo(row.id) }
     }
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot() }) {
@@ -167,7 +149,7 @@ fun TodayScreen(
                         Column(Modifier.padding(vertical = 6.dp)) {
                             for ((i, row) in ui.rows.withIndex()) key(row.id) {
                                 if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
-                                TaskRow(row, today, isNew = seen.isNotEmpty() && row.id !in seen, reduce = reduce) { centre -> finish(row, centre) }
+                                TaskRow(row, today, isNew = seen.isNotEmpty() && row.id !in seen, reduce = reduce, onOpen = { openTask(row.id) }) { centre -> finish(row, centre) }
                             }
                             if (ui.waiting > 0) {
                                 // "+2" waiting: one capsule, not a sentence (Boss: one icon beats many words).
@@ -181,9 +163,6 @@ fun TodayScreen(
             }
         }
         for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = contentPadding.calculateBottomPadding() + 76.dp, start = 12.dp, end = 12.dp)) { data ->
-            Toast(data)
-        }
     }
 }
 
@@ -215,7 +194,7 @@ private fun Note(title: String, line: String) {
  * after 0.85 s the row folds in 0.38 s (the web's "finish moment"). A newly dealt row slides up into the free slot.
  */
 @Composable
-private fun TaskRow(row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boolean, onTick: (Offset) -> Unit) {
+private fun TaskRow(row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boolean, onOpen: () -> Unit, onTick: (Offset) -> Unit) {
     val fold = remember { Animatable(1f) }
     val enter = remember { Animatable(if (isNew && !reduce) 0f else 1f) }
     LaunchedEffect(Unit) { if (enter.value < 1f) enter.animateTo(1f, tween(460, easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1.15f))) }
@@ -235,7 +214,13 @@ private fun TaskRow(row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boo
         verticalAlignment = Alignment.Top,
     ) {
         TickRing(row.priority, row.done, row.title, onTick)
-        Column(Modifier.weight(1f).padding(top = 12.dp, bottom = 10.dp)) {
+        // The row opens the task panel (the ring stays the tick), pressed the moment the finger lands (audit #6).
+        val open = remember { MutableInteractionSource() }
+        Column(
+            Modifier.weight(1f).pressOnTouch()
+                .clickable(open, indication = null, enabled = !row.done, role = Role.Button, onClickLabel = "Open") { onOpen() }
+                .padding(top = 12.dp, bottom = 10.dp),
+        ) {
             Text(row.title, style = MaterialTheme.typography.bodyLarge, color = titleColor, maxLines = 3, overflow = TextOverflow.Ellipsis)
             Meta(row, today)
         }
@@ -303,35 +288,5 @@ private fun TickRing(priority: Int, done: Boolean, title: String, onTick: (Offse
             if (d > 0f) drawLine(Color.White, a, if (d <= first) a + (b - a) * (d / first) else b, w, StrokeCap.Round)
             if (d > first) drawLine(Color.White, b, b + (c - b) * ((d - first) / (total - first)), w, StrokeCap.Round)
         }
-    }
-}
-
-/**
- * The toast as a light pill with icons, not a black bar (Boss 2026-10-27: "looks simple, black bg"): a mint tick or a
- * red mark, the words, and Undo as an icon + word in mint.
- */
-@Composable
-private fun Toast(data: androidx.compose.material3.SnackbarData) {
-    val bad = data.visuals.message.startsWith("Not saved")
-    Pane(Modifier.fillMaxWidth(), radius = 22.dp) { Row(
-        Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        androidx.compose.material3.Icon(TabIcons.Done, contentDescription = null, tint = if (bad) Glass.Risk else Glass.Primary, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(data.visuals.message, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
-        data.visuals.actionLabel?.let { label ->
-            val press = remember { MutableInteractionSource() }
-            Row(
-                Modifier.pressScale(press).clickable(press, indication = null, role = Role.Button) { data.performAction() }
-                    .background(Glass.PrimarySoft, androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                androidx.compose.material3.Icon(TabIcons.Undo, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(label, style = MaterialTheme.typography.labelLarge, color = Glass.Primary)
-            }
-        }
-    }
     }
 }

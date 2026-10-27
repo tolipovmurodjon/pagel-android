@@ -36,8 +36,13 @@ echo "== forced test crash"
 $T adb shell am force-stop "$PKG"
 $T adb shell run-as "$PKG" rm -rf files/crashes
 $T adb shell am start -n "$PKG/.MainActivity" --ez pagel.test_crash true
-sleep 10
-FILES=$($T adb shell run-as "$PKG" ls files/crashes 2>/dev/null | tr -d '\r')
+# Wait on the file itself, up to 40 s: on CI's software GPU a cold start alone took 11 s, and one check after 10 s
+# failed a docs-only commit (run 40530963214).
+for i in $(seq 1 40); do
+  FILES=$($T adb shell run-as "$PKG" ls files/crashes 2>/dev/null | tr -d '\r')
+  case "$FILES" in *crash-*.json*) break;; esac
+  sleep 1
+done
 echo "files/crashes: $FILES"
 case "$FILES" in *crash-*.json*) ;; *) fail "no crash file after the forced crash";; esac
 # adb joins its arguments into one device command (quotes are lost), so name the one file: a glob inside

@@ -114,6 +114,7 @@ class SyncEngine(
                     id = it.id, project = it.project, phase = it.phase, sort = it.sort, text = it.text, title = it.title,
                     status = it.status, priority = it.priority, star = it.star, due = it.due, every = it.every,
                     doneWhen = it.doneWhen, doneAt = it.doneAt, updatedAt = it.updatedAt, serverVersion = it.version, lastModified = now,
+                    phaseSort = it.phaseSort, phaseNow = it.phaseNow,
                 )
             },
             steps = r.tasks.flatMap { t -> t.steps.mapIndexed { i, s -> StepEntity(t.id, i, s.text, s.title, s.done) } },
