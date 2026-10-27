@@ -41,6 +41,14 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+### ✅ 2026-10-27 11:40 UTC: `build` workflow green on feat/native-app (run 40496280942, 3aaef46)
+build ✅ (219/219 tests + 5 screenshots) · smoke ✅: alive 30 s, forced crash written, relaunch, **paired with a 6-digit
+code against the fake pagel.uz → "Projects · 148 open tasks · Live" on the glass shell** (`smoke-evidence/paired-projects.png`),
+then the saved crash reached `POST /api/v1/app/crash` and left the phone. The 12.9 s freeze of run 40491073171 did not
+fail this run (the smoke now waits on real signals); its cause is still unknown: `debuggerd -j` needs root on the
+emulator, so next time use `adb shell am dumpheap`-free `kill -3 <pid>` + `/data/anr/traces.txt` or a Perfetto trace.
+Next after that: unselected tab labels were near-invisible on the glass → ink 72 % (this commit).
+
 ### START HERE (next session, 2026-10-27 ~11:00 UTC)
 1. Read the newest run on `feat/native-app-ci2` (8270c42): artifact `smoke-evidence` → `stacks-after-pair.txt` holds
    the main thread's stack during the freeze. Fix that cause, push to `feat/native-app-ci2`, repeat until build + smoke

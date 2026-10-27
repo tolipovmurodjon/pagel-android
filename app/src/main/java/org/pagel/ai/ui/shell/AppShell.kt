@@ -137,8 +137,10 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             ) {
                 Tab.entries.forEachIndexed { i, tab ->
                     LiquidBottomTab(onClick = { if (selected == i) reselect++ else selected = i }) {
-                        Icon(tab.icon, contentDescription = null, modifier = Modifier.size(22.dp))
-                        Text(tab.label, fontSize = 11.sp, maxLines = 1)
+                        // Ink on the glass, never pale grey: the first emulator screenshot showed unselected tabs at
+                        // almost no contrast. The selected tab is tinted mint by the bar's own top layer.
+                        Icon(tab.icon, contentDescription = null, tint = Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(22.dp))
+                        Text(tab.label, fontSize = 11.sp, maxLines = 1, color = Glass.Ink.copy(alpha = 0.72f))
                     }
                 }
             }
