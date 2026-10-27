@@ -27,6 +27,11 @@ import javax.inject.Singleton
 @Retention(AnnotationRetention.BINARY)
 annotation class AppScope
 
+/** pagel.uz's HTTP client (timeouts), apart from the gateway's WebSocket client, which never times out reads. */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class PagelHttp
+
 /** The native app's data layer (NATIVE-PLAN Phase 1): pagel.uz API, Room, sync engine, the paired account. */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -37,14 +42,14 @@ object AppDataModule {
     @Provides @Singleton @AppScope
     fun provideAppScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    @Provides @Singleton
+    @Provides @Singleton @PagelHttp
     fun provideHttp(): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
     @Provides @Singleton
-    fun provideApi(http: OkHttpClient, @IoDispatcher io: CoroutineDispatcher): PagelApi = PagelApi(http, io)
+    fun provideApi(@PagelHttp http: OkHttpClient, @IoDispatcher io: CoroutineDispatcher): PagelApi = PagelApi(http, io)
 
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): PagelDatabase =

@@ -22,6 +22,7 @@ import org.pagel.ai.data.sync.LiveStatus
 import org.pagel.ai.data.sync.SyncEngine
 import org.pagel.ai.di.AppScope
 import org.pagel.ai.di.IoDispatcher
+import org.pagel.ai.di.PagelHttp
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,7 +36,7 @@ class Session @Inject constructor(
     private val accounts: AccountStore,
     private val sync: SyncEngine,
     private val dao: PagelDao,
-    private val http: OkHttpClient,
+    @PagelHttp private val http: OkHttpClient,
     @ApplicationContext private val ctx: Context,
     @AppScope private val scope: CoroutineScope,
     @IoDispatcher private val io: CoroutineDispatcher,
