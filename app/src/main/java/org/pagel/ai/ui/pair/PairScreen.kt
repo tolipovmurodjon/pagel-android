@@ -24,12 +24,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -56,6 +60,9 @@ fun PairRoute(vm: PairViewModel = hiltViewModel()) {
 @Composable
 fun PairScreen(ui: PairUiState, onCode: (String) -> Unit, onServer: (String) -> Unit, onConnect: () -> Unit) {
     var advanced by rememberSaveable { mutableStateOf(false) }
+    // The keyboard opens on the code at once: one look at pagel.uz, six digits, done.
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     AuroraBackground(Modifier.fillMaxSize()) {
         Column(
             Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -78,7 +85,7 @@ fun PairScreen(ui: PairUiState, onCode: (String) -> Unit, onServer: (String) -> 
                         textStyle = TextStyle(fontFamily = Glass.Numbers, fontSize = 28.sp, letterSpacing = 8.sp, textAlign = TextAlign.Center),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { onConnect() }),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().focusRequester(focus),
                     )
                     ui.error?.let {
                         Spacer(Modifier.height(8.dp))

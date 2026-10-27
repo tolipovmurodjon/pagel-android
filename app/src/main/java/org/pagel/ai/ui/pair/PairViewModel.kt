@@ -1,5 +1,6 @@
 package org.pagel.ai.ui.pair
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -8,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.pagel.ai.BuildConfig
 import org.pagel.ai.data.Outcome
 import org.pagel.ai.data.session.Session
 import org.pagel.ai.data.session.message
@@ -24,8 +26,9 @@ data class PairUiState(
 
 /** Pairing: Boss types the 6-digit code pagel.uz → Phones shows; the session keeps the token it gets back. */
 @HiltViewModel
-class PairViewModel @Inject constructor(private val session: Session) : ViewModel() {
-    private val _ui = MutableStateFlow(PairUiState())
+class PairViewModel @Inject constructor(private val session: Session, saved: SavedStateHandle) : ViewModel() {
+    // Debug builds only: the CI emulator points the app at a fake pagel.uz with `am start --es pagel.server <url>`.
+    private val _ui = MutableStateFlow(PairUiState(server = saved.get<String>(EXTRA_SERVER)?.takeIf { BuildConfig.DEBUG } ?: Session.DEFAULT_SERVER))
     val ui: StateFlow<PairUiState> = _ui.asStateFlow()
 
     fun onCode(text: String) = _ui.update { it.copy(code = text.filter(Char::isDigit).take(6), error = null) }
@@ -45,3 +48,5 @@ class PairViewModel @Inject constructor(private val session: Session) : ViewMode
         }
     }
 }
+
+const val EXTRA_SERVER = "pagel.server"

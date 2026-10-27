@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only (overrides main's file): also allow plain HTTP to 127.0.0.1, where the CI emulator reaches a
+     fake pagel.uz through `adb reverse` (.github/scripts/fake-pagel.py). Release builds keep main's single tailnet IP. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">100.64.0.1</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>
