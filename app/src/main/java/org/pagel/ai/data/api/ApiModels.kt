@@ -80,3 +80,55 @@ data class TaskStatusDto(val id: String, val status: String = "")
  */
 @Serializable
 data class PatchReply(val id: String = "", val status: String = "", val applied: List<String>? = null)
+
+/** One save as `GET /api/v1/inbox` sends it (dashboard src/lib/inbox-api.ts). `kind` is the AI's guess, read only if [guessed]. */
+@Serializable
+data class InboxItemDto(
+    val file: String,
+    val saved: String = "",
+    val source: String = "",
+    val text: String = "",
+    val claim: String = "",
+    val why: String = "",
+    val project: String = "all",
+    val kind: String = "learn",
+    val next: String = "",
+    val note: String = "",
+    val guessed: Boolean = false,
+    val author: String = "",
+    val posted: String = "",
+    val later: String? = null,
+    @SerialName("has_picture") val hasPicture: Boolean = false,
+)
+
+/** The Inbox deck (the next cards) and the day's counts: 20 sorted a day is the goal, [cap] keeps a day. */
+@Serializable
+data class InboxResponse(
+    val day: String = "",
+    val goal: Int = 20,
+    val sorted: Int = 0,
+    @SerialName("kept_today") val keptToday: Int = 0,
+    val cap: Int = 5,
+    @SerialName("min_words") val minWords: Int = 6,
+    val total: Int = 0,
+    val items: List<InboxItemDto> = emptyList(),
+)
+
+/** `POST /api/v1/inbox`: one choice on one save. null fields are left out. */
+@Serializable
+data class SortBody(
+    val action: String,
+    val file: String,
+    val sentence: String? = null,
+    val project: String? = null,
+    val someday: Boolean? = null,
+)
+
+/** pagel.uz took the choice; `already` = it had happened before (a retry, or sorted on the web), never a refusal. */
+@Serializable
+data class SortReply(
+    val ok: Boolean = false,
+    val already: Boolean = false,
+    val sorted: Int? = null,
+    @SerialName("kept_today") val keptToday: Int? = null,
+)

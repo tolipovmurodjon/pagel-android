@@ -100,6 +100,50 @@ for want in '{"steps":["Find the account number","Call at 10"],"ticked":[0]}' '{
   log "   pagel.uz got $want"
 done
 $T adb shell input keyevent 4; shot panel-closed 1.5
+
+log "-- the Inbox (Phase 2): sort 5 saves with no network, come back online, pagel.uz gets all 5 in the order made"
+tap Inbox && shot inbox 3
+grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbox.xml" || { log "WALKTHROUGH: the Inbox shows no card from pagel.uz"; exit 1; }
+# Offline for real: the app's only road to the fake pagel.uz is adb reverse, so removing it refuses every call.
+$T adb reverse --remove tcp:8799
+log "   offline (adb reverse removed)"
+BEFORE=$(grep -c "POST /api/v1/inbox" "$FAKE_LOG")
+# The centre of the first node whose text is $1, as "x y".
+centre() {
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  local b; b=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n' | grep -F "text=\"$1\"" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+  [ -n "$b" ] || { log "   (no \"$1\" on screen)"; return 1; }
+  set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
+  echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
+}
+P=$(centre "10 AI tools lists are mostly ads") || exit 1; set -- $P
+$T adb shell input swipe "$1" "$2" $(( $1 - 700 )) "$2" 250; shot inbox-swiped-left-drop 1.5
+P=$(centre "Quizzes beat rereading: recall builds memory") || exit 1; set -- $P
+$T adb shell input swipe "$1" "$2" "$1" $(( $2 - 800 )) 250; shot inbox-swiped-up-later 1.5
+P=$(centre "A meme about Mondays") || exit 1; set -- $P
+$T adb shell input swipe "$1" "$2" $(( $1 + 700 )) "$2" 250; shot inbox-swiped-right-ai-drop 1.5
+tap "AI pick: Action" && shot inbox-action-form 2
+tap "Add to plan" && shot inbox-action-sent 1.5
+tap "AI pick: Note" && shot inbox-note-form 2
+tap "Save note" && shot inbox-note-sent 1.5
+sleep 3
+[ "$(grep -c "POST /api/v1/inbox" "$FAKE_LOG")" = "$BEFORE" ] || { log "WALKTHROUGH: a sort reached the fake pagel.uz while offline"; exit 1; }
+log "   5 sorted offline, none sent yet"
+$T adb reverse tcp:8799 tcp:8799
+log "   online again"
+WANT="drop:ib1 later:ib2 drop:ib3 act:ib4 note:ib5"
+GOT=""
+for i in $(seq 1 120); do
+  GOT=$(grep -oE 'POST /api/v1/inbox \{"action":"[a-z]+","file":"inbox/ib[0-9]+' "$FAKE_LOG" | sed -E 's/.*"action":"([a-z]+)","file":"inbox\/(ib[0-9]+)/\1:\2/' | uniq | tr '\n' ' ' | sed 's/ $//')
+  [ "$GOT" = "$WANT" ] && break
+  sleep 1
+done
+[ "$GOT" = "$WANT" ] || { log "WALKTHROUGH: pagel.uz got the sorts as \"$GOT\", wanted \"$WANT\""; grep "/api/v1/inbox" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got all 5 in order after ~${i} s: $GOT"
+grep -F 'POST /api/v1/inbox {"action":"act","file":"inbox/ib4.md","sentence":"Open the grant form and fill page one","project":"humopedia","someday":false}' "$FAKE_LOG" > /dev/null \
+  || { log "WALKTHROUGH: the Action did not carry its step and project"; grep "POST /api/v1/inbox" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+shot inbox-online 2
+tap Today && shot today-after-inbox 1.5
 $T adb shell input swipe 540 1700 540 600 300; shot today-scrolled
 tap Today && shot today-retap-top
 $T adb shell input keyevent 4; shot after-back

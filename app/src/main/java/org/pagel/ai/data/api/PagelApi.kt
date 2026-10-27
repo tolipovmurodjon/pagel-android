@@ -60,6 +60,29 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(CreatedTaskDto.serializer(), it) } }
     }
 
+    suspend fun inbox(baseUrl: String, token: String, limit: Int, seed: Long): Outcome<InboxResponse> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox?limit=$limit&seed=$seed")), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(InboxResponse.serializer(), it) } }
+    }
+
+    suspend fun sort(baseUrl: String, token: String, body: SortBody): Outcome<SortReply> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox")).post(json.encodeToString(SortBody.serializer(), body).toRequestBody(JSON)), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(SortReply.serializer(), it) } }
+    }
+
+    /** A save's own picture as bytes; Ok(null) when the post has none (404), so the phone stops asking for it. */
+    suspend fun picture(baseUrl: String, token: String, file: String): Outcome<ByteArray?> = call {
+        val q = java.net.URLEncoder.encode(file, "UTF-8")
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox/picture?file=$q")), token).build()
+        http.newCall(req).execute().use { r ->
+            when {
+                r.code == 404 -> Outcome.Ok(null)
+                r.isSuccessful -> Outcome.Ok(r.body?.bytes())
+                else -> Outcome.Failed(errorOf(r))
+            }
+        }
+    }
+
     /**
      * Opens `GET /api/v1/stream?since=` and calls [onEvent] for every event until the stream ends or the coroutine is
      * cancelled. Returns why it ended; a normal close is [DataError.Network], so the caller reconnects.

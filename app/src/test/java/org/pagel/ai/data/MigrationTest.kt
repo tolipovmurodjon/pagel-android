@@ -57,7 +57,45 @@ class MigrationTest {
             assertEquals("done", op.op)
             assertNull(op.body)
             assertFalse(op.waitsForServer)
-            assertEquals(3, db.openHelper.readableDatabase.version)
+            assertEquals(4, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
+
+    /** v3 → v4 (the Inbox): a phone on 0.5.x keeps its tasks and its waiting panel edit; the Inbox starts empty. */
+    @Test fun threeToFourKeepsTasksAndAddsAnEmptyInbox() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/3.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(3, schema["version"]!!.jsonPrimitive.content.toInt())
+
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("""INSERT INTO tasks (id, project, phase, sort, text, title, status, priority, star, due, every, doneWhen, doneAt, updatedAt, serverVersion, syncStatus, lastModified, phaseSort, phaseNow)
+                VALUES ('t_1', 'ababil', 'Now', 1.0, 'Measure TAU', NULL, 'open', 1, 1, NULL, NULL, NULL, NULL, '2026-10-27T10:00:00Z', 3, 'pending', 5, 2, 1)""")
+            old.execSQL("""INSERT INTO outbox (taskId, op, createdAt, attempts, refused, body, waitsForServer) VALUES ('t_1', 'patch', 7, 0, NULL, '{"set":{"priority":0}}', 0)""")
+            old.version = 3
+        }
+
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            val t = db.dao().taskOnce("t_1")!!
+            assertEquals("Measure TAU", t.text)
+            assertEquals(2, t.phaseSort)
+            val op = db.dao().waitingOutbox().single()
+            assertEquals("patch", op.op)
+            assertEquals("""{"set":{"priority":0}}""", op.body)
+            assertEquals(0, db.inbox().deckSize())
+            assertNull(db.inbox().stateOnce())
+            assertEquals(4, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }

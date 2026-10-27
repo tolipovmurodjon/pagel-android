@@ -7,6 +7,8 @@ import org.pagel.ai.data.Outcome
 import org.pagel.ai.data.api.NewTaskBody
 import org.pagel.ai.data.api.PagelApi
 import org.pagel.ai.data.db.OutboxEntity
+import org.pagel.ai.data.inbox.InboxSender
+import org.pagel.ai.data.inbox.SortStep
 import org.pagel.ai.data.db.LOCAL_ID
 import org.pagel.ai.data.db.PagelDao
 import org.pagel.ai.data.db.SyncStatus
@@ -82,11 +84,30 @@ enum class SendResult { ALL_SENT, TRY_LATER, SIGNED_OUT }
  * the order holds (WorkManager retries with backoff); a refusal (4xx) rolls that one change back and goes on.
  * A delete inside its Undo window holds only its own task's later changes, never the whole queue.
  */
-class OutboxSender(private val api: PagelApi, private val dao: PagelDao, private val clock: () -> Long = System::currentTimeMillis) {
+class OutboxSender(
+    private val api: PagelApi,
+    private val dao: PagelDao,
+    private val clock: () -> Long = System::currentTimeMillis,
+    /** Sends the Inbox's choices (Phase 2); without it they wait. */
+    private val inbox: InboxSender? = null,
+) {
     suspend fun sendAll(account: Account): SendResult {
         val held = mutableSetOf<String>()
+        // Inbox choices go in the order they were made: one held (a Drop inside its Undo) holds the ones after it.
+        var sortsHeld = false
         for (op in dao.waitingOutbox()) {
             if (op.taskId in held) continue
+            if (op.op == OutboxEntity.SORT) {
+                if (sortsHeld) continue
+                val sender = inbox ?: continue
+                when (sender.send(account, op)) {
+                    SortStep.SENT -> {}
+                    SortStep.HOLD -> { sortsHeld = true; held += op.taskId }
+                    SortStep.SIGNED_OUT -> return SendResult.SIGNED_OUT
+                    SortStep.TRY_LATER -> return SendResult.TRY_LATER
+                }
+                continue
+            }
             if (op.op == OutboxEntity.PATCH) {
                 when (sendPatch(account, op)) {
                     Patch.SENT -> {}

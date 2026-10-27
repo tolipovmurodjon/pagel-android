@@ -101,5 +101,52 @@ data class OutboxEntity(
         const val ADD = "add"
         /** Any edit from the task panel: `PATCH /api/v1/tasks/<id>` with [body]'s `set`. */
         const val PATCH = "patch"
+        /** One Inbox choice (Phase 2): [taskId] holds the save's file, [body] the `POST /api/v1/inbox` JSON. */
+        const val SORT = "sort"
+    }
+}
+
+/**
+ * One save waiting in the Inbox (Phase 2), as pagel.uz deals it (`GET /api/v1/inbox`). [position] is the phone's deck
+ * order: the card on top keeps its place when the deck is refreshed, so a card never jumps under Boss's finger.
+ * [sortedAs] is null while it waits; the choice once Boss sorted it here and the choice waits in the outbox.
+ */
+@Entity(tableName = "inbox_items", indices = [Index("position")])
+data class InboxItemEntity(
+    @PrimaryKey val file: String,
+    val position: Int,
+    val saved: String,
+    val source: String,
+    val text: String,
+    val claim: String,
+    val why: String,
+    val project: String,
+    val kind: String,
+    val next: String,
+    val note: String,
+    val guessed: Boolean,
+    val author: String,
+    val posted: String,
+    val later: String?,
+    val hasPicture: Boolean,
+    val sortedAs: String? = null,
+)
+
+/** The Inbox's day on the phone: the 20-a-day goal and its counts (pagel.uz's, plus choices still on their way). */
+@Entity(tableName = "inbox_state")
+data class InboxStateEntity(
+    @PrimaryKey val id: String = ID,
+    val day: String,
+    val goal: Int,
+    val sorted: Int,
+    val keptToday: Int,
+    val cap: Int,
+    val minWords: Int,
+    /** Saves on pagel.uz at the last refresh, less the ones sent since. */
+    val total: Int,
+    val fetchedAt: Long,
+) {
+    companion object {
+        const val ID = "inbox"
     }
 }

@@ -16,6 +16,10 @@ import org.pagel.ai.data.account.AccountStore
 import org.pagel.ai.data.account.EncryptedAccountStore
 import org.pagel.ai.data.api.PagelApi
 import org.pagel.ai.data.db.PagelDao
+import org.pagel.ai.data.db.InboxDao
+import org.pagel.ai.data.inbox.InboxPictures
+import org.pagel.ai.data.inbox.InboxRepository
+import org.pagel.ai.data.inbox.InboxSender
 import org.pagel.ai.data.db.PagelDatabase
 import org.pagel.ai.data.sync.SyncEngine
 import org.pagel.ai.data.today.OutboxSender
@@ -57,7 +61,7 @@ object AppDataModule {
 
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): PagelDatabase =
-        // v1 → v2 → v3 are AutoMigrations (PagelDatabase); each step has a test (MigrationTest).
+        // v1 → v2 → v3 → v4 are AutoMigrations (PagelDatabase); each step has a test (MigrationTest).
         Room.databaseBuilder(ctx, PagelDatabase::class.java, PagelDatabase.NAME).build()
 
     @Provides
@@ -67,7 +71,18 @@ object AppDataModule {
     fun provideSyncEngine(api: PagelApi, dao: PagelDao): SyncEngine = SyncEngine(api, dao)
 
     @Provides @Singleton
-    fun provideOutboxSender(api: PagelApi, dao: PagelDao): OutboxSender = OutboxSender(api, dao)
+    fun provideOutboxSender(api: PagelApi, dao: PagelDao, inbox: InboxDao): OutboxSender = OutboxSender(api, dao, inbox = InboxSender(api, inbox))
+
+    @Provides
+    fun provideInboxDao(db: PagelDatabase): InboxDao = db.inbox()
+
+    @Provides @Singleton
+    fun provideInboxRepository(@ApplicationContext ctx: Context, api: PagelApi, inbox: InboxDao): InboxRepository =
+        InboxRepository(api, inbox, OutboxWorker.scheduler(ctx))
+
+    @Provides @Singleton
+    fun provideInboxPictures(@ApplicationContext ctx: Context, api: PagelApi, @IoDispatcher io: CoroutineDispatcher): InboxPictures =
+        InboxPictures(api, java.io.File(ctx.cacheDir, "inbox-pictures"), io)
 
     @Provides @Singleton
     fun provideTodayRepository(@ApplicationContext ctx: Context, dao: PagelDao): TodayRepository =

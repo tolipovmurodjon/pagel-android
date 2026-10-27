@@ -96,6 +96,7 @@ import org.pagel.ai.ui.task.LocalTaskOpener
 import org.pagel.ai.ui.task.TaskPanelSheet
 import org.pagel.ai.ui.tasks.TasksScreen
 import org.pagel.ai.ui.today.TodayRoute as TodayScreenRoute
+import org.pagel.ai.ui.inbox.InboxRoute as InboxScreenRoute
 
 /** The glass bar: 64 dp, or 48 dp on a landscape phone, where 64 dp took 30 % of the height (checker 2026-10-28 #10). */
 private val BarTall = 64.dp
@@ -195,7 +196,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator<NavKey>(), rememberViewModelStoreNavEntryDecorator<NavKey>()),
                 entryProvider = entryProvider<NavKey> {
                     entry<TodayRoute> { TodayScreenRoute(padding, reselect) }
-                    entry<InboxRoute> { Coming("Inbox", "/learn", padding) { stack.add(WebRoute(it)) } }
+                    entry<InboxRoute> { InboxScreenRoute(padding, reselect) }
                     entry<HabitsRoute> { Coming("Habits", "/habits", padding) { stack.add(WebRoute(it)) } }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
                     entry<MoreRoute> { More(padding, onOpenProjects = { stack.add(ProjectListRoute) }, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect) }

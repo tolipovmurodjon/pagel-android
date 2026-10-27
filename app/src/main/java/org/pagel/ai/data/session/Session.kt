@@ -89,6 +89,20 @@ class Session @Inject constructor(
         accounts.clear()
     }
 
+    init {
+        // Back online (the live link was down and is up again): what waits in the outbox goes now, in order.
+        scope.launch {
+            var wasDown = false
+            sync.status.collect { s ->
+                if (s is LiveStatus.Offline) wasDown = true
+                if (s is LiveStatus.Live && wasDown) {
+                    wasDown = false
+                    withContext(io) { runCatching { org.pagel.ai.data.today.OutboxWorker.nudge(ctx) } }
+                }
+            }
+        }
+    }
+
     companion object {
         const val DEFAULT_SERVER = "https://pagel.uz"
     }

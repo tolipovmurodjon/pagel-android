@@ -7,6 +7,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dagger.hilt.EntryPoint
@@ -39,12 +40,25 @@ class OutboxWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         private const val NAME = "pagel-outbox"
 
         /** One sender at a time; a new tick while it runs appends a pass, so nothing waits for the next backoff. */
+        private fun request() = OneTimeWorkRequestBuilder<OutboxWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
+            .build()
+
         fun scheduler(ctx: Context) = OutboxScheduler {
-            val req = OneTimeWorkRequestBuilder<OutboxWorker>()
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
-                .build()
-            WorkManager.getInstance(ctx).enqueueUniqueWork(NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, req)
+            WorkManager.getInstance(ctx).enqueueUniqueWork(NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request())
+        }
+
+        /**
+         * pagel.uz is reachable again (the live stream reconnected): send now instead of waiting out a backoff that may
+         * have grown to minutes while offline. Only a pass that is waiting is replaced, never one that is sending.
+         * Blocks on WorkManager's answer: call off Main.
+         */
+        fun nudge(ctx: Context) {
+            val wm = WorkManager.getInstance(ctx)
+            val infos = runCatching { wm.getWorkInfosForUniqueWork(NAME).get() }.getOrDefault(emptyList())
+            val backingOff = infos.any { it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount > 0 }
+            wm.enqueueUniqueWork(NAME, if (backingOff) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.APPEND_OR_REPLACE, request())
         }
     }
 }
