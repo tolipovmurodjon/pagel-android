@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- glance-canonical-layouts check_list: min/max sizes kept as given. No preview image yet: the picker shows the
+     app icon until a real screenshot of the widget is saved. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_today_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:maxResizeHeight="@dimen/widget_today_max_resize_height"
+    android:maxResizeWidth="@dimen/widget_today_max_resize_width"
+    android:minHeight="@dimen/widget_today_min_height"
+    android:minResizeHeight="@dimen/widget_today_min_resize_height"
+    android:minResizeWidth="@dimen/widget_today_min_resize_width"
+    android:minWidth="@dimen/widget_today_min_width"
+    android:targetCellHeight="@integer/widget_today_target_cell_height"
+    android:targetCellWidth="@integer/widget_today_target_cell_width"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen|keyguard" />

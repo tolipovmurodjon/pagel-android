@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Today's 3" home-screen widget. Sizes copied unchanged from Google's glance-canonical-layouts check_list. -->
+<resources>
+    <string name="widget_today_name">Today\'s 3</string>
+    <string name="widget_today_title">Today</string>
+    <string name="widget_today_description">Your next 3 tasks from pagel.uz. Tick one and the next comes.</string>
+    <string name="widget_today_empty">Nothing picked yet</string>
+    <string name="widget_today_open">Open PAGEL</string>
+    <string name="widget_today_mark_done">Done</string>
+
+    <integer name="widget_today_target_cell_width">2</integer>
+    <integer name="widget_today_target_cell_height">2</integer>
+    <dimen name="widget_today_min_width">120dp</dimen>
+    <dimen name="widget_today_min_height">115dp</dimen>
+    <dimen name="widget_today_min_resize_width">120dp</dimen>
+    <dimen name="widget_today_min_resize_height">115dp</dimen>
+    <dimen name="widget_today_max_resize_width">624dp</dimen>
+    <dimen name="widget_today_max_resize_height">422dp</dimen>
+</resources>

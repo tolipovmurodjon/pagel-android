@@ -1,5 +1,7 @@
 package org.pagel.ai
 
+import javax.inject.Inject
+import org.pagel.ai.widget.TodayWidgetUpdater
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
 import org.pagel.ai.crash.CrashRecorder
@@ -15,9 +17,12 @@ import org.pagel.ai.update.UpdateWorker
  */
 @HiltAndroidApp
 class PagelApp : Application() {
+    @Inject lateinit var todayWidget: TodayWidgetUpdater
+
     override fun onCreate() {
         super.onCreate()
         CrashRecorder.install(this)
         UpdateWorker.schedule(this)
+        todayWidget.start()
     }
 }

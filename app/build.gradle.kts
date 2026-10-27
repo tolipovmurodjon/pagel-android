@@ -118,6 +118,9 @@ dependencies {
     // AnchorWatchdogWorker (service/) — plain CoroutineWorker, so no androidx.hilt:hilt-work and no
     // Configuration.Provider; the default WorkManager initializer is in play.
     implementation(libs.androidx.work.runtime.ktx)
+    // "Today's 3" home-screen widget (skills glance-canonical-layouts + glance-appwidget-updates-and-memory).
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
 
     // Async / serialization
     implementation(libs.kotlinx.coroutines.android)
