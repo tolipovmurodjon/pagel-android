@@ -41,6 +41,38 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v3 · TODAY UI (saved 2026-10-27 ~17:50 Tashkent, laptop session, context 57 %)
+Boss's last words: "I installed it fully, it's the best ever, I love that liquid glass, real iPhone vibe… native feels
+better" · "keep that style, save a rule for the navbar… Humopedia needs it" · "liquid glass not working on More, it's
+simple, audit and fix it".
+State:
+- Boss runs **0.3.13** (release run 40499990183 green, served by the server since 12:10 UTC). He LOVES the glass bar →
+  brain card `D:Brainulesliquid-glass-navbar.md` (all numbers, code paths, Humopedia reuse).
+- **Critic rig done** (456a52e): `.github/scripts/walkthrough.sh` runs in the smoke job after pairing: 15 steps (each tab,
+  scroll, re-tap, back, rotate, font 1.5×, dark) → artifact `smoke-evidence/walk/` (png + ui xml per step, walk.mp4,
+  gfxinfo, Davey lines). Run 40503012651 ✅ build + smoke.
+- **The freeze, answered:** `stacks-after-pair.txt` shows the main thread parked in `ThreadedRenderer.syncAndDrawFrame`
+  (waiting on the GPU), not in our code. CI's emulator draws in software (swiftshader): 18/18 frames janky, p50 400 ms,
+  p99 2,400 ms. That measures CI, not the A05s. NEXT measure: app-side FrameMetrics on Boss's phone → POST to the
+  server (or Boss's eyes). Do NOT optimise glass against swiftshader numbers.
+- **Today data layer done** (94a1697, CI green, 7 tests): Room v2 (`today_order`, `outbox`, AutoMigration 1→2),
+  `data/today/TodayRepository.kt` (tick = Room first, outbox, undo before send), `OutboxSender` + `OutboxWorker`
+  (WorkManager, network, backoff 10 s; refused = roll back + `refused` flow for a toast), `SyncEngine.syncOnce` also
+  stores `/api/v1/today`'s order, `applySync` never overwrites a pending tick.
+- **Glass fix** (369e4c1, pushed, CI running): the "scroll edge" was a 92 % page-coloured strip painted UNDER the glass
+  → the bar bent near-white on every screen (More/Inbox/Habits looked flat). Now the content fades as an alpha mask
+  (DstIn, to 35 %) and two stronger bottom aurora clouds (mint 34 %, teal #2BB5A8 24 %) sit under the bar. Project
+  tiles: Lucide icons generated from the web's lucide-react 1.49 (not letters); short names (ABABIL, not "ABABIL —
+  first-aid…").
+Next, in order:
+1. Read run for 369e4c1: `walk/06-tab-More.png` must show colour bending in the bar; `walk/01-home.png` icons.
+2. **Today screen** (`ui/today/`): `TodayViewModel` (UiState from `TodayRepository.today` + `refused`), shows 3 at a time
+   (web: shown_at_once), rows = ring tick (TaskRow: priority ring, ding C6→G6 + confetti + fold ~1 s, haptic CONFIRM),
+   Undo snackbar 4 s, refused → toast + acknowledge; route `TodayRoute` → Today (Projects moves under More). Fake
+   server: add `/api/v1/today` + PATCH to `fake-pagel.py`; walkthrough: tick a task, screenshot, assert the PATCH.
+3. Glance widget "Today's 3" (skills glance-*), then Add task fast.
+Rule learned: **one push per CI cycle** on this branch (`cancel-in-progress: true` threw away run 40502499659).
+
 ## START HERE v2 · PHASE 2 (saved 2026-10-27 ~12:05 UTC)
 Boss's last words: "Phase 2, use it yourself on server if possible like real critiq and improve ui ux."
 State: Phases 0-1 green on feat/native-app (runs 40496280942, 40497908540; 56143b5). Boss has NOT said "tag it" yet,
