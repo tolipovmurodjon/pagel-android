@@ -41,6 +41,39 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v7 · PHASE 1 ROUND 2 = THE CHECKER'S TOP 10 (2026-10-28, builder agent)
+A fresh checker scored the app 6.5/10 (evidence in the session scratchpad `checker1/`). Round 2 fixed all ten:
+- **Labels never wrap or cut**: "Priority" keeps one line (its flags drop under it on a narrow phone / 1.5× font,
+  `TaskPanel.kt` Props FlowRow); the project capsule owns the header's free width, chevron dropped at large font
+  (`TaskPanel.kt` Header). Tests read the text layout: `oneWholeLine("Priority")`, `oneWholeLine("PAGEL")` at 360 dp + 1.5×.
+- **Toast above the sheet**: a short sheet shows the toast in a popup above its top edge (`GlassSheet.kt` AboveTheSheet);
+  a full sheet keeps it at its foot.
+- **One chip family**: white glass; set = ink words + coloured icon + 1 dp #1C7E69 rim (`GlassChip.kt`); project chip shows
+  its gradient tile. Send = white glass + muted arrow until ready, solid mint when ready (`AddTaskSheet.kt`).
+- **Clear glass panes**: white .32 + the web's 315° conic rim at 1.25 dp (`Surfaces.kt` PaneRim).
+- **48 dp touch boxes** everywhere (`TouchMin`, `GlassIconButton` min 48, chips 48 high, priority flags 48×48, weekday
+  toggles 48 high). Tab label #0B5C45. P2 flag #C77400 (the web's task-panel.tsx FLAG[1] is still #eb8909).
+- **Fewer words**: "To tasks" list-plus chip, won't-do hint one line (hidden under an error), repeat sentence gone, repeat
+  presets with icons. Scrolling rows fade at the end (`fadeEnd`); won't-do kinds wrap (FlowRow).
+- **Parity**: project page = NOW pane (+ Add task into the project, "N done" fold), "Later · N phases" and
+  "Done · N phases" folded, "N now · N open in all", empty state (`ProjectScreen.kt`, `PagelDao.projectTasks`);
+  "Added · Today, in line" when Today holds 3; a refused add shows "Not saved" and puts the words back.
+- **Not done (server has no data/op)**: task notes and phase goal (`/api/v1/sync` sends neither), "Make now" (no v1 op).
+- **Walkthrough**: relaunches PAGEL after step 26 (Back on Today leaves the app) and asserts PAGEL is in front before
+  steps 27-31 (`front()` in `walkthrough.sh`).
+- **Boss on 0.5.0 (00:36)**: time = Apple wheel (`TimeWheel.kt`: two snapping looped drums, hours 00-23, minutes by 5,
+  fixed white-glass band with a #1C7E69 rim, fade/shrink/tilt by distance, a tick per notch; it takes the calendar's
+  place, so the date sheet fits 360×800; the slot chips and typed box are gone, typed time stays behind a keyboard
+  icon). Monthly repeat on chosen days: 1-31 + Last grid, grammar `month 1,15,last` = **dashboard d8be98c on
+  feat/gtd-core, NOT DEPLOYED** (until it is, pagel.uz refuses such a repeat and the phone rolls it back with a red
+  toast). Every select: one white-glass material, ✓ or filled mark, 48 dp, haptic.
+- **CI**: 40565428308 build ❌ (3 one-line checks used hasVisualOverflow) → 40567219334 ❌ (paragraph width) →
+  40568569881 build ✅ smoke ✅ (31 steps, 27-31 on PAGEL) → 40572766848 build ✅ smoke ✅ (wheel + monthly) → last
+  push: wheel rows drawn from the scroll position (at 1.0× the rows off the band were invisible) + tab words stop
+  growing at 1.2× ("Notebo" at 1.5×).
+- **NEXT**: deploy dashboard d8be98c (Boss's yes; PAGEL-only procedure); Boss installs the CI build (no tag: his call);
+  server: `notes` + phase `goal`/`state` in `/api/v1/sync`, then the panel's notes and the goal line; then Phase 2.
+
 ## START HERE v6 · PHASE 1 OF 10 = THE FULL TASK SYSTEM (2026-10-27 ~23:00 Tashkent, builder agent)
 Plan: `C:\Users\Murodjon\.claude\plans\tranquil-wondering-melody.md` (10 phases) + detail
 `tranquil-wondering-melody-agent-aceb5252743b532f2.md`. Phase 1 built end to end:
@@ -133,7 +166,8 @@ better" · "keep that style, save a rule for the navbar… Humopedia needs it" �
 simple, audit and fix it".
 State:
 - Boss runs **0.3.13** (release run 40499990183 green, served by the server since 12:10 UTC). He LOVES the glass bar →
-  brain card `D:Brainulesliquid-glass-navbar.md` (all numbers, code paths, Humopedia reuse).
+  brain card `D:Brain
+ulesliquid-glass-navbar.md` (all numbers, code paths, Humopedia reuse).
 - **Critic rig done** (456a52e): `.github/scripts/walkthrough.sh` runs in the smoke job after pairing: 15 steps (each tab,
   scroll, re-tap, back, rotate, font 1.5×, dark) → artifact `smoke-evidence/walk/` (png + ui xml per step, walk.mp4,
   gfxinfo, Davey lines). Run 40503012651 ✅ build + smoke.

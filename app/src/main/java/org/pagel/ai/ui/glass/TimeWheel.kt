@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -85,8 +86,9 @@ fun TimeWheel(time: String, onChange: (String) -> Unit, modifier: Modifier = Mod
     val (h0, m0) = remember(time) { TimeWheelMath.split(time) }
     val hours = rememberLazyListState(TimeWheelMath.start(h0, TimeWheelMath.HOURS) - VISIBLE / 2)
     val minutes = rememberLazyListState(TimeWheelMath.start(m0, TimeWheelMath.MINUTES) - VISIBLE / 2)
-    val hour by remember { derivedStateOf { TimeWheelMath.rowOf(centre(hours), TimeWheelMath.HOURS) } }
-    val minute by remember { derivedStateOf { TimeWheelMath.rowOf(centre(minutes), TimeWheelMath.MINUTES) } }
+    val rowPx = with(LocalDensity.current) { RowHeight.toPx() }
+    val hour by remember(rowPx) { derivedStateOf { TimeWheelMath.rowOf(centre(hours, rowPx), TimeWheelMath.HOURS) } }
+    val minute by remember(rowPx) { derivedStateOf { TimeWheelMath.rowOf(centre(minutes, rowPx), TimeWheelMath.MINUTES) } }
     val now = TimeWheelMath.value(hour, minute)
     // Settled = neither drum moving: then the time is chosen (never mid-fling).
     LaunchedEffect(Unit) {
@@ -114,19 +116,23 @@ fun TimeWheel(time: String, onChange: (String) -> Unit, modifier: Modifier = Mod
 
 private val WheelText: TextStyle @Composable get() = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 22.sp, fontFeatureSettings = "tnum")
 
+/**
+ * Where the drum stands, in rows: the first row's index plus how far it has scrolled off. Read from the scroll
+ * position itself (every row is [RowHeight] tall), not from layoutInfo, which can lag a frame behind.
+ */
+private fun position(state: LazyListState, rowPx: Float): Float =
+    state.firstVisibleItemIndex + if (rowPx > 0f) state.firstVisibleItemScrollOffset / rowPx else 0f
+
 /** The index whose row is nearest the middle of the column. */
-private fun centre(state: LazyListState): Int {
-    val info = state.layoutInfo
-    val mid = (info.viewportStartOffset + info.viewportEndOffset) / 2
-    return info.visibleItemsInfo.minByOrNull { abs(it.offset + it.size / 2 - mid) }?.index ?: (state.firstVisibleItemIndex + VISIBLE / 2)
-}
+private fun centre(state: LazyListState, rowPx: Float): Int = (position(state, rowPx) + 0.5f).toInt() + VISIBLE / 2
 
 @Composable
 private fun Drum(state: LazyListState, size: Int, label: (Int) -> String) {
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
-    LaunchedEffect(state) {
-        snapshotFlow { centre(state) }.distinctUntilChanged().drop(1).collect { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+    val rowPx = with(LocalDensity.current) { RowHeight.toPx() }
+    LaunchedEffect(state, rowPx) {
+        snapshotFlow { centre(state, rowPx) }.distinctUntilChanged().drop(1).collect { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
     }
     LazyColumn(
         Modifier.width(72.dp).height(RowHeight * VISIBLE),
@@ -140,10 +146,7 @@ private fun Drum(state: LazyListState, size: Int, label: (Int) -> String) {
                 Modifier.fillMaxWidth().height(RowHeight)
                     .graphicsLayer {
                         // Distance from the band in rows, read while drawing: the drum's fade, shrink and tilt.
-                        val info = state.layoutInfo
-                        val mid = (info.viewportStartOffset + info.viewportEndOffset) / 2f
-                        val item = info.visibleItemsInfo.firstOrNull { it.index == i }
-                        val d = if (item == null) 0f else ((item.offset + item.size / 2f) - mid) / item.size
+                        val d = i - position(state, rowPx) - VISIBLE / 2
                         val far = abs(d).coerceAtMost(2.5f)
                         alpha = (1f - far * 0.32f).coerceAtLeast(0.18f)
                         scaleX = 1f - far * 0.08f

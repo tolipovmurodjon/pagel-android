@@ -207,7 +207,10 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         // Ink on the glass, never pale grey: the first emulator screenshot showed unselected tabs at
                         // almost no contrast. The selected tab is tinted mint by the bar's own top layer.
                         Icon(tab.icon, contentDescription = null, tint = Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(22.dp))
-                        Text(tab.label, fontSize = 11.sp, maxLines = 1, color = Glass.Ink.copy(alpha = 0.72f))
+                        // The words grow with the phone's font up to 1.2x, then stop (as iOS tab bars do): at 1.5x
+                        // "Notebook" was cut to "Notebo" (walk 29). The icon carries the meaning.
+                        val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+                        Text(tab.label, fontSize = (11f * minOf(scale, 1.2f) / scale).sp, maxLines = 1, softWrap = false, color = Glass.Ink.copy(alpha = 0.72f))
                     }
                 }
             }
