@@ -24,6 +24,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import org.pagel.ai.service.AnchorService
 import org.pagel.ai.ui.gateway.GatewayDebugScreen
 import org.pagel.ai.ui.home.HomeScreen
+import org.pagel.ai.ui.hud.BootScreen
 import org.pagel.ai.ui.tasks.TasksScreen
 import org.pagel.ai.ui.theme.PagelTheme
 
@@ -74,8 +75,11 @@ private fun PagelRoot() {
     Box(Modifier.fillMaxSize()) {
         TasksScreen(onOpenPhone = { showPhone = true })
         if (showPhone) {
+            // The original boot screen greets the Phone screen for a moment, then its settings and connection.
+            var booting by remember { mutableStateOf(true) }
+            androidx.compose.runtime.LaunchedEffect(Unit) { kotlinx.coroutines.delay(900); booting = false }
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                if (showGateway) GatewayDebugScreen(onBack = { showGateway = false }) else HomeScreen(onOpenGateway = { showGateway = true })
+                if (booting) BootScreen() else if (showGateway) GatewayDebugScreen(onBack = { showGateway = false }) else HomeScreen(onOpenGateway = { showGateway = true })
             }
         }
     }
