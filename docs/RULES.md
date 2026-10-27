@@ -11,6 +11,13 @@ Load: `navigation-3`, `jetpack-compose-performance`, `edge-to-edge`, `testing-se
 `android-permissions-security` for share/notifications, `claude-android-ninja/references/android-data-sync-quick.md`
 for sync, `.../android-notifications.md` for reminders.
 
+Installed plugins (laptop, 2026-10-27; server: `claude plugin marketplace add android/skills` +
+`claude plugin install android-skills@android-skills`, same for ui-ux-pro-max):
+- `android-skills@android-skills` 1.0.18: Google's official skills (★9,865, Apache-2.0).
+- `ui-ux-pro-max@ui-ux-pro-max-skill` (★141,200, MIT): design checklist with Jetpack Compose, glassmorphism and
+  platform rules (`python3 .../scripts/search.py "glassmorphism" --domain style`). A reference only: where it
+  disagrees with our mint glass kit (`D:\30_library\taste\kit\glass-data`, brain `rules/use-our-taste`), the kit wins.
+
 ## Data and sync (claude-android-ninja data-sync, android-data-layer, android-dev)
 - The UI reads Room only. Every write goes to Room first, then to the outbox; WorkManager pushes it.
 - Every synced row carries `syncStatus`, `lastModified`, `serverVersion`.
