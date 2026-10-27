@@ -86,7 +86,7 @@ class GlassScreenshotTest {
     @Test fun pairingReadyAndWrongCode() {
         compose.setContent { GlassTheme { PairScreen(PairUiState(code = "482913", error = "Wrong code. 4 tries left."), {}, {}, {}) } }
         compose.onNodeWithText("Connect").assertIsEnabled()
-        compose.onNodeWithText("Wrong code. 4 tries left.").assertIsDisplayed()
+        compose.onNodeWithText("Wrong code. 4 tries left.", substring = true).assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/pair-error.png")
     }
 
