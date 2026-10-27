@@ -19,6 +19,10 @@ abstract class PagelDao {
     @Query("SELECT * FROM tasks WHERE project = :project AND status = 'open' ORDER BY phaseNow DESC, phaseSort, sort")
     abstract fun openTasks(project: String): Flow<List<TaskEntity>>
 
+    /** A project page: its open tasks and the ones done lately (sync keeps 14 days of them), in plan order. */
+    @Query("SELECT * FROM tasks WHERE project = :project AND status IN ('open', 'done') ORDER BY phaseNow DESC, phaseSort, sort")
+    abstract fun projectTasks(project: String): Flow<List<TaskEntity>>
+
     @Query("SELECT * FROM steps WHERE taskId = :taskId ORDER BY position")
     abstract suspend fun stepsOnce(taskId: String): List<StepEntity>
 

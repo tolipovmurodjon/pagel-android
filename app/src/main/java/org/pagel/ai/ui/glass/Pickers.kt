@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,9 +58,10 @@ import java.time.YearMonth
 
 /**
  * Todoist's flag colours, as the web (task-panel.tsx FLAG): P1 red, P2 orange, P3 blue, P4 grey. PAGEL counts from
- * P0, so index 0 is "P1". The grey is darker than the web's #9aa2bb so the icon keeps 3:1 on white (colour theory).
+ * P0, so index 0 is "P1". The grey is darker than the web's #9aa2bb, and the orange darker than its #eb8909 (2.44:1), so
+ * every flag keeps 3:1 on white (colour theory; checker 2026-10-27).
  */
-val PriorityColors = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE0), Color(0xFF7A8299))
+val PriorityColors = listOf(Color(0xFFD1453B), Color(0xFFC77400), Color(0xFF246FE0), Color(0xFF7A8299))
 /** What each priority means in PAGEL (the pagel MCP's own words): now, this week, this phase, someday. */
 val PriorityHints = listOf("now", "this week", "this phase", "someday")
 
@@ -201,7 +203,7 @@ private fun TimeSlots(time: String, onPick: (String) -> Unit) {
     var typed by remember { mutableStateOf("") }
     val exact = DatePick.parseTime(typed)
     Spacer(Modifier.height(10.dp))
-    LazyRow(state = list, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    LazyRow(Modifier.fadeEnd({ list.canScrollForward }), state = list, contentPadding = PaddingValues(end = 24.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items(DatePick.SLOTS, key = { it }) { t ->
             val on = t == time
             val press = remember { MutableInteractionSource() }
@@ -266,35 +268,41 @@ fun RepeatContent(value: String?, onChange: (String?, Boolean) -> Unit) {
         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Column(Modifier.padding(vertical = 4.dp)) {
                 Repeat.PRESETS.forEachIndexed { i, (key, label) ->
-                    if (i > 0) Divider(16)
-                    PickRow(null, label, chosen = v == key) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onChange(key.ifEmpty { null }, key.isEmpty()) }
+                    if (i > 0) Divider()
+                    PickRow(RepeatIcons[key], label, chosen = v == key) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onChange(key.ifEmpty { null }, key.isEmpty()) }
                 }
             }
         }
         Spacer(Modifier.height(16.dp))
         SheetLabel("On these days", Modifier.padding(start = 16.dp))
         val lit = Repeat.litDays(value)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        // Seven days share the width; each touch box is the full share × 48 dp, the drawn circle 42 dp.
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
             Repeat.WEEK.forEachIndexed { i, d ->
                 val on = d in lit
                 val press = remember { MutableInteractionSource() }
                 Box(
-                    Modifier.size(44.dp).pressScale(press)
-                        .background(if (on) Glass.Primary else Color.White.copy(alpha = 0.72f), CircleShape)
-                        .border(1.dp, if (on) SolidColor(Glass.Primary) else SolidColor(Glass.Ink.copy(alpha = 0.10f)), CircleShape)
+                    Modifier.weight(1f).height(TouchMin).pressScale(press)
                         .clickable(press, indication = null, role = Role.Checkbox) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onChange(Repeat.toggle(value, d), false) }
                         .semantics { contentDescription = Repeat.NAMES[d]; selected = on },
                     contentAlignment = Alignment.Center,
-                ) { Text("MTWTFSS"[i].toString(), style = MaterialTheme.typography.labelLarge, color = if (on) Color.White else Glass.Ink) }
+                ) {
+                    Box(
+                        Modifier.size(42.dp)
+                            .background(if (on) Glass.Primary else Color.White.copy(alpha = 0.72f), CircleShape)
+                            .border(1.dp, if (on) SolidColor(Glass.Primary) else SolidColor(Glass.Ink.copy(alpha = 0.10f)), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) { Text("MTWTFSS"[i].toString(), style = MaterialTheme.typography.labelLarge, color = if (on) Color.White else Glass.Ink) }
+                }
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            if (value != null) "${Repeat.label(value)}. Ticking it moves it to the next one." else "Pick days, or a preset above.",
-            style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(horizontal = 20.dp),
-        )
     }
 }
+
+/** Each preset's own icon, as the date list has (checker 2026-10-27). */
+private val RepeatIcons = mapOf(
+    "" to TabIcons.CalendarX, "day" to TabIcons.Sun, "weekday" to TabIcons.Briefcase, "week" to TabIcons.Calendar, "month" to TabIcons.CalendarRange,
+)
 
 @Composable
 fun RepeatSheet(value: String?, onChange: (String?) -> Unit, onDismiss: () -> Unit) {

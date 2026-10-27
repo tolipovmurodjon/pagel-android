@@ -67,7 +67,8 @@ fun LiquidBottomTabs(
     modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit
 ) {
-    val accentColor = Glass.Primary
+    // The selected tab's icon and word: deep mint, 4.5:1 on the lit capsule (#1C7E69 there was 3.55:1, checker 2026-10-27).
+    val accentColor = Glass.PrimaryInk
     // Clear glass, not a tinted pane: on a near-white page the 55 % mint read as a flat dull-green slab (Boss
     // 2026-10-27, 1/10). Light white lets the rim light and the lens carry the look, as iOS 26 does.
     val containerColor = Color.White.copy(alpha = 0.28f)

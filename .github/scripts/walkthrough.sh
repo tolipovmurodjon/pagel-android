@@ -33,6 +33,19 @@ tap() {
   $T adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 
+# The PAGEL screen must be the one in front before a step that judges it (checker 2026-10-27: steps 27-31 shot the Pixel
+# launcher, because Back on Today at step 26 had left the app). Waits up to 10 s for the focus to settle.
+front() {
+  local f=""
+  for i in $(seq 1 10); do
+    f=$($T adb shell dumpsys window 2>/dev/null | grep -m1 'mCurrentFocus=' | tr -d '\r')
+    echo "$f" | grep -q "$PKG/" && return 0
+    sleep 1
+  done
+  log "WALKTHROUGH: PAGEL is not in front before \"$1\" ($f)"
+  exit 1
+}
+
 log "== critic walkthrough"
 $T adb shell dumpsys gfxinfo "$PKG" reset > /dev/null
 $T adb shell screenrecord --time-limit 179 /sdcard/walk.mp4 &
@@ -89,18 +102,22 @@ $T adb shell input swipe 540 1700 540 600 300; shot today-scrolled
 tap Today && shot today-retap-top
 $T adb shell input keyevent 4; shot after-back
 
+log "-- back on Today leaves PAGEL; open it again for the screen checks"
+$T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+front relaunch
+
 log "-- rotate"
 $T adb shell settings put system accelerometer_rotation 0
-$T adb shell settings put system user_rotation 1; shot landscape 3
-$T adb shell settings put system user_rotation 0; shot portrait-again 3
+$T adb shell settings put system user_rotation 1; sleep 3; front landscape; shot landscape 0.5
+$T adb shell settings put system user_rotation 0; sleep 3; front portrait-again; shot portrait-again 0.5
 
 log "-- font 1.5x"
-$T adb shell settings put system font_scale 1.5; shot font-1.5 3
+$T adb shell settings put system font_scale 1.5; sleep 3; front font-1.5; shot font-1.5 0.5
 $T adb shell settings put system font_scale 1.0
 
 log "-- dark mode"
-$T adb shell cmd uimode night yes; shot dark 3
-$T adb shell cmd uimode night no; shot light-again 3
+$T adb shell cmd uimode night yes; sleep 3; front dark; shot dark 0.5
+$T adb shell cmd uimode night no; sleep 3; front light-again; shot light-again 0.5
 
 kill -INT $REC 2>/dev/null; sleep 3
 timeout 60 adb pull /sdcard/walk.mp4 "$OUT/walk.mp4" > /dev/null 2>&1

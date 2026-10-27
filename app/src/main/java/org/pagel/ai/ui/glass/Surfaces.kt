@@ -34,6 +34,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.SweepGradientShader
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -79,7 +83,6 @@ fun AuroraBackground(modifier: Modifier = Modifier, content: @Composable BoxScop
 fun Pane(modifier: Modifier = Modifier, radius: Dp = 24.dp, content: @Composable BoxScope.() -> Unit) {
     val page = LocalPageBackdrop.current
     val shape = RoundedCornerShape(radius)
-    val rim = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.55f)))
     val surface = if (page == null) {
         Modifier.shadow(18.dp, shape, ambientColor = Glass.Ink.copy(alpha = 0.10f), spotColor = Glass.Ink.copy(alpha = 0.16f))
             .clip(shape).background(Color.White.copy(alpha = 0.78f)).background(Glass.PaneTint)
@@ -93,12 +96,29 @@ fun Pane(modifier: Modifier = Modifier, radius: Dp = 24.dp, content: @Composable
             highlight = { Highlight.Default },
             shadow = { Shadow(alpha = 0.45f) },
             onDrawSurface = {
-                drawRect(Color.White.copy(alpha = 0.62f))
+                // Clear glass, not a white card (checker 2026-10-27): ~30 % white lets the clouds through; the rim and the
+                // shadow carry the edge. Muted text stays ≥ 4.5:1 on the darkest cloud (checked with cr.py on CI shots).
+                drawRect(Color.White.copy(alpha = 0.32f))
                 drawRect(Brush.radialGradient(listOf(Glass.Aurora1.copy(alpha = 0.30f), Color.Transparent), center = Offset.Zero, radius = size.minDimension * 0.9f))
             },
         )
     }
-    Box(modifier.then(surface).border(1.dp, rim, shape), content = content)
+    Box(modifier.then(surface).border(1.25.dp, PaneRim, shape), content = content)
+}
+
+/**
+ * The web's pane rim (globals.css `.pane::after`): a conic light from 315°: bright white at the top-left, fading, a
+ * mint band at 45 %, bright again at the end. Compose's sweep starts at 3 o'clock, so it is turned 225° to match.
+ */
+val PaneRim: Brush = object : ShaderBrush() {
+    override fun createShader(size: Size): Shader {
+        val c = Offset(size.width / 2f, size.height / 2f)
+        return SweepGradientShader(
+            c,
+            listOf(Color.White.copy(alpha = 0.95f), Color.White.copy(alpha = 0.25f), Glass.Aurora1.copy(alpha = 0.55f), Color.White.copy(alpha = 0.20f), Color.White.copy(alpha = 0.95f)),
+            listOf(0f, 0.22f, 0.45f, 0.70f, 1f),
+        ).apply { setLocalMatrix(android.graphics.Matrix().apply { setRotate(225f, c.x, c.y) }) }
+    }
 }
 
 /**

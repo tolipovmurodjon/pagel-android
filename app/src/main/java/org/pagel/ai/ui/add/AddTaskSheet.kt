@@ -46,6 +46,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,7 +65,9 @@ import org.pagel.ai.ui.glass.RepeatSheet
 import org.pagel.ai.ui.glass.SheetBottom
 import org.pagel.ai.ui.glass.SheetTitle
 import org.pagel.ai.ui.glass.TabIcons
-import org.pagel.ai.ui.glass.TileColors
+import org.pagel.ai.ui.glass.ProjectTile
+import org.pagel.ai.ui.glass.TouchMin
+import org.pagel.ai.ui.glass.fadeEnd
 import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.glass.priorityItems
 import org.pagel.ai.ui.projects.shortName
@@ -76,8 +80,9 @@ import java.time.LocalDateTime
 @Composable
 fun AddTaskSheet(onClose: () -> Unit, project: String? = null, vm: AddTaskViewModel = hiltViewModel()) {
     val projects by vm.projects.collectAsStateWithLifecycle()
+    val notSaved by vm.notSaved.collectAsStateWithLifecycle()
     GlassSheet(onClose) {
-        AddTaskContent(projects, home = project ?: "me", toToday = project == null, now = vm::now, onSave = vm::save)
+        AddTaskContent(projects, home = project ?: "me", toToday = project == null, now = vm::now, notSaved = notSaved, onSave = vm::save)
         Spacer(Modifier.height(SheetBottom))
     }
 }
@@ -98,9 +103,16 @@ fun AddTaskContent(
     initial: String = "",
     initialPicks: Picks = Picks(),
     autoFocus: Boolean = true,
+    notSaved: List<NotSaved> = emptyList(),
     onSave: (String, String, Picks, Boolean) -> Boolean,
 ) {
     var typed by rememberSaveable { mutableStateOf(initial) }
+    // pagel.uz refused an add: its words come back into the field (if Boss has not started the next line), once.
+    var restored by rememberSaveable { mutableStateOf(0L) }
+    LaunchedEffect(notSaved.lastOrNull()?.key) {
+        val g = notSaved.lastOrNull() ?: return@LaunchedEffect
+        if (g.key != restored) { restored = g.key; if (typed.isBlank()) typed = g.text }
+    }
     var pick by rememberSaveable { mutableStateOf(home) }
     var dueSet by rememberSaveable { mutableStateOf(initialPicks.dueSet) }
     var due by rememberSaveable { mutableStateOf(initialPicks.due) }
@@ -132,7 +144,7 @@ fun AddTaskContent(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(52.dp)
                 .background(Color.White.copy(alpha = 0.84f), RoundedCornerShape(26.dp))
                 .border(1.dp, if (plan.tooLong) SolidColor(Glass.Risk) else FieldRim, RoundedCornerShape(26.dp))
-                .padding(start = 18.dp, end = 4.dp),
+                .padding(start = 18.dp, end = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BasicTextField(
@@ -146,18 +158,27 @@ fun AddTaskContent(
                 modifier = Modifier.weight(1f).focusRequester(focus).semantics { contentDescription = "New task" },
                 decorationBox = { inner -> Box { if (typed.isEmpty()) Text("Call the bank tomorrow 3pm #me p1", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, maxLines = 1); inner() } },
             )
+            Spacer(Modifier.width(8.dp))
+            // Not ready = white glass with a muted arrow; ready = solid mint (checker 2026-10-27: the pale teal disc had a
+            // 1.58:1 arrow). A 44 dp disc in a 48 dp touch box.
             val press = remember { MutableInteractionSource() }
-            val fill by animateColorAsState(if (ready) Glass.Primary else Glass.Primary.copy(alpha = 0.32f), label = "send")
+            val fill by animateColorAsState(if (ready) Glass.Primary else Color.White.copy(alpha = 0.72f), label = "send")
             Box(
-                Modifier.size(44.dp).pressScale(press).background(fill, CircleShape)
+                Modifier.size(TouchMin).pressScale(press)
                     .clickable(press, indication = null, enabled = ready, role = Role.Button) { submit() }
                     .semantics { contentDescription = "Add task" },
                 contentAlignment = Alignment.Center,
-            ) { Icon(TabIcons.ArrowUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp)) }
+            ) {
+                Box(
+                    Modifier.size(44.dp).background(fill, CircleShape).then(if (ready) Modifier else Modifier.border(1.dp, FieldRim, CircleShape)),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(TabIcons.ArrowUp, contentDescription = null, tint = if (ready) Color.White else Glass.Muted, modifier = Modifier.size(22.dp)) }
+            }
         }
         Spacer(Modifier.height(12.dp))
         // What Enter will make, as chips that are also the pickers.
-        Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val chipsScroll = rememberScrollState()
+        Row(Modifier.fadeEnd({ chipsScroll.canScrollForward }).horizontalScroll(chipsScroll).padding(start = 16.dp, end = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GlassChip(TabIcons.Calendar, DatePick.dueText(plan.due, today).let { if (it == "Date" && !toToday) "Date" else it }, set = plan.due != null, description = "Date") { sheet = "date" }
             Box {
                 GlassChip(if (priority != null) TabIcons.FlagFilled else TabIcons.Flag, "P${plan.priority + 1}", set = plan.priority != 2 || priority != null,
@@ -167,10 +188,11 @@ fun AddTaskContent(
             GlassChip(TabIcons.Habits, plan.every?.let(Repeat::label) ?: "Repeat", set = plan.every != null, description = "Repeat") { sheet = "repeat" }
             val p = projects.firstOrNull { it.name == plan.project }
             GlassChip(
-                TabIcons.forProject(plan.project), shortName(plan.project, p?.title ?: plan.project), set = true,
-                tint = TileColors.stops(plan.project, p?.color).second, description = "Project",
+                TabIcons.forProject(plan.project), shortName(plan.project, p?.title ?: plan.project), set = true, description = "Project",
+                leading = { ProjectTile(plan.project, p?.color, p?.title ?: plan.project, size = 20.dp) },
             ) { sheet = "project" }
         }
+        for (g in notSaved) NotSavedRow(g)
         if (plan.tooLong) {
             Spacer(Modifier.height(10.dp))
             Text("One short line, $MAX_WORDS words at most. Put the detail in steps.", style = MaterialTheme.typography.bodyMedium, color = Glass.Risk, modifier = Modifier.padding(horizontal = 20.dp))
@@ -181,5 +203,21 @@ fun AddTaskContent(
         "date" -> DateSheet(plan.due, today, onPick = { dueSet = true; due = it }, onDismiss = { sheet = "" })
         "repeat" -> RepeatSheet(plan.every, onChange = { everySet = true; every = it }, onDismiss = { sheet = "" })
         "project" -> ProjectSheet(projects, plan.project, onPick = { pick = it }, onDismiss = { sheet = "" })
+    }
+}
+
+/** The web's ghost row for a refused add: the line, struck through, and "Not saved" in red; its words are back above. */
+@Composable
+private fun NotSavedRow(g: NotSaved) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 22.dp, end = 20.dp, top = 8.dp).semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(TabIcons.Ban, contentDescription = null, tint = Glass.Risk, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(g.text, style = MaterialTheme.typography.bodyMedium.copy(textDecoration = TextDecoration.LineThrough), color = Glass.Muted,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        Text("Not saved", style = MaterialTheme.typography.labelSmall, color = Glass.Risk, maxLines = 1, softWrap = false)
     }
 }

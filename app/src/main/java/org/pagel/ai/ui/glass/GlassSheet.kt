@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -24,14 +25,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 
 private val SheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
 
 /**
  * The app's one sheet (Add, task panel, every picker): a transparent Material sheet whose body is the page itself, the
  * mint aurora, so the glass panes inside bend real colour (rules/liquid-glass-navbar). A light ink scrim (18 %), a
- * capsule handle, a 28 dp top, and the toast line on top of it while it is open.
+ * capsule handle, a 28 dp top, and the toast line while it is open: above a short sheet, at the foot of a full one.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,10 +72,26 @@ fun GlassSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, full: Boole
                 }
             }
             if (toasts.sheets == level) {
-                ToastHost(toasts, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 12.dp))
+                if (full) {
+                    ToastHost(toasts, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 12.dp))
+                } else {
+                    // Above the sheet's top edge, in the dimmed page (checker 2026-10-27: "Added · …" covered the Add
+                    // sheet's chips). A popup, because the sheet clips its own content to its shape.
+                    Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(0.dp)) {
+                        Popup(popupPositionProvider = AboveTheSheet, properties = PopupProperties(focusable = false, clippingEnabled = false)) {
+                            ToastHost(toasts, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp))
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+/** Puts a popup's bottom on its anchor's top: the toast sits just above an open sheet. */
+private object AboveTheSheet : PopupPositionProvider {
+    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset =
+        IntOffset(anchorBounds.left + (anchorBounds.width - popupContentSize.width) / 2, anchorBounds.top - popupContentSize.height)
 }
 
 @Composable

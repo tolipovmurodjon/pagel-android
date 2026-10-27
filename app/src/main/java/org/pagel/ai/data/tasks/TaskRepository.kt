@@ -51,6 +51,8 @@ class TaskRepository(
     fun held(id: String): Flow<Int> = dao.heldCount(id)
     fun openTasks(project: String): Flow<List<TaskEntity>> = dao.openTasks(project)
 
+    fun projectTasks(project: String): Flow<List<TaskEntity>> = dao.projectTasks(project)
+
     suspend fun title(id: String, title: String?) {
         val t = title?.replace(Regex("\\s+"), " ")?.trim()?.take(120)?.ifEmpty { null }
         edit(id, buildJsonObject { put("title", t) }) { it.copy(title = t) }

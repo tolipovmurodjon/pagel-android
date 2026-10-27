@@ -3,7 +3,9 @@ package org.pagel.ai.ui.task
 import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -13,11 +15,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,6 +30,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,6 +59,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -83,6 +88,7 @@ import org.pagel.ai.ui.glass.Repeat
 import org.pagel.ai.ui.glass.RepeatSheet
 import org.pagel.ai.ui.glass.SheetBottom
 import org.pagel.ai.ui.glass.TabIcons
+import org.pagel.ai.ui.glass.TouchMin
 import org.pagel.ai.ui.glass.pressScale
 import java.time.LocalDate
 
@@ -149,7 +155,7 @@ fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: 
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
         Header(ui, stopping, a, onStop = { stopping = !stopping })
         if (ui.held) Held()
-        AnimatedVisibility(stopping, enter = expandVertically(tween(240)) + fadeIn(), exit = shrinkVertically(tween(160)) + fadeOut()) {
+        AnimatedVisibility(stopping, enter = expandVertically(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(), exit = shrinkVertically(tween(160)) + fadeOut()) {
             StopForm(onCancel = { stopping = false }) { kind, reason ->
                 a.onNotDoing(kind, reason).also { if (it == null) { stopping = false; if (kind == "drop") a.onClose() } }
             }
@@ -171,10 +177,13 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
     val ctx = LocalContext.current
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) { if (copied) { delay(1600); copied = false } }
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    // At 1.5x font the capsule kept only "PA…" (checker 2026-10-27): it shared the free width with a weighted spacer.
+    // Now it owns all of it; the chevron goes first when the words are large.
+    val big = LocalDensity.current.fontScale > 1.3f
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         val press = remember { MutableInteractionSource() }
-        Row(
-            Modifier.weight(1f, fill = false).pressScale(press)
+        Box(Modifier.weight(1f)) { Row(
+            Modifier.pressScale(press)
                 .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(18.dp))
                 .border(1.dp, SolidColor(Glass.Ink.copy(alpha = 0.08f)), RoundedCornerShape(18.dp))
                 .clickable(press, indication = null, role = Role.Button, onClick = a.onOpenProject)
@@ -184,10 +193,9 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
         ) {
             ProjectTile(ui.project, ui.projectColor, ui.projectLabel, size = 22.dp)
             Spacer(Modifier.width(7.dp))
-            Text(ui.projectLabel, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Icon(TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
-        }
-        Spacer(Modifier.weight(1f))
+            Text(ui.projectLabel, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            if (!big) Icon(TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
+        } }
         GlassIconButton(if (copied) TabIcons.Check else TabIcons.Copy, if (copied) "Copied" else "Copy as a Claude Code prompt", on = copied, size = 36.dp) {
             ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("PAGEL task", runPrompt(ui.project, ui.text, ui.priority)))
             copied = true
@@ -208,6 +216,7 @@ private fun Held() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StopForm(onCancel: () -> Unit, onSave: (String, String) -> String?) {
     var why by rememberSaveable { mutableStateOf("waiting") }
@@ -219,7 +228,8 @@ private fun StopForm(onCancel: () -> Unit, onSave: (String, String) -> String?) 
             Text("Why not?", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
             Text("The real reason, saved in the brain", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // All three kinds in view, wrapping if the words are large; never a row cut at "Not wor" (checker 2026-10-27).
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (s in STOP) GlassChip(s.icon, s.label, set = why == s.kind, modifier = Modifier.semantics { selected = why == s.kind }) {
                     haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); why = s.kind; bad = ""
                 }
@@ -239,15 +249,12 @@ private fun StopForm(onCancel: () -> Unit, onSave: (String, String) -> String?) 
                     decorationBox = { inner -> Box { if (reason.isEmpty()) Text(STOP.first { it.kind == why }.eg, style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
                 )
             }
-            if (bad.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(bad, style = MaterialTheme.typography.bodyMedium, color = Glass.Risk)
-            }
             Spacer(Modifier.height(8.dp))
-            Text(
-                when (why) { "drop" -> "The task leaves the plan."; "someday" -> "Goes to P4 and off Today."; else -> "Stays in the plan, off Today, until the block clears." } +
-                    " Facts only: who or what blocks it, money, a date, a changed plan.",
-                style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
+            // One line: what happens to the task; the error takes its place when the reason is refused.
+            if (bad.isNotEmpty()) Text(bad, style = MaterialTheme.typography.bodyMedium, color = Glass.Risk)
+            else Text(
+                when (why) { "drop" -> "Leaves the plan."; "someday" -> "Goes to P4, off Today."; else -> "Stays in the plan, off Today." },
+                style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -370,18 +377,15 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
                 )
             }
             if (texts.isNotEmpty() && !made) {
-                val press = remember { MutableInteractionSource() }
-                Text(
-                    "Make these steps tasks in ${ui.projectLabel}", style = MaterialTheme.typography.labelLarge, color = Glass.Primary,
-                    modifier = Modifier.padding(start = 6.dp).pressScale(press)
-                        .clickable(press, indication = null, role = Role.Button) { a.onMakeTasks(); made = true }
-                        .padding(horizontal = 10.dp, vertical = 10.dp),
-                )
+                GlassChip(TabIcons.ListPlus, "To tasks", set = false, description = "Make these steps tasks in ${ui.projectLabel}", modifier = Modifier.padding(start = 12.dp)) {
+                    a.onMakeTasks(); made = true
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (String) -> Unit) {
     val haptics = LocalHapticFeedback.current
@@ -391,24 +395,31 @@ private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (Strin
             Line()
             PropRow(TabIcons.Habits, "Repeat", ui.every?.let(Repeat::label) ?: "Never", set = ui.every != null) { onPick("repeat") }
             Line()
+            // "Priority" wrapped into "Prior/ity" beside four flags (checker 2026-10-27): the word keeps one line, and on a
+            // narrow phone or at large font the flags take a line of their own under it.
             Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(TabIcons.Flag, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
                 Spacer(Modifier.width(12.dp))
-                Text("Priority", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f))
-                for (p in 0..3) {
-                    val on = ui.priority == p
-                    val press = remember { MutableInteractionSource() }
-                    Row(
-                        Modifier.heightIn(min = 44.dp).pressScale(press)
-                            .background(if (on) PriorityColors[p].copy(alpha = 0.12f) else Color.Transparent, RoundedCornerShape(12.dp))
-                            .clickable(press, indication = null, role = Role.RadioButton) { if (!on) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); a.onPriority(p) } }
-                            .semantics { contentDescription = "P${p + 1}"; selected = on }
-                            .padding(horizontal = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(if (on) TabIcons.FlagFilled else TabIcons.Flag, contentDescription = null, tint = PriorityColors[p], modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(3.dp))
-                        Text("P${p + 1}", style = MaterialTheme.typography.labelSmall, color = if (on) Glass.Ink else Glass.Muted)
+                FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Priority", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, softWrap = false, modifier = Modifier.align(Alignment.CenterVertically).padding(end = 8.dp))
+                    Row(Modifier.align(Alignment.CenterVertically)) {
+                        for (p in 0..3) {
+                            val on = ui.priority == p
+                            val press = remember { MutableInteractionSource() }
+                            Row(
+                                Modifier.heightIn(min = TouchMin).widthIn(min = TouchMin).pressScale(press)
+                                    .background(if (on) PriorityColors[p].copy(alpha = 0.12f) else Color.Transparent, RoundedCornerShape(12.dp))
+                                    .clickable(press, indication = null, role = Role.RadioButton) { if (!on) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); a.onPriority(p) } }
+                                    .semantics { contentDescription = "P${p + 1}"; selected = on }
+                                    .padding(horizontal = 7.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(if (on) TabIcons.FlagFilled else TabIcons.Flag, contentDescription = null, tint = PriorityColors[p], modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(3.dp))
+                                Text("P${p + 1}", style = MaterialTheme.typography.labelSmall, color = if (on) Glass.Ink else Glass.Muted, maxLines = 1, softWrap = false)
+                            }
+                        }
                     }
                 }
             }
@@ -462,7 +473,7 @@ private fun GlassSwitch(on: Boolean, label: String, onToggle: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     val knob by animateDpAsState(if (on) 20.dp else 2.dp, tween(160), label = "knob")
     Row(
-        Modifier.pressScale(press).clickable(press, indication = null, role = Role.Switch, onClick = onToggle)
+        Modifier.heightIn(min = TouchMin).pressScale(press).clickable(press, indication = null, role = Role.Switch, onClick = onToggle)
             .semantics(mergeDescendants = true) { contentDescription = "Today"; stateDescription = label },
         verticalAlignment = Alignment.CenterVertically,
     ) {

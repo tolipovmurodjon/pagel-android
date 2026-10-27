@@ -28,7 +28,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -45,9 +51,14 @@ import androidx.compose.ui.unit.dp
 
 private val ChipRim = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.45f)))
 
+/** The smallest thing a finger may be asked to hit (Material, Apple: 44-48); the drawn shape may be smaller. */
+val TouchMin = 48.dp
+
 /**
- * A 40 dp glass capsule: an icon and a short label (rules/one-icon-over-many-words). Set = mint (soft mint, deep mint
- * words); not set = white glass with the white-to-mint rim. [tint] colours the icon, e.g. a priority flag.
+ * A 40 dp glass capsule in a 48 dp touch box: an icon and a short label (rules/one-icon-over-many-words). Every chip is
+ * the same white glass (checker 2026-10-27: two families, and the mint "set" slab had a 1.58:1 edge). Not set = ink
+ * icon and words, white-to-mint rim; set = ink words, the icon in its colour, a thin #1C7E69 rim. [tint] colours the
+ * icon (a priority flag); [leading] replaces the icon (a project's own gradient tile).
  */
 @Composable
 fun GlassChip(
@@ -57,48 +68,72 @@ fun GlassChip(
     modifier: Modifier = Modifier,
     tint: Color? = null,
     description: String? = null,
+    leading: (@Composable () -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val press = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(20.dp)
-    Row(
+    Box(
         modifier
-            .heightIn(min = 40.dp)
+            .heightIn(min = TouchMin)
             .pressScale(press)
-            .background(if (set) Glass.PrimarySoft else Color.White.copy(alpha = 0.72f), shape)
-            .border(1.dp, if (set) SolidColor(Glass.Primary.copy(alpha = 0.35f)) else ChipRim, shape)
             .clickable(press, indication = null, role = Role.Button, onClick = onClick)
-            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier)
-            .padding(start = 12.dp, end = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = tint ?: if (set) Glass.Primary else Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(7.dp))
-        Text(label, style = MaterialTheme.typography.labelLarge, color = if (set) Glass.PrimaryInk else Glass.Ink.copy(alpha = 0.82f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(
+            Modifier
+                .heightIn(min = 40.dp)
+                .background(Color.White.copy(alpha = 0.72f), shape)
+                .border(1.dp, if (set) SolidColor(Glass.Primary) else ChipRim, shape)
+                .padding(start = if (leading != null) 10.dp else 12.dp, end = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (leading != null) leading() else Icon(icon, contentDescription = null, tint = tint ?: if (set) Glass.Primary else Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, color = if (set) Glass.Ink else Glass.Ink.copy(alpha = 0.82f), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
 /**
- * A round glass icon button, drawn inside a touch target 4 dp larger, named for TalkBack. [plain] drops the glass disc
- * for quiet repeated controls (a step's remove) so a list does not fill with circles.
+ * A round glass icon button: a [size] disc drawn in a touch box of at least 48 dp, named for TalkBack. [plain] drops
+ * the glass disc for quiet repeated controls (a step's remove) so a list does not fill with circles.
  */
 @Composable
 fun GlassIconButton(icon: ImageVector, description: String, modifier: Modifier = Modifier, tint: Color = Glass.Ink.copy(alpha = 0.78f), on: Boolean = false, size: Dp = 40.dp, plain: Boolean = false, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Box(
         modifier
-            .size(size + 4.dp)
+            .size(maxOf(size + 4.dp, TouchMin))
             .pressScale(press)
             .clickable(press, indication = null, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        val disc = if (plain) Modifier else Modifier.background(if (on) Glass.PrimarySoft else Color.White.copy(alpha = 0.72f), CircleShape).border(1.dp, if (on) SolidColor(Glass.Primary.copy(alpha = 0.35f)) else ChipRim, CircleShape)
+        val disc = if (plain) Modifier else Modifier.background(Color.White.copy(alpha = 0.72f), CircleShape).border(1.dp, if (on) SolidColor(Glass.Primary) else ChipRim, CircleShape)
         Box(Modifier.size(size).then(disc), contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = null, tint = if (on) Glass.Primary else tint, modifier = Modifier.size(if (plain) 16.dp else 19.dp))
         }
     }
 }
+
+/**
+ * A scrolling row never ends in a hard cut ("Not wor", "16:0"): while more is off screen ([more]), its last [width]
+ * fades out. Put it before the scroll modifier so it fades the viewport, not the content.
+ */
+fun Modifier.fadeEnd(more: () -> Boolean, width: Dp = 24.dp): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            if (more()) {
+                val w = width.toPx()
+                drawRect(
+                    Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = size.width - w, endX = size.width),
+                    topLeft = Offset(size.width - w, 0f), size = Size(w, size.height), blendMode = BlendMode.DstIn,
+                )
+            }
+        }
 
 /**
  * Text that is its own editor, like the web's Inline (Todoist's title): it reads as plain text, a tap puts the cursor

@@ -86,10 +86,13 @@ class TaskLogicTest {
         assertEquals("Upcoming, Fri 30 Oct", whereOf(AddPlan("x", "me", 2, "2026-10-30", null, false), today))
         assertEquals("Habits, Weekly", whereOf(AddPlan("x", "me", 2, "2026-10-27", "week", false), today))
         assertEquals("in the plan", whereOf(AddPlan("x", "me", 2, null, null, false), today))
+        // Today deals 3 at a time: with 3 showing, a new one waits (the web's add-task.tsx words).
+        assertEquals("Today, in line", whereOf(AddPlan("x", "me", 2, "2026-10-27", null, false), today, inLine = true))
+        assertEquals("Upcoming, Fri 30 Oct", whereOf(AddPlan("x", "me", 2, "2026-10-30", null, false), today, inLine = true))
     }
 
-    private fun t(id: String, phase: String, sort: Int, now: Boolean) = TaskEntity(
-        id = id, project = "p", phase = phase, sort = 0.0, text = "Task $id", title = null, status = "open", priority = 2, star = false,
+    private fun t(id: String, phase: String, sort: Int, now: Boolean, status: String = "open") = TaskEntity(
+        id = id, project = "p", phase = phase, sort = 0.0, text = "Task $id", title = null, status = status, priority = 2, star = false,
         due = null, every = null, doneWhen = null, doneAt = null, updatedAt = "", serverVersion = 1, lastModified = 0, phaseSort = sort, phaseNow = now,
     )
 
@@ -102,5 +105,23 @@ class TaskLogicTest {
         val old = projectGroups(listOf(t("a", "Later", 0, false), t("b", "Now", 0, false), t("c", "Later", 0, false)))
         assertEquals(listOf("Later", "Now"), old.map { it.title })
         assertEquals(listOf("a", "c"), old[0].rows.map { it.id })
+    }
+
+    @Test fun projectGroupsKeepTheDoneOnesAndFileNewTasksUnderNow() {
+        // In PagelDao.projectTasks order: NOW first, then by phase order.
+        val g = projectGroups(listOf(
+            t("a", "Build", 1, true), t("b", "Build", 1, true, status = "done"),
+            t("d", "Plan", 0, false, status = "done"), t("phone_1", "", 0, false), t("c", "Ship", 2, false),
+        ))
+        assertEquals(listOf("Build", "Plan", "Ship"), g.map { it.title })
+        // NOW: its open task, then the one just added on the phone (no phase until pagel.uz files it); done ones apart.
+        assertEquals(listOf("a", "phone_1"), g[0].rows.map { it.id })
+        assertEquals(listOf("b"), g[0].done.map { it.id })
+        // A phase with only done tasks is a finished one: nothing open, its done list kept.
+        assertEquals(emptyList<String>(), g[1].rows.map { it.id })
+        assertEquals(listOf("d"), g[1].done.map { it.id })
+        // No NOW phase yet (a new project): the phone's task gets a pane of its own.
+        val fresh = projectGroups(listOf(t("phone_2", "", 0, false)))
+        assertEquals(listOf("Tasks" to true), fresh.map { it.title to it.now })
     }
 }
