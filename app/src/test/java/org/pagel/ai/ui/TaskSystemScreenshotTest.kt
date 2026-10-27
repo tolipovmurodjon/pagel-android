@@ -166,13 +166,18 @@ class TaskSystemScreenshotTest {
     @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun timeWheelOnANarrowPhone() {
         var picked: String? = null
         show { DateContent("2026-10-29 15:30", day) { d, _ -> picked = d } }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-date-360.png")
         compose.onNodeWithContentDescription("Time 15:30").performClick()
         compose.onNodeWithContentDescription("Time wheel 15:30").assertIsDisplayed()
         compose.onNodeWithContentDescription("No time").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-time-wheel-360.png")
         compose.onNodeWithContentDescription("No time").performClick()
         assertEquals("2026-10-29", picked)
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun datePickerFitsANarrowPhone() {
+        show { DateContent("2026-10-29 15:30", day) { _, _ -> } }
+        compose.onNodeWithContentDescription("Type a time").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-date-360.png")
     }
 
     @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun timeWheelLargeFont() {
