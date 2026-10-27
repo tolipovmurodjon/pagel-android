@@ -71,6 +71,8 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(b)))
+        # One answer per connection: a kept-alive socket would outlive "adb reverse --remove" and leak the walkthrough's offline sorts.
+        self.send_header("connection", "close")
         self.end_headers()
         self.wfile.write(b)
 
@@ -140,6 +142,7 @@ class H(BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("content-type", "image/png")
                 self.send_header("content-length", str(len(PICTURE)))
+                self.send_header("connection", "close")
                 self.end_headers()
                 self.wfile.write(PICTURE)
                 return

@@ -41,6 +41,36 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v9 · PHASE 2 OF 10 = INBOX SORTING (2026-10-28, builder agent)
+The web's `/learn` on the phone, behind the Inbox tab (`ui/inbox/`), offline-first:
+- **Server** (dashboard `feat/gtd-core` **ff7de79, NOT DEPLOYED**): `GET /api/v1/inbox?limit=&seed=` (the deck in the web's
+  shuffled order + sorted/goal 20/kept/cap/min words/total), `POST /api/v1/inbox {action: keep|act|note|later|drop|now,
+  file, sentence?, project?, someday?}` (the web's own `learn.ts` functions; a repeat or a save already sorted on the web
+  answers 200 `already`, never a refusal), `GET /api/v1/inbox/picture?file=`. vitest `src/lib/inbox-api.test.ts` 7/7.
+  Until it is deployed, pagel.uz answers 404 → the phone's Inbox stays empty (skeleton → "Inbox zero") and nothing is lost.
+- **Room v4** (AutoMigration 3→4, `MigrationTest.threeToFourKeepsTasksAndAddsAnEmptyInbox`): `inbox_items` (the deck,
+  `position` = the phone's order, `sortedAs` = chosen here, waiting to send) + `inbox_state` (the day's counts).
+  `data/db/InboxDao.kt`: `choose` / `undo` / `sent` / `refused` / `refresh` (the top card never moves; waiting choices stay).
+- **Outbox**: each choice is an `op = "sort"` row in the shared outbox (`OutboxSender` → `InboxSender`), sent in the order
+  made; a Drop waits out its 5 s Undo and holds the sorts after it; a refusal brings the card back on top and the shell's
+  red toast says why. `Session` nudges the outbox when the live link comes back (`OutboxWorker.nudge`, REPLACE only a
+  pass that is backing off), so "back online" sends in seconds, not after a grown backoff.
+- **Screen** (`InboxScreen.kt`, `InboxSheets.kt`): header "N left · Inbox · 7/20 sorted today · 2/5 learned", streak
+  flame, ? guide sheet, the **20-a-day ring** (closes, fills mint, ✓ + ding + confetti + "20 sorted today. Goal done ✓").
+  The card: site pill (Instagram/X/LinkedIn/host), author, date, project tile; the AI's claim, why (mint), the picture
+  220 dp (cached on disk, skeleton while loading), 3 lines of the post, "Read all" sheet, "Open the post ↗". Under it the
+  **AI's pick** as the big coloured button ("AI pick: …"; Learn → Note when today's keeps are full) and the other five as
+  chips (Learn off when full, Later off once put off). **Swipe** right = AI's pick (Learn if unread), left = Drop, up =
+  Later, with a tilt, a stamp, a haptic tick at the line, fling detection, spring back. Action/Note/Learn/Do now open a
+  sheet: prefilled line (web's), project chip, This week/Someday, word count ("3 more words"), coloured button.
+  Each choice: its own exit motion (web's ib-act/note/keep/now/later/drop), its own sound (web's blip notes,
+  `ChoiceSound`), its own haptic. Toasts as the web ("Dropped · Undo", "Added to Humopedia", keep cheers at 5/10/25/50/100).
+- **Not in this phase (web has it)**: filters by site/field, Shuffle button (the phone shuffles once per app run), "clear N
+  older than 14 days", paste a link/thought/picture (Phase 7 capture), recall questions + "% remembered", research
+  progress for kept saves, the AI read of unread saves (the phone never starts a triage; the web does), a dropped picture
+  on a Note.
+- **CI**: (filled below)
+
 ## START HERE v8 · PHASE 1 ROUND 3 = THE CHECKER'S 7.5 → 9 LIST (2026-10-28, builder agent)
 Fix list: `docs/qa/phase1-round2-checker.md` (app-v0.5.1 scored 7.5/10). Round 3 fixed all 10 + the "still open" list:
 - **Wheel = iOS** (`TimeWheel.kt`): 7 rows of 34 dp on a cylinder (20° a row, `cameraDistance = 8·density`, alpha cos²),

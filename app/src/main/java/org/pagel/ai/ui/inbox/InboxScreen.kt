@@ -70,6 +70,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -455,6 +456,10 @@ private fun LeavingCard(l: Leaving, pictures: Map<String, Bitmap?>, reduce: Bool
 @Composable
 private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: InboxActions) {
     val uri = LocalUriHandler.current
+    // The choice buttons stay above the tab bar without a scroll: the picture gives up height on short screens.
+    val screenH = LocalConfiguration.current.screenHeightDp
+    val pictureH = (screenH - 540).coerceIn(100, 220).dp
+    val captionLines = if (screenH < 720) 2 else 3
     Pane(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 12.dp)) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -477,18 +482,18 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
                 val bmp = pictures[card.file]
                 if (card.file !in pictures) {
                     Spacer(Modifier.height(12.dp))
-                    PictureSkeleton()
+                    PictureSkeleton(pictureH)
                 } else if (bmp != null) {
                     Spacer(Modifier.height(12.dp))
                     val img = remember(bmp) { bmp.asImageBitmap() }
                     Image(img, contentDescription = "The post's picture", contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp)))
+                        modifier = Modifier.fillMaxWidth().height(pictureH).clip(RoundedCornerShape(16.dp)))
                 }
             }
             if (card.text.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    card.text, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF3B4256), maxLines = 3, overflow = TextOverflow.Ellipsis,
+                    card.text, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF3B4256), maxLines = captionLines, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.drawBehind { drawLine(Glass.Ink.copy(alpha = 0.10f), Offset(0f, 0f), Offset(0f, size.height), 3.dp.toPx()) }.padding(start = 12.dp),
                 )
             }
@@ -502,11 +507,11 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
 }
 
 @Composable
-private fun PictureSkeleton() {
+private fun PictureSkeleton(height: androidx.compose.ui.unit.Dp) {
     val a by androidx.compose.animation.core.rememberInfiniteTransition(label = "pic").animateFloat(
         0.45f, 0.9f, androidx.compose.animation.core.infiniteRepeatable(tween(900), androidx.compose.animation.core.RepeatMode.Reverse), label = "breathe",
     )
-    Box(Modifier.fillMaxWidth().height(220.dp).graphicsLayer { alpha = a }.background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(16.dp)).clearAndSetSemantics {})
+    Box(Modifier.fillMaxWidth().height(height).graphicsLayer { alpha = a }.background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(16.dp)).clearAndSetSemantics {})
 }
 
 /** A small text link with a 48 dp touch box (the web's .ib-link). */
