@@ -6,6 +6,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -113,6 +115,7 @@ private fun Divider(start: Int = 50) = HorizontalDivider(Modifier.padding(start 
  * first turn saves, or a tap on the shown time (checker 2026-10-28 #5: "Add time" wrote 09:00 at once).
  * [onPick] gets the new due (null = no date) and whether to close.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DateContent(value: String?, today: LocalDate, onPick: (String?, Boolean) -> Unit) {
     val haptics = LocalHapticFeedback.current
@@ -145,31 +148,32 @@ fun DateContent(value: String?, today: LocalDate, onPick: (String?, Boolean) -> 
                     else -> MonthGrid(month, today, chosenDay, onMonth = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); month = it }, onPick = ::pickDay)
                 }
                 HorizontalDivider(thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
-                Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val chipsScroll = rememberScrollState()
-                    Row(Modifier.weight(1f).fadeEnd({ chipsScroll.canScrollForward }).horizontalScroll(chipsScroll), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (timeMode != "") {
-                            // The day beside the time: a tap goes back to the calendar.
-                            val d = chosenDay ?: today
-                            GlassChip(TabIcons.Calendar, "${DatePick.weekday(d)} ${d.dayOfMonth}", set = false, description = "Back to the calendar") {
-                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); timeMode = ""
-                            }
-                        }
-                        val shown = if (timeMode == "") time.ifEmpty { "Add time" } else time.ifEmpty { DEFAULT_TIME }
-                        val said = when { time.isNotEmpty() -> "Time $time"; timeMode == "" -> "Add time"; else -> "Set $DEFAULT_TIME" }
-                        GlassChip(TabIcons.Clock, shown, set = time.isNotEmpty(), description = said) {
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                            when {
-                                timeMode == "" -> timeMode = "wheel"
-                                time.isEmpty() -> setTime(DEFAULT_TIME)
-                                else -> timeMode = ""
-                            }
+                // A flow: at 1.5x font the clear and keyboard buttons take a second line instead of cutting the time
+                // ("15:3" in picker-time-wheel-360-font-1.5, round 3).
+                FlowRow(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (timeMode != "") {
+                        // The day beside the time: a tap goes back to the calendar.
+                        val d = chosenDay ?: today
+                        GlassChip(TabIcons.Calendar, "${DatePick.weekday(d)} ${d.dayOfMonth}", set = false, description = "Back to the calendar") {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); timeMode = ""
                         }
                     }
-                    if (time.isNotEmpty()) GlassIconButton(TabIcons.Close, "No time", size = 36.dp, plain = true) {
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); setTime(null); timeMode = ""
+                    val shown = if (timeMode == "") time.ifEmpty { "Add time" } else time.ifEmpty { DEFAULT_TIME }
+                    val said = when { time.isNotEmpty() -> "Time $time"; timeMode == "" -> "Add time"; else -> "Set $DEFAULT_TIME" }
+                    GlassChip(TabIcons.Clock, shown, set = time.isNotEmpty(), description = said) {
+                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        when {
+                            timeMode == "" -> timeMode = "wheel"
+                            time.isEmpty() -> setTime(DEFAULT_TIME)
+                            else -> timeMode = ""
+                        }
                     }
-                    GlassIconButton(TabIcons.Keyboard, "Type a time", on = timeMode == "type", size = 36.dp, plain = true) { timeMode = if (timeMode == "type") "wheel" else "type" }
+                    Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                        if (time.isNotEmpty()) GlassIconButton(TabIcons.Close, "No time", size = 36.dp, plain = true) {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); setTime(null); timeMode = ""
+                        }
+                        GlassIconButton(TabIcons.Keyboard, "Type a time", on = timeMode == "type", size = 36.dp, plain = true) { timeMode = if (timeMode == "type") "wheel" else "type" }
+                    }
                 }
             }
         }

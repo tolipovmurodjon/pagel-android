@@ -41,6 +41,33 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v8 · PHASE 1 ROUND 3 = THE CHECKER'S 7.5 → 9 LIST (2026-10-28, builder agent)
+Fix list: `docs/qa/phase1-round2-checker.md` (app-v0.5.1 scored 7.5/10). Round 3 fixed all 10 + the "still open" list:
+- **Wheel = iOS** (`TimeWheel.kt`): 7 rows of 34 dp on a cylinder (20° a row, `cameraDistance = 8·density`, alpha cos²),
+  drums 104 dp, no ":", band = ink 6 % fill, radius 10, no border; numbers stop growing at 1.2× font.
+- **Date sheet fits** (`Pickers.kt` DateContent): quick days = one chip row (fade at the end); the month shows only the
+  weeks it needs (5 for Oct 2026); day cells 40 dp; past days ink .50 (~3.4:1, was 1.9:1).
+- **Wheel flow**: "Add time" opens the wheel and saves nothing; the row shows "Thu 29" (back to the calendar) + the time;
+  the first turn saves, or a tap on the shown "09:00" (description "Set 09:00"); ✕ = No time (icon); the row is a
+  FlowRow so at 1.5× the icons wrap instead of cutting the time. Test `timeWheelSavesNothingUntilAsked`.
+- **Type**: `labelSmall` = Schibsted Grotesk Medium 12.5 sp; Departure Mono only through `Glass.NumberText` (step count
+  "2/3", "+2", project counts, phase counts, pairing code). Rule written in `docs/RULES.md`.
+- **Panel**: Priority = a nav row "⚑ P1 ›" opening `PrioritySheet` (same PickRow family as Date/Repeat, one ✓); Today
+  hint "By date" / "By repeat" / "From 30 Oct"; "Note" (no "what the AI reads"); won't-do has no subtitle and the refusal
+  is one line with an icon (`NotDoing.kt` words shortened; rules unchanged, the web still has the long sentences).
+- **Repeat**: weekday toggles sit in a pane like the monthly grid. **Today** meta: "⟳ Weekly" via `Repeat.label`.
+- **Tabs**: words auto-size to the slot (`AppShell.kt` TabLabel, BasicText autoSize 8 dp min); landscape bar 48 dp, icon
+  beside word, ≤ 440 dp, centred, + beside it (`LiquidBottomTabs(barHeight)`). Dark mode = light only until Phase 9 (RULES).
+- **Panes**: a second soft mint light bottom-right (`Surfaces.kt`). **Add sheet**: the typed line fades at its end when it
+  overflows (not while typing); chip-row fade 48 dp. The "30 Oct without 3pm" shot is a pick beating the typed line, as
+  the web does (add-task.tsx `picked ?? q.due`); add-ready shows the typed time.
+- **Walkthrough**: `tap "Priority: P[1-4]"` → sheet → `tap "P1"` (step `panel-priority-sheet`).
+- **CI**: 40584580869 (84d7912) build ✅ smoke ✅ (32 steps; walk 22 date sheet fits with the time row, 28 landscape
+  compact bar, 30 "Notebook" whole at 1.5×). Its picker-time-wheel-360-font-1.5 showed "15:3" (time chip squeezed by ✕ and
+  keyboard) → next push: the time row is a FlowRow. Frames on CI's software GPU: 89 % janky, p50 150 ms (not a phone number).
+- **NEXT**: fresh checker on the newest green run; Boss installs the CI build (no tag: lead's call); server `notes` +
+  phase `goal` in `/api/v1/sync`; then Phase 2.
+
 ## START HERE v7 · PHASE 1 ROUND 2 = THE CHECKER'S TOP 10 (2026-10-28, builder agent)
 A fresh checker scored the app 6.5/10 (evidence in the session scratchpad `checker1/`). Round 2 fixed all ten:
 - **Labels never wrap or cut**: "Priority" keeps one line (its flags drop under it on a narrow phone / 1.5× font,
