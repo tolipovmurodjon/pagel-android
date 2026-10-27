@@ -46,6 +46,8 @@ done
 log "-- projects live under More now"
 tap Projects && shot projects
 grep -q 'text="Humopedia"' "$OUT/$(printf '%02d' $N)-projects.xml" || { log "WALKTHROUGH: Projects under More shows no projects"; exit 1; }
+$T adb shell input swipe 540 1700 540 500 400; shot projects-down 1.5
+$T adb shell input swipe 540 900 540 1150 300; shot projects-up-shows-title 1.5
 $T adb shell input keyevent 4; shot back-to-more
 tap Today && shot today-again
 

@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.pagel.ai.data.db.ProjectEntity
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.ProjectTile
+import org.pagel.ai.ui.glass.SkeletonRows
 
 @Composable
 fun ProjectsRoute(contentPadding: PaddingValues, reselect: Int, vm: ProjectsViewModel = hiltViewModel()) {
@@ -47,12 +48,12 @@ fun ProjectsScreen(ui: ProjectsUiState, contentPadding: PaddingValues, reselect:
         item(key = "head", contentType = "head") {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
                 Text("Projects", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
-                Text("${ui.projects.sumOf { it.openCount }} open tasks · ${ui.status}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                Text("${ui.projects.sumOf { it.openCount }} open tasks" + if (ui.status.isEmpty()) "" else " · ${ui.status}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
             }
         }
         if (ui.loading) {
             item(key = "loading", contentType = "loading") {
-                Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Glass.Primary) }
+                SkeletonRows(6)
             }
         }
         if (!ui.loading && ui.projects.isEmpty()) {

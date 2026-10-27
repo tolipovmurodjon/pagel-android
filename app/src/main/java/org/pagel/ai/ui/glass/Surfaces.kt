@@ -9,6 +9,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.getValue
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -55,6 +61,26 @@ fun Pane(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit
             .background(Glass.PaneTint),
         content = content,
     )
+}
+
+/**
+ * Rows of soft grey bars in the shape of what is coming, for the very first start only (Room still empty): never a
+ * spinner (Boss 2026-10-27). They breathe gently so the screen reads as alive, not stuck.
+ */
+@Composable
+fun SkeletonRows(count: Int, modifier: Modifier = Modifier) {
+    val breathe by androidx.compose.animation.core.rememberInfiniteTransition(label = "skeleton").animateFloat(
+        0.45f, 0.9f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(900), androidx.compose.animation.core.RepeatMode.Reverse), label = "breathe",
+    )
+    androidx.compose.foundation.layout.Column(modifier.clearAndSetSemantics {}) {
+        repeat(count) { i ->
+            androidx.compose.foundation.layout.Row(Modifier.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(28.dp).graphicsLayer { alpha = breathe }.background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(9.dp)))
+                androidx.compose.foundation.layout.Spacer(Modifier.size(14.dp))
+                Box(Modifier.height(14.dp).fillMaxWidth(if (i % 2 == 0) 0.62f else 0.44f).graphicsLayer { alpha = breathe }.background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(7.dp)))
+            }
+        }
+    }
 }
 
 /** A project's lit gradient tile with its white line icon (brain rules/gradient-project-icons, colour theory #19). */

@@ -34,6 +34,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.derivedStateOf
+import org.pagel.ai.ui.glass.EaseOutStrong
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -110,6 +116,21 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     val onTop = stack.lastOrNull() == Tab.entries[selected].root
     var adding by rememberSaveable { mutableStateOf(false) }
 
+    // Scroll-aware top (X, YouTube): scrolling down gives the content all the room; scrolling up brings a small glass
+    // title back. [scrolled] is how far the list is from its top, so the title only shows once the big one is gone.
+    var scrolled by remember { mutableFloatStateOf(0f) }
+    var titleShown by remember { mutableStateOf(false) }
+    val scrollWatch = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                scrolled = (scrolled - consumed.y).coerceAtLeast(0f)
+                if (consumed.y < -1f) titleShown = false else if (consumed.y > 1f) titleShown = true
+                return Offset.Zero
+            }
+        }
+    }
+    LaunchedEffect(selected, stack.size) { scrolled = 0f; titleShown = false }
+
     // A light tick when the tab changes, never on the first frame (Apple HIG playing haptics: one per action).
     val haptics = LocalHapticFeedback.current
     var firstTab by remember { mutableStateOf(true) }
@@ -131,6 +152,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             val fadeTop = bottom + 8.dp
             Box(
                 Modifier.fillMaxSize()
+                    .nestedScroll(scrollWatch)
                     .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                     .drawWithCache {
                         val start = (size.height - fadeTop.toPx()).coerceAtLeast(0f)
@@ -148,7 +170,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     entry<HabitsRoute> { Coming("Habits", "/habits", padding) { stack.add(WebRoute(it)) } }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
                     entry<MoreRoute> { More(padding, onOpenProjects = { stack.add(ProjectListRoute) }, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect) }
-                    entry<ProjectListRoute> { ProjectsRoute(padding, 0) }
+                    entry<ProjectListRoute> { ProjectsRoute(padding, reselect) }
                     entry<WebRoute> { r -> TasksScreen(onOpenPhone = onOpenPhone, startPath = r.path) }
                 },
             ) }
@@ -172,6 +194,21 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 }
             }
         }
+        val top = stack.lastOrNull()
+        val pageTitle = when (top) { ProjectListRoute -> "Projects"; is WebRoute -> null; else -> Tab.entries[selected].label }
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        // Read through derivedStateOf: the shell redraws when a switch flips, not on every scrolled pixel.
+        val moved by remember(density) { derivedStateOf { scrolled > with(density) { 8.dp.toPx() } } }
+        val farDown by remember(density) { derivedStateOf { scrolled > with(density) { 72.dp.toPx() } } }
+        TopFade(visible = moved && pageTitle != null, modifier = Modifier.align(Alignment.TopCenter))
+        if (pageTitle != null) {
+            TitleCapsule(
+                title = pageTitle,
+                visible = titleShown && farDown,
+                backdrop = backdrop,
+                modifier = Modifier.align(Alignment.TopCenter),
+            ) { reselect++ }
+        }
         if (onTop && selected == 0) {
             AddButton(
                 backdrop,
@@ -180,6 +217,50 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         }
     }
     if (adding) AddTaskSheet(onClose = { adding = false })
+}
+
+/**
+ * The status bar never collides with the content: a soft page-coloured fade sits under the clock and icons once the
+ * list has moved (Boss 2026-10-27: the title was "squashed into the status bar").
+ */
+@Composable
+private fun TopFade(visible: Boolean, modifier: Modifier) {
+    val alpha by androidx.compose.animation.core.animateFloatAsState(if (visible) 1f else 0f, label = "fade")
+    val h = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 18.dp
+    Box(modifier.fillMaxWidth().height(h).graphicsLayer { this.alpha = alpha }
+        .background(Brush.verticalGradient(0f to Glass.Page.copy(alpha = 0.96f), 0.62f to Glass.Page.copy(alpha = 0.88f), 1f to Glass.Page.copy(alpha = 0f))))
+}
+
+/**
+ * The page's name in a small glass capsule under the status bar, shown when Boss scrolls back up (he wants something),
+ * hidden while he scrolls down (he wants room). Same glass as the bottom bar; a tap goes back to the top.
+ */
+@Composable
+private fun TitleCapsule(title: String, visible: Boolean, backdrop: Backdrop, modifier: Modifier, onTap: () -> Unit) {
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        modifier = modifier.windowInsetsPadding(WindowInsets.statusBars).padding(top = 6.dp),
+        enter = androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(220, easing = EaseOutStrong)) { -it * 2 } + androidx.compose.animation.fadeIn(),
+        exit = androidx.compose.animation.slideOutVertically(androidx.compose.animation.core.tween(180)) { -it * 2 } + androidx.compose.animation.fadeOut(),
+    ) {
+        val press = remember { MutableInteractionSource() }
+        Box(
+            Modifier
+                .height(40.dp)
+                .pressScale(press)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { Capsule() },
+                    effects = { vibrancy(); blur(8f.dp.toPx()); lens(16f.dp.toPx(), 16f.dp.toPx()) },
+                    highlight = { com.kyant.backdrop.highlight.Highlight.Default },
+                    shadow = { com.kyant.backdrop.shadow.Shadow(alpha = 0.7f) },
+                    onDrawSurface = { drawRect(Color.White.copy(alpha = 0.34f)) },
+                )
+                .clickable(press, indication = null, role = Role.Button, onClickLabel = "Back to top") { onTap() }
+                .padding(horizontal = 22.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text(title, style = MaterialTheme.typography.titleMedium, color = Glass.Ink) }
+    }
 }
 
 /**

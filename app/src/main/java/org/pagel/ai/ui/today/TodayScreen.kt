@@ -74,6 +74,7 @@ import org.pagel.ai.data.db.OutboxEntity
 import org.pagel.ai.ui.glass.EaseOutStrong
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.SkeletonRows
 import org.pagel.ai.ui.glass.ProjectTile
 import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.projects.shortName
@@ -153,7 +154,7 @@ fun TodayScreen(
             item(key = "head", contentType = "head") { Header(ui, today) }
             when {
                 ui.loading -> item(key = "loading", contentType = "note") {
-                    Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Glass.Primary) }
+                    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
                 }
                 ui.allDone -> item(key = "done", contentType = "note") {
                     Note("All done for today ✓", "Pick the next ones on pagel.uz; they show here in a second.")

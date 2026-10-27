@@ -23,9 +23,11 @@ class ProjectsViewModel @Inject constructor(session: Session) : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProjectsUiState())
 }
 
+/**
+ * Sync is silent: the saved copy shows at once and updates in place (Boss 2026-10-27: "I hate Syncing and progress
+ * bars"). Only being offline is worth one word.
+ */
 internal fun LiveStatus.line(): String = when (this) {
-    LiveStatus.Idle -> ""
-    LiveStatus.Syncing -> "Syncing…"
-    is LiveStatus.Live -> "Live"
-    is LiveStatus.Offline -> error.message()
+    is LiveStatus.Offline -> "Offline"
+    else -> ""
 }
