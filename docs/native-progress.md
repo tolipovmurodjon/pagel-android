@@ -29,7 +29,7 @@ main, which is Boss's call.**
 | 3 Server | dashboard `feat/gtd-core` a8e79b0: `devices` + `pair_codes` tables, `POST /api/v1/devices/pair`, device tokens in `apiAuthed`, `POST /api/v1/app/crash`, `GET /api/v1/stream` (bearer, `id:` + `?since=`), `GET /api/v1/sync?since=`, web page **Phones** (More → Phones: Connect phone code, last seen, Revoke). **Deployed** to pagel.uz with Boss's yes (DB backups `~/pagel-data/backups/pagel-pre-devices-20261027.db`, `pagel-pre-resources-20261027.db`); Resources import applied (127, re-run adds 0) | vitest 239/240 (the 1 = `skills.test.ts` gstack, fails before and after on this server); live check below |
 | 4 Data layer | `data/`: `PagelApi`, `SseParser`, `DataError`/`Outcome`, `Account` in an EncryptedFile (IO only), Room (`projects`, `tasks`, `steps`, `sync_state`), `SyncEngine` (cursor pull → live stream → delta pull; backoff 1-60 s with jitter; revoked token signs out), `Session` (sync only while PAGEL is on screen; uploads saved crashes) | `SyncEngineTest` (web tick → Room row < 3 s), `PagelDaoTest`, `SseParserTest` |
 | 5-6 Glass + design system | `ui/glass/`: catalog `LiquidBottomTabs` + `DampedDragAnimation` + `InteractiveHighlight` (Apache-2.0, credited) in mint; tokens from the web; bundled Inter Tight, Schibsted Grotesk, Departure Mono (OFL); aurora page; OKLCH tile gradients = the web's table; tab icons from the web's SVG paths | `TileColorsTest`; Roborazzi `GlassScreenshotTest` (bar, pairing, projects, 1.5× font) → artifact `screenshots-and-reports` |
-| 7 Shell | `ui/shell/`: Navigation 3, one back stack per tab, back exits through Today, re-tap scrolls to top; Today = project list from Room; Inbox / Habits / Notebook open their pagel.uz page until their native feature lands; pairing screen | emulator: pair → project list on screen |
+| 7 Shell | `ui/shell/`: Navigation 3, one back stack per tab, back exits through Today, re-tap scrolls to top; Today = project list from Room; Inbox / Habits / Notebook open their pagel.uz page until their native feature lands; pairing screen | emulator: pairing reaches the server (pair → sync → stream in the fake log) ✅; project list on screen ❌ blocked by the freeze below |
 
 Live check on pagel.uz (through Cloudflare + nginx, 2026-10-27 10:28 UTC; a test device, revoked after):
 pair 201 → full sync 200 (16 projects, 599 tasks, 359 KB, 0.12 s) → a new event reached `/api/v1/stream` in **0.63 s**
@@ -41,6 +41,29 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+### START HERE (next session, 2026-10-27 ~11:00 UTC)
+1. Read the newest run on `feat/native-app-ci2` (8270c42): artifact `smoke-evidence` → `stacks-after-pair.txt` holds
+   the main thread's stack during the freeze. Fix that cause, push to `feat/native-app-ci2`, repeat until build + smoke
+   are green, then `git push origin feat/native-app-ci2:feat/native-app` (fast-forward) and confirm the run there.
+2. **The freeze (real bug, found by the smoke):** right after pairing, the first frame of the tab shell blocked the main
+   thread ~12.9 s on the emulator (`Davey! duration=12898ms`, `Skipped 741 frames`). The pairing screen itself drew at
+   ~2 fps (`app_time_stats avg=500ms`; software GPU). Suspects, unproven: RuntimeShader (AGSL) compile for the lens /
+   interactive highlight on Main, 7 variable-font instances loaded with FontLoadingStrategy.Blocking, the aurora's four
+   full-screen radial gradients redrawn every frame (move to drawWithCache). Let the stack decide.
+3. Then the rest of the design audit below; then Phase 1's last check on Boss's phone (install + real code).
+
+### Apple-design audit (2026-10-27, Boss: "do it like Apple best cases, apply them all, on Jetpack Compose")
+Vetted: `emilkowalski/skills` ★50.4k MIT (use: apple-design, emil-design-eng, animate-expo, mobile-native);
+ui-skills.com page = the same apple-design file; `VoltAgent/awesome-design-md` ★124k MIT (reference only: its Apple file
+describes apple.com marketing pages); `dickwu/apple-design-skill` ★2.1k **no licence** (HIG numbers read, nothing copied).
+The 5th link Boss sent was cut off at "https://git".
+Applied (7218431): press scale 0.97 / 120 ms / strong ease-out on pressables (`ui/glass/Press.kt`); haptics SegmentTick on
+tab change and Reject on a wrong code; no slide between tabs; scroll-edge fade under the glass bar; explicit line heights;
+`heightIn` on the pill; error line with a mark + fade; empty project state. Kit wins on: mint, ExtraBold headings, list
+panes white 78 % with shadow, light theme only.
+Not yet: momentum-projected tab snap + velocity hand-off (catalog drag), reduced-motion check, skeleton rows, OTP field
+polish, opaque fallback for the glass bar.
+
 ### CI runs
 
 | Run | Commit | build | smoke |
@@ -48,6 +71,9 @@ tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test agai
 | 40483716472 | Phase 0 | ✅ | ⏱ cancelled at 30 min, but its log proves: alive 30 s, no crash/ANR, forced crash file written. Hung after on `adb shell run-as … sh -c 'cat glob'` (adb drops the quotes → bare `cat`) |
 | 40485580870 | toolchain | ✅ | cancelled (same hang) |
 | 40487383756 | Phase 1 | ❌ Hilt: two `OkHttpClient` bindings → `@PagelHttp` | skipped |
+| 40489358989 | Phase 1 + Hilt fix | ❌ 12 Robolectric tests: PagelApp started WorkManager → `robolectric.properties` plain Application | skipped |
+| 40490348826 | design pass | ❌ 1 test matched the old error text exactly | skipped |
+| 40491073171 | test fix | ✅ **219/219**, screenshots recorded (glass-bar, pair-empty, pair-error, projects, projects-font-1.5) | ❌ Phase 0 part ✅ (alive 30 s, crash file, relaunch); pairing reached the server, then the 12.9 s freeze |
 
 ### Mistake and rule (2026-10-27)
 I ran `next build` in the **live** dashboard folder before the restart was allowed. The running server then loaded
@@ -57,5 +83,8 @@ Rule: build in a separate worktree; the live folder changes only in the same ste
 
 ### Open
 - Boss: install a build and pair with a real code (pagel.uz → More → Phones); open it 10 times (Phase 0 check).
-- Room schema JSON: download `app/schemas/` from the CI artifact and commit it (migration tests start at version 2).
-- Disk on the server: 87 % used (163 → 168 GB during the session, ~0.5 GB of it my dashboard worktree, removed at the end).
+- Room schema v1 committed (`app/schemas/…/1.json`, from the CI artifact); migration tests start at version 2.
+- Brain (laptop): session note for this server session; the server's `~/brain` is a read-only mirror.
+- Disk on the server: 88 % used (163 → 168 GB during the session; my 0.5 GB dashboard worktree is removed; the rest
+  grew elsewhere on the shared box). CLAUDE.md calls ≥ 80 % critical: Boss should look.
+- PR tolipovmurodjon/pagel#5 (draft): the deploy rule for CLAUDE.md §4.
