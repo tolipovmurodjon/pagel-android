@@ -51,6 +51,8 @@ class Session @Inject constructor(
      * all day (the anchor service), so the live stream runs only while the app is in front ([pause] stops it).
      */
     fun resume() {
+        // A new build is found when Boss opens PAGEL, not up to 30 minutes later (the periodic check).
+        org.pagel.ai.update.UpdateWorker.checkNow(ctx)
         scope.launch {
             val s = accounts.load()
             if (s is AccountState.Paired) {

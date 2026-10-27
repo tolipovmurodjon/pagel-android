@@ -43,6 +43,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import org.pagel.ai.ui.glass.TabIcons
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -140,7 +143,7 @@ fun TodayScreen(
         onTick(row.id)
         scope.launch {
             snackbar.currentSnackbarData?.dismiss()
-            val r = snackbar.showSnackbar("Done: ${row.title}", actionLabel = "Undo", duration = SnackbarDuration.Short)
+            val r = snackbar.showSnackbar("Done", actionLabel = "Undo", duration = SnackbarDuration.Short)
             if (r == SnackbarResult.ActionPerformed) onUndo(row.id)
         }
     }
@@ -175,8 +178,7 @@ fun TodayScreen(
         }
         for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = contentPadding.calculateBottomPadding() + 76.dp, start = 12.dp, end = 12.dp)) { data ->
-            // The web's toast: an ink pill; the action in light mint, which reads on ink (contrast > 7:1).
-            Snackbar(data, containerColor = Glass.Ink, contentColor = Color.White, actionColor = Glass.Aurora1, shape = MaterialTheme.shapes.extraLarge)
+            Toast(data)
         }
     }
 }
@@ -294,6 +296,40 @@ private fun TickRing(priority: Int, done: Boolean, title: String, onTick: (Offse
             val w = 2.2f * u
             if (d > 0f) drawLine(Color.White, a, if (d <= first) a + (b - a) * (d / first) else b, w, StrokeCap.Round)
             if (d > first) drawLine(Color.White, b, b + (c - b) * ((d - first) / (total - first)), w, StrokeCap.Round)
+        }
+    }
+}
+
+/**
+ * The toast as a light pill with icons, not a black bar (Boss 2026-10-27: "looks simple, black bg"): a mint tick or a
+ * red mark, the words, and Undo as an icon + word in mint.
+ */
+@Composable
+private fun Toast(data: androidx.compose.material3.SnackbarData) {
+    val bad = data.visuals.message.startsWith("Not saved")
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp)
+    Row(
+        Modifier.fillMaxWidth()
+            .shadow(14.dp, shape, ambientColor = Glass.Ink.copy(alpha = 0.12f), spotColor = Glass.Ink.copy(alpha = 0.18f))
+            .background(Color.White.copy(alpha = 0.96f), shape)
+            .background(Glass.PaneTint, shape)
+            .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.Icon(TabIcons.Done, contentDescription = null, tint = if (bad) Glass.Risk else Glass.Primary, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(data.visuals.message, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
+        data.visuals.actionLabel?.let { label ->
+            val press = remember { MutableInteractionSource() }
+            Row(
+                Modifier.pressScale(press).clickable(press, indication = null, role = Role.Button) { data.performAction() }
+                    .background(Glass.PrimarySoft, androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                androidx.compose.material3.Icon(TabIcons.Undo, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(label, style = MaterialTheme.typography.labelLarge, color = Glass.Primary)
+            }
         }
     }
 }

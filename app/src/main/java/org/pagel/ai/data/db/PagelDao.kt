@@ -34,17 +34,25 @@ abstract class PagelDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun insertTodayOrder(rows: List<TodayOrderEntity>)
 
-    /** Tasks added on the phone and not yet on pagel.uz, in the order they sit on Today. */
-    @Query("SELECT taskId FROM today_order WHERE instr(taskId, '${LOCAL_ID}') = 1 ORDER BY position")
-    abstract suspend fun localTodayIds(): List<String>
+    /** Tasks on Today with a change still waiting (new ones, ticks, undos), in their order. */
+    @Query("SELECT o.taskId FROM today_order o JOIN tasks t ON t.id = o.taskId WHERE t.syncStatus = '${SyncStatus.PENDING}' ORDER BY o.position")
+    abstract suspend fun pendingTodayIds(): List<String>
 
-    /** The server's order, with the phone's unsent tasks kept at the end until pagel.uz has them. */
+    /**
+     * The server's order, plus every task with a waiting change kept at the end: pagel.uz unstars a ticked task, so
+     * without this a sync between a tick and its Undo dropped the task from Today for good (Boss 2026-10-27: "Undo did
+     * not work").
+     */
     @Transaction
     open suspend fun replaceTodayOrder(ids: List<String>) {
-        val unsent = localTodayIds()
+        val kept = pendingTodayIds().filter { it !in ids }
         clearTodayOrder()
-        insertTodayOrder((ids + unsent).mapIndexed { i, id -> TodayOrderEntity(i, id) })
+        insertTodayOrder((ids + kept).mapIndexed { i, id -> TodayOrderEntity(i, id) })
     }
+
+    /** Undo brings a task back to Today even if a sync already took it off. */
+    @Query("INSERT INTO today_order(position, taskId) SELECT (SELECT COALESCE(MAX(position), -1) + 1 FROM today_order), :taskId WHERE NOT EXISTS (SELECT 1 FROM today_order WHERE taskId = :taskId)")
+    abstract suspend fun ensureOnToday(taskId: String)
 
     @Query("INSERT INTO today_order(position, taskId) VALUES((SELECT COALESCE(MAX(position), -1) + 1 FROM today_order), :taskId)")
     abstract suspend fun appendToToday(taskId: String)

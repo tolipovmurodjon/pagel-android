@@ -53,7 +53,9 @@ class TodayRepositoryTest {
                 val path = request.path.orEmpty()
                 return when {
                     path.startsWith("/api/v1/sync") -> MockResponse().setBody(full)
-                    path == "/api/v1/today" -> MockResponse().setBody("""{"day":"2026-10-27","shown_at_once":3,"tasks":[{"id":"t_b"},{"id":"t_a"}]}""")
+                    // pagel.uz drops a ticked task from Today (it unstars it), as task-store.ts does.
+                    path == "/api/v1/today" -> MockResponse().setBody(if (serverStatusOfA == "done") """{"day":"2026-10-27","shown_at_once":3,"tasks":[{"id":"t_b"}]}"""
+                        else """{"day":"2026-10-27","shown_at_once":3,"tasks":[{"id":"t_b"},{"id":"t_a"}]}""")
                     request.method == "POST" && path == "/api/v1/tasks" -> {
                         posts += request.body.readUtf8()
                         if (postCode == 201) MockResponse().setResponseCode(201).setBody("""{"id":"t_new","project":"me","text":"Call Aziz","status":"open"}""")
@@ -79,7 +81,7 @@ class TodayRepositoryTest {
     private val account get() = Account(server.url("/").toString(), "d_1", "Test phone", "tok")
     private val api get() = PagelApi(OkHttpClient(), Dispatchers.IO)
     private fun repo() = TodayRepository(db.dao(), { kicks++ }, clock = { 1_000L })
-    private suspend fun statusOf(id: String) = db.dao().todayTasks().first().first { it.id == id }
+    private suspend fun statusOf(id: String) = db.dao().taskOnce(id)!!
 
     @Test fun todayKeepsTheServersOrder() = runBlocking {
         SyncEngine(api, db.dao()).syncOnce(account)
@@ -204,5 +206,21 @@ class TodayRepositoryTest {
         val id = repo().add("Plan sprint", "me", 2, "2026-11-02", null, onToday = false)
         assertEquals(listOf("t_b", "t_a"), todayIds())
         assertEquals("Plan sprint", db.dao().taskOnce(id)!!.text)
+    }
+
+    @Test fun undoAfterTheTickWasSentBringsTheTaskBackWithItsStar() = runBlocking {
+        val sync = SyncEngine(api, db.dao())
+        sync.syncOnce(account)
+        val r = repo()
+        r.tick("t_a", done = true)
+        assertEquals(SendResult.ALL_SENT, OutboxSender(api, db.dao()).sendAll(account))
+        serverStatusOfA = "done"
+        sync.syncOnce(account) // pagel.uz now says done and no longer deals it on Today
+        assertEquals(listOf("t_b"), todayIds())
+        r.tick("t_a", done = false) // Boss taps Undo
+        assertEquals(listOf("t_b", "t_a"), todayIds())
+        assertEquals("open", statusOf("t_a").status)
+        assertEquals(SendResult.ALL_SENT, OutboxSender(api, db.dao()).sendAll(account))
+        assertEquals("/api/v1/tasks/t_a {\"done\":false,\"star\":true}", patches.last())
     }
 }

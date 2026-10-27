@@ -42,8 +42,8 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(TodayResponse.serializer(), it) } }
     }
 
-    suspend fun setDone(baseUrl: String, token: String, id: String, done: Boolean): Outcome<TaskStatusDto> = call {
-        val body = json.encodeToString(DonePatch.serializer(), DonePatch(done)).toRequestBody(JSON)
+    suspend fun setDone(baseUrl: String, token: String, id: String, done: Boolean, star: Boolean? = null): Outcome<TaskStatusDto> = call {
+        val body = json.encodeToString(DonePatch.serializer(), DonePatch(done, star)).toRequestBody(JSON)
         val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/tasks/$id")).patch(body), token).build()
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(TaskStatusDto.serializer(), it) } }
     }

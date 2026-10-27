@@ -34,6 +34,7 @@ class TodayRepository(
     suspend fun tick(id: String, done: Boolean) {
         val now = clock()
         dao.setStatusLocal(id, if (done) "done" else "open", if (done) java.time.Instant.ofEpochMilli(now).toString() else null, now)
+        if (!done) dao.ensureOnToday(id)
         // Undo before the tick left the phone: take the waiting change back; pagel.uz never saw it.
         if (!done && dao.takeBackWaiting(id) > 0) {
             dao.markSyncedIfIdle(id)
@@ -86,7 +87,10 @@ class OutboxSender(private val api: PagelApi, private val dao: PagelDao, private
                     else -> r
                 }
             }
-            when (val out = api.setDone(account.serverUrl, account.token, op.taskId, op.op == OutboxEntity.DONE)) {
+            // pagel.uz unstars a task when it is ticked, and a sync may already have copied that. A task on Today with no
+            // date of today or earlier was there only by its star, so an Undo gives the star back and it returns.
+            val star = if (op.op == OutboxEntity.UNDONE) dao.taskOnce(op.taskId)?.let { t -> if (t.due.isNullOrBlank() || t.due.take(10) > tashkentDay()) true else null } else null
+            when (val out = api.setDone(account.serverUrl, account.token, op.taskId, op.op == OutboxEntity.DONE, star)) {
                 is Outcome.Ok -> {
                     dao.removeFromOutbox(op.id)
                     dao.markSyncedIfIdle(op.taskId)
@@ -105,6 +109,8 @@ class OutboxSender(private val api: PagelApi, private val dao: PagelDao, private
         }
         return SendResult.ALL_SENT
     }
+
+    private fun tashkentDay() = java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.of("Asia/Tashkent")).toLocalDate().toString()
 
     /** One new task: created → it takes the server's id; refused → it leaves the phone and the UI says why. */
     private suspend fun sendAdd(account: Account, op: OutboxEntity): SendResult {

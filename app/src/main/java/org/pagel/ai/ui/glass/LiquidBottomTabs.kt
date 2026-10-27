@@ -68,7 +68,9 @@ fun LiquidBottomTabs(
     content: @Composable RowScope.() -> Unit
 ) {
     val accentColor = Glass.Primary
-    val containerColor = Glass.PaneTint
+    // Clear glass, not a tinted pane: on a near-white page the 55 % mint read as a flat dull-green slab (Boss
+    // 2026-10-27, 1/10). Light white lets the rim light and the lens carry the look, as iOS 26 does.
+    val containerColor = Color.White.copy(alpha = 0.28f)
 
     val tabsBackdrop = rememberLayerBackdrop()
 
@@ -168,6 +170,10 @@ fun LiquidBottomTabs(
                         blur(8f.dp.toPx())
                         lens(24f.dp.toPx(), 24f.dp.toPx())
                     },
+                    // The rim light and a soft shadow make it read as glass even when only white is behind it.
+                    highlight = { Highlight.Default },
+                    shadow = { Shadow(alpha = 0.9f) },
+                    innerShadow = { InnerShadow(radius = 6f.dp, alpha = 0.35f) },
                     layerBlock = {
                         val progress = dampedDragAnimation.pressProgress
                         val scale = lerp(1f, 1f + 16f.dp.toPx() / size.width, progress)

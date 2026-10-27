@@ -40,5 +40,13 @@ class UpdateWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 .build()
             WorkManager.getInstance(ctx).enqueueUniquePeriodicWork("pagel-self-update", ExistingPeriodicWorkPolicy.UPDATE, req)
         }
+
+        /** One check now, at each app start: a new build reaches Boss in minutes, not up to 30 (Boss 2026-10-27). */
+        fun checkNow(ctx: Context) {
+            val req = androidx.work.OneTimeWorkRequestBuilder<UpdateWorker>()
+                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .build()
+            WorkManager.getInstance(ctx).enqueueUniqueWork("pagel-self-update-now", androidx.work.ExistingWorkPolicy.KEEP, req)
+        }
     }
 }

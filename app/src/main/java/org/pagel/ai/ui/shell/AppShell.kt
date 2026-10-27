@@ -76,6 +76,7 @@ import org.pagel.ai.ui.glass.GlassTheme
 import org.pagel.ai.ui.glass.LiquidBottomTab
 import org.pagel.ai.ui.glass.LiquidBottomTabs
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.pair.PairRoute
 import org.pagel.ai.ui.projects.ProjectsRoute
@@ -218,7 +219,7 @@ private fun Coming(title: String, path: String, padding: PaddingValues, onOpenWe
         Spacer(Modifier.height(16.dp))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(20.dp)) {
-                Text("The native $title comes next, one feature at a time. Until then it opens on pagel.uz.", style = MaterialTheme.typography.bodyMedium, color = Glass.Ink)
+                Text("Opens on pagel.uz for now.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
                 Spacer(Modifier.height(14.dp))
                 val press = remember { MutableInteractionSource() }
                 Button(onClick = { onOpenWeb(path) }, colors = ButtonDefaults.buttonColors(containerColor = Glass.Primary),
@@ -235,11 +236,29 @@ private fun More(padding: PaddingValues, onOpenProjects: () -> Unit, onOpenWeb: 
         Spacer(Modifier.height(16.dp))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 6.dp)) {
-                TextButton(onClick = onOpenProjects, modifier = Modifier.fillMaxWidth()) { Text("Projects", color = Glass.Ink, modifier = Modifier.fillMaxWidth()) }
-                TextButton(onClick = onOpenWeb, modifier = Modifier.fillMaxWidth()) { Text("pagel.uz", color = Glass.Ink, modifier = Modifier.fillMaxWidth()) }
-                TextButton(onClick = onOpenPhone, modifier = Modifier.fillMaxWidth()) { Text("Phone (gateway, senses, updates)", color = Glass.Ink, modifier = Modifier.fillMaxWidth()) }
-                TextButton(onClick = onDisconnect, modifier = Modifier.fillMaxWidth()) { Text("Disconnect this phone", color = Glass.Risk, modifier = Modifier.fillMaxWidth()) }
+                MoreRow(TabIcons.Folder, "Projects", Glass.Primary, onOpenProjects)
+                MoreRow(TabIcons.Globe, "pagel.uz", Color(0xFF246FE0), onOpenWeb)
+                MoreRow(TabIcons.Phone, "Phone", Color(0xFF692FC2), onOpenPhone)
+                MoreRow(TabIcons.LogOut, "Disconnect", Glass.Risk, onDisconnect)
             }
         }
+    }
+}
+
+/** One More row: a lit icon tile and one word, like the web's sidebar (rules/one-icon-over-many-words). */
+@Composable
+private fun MoreRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, color: Color, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(34.dp).background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(color.copy(alpha = 0.85f), color)), androidx.compose.foundation.shape.RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp)) }
+        Spacer(Modifier.size(14.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium, color = if (color == Glass.Risk) Glass.Risk else Glass.Ink)
     }
 }

@@ -59,7 +59,7 @@ data class TodayResponse(val day: String = "", @SerialName("shown_at_once") val 
 
 /** `PATCH /api/v1/tasks/<id>`: done true finishes a task (on a habit: today's tick), false opens it again. */
 @Serializable
-data class DonePatch(val done: Boolean)
+data class DonePatch(val done: Boolean, val star: Boolean? = null)
 
 /** `POST /api/v1/tasks`: null fields are left out (the JSON writer skips defaults), as the server expects. */
 @Serializable

@@ -36,8 +36,8 @@ fun AuroraBackground(modifier: Modifier = Modifier, content: @Composable BoxScop
                 glow(0.92f, 0.06f, 0.30f, Glass.Aurora2.copy(alpha = 0.45f))
                 // The two bottom clouds sit under the glass bar: it always has colour to bend, on every screen
                 // (colour theory #5: 3-4 clouds of different hues; the bottom-left one turns to teal).
-                glow(0.96f, 0.96f, 0.38f, Glass.Aurora1.copy(alpha = 0.34f))
-                glow(0.10f, 0.98f, 0.30f, Color(0xFF2BB5A8).copy(alpha = 0.24f))
+                glow(0.96f, 0.96f, 0.42f, Glass.Aurora1.copy(alpha = 0.52f))
+                glow(0.10f, 0.98f, 0.34f, Color(0xFF2BB5A8).copy(alpha = 0.40f))
             },
         content = content,
     )

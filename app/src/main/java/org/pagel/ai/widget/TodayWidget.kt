@@ -64,15 +64,20 @@ interface WidgetParts {
 
 private fun parts(ctx: Context) = EntryPointAccessors.fromApplication(ctx, WidgetParts::class.java)
 
-/** The web's mint, solid: a widget cannot draw glass (RULES.md, widget). Ink on light mint, light mint on ink at night. */
+/**
+ * White by day, deep ink at night; mint only for the ticks and the icon. The container greens read as a dull
+ * green slab on the home screen (Boss 2026-10-27), so every surface Glance may paint is set to the page colour.
+ */
 private val WidgetColors = ColorProviders(
     light = lightColorScheme(
         primary = Glass.Primary, secondary = Glass.Primary, onSurface = Glass.Ink, onSurfaceVariant = Glass.Muted,
-        surface = Glass.Page, background = Glass.Page, primaryContainer = Glass.PrimarySoft, secondaryContainer = Glass.PrimarySoft,
+        surface = Color.White, background = Color.White, primaryContainer = Color.White, secondaryContainer = Color.White,
+        surfaceVariant = Color.White, onPrimaryContainer = Glass.Primary, onSecondaryContainer = Glass.Primary,
     ),
     dark = darkColorScheme(
         primary = Glass.Aurora1, secondary = Glass.Aurora1, onSurface = Color.White, onSurfaceVariant = Color(0xFFB8C0D6),
-        surface = Glass.Ink, background = Glass.Ink, primaryContainer = Color(0xFF173A35), secondaryContainer = Color(0xFF173A35),
+        surface = Glass.Ink, background = Glass.Ink, primaryContainer = Glass.Ink, secondaryContainer = Glass.Ink,
+        surfaceVariant = Glass.Ink, onPrimaryContainer = Glass.Aurora1, onSecondaryContainer = Glass.Aurora1,
     ),
 )
 
