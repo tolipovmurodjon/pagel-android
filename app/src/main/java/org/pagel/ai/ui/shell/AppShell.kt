@@ -21,7 +21,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +34,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -50,6 +59,7 @@ import org.pagel.ai.ui.glass.GlassTheme
 import org.pagel.ai.ui.glass.LiquidBottomTab
 import org.pagel.ai.ui.glass.LiquidBottomTabs
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.pair.PairRoute
 import org.pagel.ai.ui.projects.ProjectsRoute
 import org.pagel.ai.ui.tasks.TasksScreen
@@ -80,6 +90,11 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     val backdrop = rememberLayerBackdrop()
     val onTop = stack.lastOrNull() == Tab.entries[selected].root
 
+    // A light tick when the tab changes, never on the first frame (Apple HIG playing haptics: one per action).
+    val haptics = LocalHapticFeedback.current
+    var firstTab by remember { mutableStateOf(true) }
+    LaunchedEffect(selected) { if (firstTab) firstTab = false else haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+
     // Back leaves a tab's own stack first, then returns to Today, then leaves the app (RULES.md, navigation).
     BackHandler(enabled = selected != 0 && stack.size == 1) { selected = 0 }
 
@@ -88,7 +103,9 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
             val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + BarSpace
             val padding = PaddingValues(top = top, bottom = bottom)
-            NavDisplay(
+            // Tabs are peers: switching never slides (emilkowalski/skills animate-expo). Each tab gets its own
+            // NavDisplay, so only pushes inside a tab animate.
+            key(selected) { NavDisplay(
                 backStack = stack,
                 onBack = { stack.removeLastOrNull() },
                 entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator<NavKey>(), rememberViewModelStoreNavEntryDecorator<NavKey>()),
@@ -100,7 +117,15 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     entry<MoreRoute> { More(padding, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect) }
                     entry<WebRoute> { r -> TasksScreen(onOpenPhone = onOpenPhone, startPath = r.path) }
                 },
-            )
+            ) }
+            // Content fades out where it meets the floating bar instead of a hard cut (Apple HIG scroll edge effect).
+            // Inside the backdrop layer, so the glass refracts the fade too.
+            if (onTop) {
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bottom + 8.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Glass.Page.copy(alpha = 0.92f)))),
+                )
+            }
         }
         if (onTop) {
             LiquidBottomTabs(
@@ -131,7 +156,9 @@ private fun Coming(title: String, path: String, padding: PaddingValues, onOpenWe
             Column(Modifier.padding(20.dp)) {
                 Text("The native $title comes next, one feature at a time. Until then it opens on pagel.uz.", style = MaterialTheme.typography.bodyMedium, color = Glass.Ink)
                 Spacer(Modifier.height(14.dp))
-                Button(onClick = { onOpenWeb(path) }, colors = ButtonDefaults.buttonColors(containerColor = Glass.Primary)) { Text("Open $title") }
+                val press = remember { MutableInteractionSource() }
+                Button(onClick = { onOpenWeb(path) }, colors = ButtonDefaults.buttonColors(containerColor = Glass.Primary),
+                    interactionSource = press, modifier = Modifier.pressScale(press)) { Text("Open $title") }
             }
         }
     }

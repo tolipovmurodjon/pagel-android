@@ -41,13 +41,13 @@ object Glass {
 }
 
 private val GlassTypography = Typography(
-    headlineLarge = TextStyle(fontFamily = Glass.Heading, fontWeight = FontWeight.ExtraBold, fontSize = 32.sp, letterSpacing = (-0.96).sp),
-    headlineSmall = TextStyle(fontFamily = Glass.Heading, fontWeight = FontWeight.Bold, fontSize = 22.sp, letterSpacing = (-0.4).sp),
-    titleMedium = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
+    headlineLarge = TextStyle(fontFamily = Glass.Heading, fontWeight = FontWeight.ExtraBold, fontSize = 32.sp, lineHeight = 36.sp, letterSpacing = (-0.96).sp),
+    headlineSmall = TextStyle(fontFamily = Glass.Heading, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.4).sp),
+    titleMedium = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 21.sp),
     bodyLarge = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 22.sp),
     bodyMedium = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp),
-    labelLarge = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Medium, fontSize = 15.sp),
-    labelSmall = TextStyle(fontFamily = Glass.Numbers, fontSize = 12.sp),
+    labelLarge = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Medium, fontSize = 15.sp, lineHeight = 20.sp),
+    labelSmall = TextStyle(fontFamily = Glass.Numbers, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.sp),
 )
 
 private val GlassColors = lightColorScheme(

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -23,6 +24,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -47,8 +55,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import org.pagel.ai.ui.glass.AuroraBackground
+import org.pagel.ai.ui.glass.EaseOutStrong
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.pressScale
 
 @Composable
 fun PairRoute(vm: PairViewModel = hiltViewModel()) {
@@ -62,6 +72,10 @@ fun PairScreen(ui: PairUiState, onCode: (String) -> Unit, onServer: (String) -> 
     var advanced by rememberSaveable { mutableStateOf(false) }
     // The keyboard opens on the code at once: one look at pagel.uz, six digits, done.
     val focus = remember { FocusRequester() }
+    val press = remember { MutableInteractionSource() }
+    // One haptic per outcome, on the same frame as the change it reports (Apple HIG playing haptics).
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(ui.error) { if (ui.error != null) haptics.performHapticFeedback(HapticFeedbackType.Reject) }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     AuroraBackground(Modifier.fillMaxSize()) {
         Column(
@@ -87,9 +101,10 @@ fun PairScreen(ui: PairUiState, onCode: (String) -> Unit, onServer: (String) -> 
                         keyboardActions = KeyboardActions(onDone = { onConnect() }),
                         modifier = Modifier.fillMaxWidth().focusRequester(focus),
                     )
-                    ui.error?.let {
-                        Spacer(Modifier.height(8.dp))
-                        Text(it, color = Glass.Risk, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    // What went wrong and what to do, with a mark as well as the colour (never colour alone).
+                    AnimatedVisibility(ui.error != null, enter = fadeIn(tween(150, easing = EaseOutStrong)), exit = fadeOut(tween(120))) {
+                        Text("⚠  " + (ui.error ?: ""), color = Glass.Risk, style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite })
                     }
                     Spacer(Modifier.height(16.dp))
                     Button(
@@ -97,7 +112,9 @@ fun PairScreen(ui: PairUiState, onCode: (String) -> Unit, onServer: (String) -> 
                         enabled = ui.canConnect,
                         shape = RoundedCornerShape(28.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Glass.Primary),
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        interactionSource = press,
+                        // heightIn, not height: at 2x font the label grows instead of clipping.
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).pressScale(press),
                     ) {
                         if (ui.busy) CircularProgressIndicator(Modifier.height(20.dp), color = Color.White, strokeWidth = 2.dp)
                         else Text("Connect", style = MaterialTheme.typography.labelLarge)

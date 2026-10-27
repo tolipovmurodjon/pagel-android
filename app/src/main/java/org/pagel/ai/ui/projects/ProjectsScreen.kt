@@ -55,6 +55,12 @@ fun ProjectsScreen(ui: ProjectsUiState, contentPadding: PaddingValues, reselect:
                 Box(Modifier.fillMaxWidth().padding(40.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Glass.Primary) }
             }
         }
+        if (!ui.loading && ui.projects.isEmpty()) {
+            item(key = "empty", contentType = "empty") {
+                Text("No projects yet. Add one on pagel.uz and it appears here in a second.", style = MaterialTheme.typography.bodyLarge,
+                    color = Glass.Muted, modifier = Modifier.padding(20.dp))
+            }
+        }
         items(ui.projects, key = { it.name }, contentType = { "project" }) { ProjectRow(it) }
     }
 }
