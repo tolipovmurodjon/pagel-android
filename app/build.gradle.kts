@@ -1,17 +1,16 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
+    // AGP 9 compiles Kotlin itself (built-in Kotlin): no org.jetbrains.kotlin.android plugin.
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.roborazzi)
 }
 
 android {
     namespace = "org.pagel.ai"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "org.pagel.ai"
@@ -66,13 +65,14 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // Robolectric (Compose UI, Room and screenshot tests on the JVM) needs the merged resources.
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_11)
-    }
+// Room writes its schema here so every migration can be tested against the real old shape.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -93,16 +93,27 @@ dependencies {
     // Re-add it only if a screen genuinely needs an icon outside core's set.
     implementation(libs.androidx.compose.ui.text.google.fonts)
 
-    // Navigation
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.hilt.navigation.compose)
+    // Navigation 3 + ViewModels per entry; hiltViewModel() without Navigation 2
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+
+    // Real liquid glass on the chrome (bars, sheets, buttons)
+    implementation(libs.kyant.backdrop)
+    implementation(libs.kyant.shapes)
+    implementation(libs.androidx.compose.ui.util)
 
     // DI
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
-    // Persistence
+    // Persistence: Room is the phone's copy of pagel.uz; DataStore only for small settings
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
     // AnchorWatchdogWorker (service/) — plain CoroutineWorker, so no androidx.hilt:hilt-work and no
     // Configuration.Provider; the default WorkManager initializer is in play.
@@ -135,6 +146,16 @@ dependencies {
     // Local loopback WebSocket server — lets GatewayConnectionSocketTest drive the real handshake
     // over a real socket, without opening one to anything but localhost.
     testImplementation(libs.okhttp.mockwebserver)
+    // Android on the JVM: Room in-memory tests, Compose UI tests, Roborazzi screenshots
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.junit)
+    testImplementation(libs.androidx.room.testing)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
 
     // Instrumented test
     androidTestImplementation(libs.androidx.junit)
