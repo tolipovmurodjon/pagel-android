@@ -41,6 +41,20 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## ✅ 2026-10-27 13:27 UTC · Today screen native, CI green (run 40509697013, c9df153)
+- `ui/today/`: `TodayDeal.kt` (3 at a time; a ticked row keeps its slot until its fold ends; headline + due labels =
+  the web's), `TodayViewModel.kt` (Room only, `finishing` set, tick/undo/acknowledge), `TodayScreen.kt` (Todoist flag
+  rings, ring pop + tick draw, fold after 0.85 s, next task slides in, Undo snackbar 4 s, refused → shown once),
+  `Celebrate.kt` (ding C6→G6 as PCM, 34-bit confetti, reduced-motion respected). Projects moved under More.
+- Proof: build ✅ 235 tests (`TodayDealTest` 5) + Roborazzi `today*.png` (4); smoke ✅ walkthrough 19 steps: tick
+  "Ship the native app" → 4th task dealt (`walk/11-after-fold.png`, "4 tasks today") → `PATCH /api/v1/tasks/t_ci1
+  {"done":true}` reached the fake pagel.uz in ~1 s.
+- First run 40508378443 failed 1 test: my expectation was wrong (the web keeps the full stop: "Call the bank."),
+  checked against `lib/headline.ts` in node before changing the test.
+- Not checked: ding, confetti, haptics and speed on the A05s (Boss's phone; needs a release = his "tag it").
+- Brain: `D:\Brain\rules\native-app-playbook.md` (skills, rules, method, look, checks; Humopedia reuses).
+- NEXT: Glance widget "Today's 3" (skills glance-canonical-layouts + glance-appwidget-updates-and-memory), then Add task fast.
+
 ## START HERE v3 · TODAY UI (saved 2026-10-27 ~17:50 Tashkent, laptop session, context 57 %)
 Boss's last words: "I installed it fully, it's the best ever, I love that liquid glass, real iPhone vibe… native feels
 better" · "keep that style, save a rule for the navbar… Humopedia needs it" · "liquid glass not working on More, it's
