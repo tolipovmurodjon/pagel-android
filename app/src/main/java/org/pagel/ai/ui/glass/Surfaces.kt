@@ -87,7 +87,9 @@ fun Pane(modifier: Modifier = Modifier, radius: Dp = 24.dp, content: @Composable
         Modifier.drawBackdrop(
             backdrop = page,
             shape = { RoundedRectangle(radius) },
-            effects = { vibrancy(); blur(12f.dp.toPx()); lens(10f.dp.toPx(), 18f.dp.toPx()) },
+            // No blur on panes: it changes nothing visible over smooth clouds but costs a full pass per frame (audit #10;
+            // the first frame passed 5 s on CI's software GPU = ANR). Bar and capsules keep their blur.
+            effects = { vibrancy(); lens(10f.dp.toPx(), 18f.dp.toPx()) },
             highlight = { Highlight.Default },
             shadow = { Shadow(alpha = 0.45f) },
             onDrawSurface = {
