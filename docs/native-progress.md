@@ -41,6 +41,28 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v5 · WEB PARITY 1:1 (saved 2026-10-27 ~20:25 Tashkent, context 55 %)
+Boss's last words (on 0.3.15, Add sheet screenshots): "it opened good, but that dialog: liquid, clean · select
+priority with icons, select date with calendar view, and repeat, many more not working · when I click Add task, after
+it's added it is not syncing [to the] laptop · audit, I want the whole thing working, we did only the simple part ·
+make the widget white mint clear liquid glass kind, with aurora · build 1:1 fully [like the] web, faster, better".
+Facts: the add DID reach pagel.uz (t_ydf7aj6tbw "Game Development'dan rocket o'yini tuzish", university, 15:20:02 UTC,
+source pagel-android) → check the laptop page's live refresh (SSE /api/events/stream) shows phone adds without reload.
+Running at save: CI for f437570 (panes without blur, after the c4eae19 launch ANR on CI's software GPU). Green → tag.
+**Next, in order (one push per CI cycle, tag after each green run):**
+1. Add sheet = the web's add-task.tsx 1:1 + glass: transparent ModalBottomSheet over AuroraBackground { Pane(28) },
+   tappable chips that open pickers: priority menu with flag icons P1-P4 (web FLAG colours), date picker with a calendar
+   month view + half-hour time slots (web pickers.tsx DatePicker), repeat picker (web repeat-picker.tsx: daily,
+   weekdays, weekly, monthly, custom days), project picker with search; audit #4 (52 dp capsule field + 44 dp mint
+   send). After Enter: a glass toast "Added · Today" (or "Upcoming, Fri 30 Oct").
+2. Laptop live refresh check (web side) for phone adds; fix if the page needs a reload.
+3. Widget "white mint clear glass with aurora": Glance cannot blur, so a drawable background with the aurora
+   radial gradients (layer-list) + a white 70 % card with a white-to-mint rim; ticks mint.
+4. Audit fixes 5-10 below (pair spinner, press on touch-down, top fade in the mask, toast in the shell, capsule
+   hysteresis, animations).
+5. Web parity list (each one a release): task panel (edit title, date+time, priority, steps, finish line, notes, won't
+   do, delete+undo) on row tap · Upcoming · Habits + reminders · Inbox sorting · voice add + Share → PAGEL.
+
 ## START HERE v4 · DESIGN AUDIT FIXES (saved 2026-10-27 ~20:00 Tashkent)
 Boss's words: "everything liquid glass with our colour theory mint" · "one icon beats many words" · "no Syncing, no
 spinners, skeleton" · "tasks must be mine, fast" · web Habits cards = 8/10 reference · 0.3.14 was 1/10 (flat bar,
