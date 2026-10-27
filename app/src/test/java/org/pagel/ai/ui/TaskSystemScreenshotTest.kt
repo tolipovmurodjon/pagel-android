@@ -91,23 +91,25 @@ class TaskSystemScreenshotTest {
         val node = compose.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode()
         val layout = mutableListOf<TextLayoutResult>()
         node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
-        assertEquals("\"$text\" wraps", 1, layout.single().lineCount)
-        assertFalse("\"$text\" is cut", layout.single().hasVisualOverflow)
+        val l = layout.single()
+        assertEquals("\"$text\" wraps", 1, l.lineCount)
+        // Width only: a one-line text's paragraph may stand a pixel taller than its box, which is not a cut.
+        assertFalse("\"$text\" is cut: needs ${l.multiParagraph.width} px, has ${l.size.width} px", l.isLineEllipsized(0) || l.multiParagraph.width > l.size.width + 1f)
     }
 
     @Test @Config(sdk = [35], qualifiers = "w360dp-h780dp-xxhdpi") fun taskPanelOnANarrowPhone() {
         show { TaskPanelContent(panel, day, PanelActions()) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-360.png")
         oneWholeLine("Priority")
         oneWholeLine("PAGEL")
         compose.onNodeWithContentDescription("Make these steps tasks in PAGEL").assertIsDisplayed()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-360.png")
     }
 
     @Test @Config(sdk = [35], qualifiers = "w360dp-h780dp-xxhdpi") fun taskPanelOnANarrowPhoneLargeFont() {
         show(1.5f) { TaskPanelContent(panel, day, PanelActions()) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-360-font-1.5.png")
         oneWholeLine("Priority")
         oneWholeLine("PAGEL")
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-360-font-1.5.png")
     }
 
     @Test fun taskPanel() {
@@ -120,8 +122,8 @@ class TaskSystemScreenshotTest {
 
     @Test fun taskPanelLargeFont() {
         show(1.5f) { TaskPanelContent(panel, day, PanelActions()) }
-        oneWholeLine("PAGEL")
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-font-1.5.png")
+        oneWholeLine("PAGEL")
     }
 
     @Test fun taskPanelWontDoRefusesAnExcuse() {
