@@ -82,7 +82,6 @@ import org.pagel.ai.ui.glass.ProjectTile
 import org.pagel.ai.ui.glass.Repeat
 import org.pagel.ai.ui.glass.RepeatSheet
 import org.pagel.ai.ui.glass.SheetBottom
-import org.pagel.ai.ui.glass.SkeletonRows
 import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.glass.pressScale
 import java.time.LocalDate
@@ -120,9 +119,10 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
     val vm: TaskPanelViewModel = hiltViewModel(key = "panel-$taskId")
     LaunchedEffect(taskId) { vm.bind(taskId) }
     val ui by vm.ui.collectAsStateWithLifecycle()
-    GlassSheet(onClose) {
+    // Room answers in a few ms: the sheet opens with the task already in it, never with a placeholder that then grows.
+    if (ui.loading) return
+    GlassSheet(onClose, full = true) {
         when {
-            ui.loading -> SkeletonRows(4, Modifier.padding(bottom = SheetBottom))
             ui.project.isEmpty() -> Text("This task is gone from pagel.uz.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(24.dp))
             else -> TaskPanelContent(
                 ui, vm.dayToday(),
@@ -354,7 +354,7 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
                         MaterialTheme.typography.bodyLarge.copy(textDecoration = if (s.done) TextDecoration.LineThrough else null),
                         Modifier.weight(1f), allowBlank = true, color = if (s.done) Glass.Muted else Glass.Ink,
                     ) { edit(i, it) }
-                    GlassIconButton(TabIcons.Close, "Remove step: ${s.text}", tint = Glass.Muted, size = 30.dp) { edit(i, "") }
+                    GlassIconButton(TabIcons.Close, "Remove step: ${s.text}", tint = Glass.Muted, size = 40.dp, plain = true) { edit(i, "") }
                 }
             }
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 13.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {

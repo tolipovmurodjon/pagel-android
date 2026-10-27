@@ -64,6 +64,8 @@ grep -q "Process: $PKG, PID" "$OUT/logcat-relaunch.txt" && fail "crash after rel
 echo "== pair with a code against the fake pagel.uz"
 python3 .github/scripts/fake-pagel.py 8799 "$OUT/fake-pagel.log" &
 FAKE=$!
+# A failed step must not leave the fake server running: it kept run 40546542662's job open 35 min after the failure.
+trap 'kill $FAKE 2>/dev/null' EXIT
 sleep 1
 $T adb reverse tcp:8799 tcp:8799
 $T adb shell am force-stop "$PKG"

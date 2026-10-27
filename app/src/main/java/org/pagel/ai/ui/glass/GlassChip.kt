@@ -78,9 +78,12 @@ fun GlassChip(
     }
 }
 
-/** A round glass icon button, 40 dp drawn inside a 44 dp touch target, named for TalkBack. */
+/**
+ * A round glass icon button, drawn inside a touch target 4 dp larger, named for TalkBack. [plain] drops the glass disc
+ * for quiet repeated controls (a step's remove) so a list does not fill with circles.
+ */
 @Composable
-fun GlassIconButton(icon: ImageVector, description: String, modifier: Modifier = Modifier, tint: Color = Glass.Ink.copy(alpha = 0.78f), on: Boolean = false, size: Dp = 40.dp, onClick: () -> Unit) {
+fun GlassIconButton(icon: ImageVector, description: String, modifier: Modifier = Modifier, tint: Color = Glass.Ink.copy(alpha = 0.78f), on: Boolean = false, size: Dp = 40.dp, plain: Boolean = false, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Box(
         modifier
@@ -90,10 +93,10 @@ fun GlassIconButton(icon: ImageVector, description: String, modifier: Modifier =
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier.size(size).background(if (on) Glass.PrimarySoft else Color.White.copy(alpha = 0.72f), CircleShape).border(1.dp, if (on) SolidColor(Glass.Primary.copy(alpha = 0.35f)) else ChipRim, CircleShape),
-            contentAlignment = Alignment.Center,
-        ) { Icon(icon, contentDescription = null, tint = if (on) Glass.Primary else tint, modifier = Modifier.size(19.dp)) }
+        val disc = if (plain) Modifier else Modifier.background(if (on) Glass.PrimarySoft else Color.White.copy(alpha = 0.72f), CircleShape).border(1.dp, if (on) SolidColor(Glass.Primary.copy(alpha = 0.35f)) else ChipRim, CircleShape)
+        Box(Modifier.size(size).then(disc), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = if (on) Glass.Primary else tint, modifier = Modifier.size(if (plain) 16.dp else 19.dp))
+        }
     }
 }
 

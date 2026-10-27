@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -34,7 +35,7 @@ private val SheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GlassSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun GlassSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, full: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     val toasts = LocalToasts.current
     // This sheet's place in the stack: only the top sheet draws the toast.
     val level = remember { toasts.sheets + 1 }
@@ -54,8 +55,10 @@ fun GlassSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, content: @C
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
         Box(Modifier.fillMaxWidth().statusBarsPadding()) {
-            AuroraBackground(Modifier.fillMaxWidth().clip(SheetShape)) {
-                Column(modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
+            // [full]: the sheet takes the whole height from its first frame. Material's sheet keeps the height it opened
+            // with when its content grows later (CI 40546542662: the task panel stayed half open, Priority off screen).
+            AuroraBackground(Modifier.fillMaxWidth().then(if (full) Modifier.fillMaxHeight() else Modifier).clip(SheetShape)) {
+                Column(modifier.fillMaxWidth().then(if (full) Modifier.fillMaxHeight() else Modifier).navigationBarsPadding().imePadding()) {
                     Handle()
                     content()
                 }

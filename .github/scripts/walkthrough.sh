@@ -37,6 +37,7 @@ log "== critic walkthrough"
 $T adb shell dumpsys gfxinfo "$PKG" reset > /dev/null
 $T adb shell screenrecord --time-limit 179 /sdcard/walk.mp4 &
 REC=$!
+trap 'kill -INT $REC 2>/dev/null' EXIT
 sleep 1
 
 shot home
