@@ -40,7 +40,8 @@ class TodayDealTest {
     }
 
     @Test fun headlineIsTheFirstSentenceLikeTheWeb() {
-        assertEquals("Call the bank", headline("Call the bank. They close at 5."))
+        // The web keeps the sentence's own full stop (checked against lib/headline.ts in node, 2026-10-27).
+        assertEquals("Call the bank.", headline("Call the bank. They close at 5."))
         assertEquals("Read the paper", headline("Read the [[library/all/karpathy-explain-ladder|paper]] → notes"))
         assertEquals("Fix the bar", headline("**Fix** the bar (Boss said so)"))
         val long = "x".repeat(120)
