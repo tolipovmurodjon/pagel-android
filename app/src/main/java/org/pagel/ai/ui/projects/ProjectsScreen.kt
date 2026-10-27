@@ -30,6 +30,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.pagel.ai.data.db.ProjectEntity
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.ProjectTile
+import org.pagel.ai.ui.glass.Pane
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import org.pagel.ai.ui.glass.SkeletonRows
 
 @Composable
@@ -62,17 +66,28 @@ fun ProjectsScreen(ui: ProjectsUiState, contentPadding: PaddingValues, reselect:
                     color = Glass.Muted, modifier = Modifier.padding(20.dp))
             }
         }
-        items(ui.projects, key = { it.name }, contentType = { "project" }) { ProjectRow(it) }
+        // One glass card with thin dividers, like the web's Habits card (Boss 8/10); ~17 rows, so one pane is cheap.
+        if (ui.projects.isNotEmpty()) item(key = "list", contentType = "list") {
+            Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    ui.projects.forEachIndexed { i, p ->
+                        if (i > 0) HorizontalDivider(Modifier.padding(start = 70.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
+                        ProjectRow(p)
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun ProjectRow(p: ProjectEntity) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         ProjectTile(p.name, p.color, p.title)
         Spacer(Modifier.width(14.dp))
         Text(shortName(p.name, p.title), style = MaterialTheme.typography.titleMedium, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Text(p.openCount.toString(), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+        Text(p.openCount.toString(), style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk,
+            modifier = Modifier.background(Glass.PrimarySoft, RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
     }
 }
 

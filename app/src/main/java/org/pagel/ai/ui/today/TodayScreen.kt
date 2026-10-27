@@ -165,12 +165,15 @@ fun TodayScreen(
                 else -> item(key = "list", contentType = "list") {
                     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                         Column(Modifier.padding(vertical = 6.dp)) {
-                            for (row in ui.rows) key(row.id) {
+                            for ((i, row) in ui.rows.withIndex()) key(row.id) {
+                                if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
                                 TaskRow(row, today, isNew = seen.isNotEmpty() && row.id !in seen, reduce = reduce) { centre -> finish(row, centre) }
                             }
                             if (ui.waiting > 0) {
-                                Text("${ui.waiting} more after these. The next one comes when you finish one.", style = MaterialTheme.typography.bodyMedium,
-                                    color = Glass.Muted, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 10.dp))
+                                // "+2" waiting: one capsule, not a sentence (Boss: one icon beats many words).
+                                Text("+${ui.waiting}", style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk,
+                                    modifier = Modifier.padding(start = 54.dp, top = 4.dp, bottom = 10.dp).background(Glass.PrimarySoft, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(horizontal = 9.dp, vertical = 3.dp)
+                                        .semantics { contentDescription = "${ui.waiting} more after these" })
                             }
                         }
                     }
@@ -187,12 +190,11 @@ fun TodayScreen(
 @Composable
 private fun Header(ui: TodayUiState, today: LocalDate) {
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
-        Text(today.format(HEAD_DATE), style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+        Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Today", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         val count = when {
-            ui.open == 0 -> "Nothing open"
-            ui.open > SHOWN_AT_ONCE -> "${ui.open} tasks today, $SHOWN_AT_ONCE at a time"
-            else -> "${ui.open} ${if (ui.open == 1) "task" else "tasks"} today"
+            ui.open == 0 -> "0 today"
+            else -> "${ui.open} today"
         }
         Text(if (ui.status.isEmpty()) count else "$count · ${ui.status}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
     }
@@ -242,7 +244,8 @@ private fun TaskRow(row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boo
 
 @Composable
 private fun Meta(row: TodayRow, today: LocalDate) {
-    val small = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 16.sp)
+    // The web Habits card's meta line: mono, 12.5 sp (Boss 8/10).
+    val small = MaterialTheme.typography.labelSmall.copy(fontSize = 12.5.sp, lineHeight = 16.sp)
     Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         dueLabel(row.due, today)?.let { d ->
             val c = when (d.tone) { DueTone.LATE -> Glass.Risk; DueTone.TODAY -> Glass.Primary; else -> Glass.Muted }
