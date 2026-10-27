@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark framework NoActionBar base (exists since API 21). Compose draws the Material3 UI;
-         this only sets a black window so there is no white flash before the first frame.
-         (DayNight lives in AppCompat/Material-Components, NOT the android: namespace — avoid it.) -->
-    <style name="Theme.Pagel" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@android:color/black</item>
+    <!-- Light framework NoActionBar base (exists since API 21). Compose draws the UI; the window is the web's page
+         colour, so the very first frame before Compose is the same near-white as the app (2026-10-27: the black
+         window was one of the "white/black screen at launch" reports). -->
+    <style name="Theme.Pagel" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/pagel_page</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>

@@ -73,7 +73,6 @@ import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-private const val HOME = "https://pagel.uz/today"
 private const val HOST = "pagel.uz"
 private val Paper = Color(0xFFF4FBF8)
 private val Mint = Color(0xFF1C7E69)
@@ -86,7 +85,7 @@ private val Ink = Color(0xFF0B2A22)
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun TasksScreen(onOpenPhone: () -> Unit) {
+fun TasksScreen(onOpenPhone: () -> Unit, startPath: String = "/today") {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // Opened on IO before the page starts, so the first password ask already knows the saved one.
@@ -171,7 +170,7 @@ fun TasksScreen(onOpenPhone: () -> Unit) {
                     return try { picker.launch(params.createIntent()); true } catch (e: ActivityNotFoundException) { pickFiles = null; false }
                 }
             }
-            loadUrl(HOME)
+            loadUrl("https://$HOST$startPath")
         } }.getOrNull()
         webBroken = web == null
     }

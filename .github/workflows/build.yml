@@ -21,8 +21,19 @@ jobs:
           distribution: zulu
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - name: Unit tests and debug build
-        run: ./gradlew testDebugUnitTest assembleDebug
+      # roborazzi.test.record: the screenshot tests save their PNGs (app/build/outputs/roborazzi) for the artifact.
+      - name: Unit tests, screenshot tests and debug build
+        run: ./gradlew testDebugUnitTest assembleDebug -Proborazzi.test.record=true
+      - name: Keep the screenshots and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-and-reports
+          path: |
+            app/build/outputs/roborazzi/
+            app/build/reports/tests/
+            app/build/test-results/
+          retention-days: 7
       - name: Keep the debug APK
         uses: actions/upload-artifact@v4
         with:

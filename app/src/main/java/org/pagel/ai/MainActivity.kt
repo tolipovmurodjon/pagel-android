@@ -27,17 +27,21 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.pagel.ai.data.session.Session
 import org.pagel.ai.service.AnchorService
 import org.pagel.ai.ui.gateway.GatewayDebugScreen
 import org.pagel.ai.ui.home.HomeScreen
 import org.pagel.ai.ui.hud.BootScreen
-import org.pagel.ai.ui.tasks.TasksScreen
+import org.pagel.ai.ui.shell.AppShell
 import org.pagel.ai.ui.theme.PagelTheme
 import org.pagel.ai.update.Updater
 import timber.log.Timber
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var session: Session
 
     private val notifPerm =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -45,6 +49,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // The glass bar draws under the navigation bar; Android must not paint its own scrim over it.
+        window.isNavigationBarContrastEnforced = false
         ensureNotifPermission()
         ContextCompat.startForegroundService(this, Intent(this, AnchorService::class.java))
         handle(intent)
@@ -55,6 +61,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // Live sync only while PAGEL is on screen: the process itself runs all day for the gateway.
+    override fun onStart() {
+        super.onStart()
+        session.resume()
+    }
+
+    override fun onStop() {
+        session.pause()
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -95,8 +112,8 @@ class MainActivity : ComponentActivity() {
 }
 
 /**
- * Tasks first (Boss 2026-10-27): the app opens straight into pagel.uz with no splash wait. The phone screen
- * (gateway, senses, updates) opens on top from More → Phone, and Back returns to the tasks, which stay loaded.
+ * The native shell first (NATIVE-PLAN Phase 1): pair once, then the glass tabs. The phone screen (gateway, senses,
+ * updates) opens on top from More → Phone, and Back returns to the tabs, which stay loaded.
  */
 private const val EXTRA_TEST_CRASH = "pagel.test_crash"
 
@@ -111,7 +128,7 @@ private fun PagelRoot() {
     }
     androidx.activity.compose.BackHandler(enabled = showPhone) { if (showGateway) showGateway = false else showPhone = false }
     Box(Modifier.fillMaxSize()) {
-        TasksScreen(onOpenPhone = { showPhone = true })
+        AppShell(onOpenPhone = { showPhone = true })
         if (showPhone) {
             // The original boot screen greets the Phone screen for a moment, then its settings and connection.
             var booting by remember { mutableStateOf(true) }
