@@ -93,8 +93,10 @@ class TaskSystemScreenshotTest {
         node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
         val l = layout.single()
         assertEquals("\"$text\" wraps", 1, l.lineCount)
-        // Width only: a one-line text's paragraph may stand a pixel taller than its box, which is not a cut.
-        assertFalse("\"$text\" is cut: needs ${l.multiParagraph.width} px, has ${l.size.width} px", l.isLineEllipsized(0) || l.multiParagraph.width > l.size.width + 1f)
+        // The drawn line's own width against its box (a no-wrap paragraph is laid out as wide as it is allowed, so
+        // its width says nothing; hasVisualOverflow also counts a pixel of height).
+        val needs = l.getLineRight(0) - l.getLineLeft(0)
+        assertFalse("\"$text\" is cut: needs $needs px, has ${l.size.width} px", l.isLineEllipsized(0) || needs > l.size.width + 1f)
     }
 
     @Test @Config(sdk = [35], qualifiers = "w360dp-h780dp-xxhdpi") fun taskPanelOnANarrowPhone() {
