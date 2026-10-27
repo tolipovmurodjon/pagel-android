@@ -85,6 +85,7 @@ class InboxScreenshotTest {
         }
     }
 
+    @Composable
     private fun screen(u: InboxUi, peek: Offset = Offset.Zero) =
         InboxScreen(u, leaving = null, pictures = mapOf(ig.file to picture), contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp), peek = peek)
 
