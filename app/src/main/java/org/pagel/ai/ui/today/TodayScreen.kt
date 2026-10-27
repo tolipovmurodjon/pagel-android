@@ -246,6 +246,8 @@ private fun Meta(row: TodayRow, today: LocalDate) {
     Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         dueLabel(row.due, today)?.let { d ->
             val c = when (d.tone) { DueTone.LATE -> Glass.Risk; DueTone.TODAY -> Glass.Primary; else -> Glass.Muted }
+            androidx.compose.material3.Icon(TabIcons.Calendar, contentDescription = null, tint = c, modifier = Modifier.size(13.dp))
+            Spacer(Modifier.width(4.dp))
             Text(d.text, style = small, color = c)
             Spacer(Modifier.width(10.dp))
         }
@@ -308,13 +310,8 @@ private fun TickRing(priority: Int, done: Boolean, title: String, onTick: (Offse
 @Composable
 private fun Toast(data: androidx.compose.material3.SnackbarData) {
     val bad = data.visuals.message.startsWith("Not saved")
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp)
-    Row(
-        Modifier.fillMaxWidth()
-            .shadow(14.dp, shape, ambientColor = Glass.Ink.copy(alpha = 0.12f), spotColor = Glass.Ink.copy(alpha = 0.18f))
-            .background(Color.White.copy(alpha = 0.96f), shape)
-            .background(Glass.PaneTint, shape)
-            .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+    Pane(Modifier.fillMaxWidth(), radius = 22.dp) { Row(
+        Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         androidx.compose.material3.Icon(TabIcons.Done, contentDescription = null, tint = if (bad) Glass.Risk else Glass.Primary, modifier = Modifier.size(20.dp))
@@ -332,5 +329,6 @@ private fun Toast(data: androidx.compose.material3.SnackbarData) {
                 Text(label, style = MaterialTheme.typography.labelLarge, color = Glass.Primary)
             }
         }
+    }
     }
 }

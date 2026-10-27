@@ -9,6 +9,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.kyant.shapes.RoundedRectangle
+import com.kyant.backdrop.shadow.Shadow
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.Backdrop
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,12 +42,18 @@ import androidx.compose.ui.unit.dp
  * The page behind everything: near-white lit by soft mint light from the corners, as the web's body background
  * (four radial gradients). Drawn once per size change in the draw phase, so it costs nothing while scrolling.
  */
+/** The page's colour clouds, captured on their own layer so glass panes can bend them (a pane never bends itself). */
+val LocalPageBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
 @Composable
 fun AuroraBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    Box(
-        modifier
-            .background(Glass.Page)
-            .drawBehind {
+    val page = rememberLayerBackdrop()
+    Box(modifier) {
+        Box(
+            Modifier.matchParentSize()
+                .layerBackdrop(page)
+                .background(Glass.Page)
+                .drawBehind {
                 fun glow(x: Float, y: Float, r: Float, c: Color) = drawRect(
                     Brush.radialGradient(listOf(c, Color.Transparent), center = Offset(size.width * x, size.height * y), radius = size.maxDimension * r),
                 )
@@ -44,23 +63,40 @@ fun AuroraBackground(modifier: Modifier = Modifier, content: @Composable BoxScop
                 // (colour theory #5: 3-4 clouds of different hues; the bottom-left one turns to teal).
                 glow(0.96f, 0.96f, 0.42f, Glass.Aurora1.copy(alpha = 0.52f))
                 glow(0.10f, 0.98f, 0.34f, Color(0xFF2BB5A8).copy(alpha = 0.40f))
-            },
-        content = content,
-    )
+                },
+        )
+        val scope = this
+        CompositionLocalProvider(LocalPageBackdrop provides page) { scope.content() }
+    }
 }
 
-/** A list pane: tinted, a soft shadow, no blur (glass is for chrome; lists stay ink on near-white for contrast). */
+/**
+ * Every pane is liquid glass (Boss 2026-10-27: "everything liquid glass, our colour theory mint"): it bends the page's
+ * mint clouds, carries the web card Boss scored 8/10 (a mint glow in the top-left corner, a white-to-mint rim), and
+ * keeps text ink-dark on a light surface (contrast ≥ 4.5:1). Off a glass page (tests, previews) it falls back to a pane.
+ */
 @Composable
-fun Pane(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    val shape = RoundedCornerShape(24.dp)
-    Box(
-        modifier
-            .shadow(18.dp, shape, ambientColor = Glass.Ink.copy(alpha = 0.10f), spotColor = Glass.Ink.copy(alpha = 0.16f))
-            .clip(shape)
-            .background(Color.White.copy(alpha = 0.78f))
-            .background(Glass.PaneTint),
-        content = content,
-    )
+fun Pane(modifier: Modifier = Modifier, radius: Dp = 24.dp, content: @Composable BoxScope.() -> Unit) {
+    val page = LocalPageBackdrop.current
+    val shape = RoundedCornerShape(radius)
+    val rim = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.55f)))
+    val surface = if (page == null) {
+        Modifier.shadow(18.dp, shape, ambientColor = Glass.Ink.copy(alpha = 0.10f), spotColor = Glass.Ink.copy(alpha = 0.16f))
+            .clip(shape).background(Color.White.copy(alpha = 0.78f)).background(Glass.PaneTint)
+    } else {
+        Modifier.drawBackdrop(
+            backdrop = page,
+            shape = { RoundedRectangle(radius) },
+            effects = { vibrancy(); blur(12f.dp.toPx()); lens(10f.dp.toPx(), 18f.dp.toPx()) },
+            highlight = { Highlight.Default },
+            shadow = { Shadow(alpha = 0.45f) },
+            onDrawSurface = {
+                drawRect(Color.White.copy(alpha = 0.62f))
+                drawRect(Brush.radialGradient(listOf(Glass.Aurora1.copy(alpha = 0.30f), Color.Transparent), center = Offset.Zero, radius = size.minDimension * 0.9f))
+            },
+        )
+    }
+    Box(modifier.then(surface).border(1.dp, rim, shape), content = content)
 }
 
 /**
