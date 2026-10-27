@@ -41,6 +41,25 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v2 · PHASE 2 (saved 2026-10-27 ~12:05 UTC)
+Boss's last words: "Phase 2, use it yourself on server if possible like real critiq and improve ui ux."
+State: Phases 0-1 green on feat/native-app (runs 40496280942, 40497908540; 56143b5). Boss has NOT said "tag it" yet,
+so no release; never tag app-v* or merge main without his word.
+The server cannot run an emulator (no /dev/kvm, 2 ARM cores, lexion lives there) → "use it myself" = the CI emulator.
+Order:
+1. **Critic rig first** (before features): `.github/scripts/walkthrough.sh` in the smoke job: pair against
+   fake-pagel.py, then like a person: open each tab, scroll Today, tick a task, back, re-tap a tab, rotate, font 1.5×
+   (`settings put system font_scale 1.5`), dark status check; `adb shell screenrecord --time-limit 60` + a screencap per
+   step → artifact `walkthrough`. Read every frame against the web at 390 px (`D:\.tmp\shots` / pagel.uz) and the
+   Apple-design audit above; write findings as a table in this file; fix; loop (max 3 rounds per feature).
+2. **The freeze**: one run froze the main thread 12.9 s right after pairing. Catch it with
+   `adb shell kill -3 <pid>` + `adb pull /data/anr/` (works without root) or a Perfetto trace; fix the cause.
+3. **Phase 2 = Today + tick** (NATIVE-PLAN table row 2): server: the web's Today order (`lib/views.ts` todayView /
+   dealOrder: 3 at a time, overdue, project next step) exposed via `/api/v1/today` (exists) → Room `today` order or
+   computed on the phone; tick = Room first (< 50 ms), outbox + WorkManager push with backoff, 4xx rolls back with a
+   toast; ding + confetti + fold like `src/app/today/celebrate.ts`; haptic Confirm; Glance widget "Today's 3" after.
+   Deploys of server changes: worktree build → Boss's yes → live build + restart in one step (CLAUDE.md §4 rule, PR #5).
+
 ### ✅ 2026-10-27 11:40 UTC: `build` workflow green on feat/native-app (run 40496280942, 3aaef46)
 build ✅ (219/219 tests + 5 screenshots) · smoke ✅: alive 30 s, forced crash written, relaunch, **paired with a 6-digit
 code against the fake pagel.uz → "Projects · 148 open tasks · Live" on the glass shell** (`smoke-evidence/paired-projects.png`),
