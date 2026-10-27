@@ -70,7 +70,21 @@ private fun ProjectRow(p: ProjectEntity) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         ProjectTile(p.name, p.color, p.title)
         Spacer(Modifier.width(14.dp))
-        Text(p.title, style = MaterialTheme.typography.titleMedium, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(shortName(p.name, p.title), style = MaterialTheme.typography.titleMedium, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Text(p.openCount.toString(), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
     }
 }
+
+/**
+ * The name the web shows ("ABABIL", not "ABABIL — first-aid delivery drone plan"): a known project's label, else the
+ * plan title cut at its dash or colon, without a trailing "plan".
+ */
+internal fun shortName(name: String, title: String): String = LABELS[name] ?: title
+    .substringBefore(" — ").substringBefore(": ").removeSuffix(" plan").removeSuffix(" Plan").trim()
+    .replaceFirstChar { it.uppercase() }.ifEmpty { name }
+
+private val LABELS = mapOf(
+    "humopedia" to "Humopedia", "ababil" to "ABABIL", "pagel" to "PAGEL", "uzcosmos" to "UzCosmos", "me" to "Me",
+    "university" to "University", "gamedev" to "Game dev", "games" to "Games", "samarqand" to "Samarqand", "labs" to "Labs",
+    "motion" to "Motion", "muhub" to "MuHub", "ovoz" to "Ovoz", "brilliant" to "Brilliant", "autonomy" to "Autonomy", "design" to "Design",
+)

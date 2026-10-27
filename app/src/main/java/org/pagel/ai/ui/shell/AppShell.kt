@@ -34,7 +34,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -105,6 +109,19 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             val padding = PaddingValues(top = top, bottom = bottom)
             // Tabs are peers: switching never slides (emilkowalski/skills animate-expo). Each tab gets its own
             // NavDisplay, so only pushes inside a tab animate.
+            // Scroll edge (Apple HIG): the CONTENT fades to 35 % where it meets the bar, as an alpha mask. It used to be
+            // a page-coloured strip painted on top, which put near-white under the glass on every screen, so the bar
+            // had nothing to bend and looked flat (Boss 2026-10-27: "liquid glass not working on More, it's simple").
+            val fadeTop = bottom + 8.dp
+            Box(
+                Modifier.fillMaxSize()
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithCache {
+                        val start = (size.height - fadeTop.toPx()).coerceAtLeast(0f)
+                        val mask = Brush.verticalGradient(0f to Color.Black, (start / size.height) to Color.Black, 1f to Color.Black.copy(alpha = 0.35f))
+                        onDrawWithContent { drawContent(); if (onTop) drawRect(mask, blendMode = BlendMode.DstIn) }
+                    },
+            ) {
             key(selected) { NavDisplay(
                 backStack = stack,
                 onBack = { stack.removeLastOrNull() },
@@ -118,13 +135,6 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     entry<WebRoute> { r -> TasksScreen(onOpenPhone = onOpenPhone, startPath = r.path) }
                 },
             ) }
-            // Content fades out where it meets the floating bar instead of a hard cut (Apple HIG scroll edge effect).
-            // Inside the backdrop layer, so the glass refracts the fade too.
-            if (onTop) {
-                Box(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(bottom + 8.dp)
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Glass.Page.copy(alpha = 0.92f)))),
-                )
             }
         }
         if (onTop) {

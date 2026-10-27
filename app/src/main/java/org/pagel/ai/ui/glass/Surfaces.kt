@@ -16,10 +16,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /**
  * The page behind everything: near-white lit by soft mint light from the corners, as the web's body background
@@ -36,8 +34,10 @@ fun AuroraBackground(modifier: Modifier = Modifier, content: @Composable BoxScop
                 )
                 glow(0.06f, 0.04f, 0.34f, Color(0xFF3DC98C).copy(alpha = 0.20f))
                 glow(0.92f, 0.06f, 0.30f, Glass.Aurora2.copy(alpha = 0.45f))
-                glow(0.96f, 0.96f, 0.34f, Glass.Aurora1.copy(alpha = 0.24f))
-                glow(0.16f, 0.94f, 0.16f, Color(0xFF23A06C).copy(alpha = 0.10f))
+                // The two bottom clouds sit under the glass bar: it always has colour to bend, on every screen
+                // (colour theory #5: 3-4 clouds of different hues; the bottom-left one turns to teal).
+                glow(0.96f, 0.96f, 0.38f, Glass.Aurora1.copy(alpha = 0.34f))
+                glow(0.10f, 0.98f, 0.30f, Color(0xFF2BB5A8).copy(alpha = 0.24f))
             },
         content = content,
     )
@@ -57,7 +57,7 @@ fun Pane(modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit
     )
 }
 
-/** A project's lit gradient tile (brain rules/gradient-project-icons), with its first letter until icons arrive. */
+/** A project's lit gradient tile with its white line icon (brain rules/gradient-project-icons, colour theory #19). */
 @Composable
 fun ProjectTile(project: String, color: String?, title: String, size: Dp = 36.dp) {
     val (a, b) = TileColors.stops(project, color)
@@ -69,6 +69,6 @@ fun ProjectTile(project: String, color: String?, title: String, size: Dp = 36.dp
             .clearAndSetSemantics {},
         contentAlignment = Alignment.Center,
     ) {
-        Text(title.take(1).uppercase(), color = Color.White, fontFamily = Glass.Heading, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.44f).sp)
+        androidx.compose.material3.Icon(TabIcons.forProject(project), contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.6f))
     }
 }
