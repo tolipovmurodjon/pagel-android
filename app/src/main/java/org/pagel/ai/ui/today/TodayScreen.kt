@@ -210,8 +210,8 @@ private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = 
         Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Today", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         val count = when {
-            ui.open == 0 -> "0 today"
-            else -> "${ui.open} today"
+            // The same "left" as the bar beside the tasks (one number, one meaning).
+            else -> "${ui.open} left today"
         }
         // Only "Offline" is worth a word (PHASE-BRIEF: no "Syncing"); the waiting chip already says what waits.
         Text(if (ui.status != "Offline") count else "$count · Offline", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
@@ -258,7 +258,7 @@ internal fun DayProgressBar(p: DayProgress, nudge: String?, modifier: Modifier =
             Spacer(Modifier.width(10.dp))
             // slot: tabular figures in a fixed least width, so "9 of 10 ✓" and "1 of 6 ✓" never change the bar's length (#22).
             Text(p.text, style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"), color = Glass.PrimaryInk, maxLines = 1, softWrap = false,
-                textAlign = TextAlign.End, modifier = Modifier.widthIn(min = 64.dp))
+                textAlign = TextAlign.End, modifier = Modifier.widthIn(min = 128.dp))
         }
         // slot: the nudge's line is always laid out (empty and clear when there is none), so the tasks under it never
         // drop 22 dp after a tick and rise 8 s later (spacing audit #4).

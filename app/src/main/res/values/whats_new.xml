@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  "What's new" (Boss 2026-10-28: never feel lost when testing an update). Update every round: one line per thing to
+  try, "words|where" (where = today, upcoming, habits, notifications, shutdown, more). The sheet opens once after an
+  update; More → What's new opens it again.
+-->
+<resources>
+    <string name="whats_new_title">Round C: calendar + notifications</string>
+    <string-array name="whats_new_items">
+        <item>Calendar: switch List · Day · 3 days · Week · Month|upcoming</item>
+        <item>Swipe the week strip left for next week, "Today" to come back|upcoming</item>
+        <item>Hold a block in Day or Week and drag it to a new time|upcoming</item>
+        <item>Notifications: pick your tone (chill · normal · no mercy) and the morning plan|notifications</item>
+        <item>Open a task with a time: "Also 10 min before"|today</item>
+        <item>Clear your last task from anywhere: the big confetti + chord|today</item>
+        <item>Habits: the week dots sit under the title; long-press a done habit to undo|habits</item>
+        <item>Close the day: the cards no longer jump between stars|shutdown</item>
+    </string-array>
+</resources>

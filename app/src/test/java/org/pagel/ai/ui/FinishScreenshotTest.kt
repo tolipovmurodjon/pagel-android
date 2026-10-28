@@ -76,7 +76,7 @@ class FinishScreenshotTest {
 
     @Test fun theProgressBarWithTheNextTasksNudge() {
         show { Column(Modifier.padding(top = 24.dp)) { DayProgressBar(DayProgress(3, 2), "Next: Call the bank about the report · 10 min?", Modifier.padding(horizontal = 20.dp)) } }
-        compose.onNodeWithText("3 of 5 ✓").assertIsDisplayed()
+        compose.onNodeWithText("3 done · 2 left").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-progress-nudge-360x800.png")
     }
 

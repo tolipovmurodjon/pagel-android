@@ -69,6 +69,15 @@ tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test agai
   Copy: `res/values/notify_copy.xml` (60 lines, 3 tones), `NotifyCopy.pick` never repeats within 7 days (test).
   More → Notifications: tone, morning time (wheel), evening nudge, channel rows; permission asked there or at the
   panel's toggle, never at launch.
+- **Boss note (0.3.26: the latest update "ruined" the top):** (1) the status bar showed a page-coloured band
+  (`TopFade`): gone; the content now melts by an alpha mask (`Modifier.edgeFade`, top + the old bottom fade), the
+  aurora runs from the top pixel. (2) Sheets: the scrim only behind a half sheet; a full sheet runs edge to edge;
+  the sheet's dialog window gets transparent bars, no nav-bar contrast scrim, dark icons (`SheetSystemBars`).
+  (3) RULES.md "Layout" 4 + pixel asserts (`theContentMeltsUnderTheStatusBarAndTheAuroraShows`,
+  `theFullTaskPanelRunsEdgeToEdge`, `aHalfSheetEndsOnTheAuroraNotABand`). (4) "12 of 13" is now "12 done · 1 left"
+  and the header says "1 left today" (one number, one meaning). (5) "What's new" sheet once after an update
+  (`res/values/whats_new.xml`, update it every round; More → What's new), each line opens its screen and ticks.
+  Note: Robolectric draws no system bars, so the sheet asserts prove our window reaches both edges, not the OEM bar.
 - **Not done (why):** no walk step drags a calendar block on the emulator (the drag is proven by
   `aBlockDraggedAnHourDownMovesItsTime` on Robolectric; adb motion events over a pager + scroll were not risked in
   this round); the walk asserts TASK_FIRE/MORNING_FIRE counts, not one alarm per range (dumpsys shows actions, not

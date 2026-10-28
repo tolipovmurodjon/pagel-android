@@ -360,7 +360,8 @@ log "-- Round C calendar: swipe the strip to next week, Today comes back, a day 
 P=$(centre_desc "$TOMORROW_SPOKEN") || exit 1; set -- $P
 # The emulator's own width (a 320 dp screen here): from the strip's right edge to its left, in 400 ms.
 W=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f1)
-$T adb shell input swipe "$(( W - 12 ))" "$2" 12 "$2" 400; shot calendar-next-week 1.5
+# Never from the very edge: gesture navigation takes an edge swipe as Back (CI 40737393541 started at W - 12).
+$T adb shell input swipe "$(( W * 85 / 100 ))" "$2" "$(( W * 12 / 100 ))" "$2" 350; shot calendar-next-week 1.5
 NEXTWEEK_SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date -d '+7 days' '+%A %-d %B')
 grep -qF "content-desc=\"$NEXTWEEK_SPOKEN" "$OUT/$(printf '%02d' $N)-calendar-next-week.xml" || { log "WALKTHROUGH: the strip did not page to next week ($NEXTWEEK_SPOKEN)"; exit 1; }
 tap "Back to today" && shot calendar-back-to-today 1.5

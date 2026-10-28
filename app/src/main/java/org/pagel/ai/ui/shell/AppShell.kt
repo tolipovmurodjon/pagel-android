@@ -99,6 +99,7 @@ import org.pagel.ai.ui.glass.LiquidBottomTab
 import org.pagel.ai.ui.glass.LiquidBottomTabs
 import org.pagel.ai.ui.glass.Pane
 import org.pagel.ai.ui.glass.Space
+import org.pagel.ai.ui.glass.edgeFade
 import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.pair.PairRoute
@@ -215,6 +216,23 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         OpenRequests.pending.value = null
     }
 
+    // "What's new" once after an update (never on a fresh install); More → What's new opens it again.
+    var whatsNew by rememberSaveable { mutableStateOf(false) }
+    val appCtx = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    LaunchedEffect(Unit) { if (kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { WhatsNewPrefs.showOnce(appCtx) }) whatsNew = true }
+    fun openWhere(where: String) {
+        whatsNew = false
+        val more = Tab.entries.indexOf(Tab.More)
+        when (where) {
+            "upcoming" -> { selected = more; stacks[more].add(UpcomingListRoute) }
+            "notifications" -> { selected = more; stacks[more].add(NotificationsRoute) }
+            "habits" -> selected = Tab.entries.indexOf(Tab.Habits)
+            "shutdown" -> { goToday(); stacks[0].add(ShutdownRoute) }
+            "more" -> selected = more
+            else -> goToday()
+        }
+    }
+
     // Back leaves a tab's own stack first, then returns to Today, then leaves the app (RULES.md, navigation).
     BackHandler(enabled = selected != 0 && stack.size == 1) { selected = 0 }
 
@@ -240,12 +258,10 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 Modifier.fillMaxSize()
                     .nestedScroll(scrollWatch)
                     // No full-screen offscreen layer in a cold start's first frame (GlassStage).
-                    .then(if (!GlassStage.on) Modifier else Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .drawWithCache {
-                        val start = (size.height - fadeTop.toPx()).coerceAtLeast(0f)
-                        val mask = Brush.verticalGradient(0f to Color.Black, (start / size.height) to Color.Black, 1f to Color.Black.copy(alpha = 0.35f))
-                        onDrawWithContent { drawContent(); if (onTop) drawRect(mask, blendMode = BlendMode.DstIn) }
-                    }),
+                    // Both edges are an alpha mask on the CONTENT (Boss 2026-10-28: "that colour is applied to the status
+                    // bar too"): the list melts away under the clock and toward the bar, the aurora runs unbroken from the
+                    // top pixel. Never a painted band.
+                    .then(if (!GlassStage.on) Modifier else Modifier.edgeFade(top + 14.dp, if (onTop) fadeTop else null)),
             ) {
             key(selected) { NavDisplay(
                 backStack = stack,
@@ -268,7 +284,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     entry<MoreRoute> {
                         More(
                             padding, onOpenUpcoming = { stack.add(UpcomingListRoute) }, onOpenCompleted = { stack.add(CompletedListRoute) },
-                            onOpenRitual = { stack.add(it) },
+                            onOpenRitual = { stack.add(it) }, onWhatsNew = { whatsNew = true },
                             onOpenProjects = { stack.add(ProjectListRoute) }, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect,
                         )
                     }
@@ -322,7 +338,6 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         // Read through derivedStateOf: the shell redraws when a switch flips, not on every scrolled pixel.
         val farDown by remember(density) { derivedStateOf { scrolled > with(density) { 72.dp.toPx() } } }
-        TopFade(visible = pageTitle != null, modifier = Modifier.align(Alignment.TopCenter))
         if (pageTitle != null) {
             TitleCapsule(
                 title = pageTitle,
@@ -341,6 +356,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         DayClearedBurst()
     }
     }
+    if (whatsNew) WhatsNewSheet(onDismiss = { whatsNew = false }, onOpen = ::openWhere)
     adding?.let { target -> AddTaskSheet(onClose = { adding = null }, project = target.ifEmpty { null }) }
     openTask?.let { id ->
         androidx.compose.runtime.key(id) {
@@ -363,22 +379,6 @@ private fun TabLabel(label: String) {
         softWrap = false,
         autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = (8f / scale).sp, maxFontSize = (11f * minOf(scale, 1.2f) / scale).sp, stepSize = (0.25f / scale).sp),
     )
-}
-
-/**
- * The status bar never collides with the content: a soft page-coloured fade sits under the clock and icons once the
- * list has moved (Boss 2026-10-27: the title was "squashed into the status bar").
- */
-@Composable
-private fun TopFade(visible: Boolean, modifier: Modifier) {
-    val alpha by androidx.compose.animation.core.animateFloatAsState(if (visible) 1f else 0f, label = "fade")
-    val bar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val h = bar + 14.dp
-    // Solid under the clock, then a short fade (round B: "Habits" sat under the status bar). It no longer waits for a
-    // scroll seen by the shell: a tab whose list kept its place reported 0 scrolled and showed no fade at all.
-    val solid = if (h.value > 0f) bar.value / h.value else 0f
-    Box(modifier.fillMaxWidth().height(h).graphicsLayer { this.alpha = alpha }
-        .background(Brush.verticalGradient(0f to Glass.Page.copy(alpha = 0.97f), solid to Glass.Page.copy(alpha = 0.93f), 1f to Glass.Page.copy(alpha = 0f))))
 }
 
 /**
@@ -494,7 +494,7 @@ private fun Coming(title: String, path: String, padding: PaddingValues, onOpenWe
 }
 
 @Composable
-private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompleted: () -> Unit, onOpenRitual: (NavKey) -> Unit, onOpenProjects: () -> Unit, onOpenWeb: () -> Unit, onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
+private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompleted: () -> Unit, onOpenRitual: (NavKey) -> Unit, onWhatsNew: () -> Unit, onOpenProjects: () -> Unit, onOpenWeb: () -> Unit, onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     // Nine rows pass a 640-dp screen's height: More scrolls, so Disconnect is never stuck under the bar.
     // The same gutter and header as Today, Inbox and Habits (spacing audit #14: More's title sat ~8 dp off between tabs
     // and its panes 20 dp from the edge, every other screen 16).
@@ -514,6 +514,7 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 MoreRow(TabIcons.Moon, "Close the day", Color(0xFF5B4BC4)) { onOpenRitual(ShutdownRoute) }
                 MoreRow(TabIcons.CalendarCheck, "Weekly review", Color(0xFFBE123C)) { onOpenRitual(ReviewRoute) }
                 MoreRow(TabIcons.Bell, "Notifications", Color(0xFFC2410C)) { onOpenRitual(NotificationsRoute) }
+                MoreRow(TabIcons.Sparkles, "What's new", Color(0xFF0E7490), onWhatsNew)
                 MoreRow(TabIcons.Folder, "Projects", Glass.Primary, onOpenProjects)
                 MoreRow(TabIcons.Globe, "pagel.uz", Color(0xFF246FE0), onOpenWeb)
                 MoreRow(TabIcons.Phone, "Phone", Color(0xFF692FC2), onOpenPhone)

@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -181,3 +182,21 @@ fun WordCount(n: Int, max: Int, modifier: Modifier = Modifier) {
             .clearAndSetSemantics { if (shown) contentDescription = if (over) "$n words, $max at most" else "$n of $max words" },
     )
 }
+
+/**
+ * The screen's edges as an alpha mask on its content (RULES.md "Layout" 4: system bars show the page's own
+ * background, never a painted band): clear for the first 55 % of [top] (the status bar), then fully drawn at [top];
+ * from [bottom] above the foot the content fades to 35 % toward the glass bar. Needs an offscreen layer (one pass).
+ */
+fun Modifier.edgeFade(top: Dp, bottom: Dp?): Modifier = graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+    .drawWithCache {
+        val t = top.toPx().coerceAtLeast(1f)
+        val topMask = Brush.verticalGradient(0f to Color.Transparent, 0.55f to Color.Transparent, 1f to Color.Black, startY = 0f, endY = t)
+        val start = bottom?.let { (size.height - it.toPx()).coerceAtLeast(0f) }
+        val foot = start?.let { Brush.verticalGradient(0f to Color.Black, 1f to Color.Black.copy(alpha = 0.35f), startY = it, endY = size.height) }
+        onDrawWithContent {
+            drawContent()
+            drawRect(topMask, size = Size(size.width, t), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+            if (start != null && foot != null) drawRect(foot, topLeft = Offset(0f, start), size = Size(size.width, size.height - start), blendMode = androidx.compose.ui.graphics.BlendMode.DstIn)
+        }
+    }

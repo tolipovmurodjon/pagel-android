@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import org.pagel.ai.ui.glass.edgeFade
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.onNodeWithTag
@@ -419,5 +423,77 @@ class TaskSystemScreenshotTest {
         compose.onNodeWithContentDescription("22 words, 20 at most").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/add-state-b.png")
         assertEquals(h, compose.onNodeWithTag("sheet").fetchSemanticsNode().boundsInRoot.height, 0.5f)
+    }
+
+    // ── RULES.md "Layout" 4 (Boss 2026-10-28: "that colour is applied to the status bar too"): system bars show the
+    // page's own background, never a painted band. ──
+
+    /** A pixel is the aurora's: light, and near the aurora pixel [ref] further in (not a white or grey band). */
+    private fun assertAurora(px: Int, ref: Int, where: String) {
+        fun c(v: Int, s: Int) = (v shr s) and 0xFF
+        val d = listOf(16, 8, 0).maxOf { kotlin.math.abs(c(px, it) - c(ref, it)) }
+        org.junit.Assert.assertTrue("$where: ${Integer.toHexString(px)} vs aurora ${Integer.toHexString(ref)}", d <= 24 && px != android.graphics.Color.WHITE)
+    }
+
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun theContentMeltsUnderTheStatusBarAndTheAuroraShows() {
+        compose.setContent {
+            GlassTheme {
+                AuroraBackground(Modifier.fillMaxSize()) {
+                    // Ink content edge to edge: under the top 24 dp only the aurora may show.
+                    Box(Modifier.fillMaxSize().edgeFade(40.dp, null).background(androidx.compose.ui.graphics.Color(0xFF0F1630)))
+                }
+            }
+        }
+        val bmp = compose.onRoot().captureToImage().asAndroidBitmap()
+        val px = bmp.width / 360f
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/edge-fade-top-360x800.png")
+        val ref = bmp.getPixel(bmp.width / 2, (0.5f * px).toInt())
+        for (y in 0 until (20 * px).toInt() step 4) {
+            val p = bmp.getPixel(bmp.width / 2, y)
+            org.junit.Assert.assertTrue("row $y is not the aurora: ${Integer.toHexString(p)}", listOf(16, 8, 0).all { ((p shr it) and 0xFF) > 200 })
+        }
+        org.junit.Assert.assertEquals("the content is drawn below the bar", 0xFF0F1630.toInt(), bmp.getPixel(bmp.width / 2, (60 * px).toInt()))
+        assertAurora(bmp.getPixel(bmp.width / 2, 2), ref, "top row")
+    }
+
+    @OptIn(com.github.takahirom.roborazzi.ExperimentalRoborazziApi::class)
+    private fun sheetEdges(full: Boolean, name: String) {
+        compose.setContent {
+            GlassTheme {
+                AuroraBackground(Modifier.fillMaxSize()) {
+                    org.pagel.ai.ui.glass.GlassSheet(onDismiss = {}, full = full) {
+                        if (full) TaskPanelContent(panel, day, PanelActions()) else DateContent("2026-10-29", day) { _, _ -> }
+                    }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(1_000)
+        val file = "build/outputs/roborazzi/$name.png"
+        com.github.takahirom.roborazzi.captureScreenRoboImage(file)
+        val bmp = android.graphics.BitmapFactory.decodeFile(file) ?: return
+        // The left gutter (16 dp): no content there, only the sheet's own aurora.
+        val x = 8
+        if (full) {
+            // The full sheet's aurora from the very top row to the very bottom row: no grey scrim, no white band.
+            val refTop = bmp.getPixel(x, 72)
+            for (y in 0 until 24) assertAurora(bmp.getPixel(x, y), refTop, "full sheet top row $y")
+            val refBottom = bmp.getPixel(x, bmp.height - 90)
+            for (y in bmp.height - 24 until bmp.height) assertAurora(bmp.getPixel(x, y), refBottom, "full sheet bottom row $y")
+        } else {
+            val refBottom = bmp.getPixel(x, bmp.height - 90)
+            for (y in bmp.height - 24 until bmp.height) assertAurora(bmp.getPixel(x, y), refBottom, "half sheet bottom row $y")
+        }
+    }
+
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun theFullTaskPanelRunsEdgeToEdge() = sheetEdges(true, "sheet-full-panel-360x800")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun aHalfSheetEndsOnTheAuroraNotABand() = sheetEdges(false, "sheet-half-date-360x800")
+
+    /** Boss 2026-10-28: "What's new" after an update, a try-this list that opens each screen. */
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun whatsNewListsWhatToTry() {
+        var opened = ""
+        show { org.pagel.ai.ui.shell.WhatsNewContent { opened = it } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/whats-new-360x800.png")
+        compose.onNodeWithContentDescription("Try: Calendar: switch List · Day · 3 days · Week · Month").performClick()
+        assertEquals("upcoming", opened)
     }
 }

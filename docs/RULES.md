@@ -100,6 +100,12 @@ Installed plugins (laptop, 2026-10-27; server: `claude plugin marketplace add an
 3. **Proof for any screen with steps or states:** a Roborazzi pair (state A and state B) plus an assert that the main
    card's top y is equal (example: `RitualsScreenshotTest.closeTheDayCardDoesNotMoveBetweenStars`).
 
+4. **System bars show the page's own background; never a painted band** (Boss 2026-10-28: "that colour is applied
+   to the status bar too"). The content melts under the status bar by an alpha mask (`Modifier.edgeFade`), the aurora
+   runs unbroken from the top pixel; a full sheet runs edge to edge with transparent bars and no scrim; only a half
+   sheet dims the page. Proof: `theContentMeltsUnderTheStatusBarAndTheAuroraShows`, `theFullTaskPanelRunsEdgeToEdge`,
+   `aHalfSheetEndsOnTheAuroraNotABand` (pixel asserts on the top and bottom rows).
+
 ## Ours (Boss's rules)
 - Respond first, save after: a tap shows its result in < 50 ms; a failed save rolls back with a toast.
 - A UI change is done only after a screenshot of its open state; speed claims come with before/after numbers.
