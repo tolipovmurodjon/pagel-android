@@ -293,7 +293,12 @@ grep -q 'text="Bomdod"' "$OUT/$(printf '%02d' $N)-namoz-group.xml" || log "   (W
 tap History && shot habits-history 2
 $T adb shell input keyevent 4; sleep 1
 tap Morning && sleep 1
-# Back to the top, where Stretch's time tab is.
+# The Namoz group (5 rows now) pushes Stretch's card down: scroll until its time tab is on screen.
+for k in 1 2 3; do
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -qF 'content-desc="Reminder: Stretch for ten minutes"' && break
+  $T adb shell input swipe 160 500 160 300 400; sleep 1
+done
 # Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
 ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")
