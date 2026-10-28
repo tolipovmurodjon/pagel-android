@@ -41,6 +41,43 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v14 · COLD-START ANR: FLAT FIRST FRAME, GLASS ON AFTER FOCUS (2026-10-28, builder agent)
+a713747 = build ✅ smoke ❌: "PAGEL isn't responding" over the walk's first step (CI 40656925148). Measured, not guessed
+(`.github/scripts/launch-numbers.py` splits each Davey line; every number below is CI's software GPU, not the A05s):
+- **The cause.** The first frame that uses the glass builds its shaders. With an empty shader cache the cold Today's first
+  frame took **7,055 ms** on the render thread (747 ms layout on Main); Main drew the next frame (rows rising in, data),
+  waited behind it in `syncAndDrawFrame` and took >5 s to accept the window's FocusEvent = ANR. CI 40679698108 got the same
+  ANR with nothing touched (6,004 ms frame, "spent 5,101 ms processing FocusEvent"), so it is the app's launch, not the walk.
+  The notes round's code (caret, shimmer, dock, toast spring, Upcoming fade, PagelHttp) is not in the numbers: a713747's code
+  with a warm cache drew the same cold Today in 51 ms (below). The pair screen paid ~4,000 ms the same way since 39f9604.
+- **Measured options** (CI 40666139501, cold Today, nothing touched, debug probe since removed):
+  | Cold Today | TotalTime | 1st frame render | worst frame | skipped |
+  |---|---|---|---|---|
+  | all glass in frame 1, cache warm | 2,578 ms | 51 ms | 51 ms | 89 |
+  | all glass in frame 1, cache empty (40656925148 / 40679698108) | — / 2,956 | 7,055 / 6,004 | same | 484 / 453 |
+  | no glass at all | 2,747 | 30 | 1,740 | 108 |
+  | glass in 3 steps (tried, dropped: mixed steps build shaders no cache holds) | 3,608 | 65 | 4,209 | 225 |
+- **The fix** (`ui/glass/GlassStage.kt`): a cold start (once per process, `MainActivity.onCreate`) draws a flat first
+  frame: panes keep their white + mint lights and rim without the backdrop effects, no scroll-edge alpha layer, the bar
+  white 72 %, the + solid mint. One frame after the window has focus all glass comes on at once (`PagelGlass: glass on`),
+  and two frames later it logs `glass drawn in N ms` (the render thread has finished the glass frame). On a phone that is
+  1-3 frames. Tests/previews never call `coldStart()` and always draw glass.
+  The glass frame itself can still be long on CI with an empty cache (40681742567: **11,256 ms**); nothing waits on it
+  then, because focus was already taken on the flat frame. That run went green by 0.7 s on a fixed 8 s wait, hence:
+- **Smoke:** `wait_glass` waits for this process's "glass drawn" line (≤ 45 s) before typing the code and before the walk;
+  `smoke-out/launch-numbers.txt` (first launch + cold Today; the walk's `steps.txt` repeats it): TotalTime, first/worst
+  render ms, skipped up to glass-on and overall, glass-on time, glass-drawn time, ANR. Gates: an ANR of that launch's process (after relaunch,
+  cold start, in the walk logcat) or the ANR dialog in any walk step. TotalTime < 4 s, skipped ≤ 100 at launch, render
+  < 4 s are printed WARN targets (the glass frame's cost depends on CI's cache, not on us).
+- **Rule:** never judge glass by a software-GPU frame without `launch-numbers.txt` and the Davey split.
+- **Before → after** (cold Today on CI, `launch-numbers.txt`): a713747 40656925148 first frame 7,055 ms render, 484 skipped,
+  ANR; 40679698108 TotalTime 2,956 ms, 6,004 ms, 453 skipped, ANR (nothing touched) → **3c1b3a8, CI 40685581000 ✅ build +
+  smoke: TotalTime 3,911 ms, first frame 26 ms render, 101 skipped up to glass-on, glass on +2,258 ms, glass frame
+  11,487 ms (drawn in 12,164 ms) with no ANR, walk 66 steps.** First launch (pair, fresh install): 9,084 ms TotalTime, flat
+  first frame 1,494 ms, glass drawn in 5,569 ms. `cold-start.png` = the flat frame, `cold-start-glass.png` = the glass.
+- **Seen, not fixed:** the flat cold frame shows Today's skeleton and "0 today" for a moment (Room not read yet), and the
+  skeleton's breathing keeps Main drawing frames; worth a look in the next round (show nothing until Room answers).
+
 ## START HERE v13 · BOSS'S PHONE NOTES: PAIRING KEPT, INBOX THUMB DOCK + SWIPE MAP, UPCOMING FOLD (2026-10-28, builder agent)
 No new phase. From Boss's A05s screenshots and the lead's notes, in this order:
 - **Pairing survives a cold start (urgent).** `data/account/Account.kt`: the account was sealed as `cache/pagel-account.new`
