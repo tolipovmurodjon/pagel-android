@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.padding
@@ -433,7 +434,7 @@ internal fun DayClosedCard(done: Int, tomorrow: List<TodayRow>) {
             if (done > 0) {
                 Spacer(Modifier.height(Space.md))
                 Text("$done done today ✓", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk,
-                    modifier = Modifier.background(Glass.PrimarySoft, RoundedCornerShape(14.dp)).padding(horizontal = Space.lg, vertical = Space.sm))
+                    modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = Space.lg, vertical = Space.sm))
             }
             if (tomorrow.isNotEmpty()) {
                 Spacer(Modifier.height(Space.lg))
