@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -228,6 +226,9 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             "notifications" -> { selected = more; stacks[more].add(NotificationsRoute) }
             "compass" -> { selected = more; stacks[more].add(org.pagel.ai.ui.compass.CompassRoute) }
             "habits" -> selected = Tab.entries.indexOf(Tab.Habits)
+            "notebook" -> selected = Tab.entries.indexOf(Tab.Notebook)
+            "folders" -> Tab.entries.indexOf(Tab.Notebook).let { n -> selected = n; stacks[n].add(org.pagel.ai.ui.notebook.FoldersRoute) }
+            "journal" -> Tab.entries.indexOf(Tab.Notebook).let { n -> selected = n; stacks[n].add(org.pagel.ai.ui.journal.JournalRoute) }
             "shutdown" -> { goToday(); stacks[0].add(ShutdownRoute) }
             "more" -> selected = more
             else -> goToday()
@@ -264,6 +265,8 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     // top pixel. Never a painted band.
                     .then(if (!GlassStage.on) Modifier else Modifier.edgeFade(top + 14.dp, if (onTop) fadeTop else null)),
             ) {
+            // The Notebook's screens push onto the tab's own stack (Today's search opens on Today's).
+            val notebookNav = org.pagel.ai.ui.notebook.NotebookNav(open = { stack.add(it) }, back = { stack.removeLastOrNull() })
             key(selected) { NavDisplay(
                 backStack = stack,
                 onBack = { stack.removeLastOrNull() },
@@ -272,6 +275,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     entry<TodayRoute> {
                         TodayScreenRoute(padding, reselect, links = org.pagel.ai.ui.rituals.RitualLinks(
                             sweep = { stack.add(SweepRoute) }, shutdown = { stack.add(ShutdownRoute) }, review = { stack.add(ReviewRoute) },
+                            search = { stack.add(org.pagel.ai.ui.notebook.SearchRoute) },
                         ))
                     }
                     entry<SweepRoute> { org.pagel.ai.ui.rituals.SweepRoute(padding, onToday = ::goToday) }
@@ -281,7 +285,16 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     }
                     entry<InboxRoute> { InboxScreenRoute(padding, reselect) }
                     entry<HabitsRoute> { HabitsScreenRoute(padding, reselect) }
-                    entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
+                    // The second brain (Phase 6b): search, Review 5, the locked journal, the vault's folders, notes.
+                    entry<NotebookRoute> { org.pagel.ai.ui.notebook.NotebookRouteScreen(padding, reselect, notebookNav) }
+                    entry<org.pagel.ai.ui.notebook.SearchRoute> { org.pagel.ai.ui.notebook.NotebookRouteScreen(padding, reselect, notebookNav, focusSearch = true) }
+                    entry<org.pagel.ai.ui.notebook.FoldersRoute> { org.pagel.ai.ui.notebook.FoldersRouteScreen(padding, notebookNav) }
+                    entry<org.pagel.ai.ui.notebook.FolderNotesRoute> { r -> org.pagel.ai.ui.notebook.FolderNotesRouteScreen(r.folder, padding, notebookNav) }
+                    entry<org.pagel.ai.ui.notebook.NoteRoute> { r -> org.pagel.ai.ui.notebook.NoteRouteScreen(r.path, padding, notebookNav) }
+                    entry<org.pagel.ai.ui.notebook.WriteRoute> { r -> org.pagel.ai.ui.notebook.WriteRouteScreen(r, padding, notebookNav) }
+                    entry<org.pagel.ai.ui.notebook.RecallRoute> { org.pagel.ai.ui.notebook.RecallRouteScreen(padding, notebookNav) }
+                    entry<org.pagel.ai.ui.notebook.ResourceRoute> { r -> org.pagel.ai.ui.notebook.ResourceRouteScreen(r.id, padding, notebookNav) }
+                    entry<org.pagel.ai.ui.journal.JournalRoute> { org.pagel.ai.ui.journal.JournalRouteScreen(padding, onBack = { stack.removeLastOrNull() }) }
                     entry<MoreRoute> {
                         More(
                             padding, onOpenUpcoming = { stack.add(UpcomingListRoute) }, onOpenCompleted = { stack.add(CompletedListRoute) },
@@ -336,6 +349,10 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
             org.pagel.ai.ui.compass.CompassRoute -> "Compass"
+            org.pagel.ai.ui.notebook.FoldersRoute -> "Folders"; org.pagel.ai.ui.notebook.RecallRoute -> "Review"
+            org.pagel.ai.ui.journal.JournalRoute -> "Journal"; org.pagel.ai.ui.notebook.SearchRoute -> "Search"
+            is org.pagel.ai.ui.notebook.NoteRoute, is org.pagel.ai.ui.notebook.WriteRoute, is org.pagel.ai.ui.notebook.ResourceRoute,
+            is org.pagel.ai.ui.notebook.FolderNotesRoute -> null
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
         val density = androidx.compose.ui.platform.LocalDensity.current
@@ -474,24 +491,6 @@ private fun AddButton(backdrop: Backdrop, modifier: Modifier, onClick: () -> Uni
             val w = 2.4.dp.toPx()
             drawLine(Color.White, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), w, StrokeCap.Round)
             drawLine(Color.White, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), w, StrokeCap.Round)
-        }
-    }
-}
-
-/** A tab whose native screen comes in a later phase; its pagel.uz page opens meanwhile. */
-@Composable
-private fun Coming(title: String, path: String, padding: PaddingValues, onOpenWeb: (String) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(padding).padding(20.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
-        Spacer(Modifier.height(16.dp))
-        Pane(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp)) {
-                Text("Opens on pagel.uz for now.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
-                Spacer(Modifier.height(14.dp))
-                val press = remember { MutableInteractionSource() }
-                Button(onClick = { onOpenWeb(path) }, colors = ButtonDefaults.buttonColors(containerColor = Glass.Primary),
-                    interactionSource = press, modifier = Modifier.pressScale(press)) { Text("Open $title") }
-            }
         }
     }
 }

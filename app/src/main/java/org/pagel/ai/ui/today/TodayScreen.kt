@@ -168,7 +168,7 @@ fun TodayScreen(
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
             if (compassLine != null) item(key = "compass", contentType = "compass") { org.pagel.ai.ui.compass.CompassTodayLine(compassLine) }
             item(key = "head", contentType = "head") {
-                Header(ui, today, closed = closed, onSweep = if (pills != null) links.sweep else null) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
+                Header(ui, today, closed = closed, onSweep = if (pills != null) links.sweep else null, onSearch = links.search) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
             }
             // Boss 2026-10-28: "I closed the day … I should have an empty Today, so I can sleep well". After Close the
             // day, Today is one calm card and a folded peek at tomorrow; no rows, no bar, no leftover habits.
@@ -221,7 +221,7 @@ fun TodayScreen(
 }
 
 @Composable
-private fun Header(ui: TodayUiState, today: LocalDate, closed: Boolean = false, onSweep: (() -> Unit)? = null, onSendNow: () -> Unit = {}) {
+private fun Header(ui: TodayUiState, today: LocalDate, closed: Boolean = false, onSweep: (() -> Unit)? = null, onSearch: (() -> Unit)? = null, onSendNow: () -> Unit = {}) {
     Row(verticalAlignment = Alignment.CenterVertically) {
     Column(Modifier.weight(1f).padding(start = Space.textEdge, end = Space.textEdge, top = Space.headerTop)) {
         Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
@@ -234,7 +234,9 @@ private fun Header(ui: TodayUiState, today: LocalDate, closed: Boolean = false, 
     // Round B (A): what waits to reach pagel.uz is never invisible; a tap sends it now. In the header's row (taller than
     // the chip), never a list item: the list never moves when it comes or goes (spacing audit #3).
     // The chip keeps the 16 dp edge the left side keeps (checker #10: it sat 4 dp from the edge).
-    if (ui.outbox > 0) WaitingChip(ui.outbox, Modifier.padding(end = if (onSweep == null) Space.lg else Space.xs), onClick = onSendNow)
+    if (ui.outbox > 0) WaitingChip(ui.outbox, Modifier.padding(end = if (onSweep == null && onSearch == null) Space.lg else Space.xs), onClick = onSendNow)
+    // Find anything (Phase 6b): the Notebook's one search box over tasks, steps, notes, quick notes and resources.
+    if (onSearch != null) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.Search, "Search everything", Modifier.padding(end = if (onSweep == null) Space.md else 0.dp), onClick = onSearch)
     // Empty your head: a 48 dp sparkle beside the title, any time of day (Phase 5).
     if (onSweep != null) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.Sparkles, "Empty your head", Modifier.padding(end = 12.dp), tint = Glass.Primary, onClick = onSweep)
     }

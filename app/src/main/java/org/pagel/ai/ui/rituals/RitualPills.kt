@@ -13,7 +13,13 @@ import org.pagel.ai.ui.glass.GlassChip
 import org.pagel.ai.ui.glass.TabIcons
 
 /** Where Today's ritual pills lead (the shell pushes the screen onto Today's own stack). */
-class RitualLinks(val sweep: () -> Unit = {}, val shutdown: () -> Unit = {}, val review: () -> Unit = {})
+class RitualLinks(
+    val sweep: () -> Unit = {},
+    val shutdown: () -> Unit = {},
+    val review: () -> Unit = {},
+    /** The second brain's one search box (Phase 6b), reached from Today's header; null hides the button. */
+    val search: (() -> Unit)? = null,
+)
 
 /**
  * Today's ritual pills, as the web's Today shows them: Close the day in the evening (a ✓ once it is closed tonight), the

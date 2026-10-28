@@ -1,12 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   "What's new" (Boss 2026-10-28: never feel lost when testing an update). Update every round: one line per thing to
-  try, "words|where" (where = today, upcoming, habits, notifications, shutdown, more). The sheet opens once after an
+  try, "words|where" (where = today, upcoming, habits, notifications, shutdown, more, notebook, folders, journal). The sheet opens once after an
   update; More → What's new opens it again.
 -->
 <resources>
-    <string name="whats_new_title">Round C: calendar + notifications</string>
+    <string name="whats_new_title">Your second brain + a locked journal</string>
     <string-array name="whats_new_items">
+        <item>🔎 Search everything: tasks, steps, notes, quick notes, saves (Notebook, or 🔍 on Today)|notebook</item>
+        <item>📂 Folders: pick which Obsidian folders PAGEL may read; Kundalik stays locked|folders</item>
+        <item>✍️ Write a note, today\'s daily note or a book note; it saves offline|notebook</item>
+        <item>🧠 Review 5: show the answer, then Again · Hard · Good · Easy|notebook</item>
+        <item>🔒 Journal: only your fingerprint or PIN opens it; no AI ever reads it|journal</item>
         <item>🧭 Compass: write your goals; only you can read them|compass</item>
         <item>Calendar: switch List · Day · 3 days · Week · Month|upcoming</item>
         <item>Swipe the week strip left for next week, “Today” to come back|upcoming</item>
