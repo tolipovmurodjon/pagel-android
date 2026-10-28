@@ -41,6 +41,34 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE · Phase 6b phone = the second brain + the locked journal (2026-10-29, builder agent, branch `feat/6b-phone` from `feat/compass-fix`, server `feat/6b-journal-server`)
+- **Not built yet:** CI blocked (billing), laptop cannot run Gradle; nothing Android was compiled. NotebookLogicTest's 8 cases
+  ran outside Gradle (cached kotlinc 2.0.21 + a JUnit shim): 8/8. Push once with `[smoke]` when Actions is back.
+- **Data:** `data/notebook/` = its own `notebook.db` (vault folders, notes, picture paths, recall cards, quick notes, outbox),
+  apart from pagel.db so round D's v8/v9 never collide. NotebookApi = vault-api.ts (folders GET/PUT, notes list/one, manifest,
+  files, PUT notes with `base` = the hash last seen, never null), search.ts, recall due/grade, quick notes, resources. Room
+  first + outbox (NotebookWorker). A stale note is kept by pagel.uz as "(phone)" and the phone follows; a refused switch rolls
+  back with a toast; a refused note keeps its words, marked. Kundalik: refused on the phone before any write.
+- **Journal:** `data/journal/` = `journal.db` (id + blob only: no day, mood or words column), its OWN Keystore guard key
+  `pagel_journal_guard_v1` (KeystoreDeviceKeys now takes the alias), its own in-memory key (CompassKey, 60 s), AEAD bound to
+  "journal\n<id>". Server **3e6c78b DEPLOY NEEDED** (`feat/6b-journal-server`): GET /api/v1/journal, PUT
+  /api/v1/journal/entries/<id> {blob, deleted, base}, paired phone only, never indexed or logged as an event (vitest 7/7);
+  until deployed the phone keeps entries waiting (404/405). Crashes through `.journal.` hide their message; journal.db out of
+  backup + device transfer.
+- **Screens:** Notebook tab = search box (also Today's 🔍), doors Journal · Folders · Write, Review 5 when due, recent notes;
+  results grouped Tasks · Steps · Notes · Quick notes · Resources, words marked. Folders: switch per folder, Kundalik greyed +
+  lock + one line. Reader: headings, lists, task boxes, quotes/callouts, code, vault pictures, wikilinks open their note,
+  Linked from. Writer: Note · Daily · Book into an open folder, saves offline. Recall: face down/up without moving, 4 grades
+  with haptics. Journal: Compass-style unlock, FLAG_SECURE (screen + sheet), PrivateKeyboard, mood optional (sealed).
+- **Tests:** NotebookLogicTest, NotebookRepositoryTest (MockWebServer), JournalPrivacyTest (THE PROOF), JournalSchemaTest,
+  NotebookScreenshotTest (home, search, folders, reader, writer, recall down/up + equal-top, journal new/locked/open; 1.5×);
+  walkthrough "PHASE 6b": Allow Notes → read → search → Review → Good → journal entry → fake pagel.uz gets {blob, deleted, base}.
+- **Not done:** journal recovery passphrase / new-phone restore (the server keeps the sealed copy; a lost key = LOST, start
+  over); the journal write sheet's draft is lost if the 60 s auto-lock fires in the background (by choice: no plaintext
+  draft on disk); web images in notes show as a link (no image loader in the app); quick notes cached for 12 projects only;
+  search's tasks/steps run on the phone (pagel.uz's task hits merge in when online); recall grades are not idempotent on
+  pagel.uz (a lost reply + retry grades twice).
+
 ## START HERE · Phase 6a Compass FIX ROUND = the security checker's 6/10 list (docs/qa/compass-checker.md) (2026-10-29, builder agent, branch `feat/compass-fix`)
 - **Not built yet:** CI was blocked (billing) while this was written; nothing was compiled or run. Push once with `[smoke]`.
 - **Windows:** every Compass sheet's own window is FLAG_SECURE (`GlassSheet(secure = true)` → `ModalBottomSheetProperties
