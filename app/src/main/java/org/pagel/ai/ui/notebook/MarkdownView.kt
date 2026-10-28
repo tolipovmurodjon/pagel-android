@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -120,7 +121,9 @@ fun MarkdownBlock(block: Block, links: NoteLinks, known: (String) -> Boolean) {
                 .horizontalScroll(rememberScrollState()).padding(Space.md),
         ) { Text(block.text, style = type.bodyMedium.copy(fontFamily = FontFamily.Monospace), color = Glass.Ink) }
         is Block.Image -> VaultPicture(block, links)
-        Block.Rule -> Box(Modifier.fillMaxWidth().padding(vertical = Space.sm).heightIn(min = 1.dp).background(Glass.Ink.copy(alpha = 0.12f)))
+        Block.Rule -> Box(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
+            Box(Modifier.fillMaxWidth().height(1.dp).background(Glass.Ink.copy(alpha = 0.12f)))
+        }
     }
 }
 

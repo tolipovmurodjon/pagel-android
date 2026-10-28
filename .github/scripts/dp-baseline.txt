@@ -1,6 +1,12 @@
 add/AddTaskSheet.kt 3
 add/AddTaskViewModel.kt 0
 add/QuickAdd.kt 0
+compass/CompassHooks.kt 0
+compass/CompassKit.kt 0
+compass/CompassScreen.kt 0
+compass/CompassSecurity.kt 0
+compass/CompassViewModel.kt 0
+compass/GoalSheet.kt 0
 gateway/GatewayDebugScreen.kt 7
 gateway/GatewayViewModel.kt 0
 habits/HabitsScreen.kt 24
@@ -12,6 +18,15 @@ inbox/ChoiceSound.kt 0
 inbox/InboxScreen.kt 33
 inbox/InboxSheets.kt 18
 inbox/InboxViewModel.kt 0
+journal/JournalScreen.kt 0
+journal/JournalViewModel.kt 0
+notebook/FoldersScreen.kt 0
+notebook/MarkdownView.kt 0
+notebook/NoteScreens.kt 0
+notebook/NotebookRoutes.kt 0
+notebook/NotebookScreen.kt 0
+notebook/NotebookViewModels.kt 0
+notebook/RecallScreen.kt 0
 pair/PairScreen.kt 4
 pair/PairViewModel.kt 0
 projects/ProjectScreen.kt 14
@@ -26,7 +41,7 @@ rituals/ShutdownScreen.kt 5
 rituals/SweepScreen.kt 8
 senses/SensesCard.kt 2
 senses/UpdateCard.kt 1
-shell/AppShell.kt 9
+shell/AppShell.kt 8
 shell/Routes.kt 0
 shell/ShellViewModel.kt 0
 shell/WhatsNew.kt 0

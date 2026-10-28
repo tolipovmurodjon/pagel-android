@@ -241,7 +241,11 @@ internal fun HitRow(h: Hit, onClick: () -> Unit) {
             .padding(horizontal = Space.paneInset, vertical = Space.sm),
         verticalAlignment = Alignment.Top,
     ) {
-        Icon(kindIcon(h.kind), contentDescription = null, tint = Glass.Primary, modifier = Modifier.padding(top = 2.dp).size(18.dp))
+        Icon(
+            kindIcon(h.kind), contentDescription = null, tint = Glass.Primary,
+            modifier = Modifier.padding(top = Space.xs)
+                .size(18.dp),
+        )
         Spacer(Modifier.width(Space.md))
         Column(Modifier.weight(1f)) {
             Text(h.title, style = MaterialTheme.typography.titleSmall, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
