@@ -259,6 +259,21 @@ grep -q 'POST /api/v1/inbox {"action":"triage","files":\[[^]]*"inbox/ib8.md"' "$
   || { log "WALKTHROUGH: the unread save ib8 never asked pagel.uz's AI to read it"; grep "/api/v1/inbox" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   the AI was asked to read ib8 after ~${i} s online"
 shot inbox-online 2
+log "-- Inbox: where did it go (round D item 2): Sorted today lists the day's choices by where they went; More -> Notes reads a project's notes"
+$T adb shell input swipe 160 200 160 600 400; sleep 1
+tap 'Sorted today \([0-9]+\)' && shot sorted-today 2
+grep -q 'text="📝 Notes · [0-9]*"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Note"; exit 1; }
+grep -q 'text="✅ Tasks · [0-9]*"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Action"; exit 1; }
+$T adb shell input keyevent 4; sleep 1
+tap More && sleep 1
+for k in 1 2 3; do onscreen Notes && break; $T adb shell input swipe 160 500 160 300 400; sleep 1; done
+tap Notes && shot notes-projects 3
+tap '[^"]*notes, 1' || { log "WALKTHROUGH: More -> Notes lists no project with a note"; exit 1; }
+shot notes-ababil 3
+grep -q 'RunCam Phoenix 2' "$OUT/$(printf '%02d' $N)-notes-ababil.xml" || { log "WALKTHROUGH: the project's notes did not come from pagel.uz"; exit 1; }
+grep -q 'GET /api/v1/notes' "$FAKE_LOG" || { log "WALKTHROUGH: the phone never asked pagel.uz for notes"; exit 1; }
+log "   Sorted today and the notes list read right"
+$T adb shell input keyevent 4; sleep 1; $T adb shell input keyevent 4; sleep 1
 
 log "-- Habits 2.0 (round D): the chain strip, Morning/Afternoon/Evening, bold cards; a tick reaches pagel.uz; a reminder; Namoz"
 tap Habits && shot habits 2.5

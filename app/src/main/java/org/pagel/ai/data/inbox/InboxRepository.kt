@@ -91,8 +91,8 @@ class InboxRepository(
         api.triage(account.serverUrl, account.token, files) is Outcome.Ok
 
     /** Boss's choice: Room first (the card leaves now), the outbox after. Returns the outbox row (Drop's Undo needs it). */
-    suspend fun choose(file: String, choice: Choice, sentence: String? = null, project: String? = null, someday: Boolean? = null): Long {
-        val body = wire.encodeToString(SortBody.serializer(), SortBody(choice.wire, file, sentence?.trim()?.takeIf(String::isNotEmpty), project, someday))
+    suspend fun choose(file: String, choice: Choice, sentence: String? = null, project: String? = null, someday: Boolean? = null, due: String? = null): Long {
+        val body = wire.encodeToString(SortBody.serializer(), SortBody(choice.wire, file, sentence?.trim()?.takeIf(String::isNotEmpty), project, someday, due))
         val now = clock()
         val id = dao.choose(file, choice.wire, body, tashkentDay(now), keep = choice == Choice.KEEP, at = now, dayStart = tashkentDayStart(now))
         scheduler.kick()

@@ -23,6 +23,10 @@ import org.pagel.ai.ui.glass.TabIcons
 @Serializable data class HabitDetailRoute(val id: String) : NavKey
 /** Habits' History (round D): Calendar · All habits · Achievements. */
 @Serializable data object HabitHistoryRoute : NavKey
+/** Inbox → "Sorted today" (round D item 2): today's decisions and where each went. */
+@Serializable data object SortedTodayRoute : NavKey
+/** The projects' quick notes (round D item 2): a project's list, or all projects with notes when [project] is null. */
+@Serializable data class NotesRoute(val project: String? = null) : NavKey
 /** pagel.uz itself in the kept-alive WebView, until each native feature replaces its page. */
 @Serializable data class WebRoute(val path: String) : NavKey
 

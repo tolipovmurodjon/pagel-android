@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -311,5 +312,49 @@ class InboxScreenshotTest {
         val b = places()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-state-b.png")
         assertEquals("a choice moved between cards: $a vs $b", a, b)
+    }
+    // ── Round D item 2: where did it go ──
+    @Test fun actionFormAsksWhen() {
+        val u = ui(listOf(grant))
+        val tomorrow = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent")).plusDays(1).toString()
+        var edited: Form? = null
+        show { Column(Modifier.padding(top = 16.dp)) { ChoiceFormContent(Form(u.cards[0], Choice.ACT, grant.next, "humopedia", false, due = tomorrow), u, { edited = it }, {}, {}) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-form-action-when.png")
+        compose.onNodeWithText("Tomorrow").assertIsDisplayed()
+        compose.onNodeWithText("Today").performClick()
+        assertEquals(java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent")).toString(), edited?.due)
+        // The chosen one tapped again clears it: no date.
+        compose.onNodeWithText("Tomorrow").performClick()
+        assertEquals(null, edited?.due)
+    }
+
+    private val sorted = listOf(
+        org.pagel.ai.data.db.InboxSortedEntity("inbox/a.md", "2026-10-29", "note", "RunCam Phoenix 2", "ababil", "RunCam Phoenix 2: the night camera", null, 1, 3),
+        org.pagel.ai.data.db.InboxSortedEntity("inbox/b.md", "2026-10-29", "act", "The IT Park grant", "humopedia", "Open the grant form and fill page one", "2026-10-30", 2, 2),
+        org.pagel.ai.data.db.InboxSortedEntity("inbox/c.md", "2026-10-29", "drop", "10 AI tools lists", null, null, null, 3, 1),
+    )
+
+    @Test fun sortedTodayByWhereItWent() {
+        var opened: org.pagel.ai.ui.inbox.InboxOpen? = null
+        show { org.pagel.ai.ui.inbox.SortedToday(sorted, projects.associateBy { it.name }, PaddingValues(top = 16.dp, bottom = 96.dp), onOpen = { opened = it }) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-sorted-today.png")
+        compose.onNodeWithText("📝 Notes · 1").assertIsDisplayed()
+        compose.onNodeWithText("✅ Tasks · 1").assertIsDisplayed()
+        compose.onNodeWithText("RunCam Phoenix 2: the night camera").performClick()
+        assertEquals(org.pagel.ai.ui.inbox.InboxOpen.Notes("ababil"), opened)
+    }
+
+    @Test fun aProjectsNotes() {
+        val notes = listOf(org.pagel.ai.data.db.QuickNoteEntity("ababil", 0, "RunCam Phoenix 2: the night camera", "https://x.com/b", null, "2026-10-28"),
+            org.pagel.ai.data.db.QuickNoteEntity("ababil", 1, "Oscar Liang: FPV build guides worth one look", null, null, "2026-10-27"))
+        show { org.pagel.ai.ui.inbox.Notes("ababil", projects.associateBy { it.name }, emptyList(), notes, PaddingValues(top = 16.dp, bottom = 96.dp)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-notes.png")
+        compose.onNodeWithText("RunCam Phoenix 2: the night camera").assertIsDisplayed()
+    }
+
+    @Test fun theNotesProjectsAtLargeFont() {
+        show(1.5f) { org.pagel.ai.ui.inbox.Notes(null, projects.associateBy { it.name }, listOf(org.pagel.ai.data.db.NoteCount("ababil", 2), org.pagel.ai.data.db.NoteCount("humopedia", 5)), emptyList(), PaddingValues(top = 16.dp, bottom = 96.dp)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-notes-projects-font-1.5.png")
+        compose.onNodeWithContentDescription("ABABIL notes, 2").assertIsDisplayed()
     }
 }

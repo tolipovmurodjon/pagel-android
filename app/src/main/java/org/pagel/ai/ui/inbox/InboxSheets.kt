@@ -147,12 +147,24 @@ fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit:
                 GlassChip(TabIcons.Folder, p?.let { shortName(it.name, it.title) } ?: form.project, set = true, description = "Project: ${p?.title ?: form.project}",
                     leading = { ProjectTile(form.project, p?.color, p?.title ?: form.project, size = 20.dp) }, onClick = onProject)
             }
-            if (form.choice == Choice.ACT) Segmented(listOf("This week", "Someday"), if (form.someday) 1 else 0) { onEdit(form.copy(someday = it == 1)) }
+            // When? Today · Tomorrow · Someday (round D item 2): one optional pick; none = no date. Tapping the chosen one
+            // again clears it. Today and Tomorrow date the task, so it shows on Today or Upcoming.
+            if (form.choice == Choice.ACT) {
+                val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent"))
+                val chosen = when { form.someday -> 2; form.due == today.toString() -> 0; form.due == today.plusDays(1).toString() -> 1; else -> -1 }
+                Segmented(listOf("Today", "Tomorrow", "Someday"), chosen) { i ->
+                    onEdit(when {
+                        i == chosen -> form.copy(due = null, someday = false)
+                        i == 2 -> form.copy(due = null, someday = true)
+                        else -> form.copy(due = today.plusDays(i.toLong()).toString(), someday = false)
+                    })
+                }
+            }
             if (form.choice == Choice.NOW) form.card.link?.let { l -> GlassChip(TabIcons.ArrowUpRight, "Open it", set = false) { runCatching { uri.openUri(l) } } }
         }
         val hint = when (form.choice) {
             Choice.KEEP -> if (ready) "Ready" else "${need - count} more words"
-            Choice.NOTE -> if (withPicture) "With the picture → Notebook · Saved notes" else "→ Notebook · Saved notes"
+            Choice.NOTE -> if (withPicture) "With the picture → the project's notes" else "→ the project's notes"
             else -> null
         }
         hint?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(top = 6.dp, start = 4.dp)) }

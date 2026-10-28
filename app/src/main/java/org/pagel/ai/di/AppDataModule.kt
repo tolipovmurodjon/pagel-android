@@ -87,6 +87,11 @@ object AppDataModule {
 
     @Provides
     @Singleton
+    fun provideWhereItWent(db: PagelDatabase, inbox: InboxDao, api: PagelApi): org.pagel.ai.data.inbox.WhereItWent =
+        org.pagel.ai.data.inbox.WhereItWent(db.inboxLog(), inbox, api)
+
+    @Provides
+    @Singleton
     fun provideHabitPrefsRepository(dao: org.pagel.ai.data.db.HabitPrefsDao): org.pagel.ai.data.habits.HabitPrefsRepository =
         org.pagel.ai.data.habits.HabitPrefsRepository(dao)
 
