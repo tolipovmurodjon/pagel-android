@@ -302,7 +302,8 @@ class RitualsRepositoryTest {
         assertEquals(both[0], both[1])
         val ops = db.dao().waitingOutbox()
         assertEquals(1, ops.count { it.op == OutboxEntity.RITUAL })
-        assertEquals(3, ops.count { it.op == OutboxEntity.PATCH })
+        // later + drop + pick, and tomorrow's date for the kept star and the pick (Boss 2026-10-28: an empty Today).
+        assertEquals(5, ops.count { it.op == OutboxEntity.PATCH })
         now += 6_000
         sender.sendAll(account)
         assertEquals(1, calls.count { it.startsWith("POST /api/v1/rituals") })
