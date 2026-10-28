@@ -41,59 +41,6 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
-## START HERE · Phase 6a Compass (2026-10-29, builder agent, branch `feat/compass`, server `feat/compass-server`)
-- **What it is:** More → Compass. Boss's goals, sealed on the phone (Boss: "my goals are sacred, no AI ever will read
-  them… build the frame and I put them in"). The app ships an EMPTY frame; no goal was read, imported or written by AI.
-- **Lock:** a fresh 256-bit data key per phone, wrapped by an Android Keystore key that opens only within 60 s of
-  BiometricPrompt (fingerprint or the screen-lock PIN); every goal / note / report is AES-256-GCM sealed with its own
-  nonce and its id as AAD before Room (`compass.db`, its own file: ciphertext only, no word columns) and before the
-  outbox (`CompassWorker`). FLAG_SECURE on every Compass window (screen + sheets, counted per window); the key is
-  wiped 60 s after leaving the Compass or the app. No screen lock → "Set a screen lock first". Lost key → said plainly;
-  optional recovery passphrase (scrypt 2^15 wraps the data key; off by default, one line explains it).
-- **Server:** `feat/compass-server` **6cbb4cb — DEPLOY NEEDED**: `GET /api/v1/compass`, `PUT /api/v1/compass/items/<id>`
-  `{kind, parent, blob, starts, ends, deleted}` (any other key → 400, a blob must be the sealed envelope),
-  `/links/<project>` `{goal: id}`, `/recovery`; paired phone only (the machine token = 403). vitest 7/7. Until it is
-  deployed the phone keeps every sealed change waiting (404/405 = wait, never dropped).
-- **Frame:** Path = the vertical path (Why I live with a star on top → 10 years → Year 19 (1 Nov → 31 Oct) → the
-  season's 3 slots → Someday, no limit), empty states that invite writing. Season = four 13-week seasons made by the
-  app (12 + a review week), max 3 goals, a change after week 1 asks one line why (sealed), "my part" scored (70 % =
-  full mint "Win", never a percentage), the outcome never scored and closed as "a different door", week dots, never
-  miss twice, "Reset, not restart", key results he ticks, the weekly 2 questions. Year = "Year 18 → 19": tasks done,
-  habit days, best run, namaz days from 1 Nov, his own words, then "Write Year 19's goals".
-- **Hooks:** a season goal's weekly step becomes a weekly habit through the normal path (its own words only); project
-  page "Link to a goal" (titles opened only in a secured sheet; pagel.uz gets the id); Today's quiet line (off by
-  default, its own Keystore key, on this phone only); What's new line.
-- **Tests:** CompassRulesTest (31 Oct / 1 Nov, age from 2007-11-01, seasons, cap, chain, 70 %, reset),
-  CompassCryptoTest, **CompassPrivacyTest = the proof** (marked words through the real repository, a real Room file
-  and the outbox against MockWebServer: in no request body, no Timber/Log line, no file; every blob opens with the key),
-  CompassSchemaTest (v1 from its exported schema, no word columns), CompassScreenshotTest (empty, path empty, locked,
-  locked 1.5×, cascade + 1.5×, season + reset + week, age report, goal sheet + 1.5×, tabs equal-top assert);
-  walkthrough: PIN 1111 → More → Compass → Start (PIN) → write → fake pagel.uz has ciphertext only → Projects →
-  Humopedia → Link to a goal → `PUT /links/humopedia {"goal":"g_…"}`.
-- **Not done (and why):** the 1 Nov 08:00 birthday notification (the switch is stored, no alarm/UI yet: it needs a
-  receiver in the shared manifest, next round); the season-review reminder; changing a lead action after it became a
-  habit does not rename the habit (rename it in Habits); the keyboard's "incognito" flag (Compose BasicTextField has
-  no IME_FLAG_NO_PERSONALIZED_LEARNING switch); a second device syncing back (the phone is the only writer, by design).
-
-<<<<<<< HEAD
-## START HERE v17.1 · ROUND C FIX ROUND = THE CHECKER'S 7/10 LIST (docs/qa/roundC-checker.md) (2026-10-29, builder agent)
-- **Data:** server **ef3f671 (DEPLOY NEEDED; it contains ad76178)**: the web's Close the day keeps a due's time
-  ("15:00" stays), never pulls a later due back, and caps kept stars at 3 too (over the cap = pushed). Phone: kept
-  stars over 3 go to Later; the Tomorrow peek reads the ritual day + 1 (a close after midnight still peeks).
-- **Checker list:** #4 no permission ask at launch (MainActivity; first use only). #1 month days ≥ 28 dp, one line.
-  #2 view switch: 44 dp parts with a gap. #3 the tone switch fills the width (Segmented `fill`), FixRow 2 lines.
-  #5 hours as "05", GUTTER 36 dp, timed daily habits fold into All day in 3 days / Week, titles clip by the block's
-  height (11 sp in narrow lanes). #6 day heads on the timeline's columns inside the glass (DayHeads; the grid now ends
-  at the glass's inner edge), Day's header = its day, 3 days = its range. #7 copy: 32 lines per task tone, 10 per
-  daily nudge, counts that read right for 1 ("left: 1"), no topic lines in the pools; `NotifyCopy.keywordLine` matches
-  a task's own words (pay → "money moves only"). #9 a dropped block stays put until Room moves it, and snaps to the
-  15-min grid / column while dragging. #10 an hour label under the glass top is not drawn.
-- **Also:** What's new keeps its quotes (escaped), adds the two Boss notes (empty Today after Close the day; the mint
-  status bar), untried rings ≥ 3:1. A repeating timed task rings too (unless its own habit bell does). The spacing gate
-  counts 2 and 6 dp now (baseline 250).
-- **Not done:** the group summary still mixes Tasks + Rituals in one day group (checker data note); keyword lines are
-  English only.
-=======
 ## START HERE v18 · ROUND D = HABITS 2.0 (THE CHAIN, OUR OWN LOOK), NAMOZ, THE ICON, HUMAN-MADE EMOJI (2026-10-29, builder agent, branch `feat/roundD-habits`)
 - **Order Boss set:** 0a habits (rebuilt from zero in our own glass, ideas from his 4 loved screens in `D:\00_inbox\taste\habit-*__loved__pagel-habits.jpg`),
   0b icon, 0c emoji, Namoz (Boss 2026-10-28: "start tracking namaz fully … from 1 November"). Items 1 (amount + calories photo), 2 (Inbox
@@ -147,6 +94,40 @@ tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test agai
   Room only (v8 `habit_prefs`/`habit_freezes`); pagel.uz has no fields for them yet. Namoz's "learn" link waits for Phase 6.
 - **Server (DEPLOY NEEDED, see report):** `feat/roundD-server` e39b7b6: `tasks.habit_group`, POST /api/v1/tasks takes `group` (one lower-case
   word), /sync + task reads send `group`; vitest. Until deployed, the phone still finds the prayers by their names.
+## START HERE · Phase 6a Compass (2026-10-29, builder agent, branch `feat/compass`, server `feat/compass-server`)
+- **What it is:** More → Compass. Boss's goals, sealed on the phone (Boss: "my goals are sacred, no AI ever will read
+  them… build the frame and I put them in"). The app ships an EMPTY frame; no goal was read, imported or written by AI.
+- **Lock:** a fresh 256-bit data key per phone, wrapped by an Android Keystore key that opens only within 60 s of
+  BiometricPrompt (fingerprint or the screen-lock PIN); every goal / note / report is AES-256-GCM sealed with its own
+  nonce and its id as AAD before Room (`compass.db`, its own file: ciphertext only, no word columns) and before the
+  outbox (`CompassWorker`). FLAG_SECURE on every Compass window (screen + sheets, counted per window); the key is
+  wiped 60 s after leaving the Compass or the app. No screen lock → "Set a screen lock first". Lost key → said plainly;
+  optional recovery passphrase (scrypt 2^15 wraps the data key; off by default, one line explains it).
+- **Server:** `feat/compass-server` **6cbb4cb — DEPLOY NEEDED**: `GET /api/v1/compass`, `PUT /api/v1/compass/items/<id>`
+  `{kind, parent, blob, starts, ends, deleted}` (any other key → 400, a blob must be the sealed envelope),
+  `/links/<project>` `{goal: id}`, `/recovery`; paired phone only (the machine token = 403). vitest 7/7. Until it is
+  deployed the phone keeps every sealed change waiting (404/405 = wait, never dropped).
+- **Frame:** Path = the vertical path (Why I live with a star on top → 10 years → Year 19 (1 Nov → 31 Oct) → the
+  season's 3 slots → Someday, no limit), empty states that invite writing. Season = four 13-week seasons made by the
+  app (12 + a review week), max 3 goals, a change after week 1 asks one line why (sealed), "my part" scored (70 % =
+  full mint "Win", never a percentage), the outcome never scored and closed as "a different door", week dots, never
+  miss twice, "Reset, not restart", key results he ticks, the weekly 2 questions. Year = "Year 18 → 19": tasks done,
+  habit days, best run, namaz days from 1 Nov, his own words, then "Write Year 19's goals".
+- **Hooks:** a season goal's weekly step becomes a weekly habit through the normal path (its own words only); project
+  page "Link to a goal" (titles opened only in a secured sheet; pagel.uz gets the id); Today's quiet line (off by
+  default, its own Keystore key, on this phone only); What's new line.
+- **Tests:** CompassRulesTest (31 Oct / 1 Nov, age from 2007-11-01, seasons, cap, chain, 70 %, reset),
+  CompassCryptoTest, **CompassPrivacyTest = the proof** (marked words through the real repository, a real Room file
+  and the outbox against MockWebServer: in no request body, no Timber/Log line, no file; every blob opens with the key),
+  CompassSchemaTest (v1 from its exported schema, no word columns), CompassScreenshotTest (empty, path empty, locked,
+  locked 1.5×, cascade + 1.5×, season + reset + week, age report, goal sheet + 1.5×, tabs equal-top assert);
+  walkthrough: PIN 1111 → More → Compass → Start (PIN) → write → fake pagel.uz has ciphertext only → Projects →
+  Humopedia → Link to a goal → `PUT /links/humopedia {"goal":"g_…"}`.
+- **Not done (and why):** the 1 Nov 08:00 birthday notification (the switch is stored, no alarm/UI yet: it needs a
+  receiver in the shared manifest, next round); the season-review reminder; changing a lead action after it became a
+  habit does not rename the habit (rename it in Habits); the keyboard's "incognito" flag (Compose BasicTextField has
+  no IME_FLAG_NO_PERSONALIZED_LEARNING switch); a second device syncing back (the phone is the only writer, by design).
+
 ## START HERE v17.1 · ROUND C FIX ROUND = THE CHECKER'S 7/10 LIST (docs/qa/roundC-checker.md) (2026-10-29, builder agent)
 - **Data:** server **ef3f671 (DEPLOY NEEDED; it contains ad76178)**: the web's Close the day keeps a due's time
   ("15:00" stays), never pulls a later due back, and caps kept stars at 3 too (over the cap = pushed). Phone: kept
