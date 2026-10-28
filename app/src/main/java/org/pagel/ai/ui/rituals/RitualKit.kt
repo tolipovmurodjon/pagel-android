@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.Pane
 import org.pagel.ai.ui.glass.TouchMin
@@ -154,8 +155,12 @@ internal fun StepDots(names: List<String>, current: Int, onGo: (Int) -> Unit) {
                     if (i < current) Icon(org.pagel.ai.ui.glass.TabIcons.Check, contentDescription = null, tint = Glass.Ink, modifier = Modifier.size(15.dp))
                     else Text("${i + 1}", style = Glass.NumberText, color = Glass.Ink)
                 }
-                // Two lines at 1.5x ("Next s…" was cut), centred under its dot.
-                Text(name, style = MaterialTheme.typography.labelSmall, color = if (i == current) Glass.Ink else Glass.Muted, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                // One line that shrinks to fit at 1.5x: two lines broke "Someday" into "Someda / y" (CI 40657424080).
+                androidx.compose.foundation.text.BasicText(
+                    name, style = MaterialTheme.typography.labelSmall.copy(color = if (i == current) Glass.Ink else Glass.Muted, textAlign = TextAlign.Center),
+                    maxLines = 1, softWrap = false, modifier = Modifier.padding(top = 4.dp),
+                    autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = MaterialTheme.typography.labelSmall.fontSize, stepSize = 0.5.sp),
+                )
             }
         }
     }

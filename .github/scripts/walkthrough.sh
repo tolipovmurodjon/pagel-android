@@ -370,11 +370,13 @@ sleep 4
 $T adb shell cmd statusbar expand-notifications
 shot p5-evening-notification 2
 grep -q 'Five minutes, then sleep' "$OUT/$(printf '%02d' $N)-p5-evening-notification.xml" || { log "WALKTHROUGH: no Close the day notification"; exit 1; }
-if ! tap "Close the day"; then
-  log "   (not tappable in the shade; opening it the way its intent does)"
-  $T adb shell cmd statusbar collapse
-  $T adb shell am start -n "$PKG/.MainActivity" --es pagel.open shutdown > /dev/null
-fi
+# Its button and content open MainActivity with pagel.open=shutdown. In the shade the emulator bundles it with the
+# anchor service's notification ("PAGEL 2"), and a tap there opened the bundle's other intent (CI 40657424080), so the
+# walk checks the notification carries its action, then sends the same intent.
+$T adb shell dumpsys notification --noredact > "$OUT/notification-dump.txt"
+grep -q 'Close the day' "$OUT/notification-dump.txt" || { log "WALKTHROUGH: no Close the day notification in dumpsys"; exit 1; }
+$T adb shell cmd statusbar collapse
+$T adb shell am start -n "$PKG/.MainActivity" --es pagel.open shutdown > /dev/null
 front p5-shutdown
 shot p5-shutdown 2.5
 grep -q 'content-desc="Star 1 of' "$OUT/$(printf '%02d' $N)-p5-shutdown.xml" || { log "WALKTHROUGH: the notification did not open Close the day on its first star"; exit 1; }

@@ -92,7 +92,10 @@ worktree (`D:\PAGEL\android-p5`) while another builder fixes Inbox/Upcoming on `
   its smoke stopped in the Phase 2 Inbox walk (the old swipe-up flake that feat/native-app a713747 fixes), before the
   Phase 5 block. Screenshot round 1 fixes: "Tomorrow" was cut at 1.5x (it now shrinks to fit), the evening row broke
   into five lines at 1.5x (two rows now), "1 of 3" was in the pixel number face (body face now), the review's step
-  names were cut at 1.5x (two lines), "Back to the text" wrapped (now "Edit text").
+  names were cut at 1.5x (one line that shrinks to fit), "Back to the text" wrapped (now "Edit text").
+  Run 40657424080: build ✅, smoke reached the Phase 5 block: 3 lines → 3 tasks on pagel.uz ✅; the evening notification
+  posted ✅ but a tap in the shade opened the anchor notification it is bundled with, so the walk now checks the
+  notification in `dumpsys notification` and sends its intent (`pagel.open=shutdown`).
 
 ## START HERE v12 · PHASE 4 FIX ROUND = THE CHECKER'S TOP 10 (2026-10-28, builder agent)
 No new phase (Phase 5 waits for Boss's phone test). The list: `docs/qa/phase4-checker.md` (8.5/10), in its order.
