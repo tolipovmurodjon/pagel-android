@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ draws its own splash from these: the page colour and PAGEL's mark (round D 0b), never the robot. -->
+    <style name="Theme.Pagel" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/pagel_page</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowSplashScreenBackground">@color/pagel_page</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+    </style>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PAGEL's icon ground (round D 0b): the mint glass family, three OKLCH stops lit from the top-left (brain rules
+     gradient-project-icons + colour-theory: 0.82/0.13/165 #65DFAF → 0.66/0.14/172 #00AD88 → 0.47/0.10/186 #006C63),
+     a soft top-left light and a darker bottom-right falloff, so the tile reads as one lit object, not a flat slab. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="18" android:startY="12" android:endX="96" android:endY="100">
+                <item android:offset="0" android:color="#FF65DFAF" />
+                <item android:offset="0.5" android:color="#FF00AD88" />
+                <item android:offset="1" android:color="#FF006C63" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- The one light, top-left: a white glow that fades out before the centre. -->
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="26" android:centerY="20" android:gradientRadius="58">
+                <item android:offset="0" android:color="#59FFFFFF" />
+                <item android:offset="1" android:color="#00FFFFFF" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

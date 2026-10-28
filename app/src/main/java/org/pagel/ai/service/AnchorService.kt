@@ -74,7 +74,7 @@ class AnchorService : Service() {
             )
         }
         val n = NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+            .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_pagel)
             .setContentTitle("PAGEL")
             .setContentText("Connected to your gateway.")
             .setOngoing(true)
