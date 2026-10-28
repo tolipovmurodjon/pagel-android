@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PAGEL's mark (round D 0b): the web's "P" and its yellow dot (dashboard public/logos/pagel.svg), scaled 1.25x into
+     the adaptive icon's 66 dp safe circle. A deep-teal shadow 1.5 dp under the P lifts it off the glass; the dot keeps
+     the brand's #FFD166. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="9.5" android:translateY="15.5" android:scaleX="1.25" android:scaleY="1.25">
+        <path android:fillColor="#40004643"
+            android:pathData="M22,48V16h12.5C41.4,16 46,20.2 46,26.4S41.4,36.8 34.5,36.8H29V48z M29,30.6h5c3,0 4.9,-1.6 4.9,-4.2S37.6,22.2 34.6,22.2H29z" />
+    </group>
+    <group android:translateX="9.5" android:translateY="14" android:scaleX="1.25" android:scaleY="1.25">
+        <path android:fillColor="#FFFFFFFF"
+            android:pathData="M22,48V16h12.5C41.4,16 46,20.2 46,26.4S41.4,36.8 34.5,36.8H29V48z M29,30.6h5c3,0 4.9,-1.6 4.9,-4.2S37.6,22.2 34.6,22.2H29z" />
+        <path android:fillColor="#FFFFD166" android:pathData="M44,46m-4,0a4,4 0,1 1,8 0a4,4 0,1 1,-8 0" />
+    </group>
+</vector>

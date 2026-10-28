@@ -1,0 +1,15 @@
+PAGEL Android bundles third-party work under these licences.
+
+Fluent Emoji (app/src/main/res/drawable-nodpi/emoji_*.webp)
+  Copyright (c) Microsoft Corporation. MIT License.
+  https://github.com/microsoft/fluentui-emoji (3D set, resized to 144 px WebP)
+
+Adhan (com.batoulapps.adhan:adhan 1.2.1, prayer times)
+  Copyright (c) Batoul Apps. MIT License.
+  https://github.com/batoulapps/adhan-java
+
+Lucide icons (ui/glass/TabIcons.kt, drawable/ic_stat_bell.xml)
+  ISC License, Copyright Lucide Icons and Contributors. https://lucide.dev
+
+Liquid glass catalog components (ui/glass/*, credited in each file header)
+  Apache License 2.0.
