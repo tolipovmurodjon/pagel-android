@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The Compass (Phase 6a): Android's own unlock sheet (fingerprint or screen-lock PIN). Normal permission. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- device.status reads ConnectivityManager for the network block (AndroidDeviceInfoSource.network()).
          Without this, the whole command dies at the framework boundary with

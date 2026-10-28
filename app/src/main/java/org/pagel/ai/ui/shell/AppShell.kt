@@ -226,6 +226,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         when (where) {
             "upcoming" -> { selected = more; stacks[more].add(UpcomingListRoute) }
             "notifications" -> { selected = more; stacks[more].add(NotificationsRoute) }
+            "compass" -> { selected = more; stacks[more].add(org.pagel.ai.ui.compass.CompassRoute) }
             "habits" -> selected = Tab.entries.indexOf(Tab.Habits)
             "shutdown" -> { goToday(); stacks[0].add(ShutdownRoute) }
             "more" -> selected = more
@@ -296,6 +297,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         }
                     }
                     entry<CompletedListRoute> { CompletedScreenRoute(padding, reselect) }
+                    entry<org.pagel.ai.ui.compass.CompassRoute> { org.pagel.ai.ui.compass.CompassRouteScreen(padding) }
                     entry<ProjectListRoute> { ProjectsRoute(padding, reselect, onOpenProject = { stack.add(ProjectPageRoute(it)) }) }
                     entry<ProjectPageRoute> { r -> ProjectScreenRoute(r.name, padding, reselect, onOpenTask = { openTask = it }, onAdd = { adding = it }) }
                     entry<WebRoute> { r -> TasksScreen(onOpenPhone = onOpenPhone, startPath = r.path) }
@@ -333,6 +335,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         val pageTitle = when (top) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
+            org.pagel.ai.ui.compass.CompassRoute -> "Compass"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
         val density = androidx.compose.ui.platform.LocalDensity.current
@@ -506,6 +509,8 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
         Spacer(Modifier.height(Space.headerToCard))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 6.dp)) {
+                // The Compass first: Boss's goals are the core every list below serves (Phase 6a).
+                MoreRow(org.pagel.ai.ui.compass.CompassIcons.Compass, "Compass", Glass.Primary) { onOpenRitual(org.pagel.ai.ui.compass.CompassRoute) }
                 // The web's phone bar keeps Upcoming and Completed under More too (dashboard nav.tsx PHONE).
                 MoreRow(TabIcons.Calendar, "Upcoming", Color(0xFFD9620B), onOpenUpcoming)
                 MoreRow(TabIcons.Done, "Completed", Color(0xFF0E7490), onOpenCompleted)

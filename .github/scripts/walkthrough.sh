@@ -564,3 +564,56 @@ log "   pagel.uz got the weekly review"
 $T adb logcat -d > "$OUT/logcat-p5.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-p5.txt" && { log "WALKTHROUGH: CRASH in Phase 5 (see logcat-p5.txt)"; exit 1; }
 log "PHASE 5 WALK DONE: $N steps"
+
+log "-- Phase 6a, the Compass: a screen lock (PIN 1111, the test credential), More → Compass, start it with the PIN,"
+log "   write why I live, link a project; the fake pagel.uz must get ciphertext only (no goal words anywhere in its log)"
+# The Keystore guards the key only behind a secure lock screen; the emulator has none until this PIN. The screen must
+# stay on, or the lock screen would cover every step after this.
+$T adb shell svc power stayon true
+$T adb shell locksettings set-pin 1111 > /dev/null 2>&1 || log "   (WARN: locksettings set-pin failed)"
+# Back to a tab's root, where the bar (and More) shows.
+for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
+front c-more
+tap Compass && shot c-new 2.5 || { log "WALKTHROUGH: More has no Compass"; exit 1; }
+grep -q 'content-desc="Start my Compass"' "$OUT/$(printf '%02d' $N)-c-new.xml" || { log "WALKTHROUGH: the empty Compass does not invite writing"; exit 1; }
+# FLAG_SECURE: the window that shows the Compass is marked secure (screenshots of it come out black).
+$T adb shell dumpsys window windows > "$OUT/window-dump-compass.txt" 2>&1
+grep -B2 -A12 "$PKG/$PKG.MainActivity" "$OUT/window-dump-compass.txt" | grep -q "SECURE" && log "   the Compass window is FLAG_SECURE" || log "   (WARN: dumpsys did not show SECURE on the Compass window)"
+unlock_pin() {
+  sleep 2.5
+  $T adb shell input text 1111; sleep 0.5; $T adb shell input keyevent 66; sleep 3
+}
+tap "Start my Compass" && unlock_pin
+shot c-open 2
+grep -q 'content-desc="Write why you live"' "$OUT/$(printf '%02d' $N)-c-open.xml" || { log "WALKTHROUGH: the Compass did not open after the PIN"; exit 1; }
+tap "Write why you live" && shot c-sheet 2.5 || exit 1
+tap "Why I live" || { log "WALKTHROUGH: the goal sheet has no Why I live field"; exit 1; }
+$T adb shell "input text 'Walkthrough%szebra%spurpose%sline'"
+$T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
+tap_scroll Save && shot c-saved 2.5 || { log "WALKTHROUGH: no Save in the goal sheet"; exit 1; }
+grep -q 'Walkthrough zebra purpose line' "$OUT/$(printf '%02d' $N)-c-saved.xml" || { log "WALKTHROUGH: the purpose is not on the path after Save"; exit 1; }
+wait_log 'PUT /api/v1/compass/items/g_' 40 || { log "WALKTHROUGH: the sealed purpose never reached pagel.uz"; exit 1; }
+grep -F 'PUT /api/v1/compass/items/g_' "$FAKE_LOG" | head -1 | grep -qE '\{"kind":"purpose","parent":null,"blob":"[A-Za-z0-9+/=]{40,}","starts":null,"ends":null,"deleted":false\} auth=True' \
+  || { log "WALKTHROUGH: the purpose did not reach pagel.uz as a sealed item"; grep compass "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+grep -qi 'zebra' "$FAKE_LOG" && { log "WALKTHROUGH: GOAL WORDS REACHED pagel.uz IN THE CLEAR"; grep -i zebra "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+# PAGEL's own log lines (its pid): no goal words.
+APP_PID=$($T adb shell pidof "$PKG" | tr -cd '0-9')
+grep -qi 'zebra' <($T adb logcat -d --pid="$APP_PID") && { log "WALKTHROUGH: goal words in PAGEL's logcat"; exit 1; }
+log "   pagel.uz got the purpose as ciphertext only (no goal words in its log or in logcat)"
+
+log "-- a project serves the goal: Projects → Humopedia → Link to a goal → the purpose; pagel.uz gets only its id"
+$T adb shell input keyevent 4; sleep 1
+for k in 1 2 3; do tap Projects && break; $T adb shell input keyevent 4; sleep 1; done
+front c-projects
+tap Humopedia && shot c-project 2 || { log "WALKTHROUGH: no Humopedia project"; exit 1; }
+tap "Link to a goal" && shot c-picker 2 || { log "WALKTHROUGH: the project page has no Link to a goal"; exit 1; }
+if grep -q 'content-desc="Unlock"' "$OUT/$(printf '%02d' $N)-c-picker.xml"; then tap Unlock && unlock_pin; shot c-picker-open 1.5; fi
+tap 'Serves: Why I live[^"]*' && shot c-linked 2 || { log "WALKTHROUGH: the picker has no purpose to pick"; exit 1; }
+wait_log 'PUT /api/v1/compass/links/humopedia {"goal":"g_' 40 || { log "WALKTHROUGH: the link never reached pagel.uz as an id"; grep compass "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+grep -q 'content-desc="Serves a goal"' "$OUT/$(printf '%02d' $N)-c-linked.xml" || log "   (WARN: the project row did not turn to Serves a goal yet)"
+grep -qi 'zebra' "$FAKE_LOG" && { log "WALKTHROUGH: GOAL WORDS REACHED pagel.uz IN THE CLEAR"; exit 1; }
+log "   pagel.uz got humopedia → the goal's id, no words"
+$T adb shell locksettings clear --old 1111 > /dev/null 2>&1 || true
+$T adb logcat -d > "$OUT/logcat-compass.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-compass.txt" && { log "WALKTHROUGH: CRASH in the Compass (see logcat-compass.txt)"; exit 1; }
+log "PHASE 6a WALK DONE: $N steps"

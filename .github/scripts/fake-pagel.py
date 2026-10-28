@@ -361,4 +361,63 @@ def _p5_get(self):
 
 H.do_POST, H.do_PATCH, H.do_GET = _p5_post, _p5_patch, _p5_get
 
+# ── Phase 6a · the Compass (dashboard compass-api.ts): sealed items only ────────────────────────────────────────────
+# PUT /api/v1/compass/items/<id> takes {kind, parent, blob, starts, ends, deleted} and nothing else: any other key (a
+# title, a why…) is refused, as pagel.uz refuses it; the blob must be the phone's envelope (base64, version byte 1).
+import base64
+COMPASS = {}       # id -> body
+COMPASS_LINKS = {}  # project -> goal id
+COMPASS_RECOVERY = [None]
+ITEM_KEYS = {"kind", "parent", "blob", "starts", "ends", "deleted"}
+
+def sealed(blob):
+    try:
+        raw = base64.b64decode(blob, validate=True)
+    except Exception:
+        return False
+    return isinstance(blob, str) and len(raw) >= 29 and raw[0] == 1
+
+def _compass_put(self):
+    body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode()
+    LOG.write(f"PUT {self.path} {body[:4000]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    b = json.loads(body or "{}")
+    parts = self.path.split("/")  # ['', 'api', 'v1', 'compass', what, id]
+    if len(parts) < 5 or parts[3] != "compass":
+        return self.send(404, {"error": "Unknown path."})
+    what = parts[4]
+    if what == "items" and len(parts) == 6:
+        extra = set(b) - ITEM_KEYS
+        if extra:
+            return self.send(400, {"error": "pagel.uz never takes goal words: " + ", ".join(sorted(extra))})
+        if not sealed(b.get("blob")):
+            return self.send(400, {"error": "blob must be the phone's sealed envelope (base64, version 1)."})
+        old = COMPASS.get(parts[5], {}).get("version", 0)
+        COMPASS[parts[5]] = {**b, "id": parts[5], "version": old + 1}
+        return self.send(200, {"id": parts[5], "version": old + 1})
+    if what == "links" and len(parts) == 6:
+        if set(b) - {"goal"}:
+            return self.send(400, {"error": "Send {goal}."})
+        COMPASS_LINKS[parts[5]] = b.get("goal")
+        return self.send(200, {"project": parts[5], "goal": b.get("goal")})
+    if what == "recovery":
+        if b.get("blob") is not None and not sealed(b.get("blob")):
+            return self.send(400, {"error": "blob must be sealed."})
+        COMPASS_RECOVERY[0] = b.get("blob")
+        return self.send(200, {"recovery": b.get("blob") is not None})
+    return self.send(404, {"error": "Unknown path."})
+
+_p5_get_compass = H.do_GET
+def _compass_get(self):
+    if self.path != "/api/v1/compass":
+        return _p5_get_compass(self)
+    LOG.write(f"GET {self.path} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    return self.send(200, {"items": list(COMPASS.values()), "links": [{"project": k, "goal": v} for k, v in COMPASS_LINKS.items() if v],
+                           "recovery": COMPASS_RECOVERY[0]})
+
+H.do_PUT, H.do_GET = _compass_put, _compass_get
+
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()

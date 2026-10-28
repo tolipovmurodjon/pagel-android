@@ -147,7 +147,7 @@ class ProjectViewModel @Inject constructor(private val tasks: TaskRepository, pr
 fun ProjectRoute(project: String, contentPadding: PaddingValues, reselect: Int, onOpenTask: (String) -> Unit, onAdd: (String) -> Unit = {}, vm: ProjectViewModel = hiltViewModel()) {
     LaunchedEffect(project) { vm.bind(project) }
     val ui by vm.ui.collectAsStateWithLifecycle()
-    ProjectScreen(ui, contentPadding, reselect, onOpenTask = onOpenTask, onTick = vm::tick, onAdd = { onAdd(project) })
+    ProjectScreen(ui, contentPadding, reselect, onOpenTask = onOpenTask, onTick = vm::tick, onAdd = { onAdd(project) }, goal = { org.pagel.ai.ui.compass.ServesGoalRow(project) })
 }
 
 private val TASHKENT = ZoneId.of("Asia/Tashkent")
@@ -158,7 +158,7 @@ private val TASHKENT = ZoneId.of("Asia/Tashkent")
  * panel, the ring ticks it.
  */
 @Composable
-fun ProjectScreen(ui: ProjectUi, contentPadding: PaddingValues, reselect: Int = 0, today: LocalDate = LocalDate.now(TASHKENT), onOpenTask: (String) -> Unit = {}, onTick: (String) -> Unit = {}, onAdd: () -> Unit = {}) {
+fun ProjectScreen(ui: ProjectUi, contentPadding: PaddingValues, reselect: Int = 0, today: LocalDate = LocalDate.now(TASHKENT), onOpenTask: (String) -> Unit = {}, onTick: (String) -> Unit = {}, onAdd: () -> Unit = {}, goal: @Composable (() -> Unit)? = null) {
     val list = rememberLazyListState()
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
     val now = ui.groups.filter { it.now }
@@ -174,6 +174,8 @@ fun ProjectScreen(ui: ProjectUi, contentPadding: PaddingValues, reselect: Int = 
                 }
             }
         }
+        // Which goal this project serves (the Compass, Phase 6a): one tap from the work to the why.
+        if (goal != null && ui.name.isNotEmpty()) item(key = "goal", contentType = "goal") { goal() }
         when {
             ui.loading -> item(key = "loading", contentType = "note") { Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(4) } }
             ui.groups.isEmpty() -> item(key = "empty", contentType = "note") {
