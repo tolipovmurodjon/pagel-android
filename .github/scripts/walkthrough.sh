@@ -617,3 +617,68 @@ $T adb shell locksettings clear --old 1111 > /dev/null 2>&1 || true
 $T adb logcat -d > "$OUT/logcat-compass.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-compass.txt" && { log "WALKTHROUGH: CRASH in the Compass (see logcat-compass.txt)"; exit 1; }
 log "PHASE 6a WALK DONE: $N steps"
+
+log "-- Phase 6b, the second brain: Notebook → Folders → open Notes (only the phone's switch), read Spaced recall, search"
+log "   finds it, Review 5 grades its card, the journal seals an entry; the fake pagel.uz gets ciphertext only for the journal"
+for k in 1 2 3 4; do tap Notebook && break; $T adb shell input keyevent 4; sleep 1; done
+front nb-home
+shot nb-home 2.5
+grep -q 'content-desc="Search everything"' "$OUT/$(printf '%02d' $N)-nb-home.xml" || { log "WALKTHROUGH: the Notebook has no search box"; exit 1; }
+tap Folders && shot nb-folders 3 || { log "WALKTHROUGH: the Notebook has no Folders door"; exit 1; }
+grep -q 'content-desc="Kundalik is locked"' "$OUT/$(printf '%02d' $N)-nb-folders.xml" || { log "WALKTHROUGH: Kundalik is not shown locked"; exit 1; }
+tap "Allow Notes" && shot nb-notes-on 2 || { log "WALKTHROUGH: Notes has no switch"; exit 1; }
+wait_log 'PUT /api/v1/vault/folders {"folders":[{"path":"Notes","allowed":true}]}' 40 || { log "WALKTHROUGH: the Notes switch never reached pagel.uz"; grep vault "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+grep -q 'PUT /api/v1/vault/folders {"folders":\[{"path":"Kundalik"' "$FAKE_LOG" && { log "WALKTHROUGH: the phone tried to open Kundalik"; exit 1; }
+log "   pagel.uz got the switch for Notes; Kundalik stayed locked"
+tap "Folder Notes" && shot nb-folder 3 || { log "WALKTHROUGH: the open folder does not open"; exit 1; }
+OPENED=0
+for i in 1 2 3 4 5 6; do tap "Note: Spaced recall" && { OPENED=1; break; }; sleep 2; done
+[ "$OPENED" = 1 ] || { log "WALKTHROUGH: the folder's notes never came (GET /api/v1/vault/notes)"; exit 1; }
+shot nb-reader 3
+grep -q 'just before you would forget' "$OUT/$(printf '%02d' $N)-nb-reader.xml" || { shot nb-reader-again 3; grep -q 'just before you would forget' "$OUT/$(printf '%02d' $N)-nb-reader-again.xml" || { log "WALKTHROUGH: the reader does not show the note's words"; exit 1; }; }
+log "   the native reader shows the fixture note"
+for k in 1 2 3; do $T adb shell input keyevent 4; sleep 1; done
+for k in 1 2 3; do tap Notebook && break; $T adb shell input keyevent 4; sleep 1; done
+front nb-search
+tap "Search everything" || { log "WALKTHROUGH: no search box on the Notebook"; exit 1; }
+$T adb shell input text 'spaced'
+shot nb-search 3
+grep -q 'content-desc="Note: Spaced recall"' "$OUT/$(printf '%02d' $N)-nb-search.xml" || { log "WALKTHROUGH: search does not find the note"; exit 1; }
+log "   search finds the note"
+tap "Clear search"
+$T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
+tap_scroll "Start the review" && shot nb-recall 2.5 || { log "WALKTHROUGH: no Review 5 card (GET /api/v1/recall/due)"; exit 1; }
+tap "Show answer" && shot nb-recall-answer 1.5 || { log "WALKTHROUGH: the card has no Show answer"; exit 1; }
+tap Good && shot nb-recall-done 2 || { log "WALKTHROUGH: no Good grade"; exit 1; }
+wait_log 'POST /api/v1/recall/c_ci1/grade {"grade":"good"}' 40 || { log "WALKTHROUGH: the grade never reached pagel.uz"; grep recall "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got the grade"
+tap "Back to Notebook" || $T adb shell input keyevent 4
+sleep 1
+
+log "-- the locked journal: PIN 1111 again, Journal → Start (PIN) → Write today → Save; pagel.uz must get {blob, deleted, base} only"
+$T adb shell locksettings set-pin 1111 > /dev/null 2>&1 || log "   (WARN: locksettings set-pin failed)"
+front nb-journal
+tap_scroll Journal && shot j-new 2.5 || { log "WALKTHROUGH: the Notebook has no Journal door"; exit 1; }
+grep -q 'content-desc="Start my journal"' "$OUT/$(printf '%02d' $N)-j-new.xml" || { log "WALKTHROUGH: the new journal does not invite writing"; exit 1; }
+$T adb shell dumpsys window windows > "$OUT/window-dump-journal.txt" 2>&1
+grep -B2 -A12 "$PKG/$PKG.MainActivity" "$OUT/window-dump-journal.txt" | grep -q "SECURE" && log "   the journal window is FLAG_SECURE" || log "   (WARN: dumpsys did not show SECURE on the journal window)"
+tap "Start my journal" && unlock_pin
+shot j-open 2
+grep -q 'content-desc="Write today"' "$OUT/$(printf '%02d' $N)-j-open.xml" || { log "WALKTHROUGH: the journal did not open after the PIN"; exit 1; }
+tap "Write today" && sleep 2 || exit 1
+tap "Journal words" || { log "WALKTHROUGH: the writing sheet has no field"; exit 1; }
+$T adb shell "input text 'Walkthrough%szebra%sjournal%sline'"
+$T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
+tap "Save entry" && shot j-saved 2.5 || { log "WALKTHROUGH: no Save in the writing sheet"; exit 1; }
+grep -q 'Walkthrough zebra journal line' "$OUT/$(printf '%02d' $N)-j-saved.xml" || log "   (WARN: the entry is not on the list yet)"
+wait_log 'PUT /api/v1/journal/entries/j_' 40 || { log "WALKTHROUGH: the sealed entry never reached pagel.uz"; exit 1; }
+grep -F 'PUT /api/v1/journal/entries/j_' "$FAKE_LOG" | head -1 | grep -qE '\{"blob":"[A-Za-z0-9+/=]{40,}","deleted":false,"base":0\} auth=True' \
+  || { log "WALKTHROUGH: the entry did not reach pagel.uz as {blob, deleted, base}"; grep journal "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+grep -qi 'zebra' "$FAKE_LOG" && { log "WALKTHROUGH: JOURNAL WORDS REACHED pagel.uz IN THE CLEAR"; grep -i zebra "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+APP_PID=$($T adb shell pidof "$PKG" | tr -cd '0-9')
+grep -qi 'zebra' <($T adb logcat -d --pid="$APP_PID") && { log "WALKTHROUGH: journal words in PAGEL's logcat"; exit 1; }
+log "   pagel.uz got the entry as ciphertext only (no words in its log or in logcat)"
+$T adb shell locksettings clear --old 1111 > /dev/null 2>&1 || true
+$T adb logcat -d > "$OUT/logcat-notebook.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-notebook.txt" && { log "WALKTHROUGH: CRASH in the Notebook or the journal (see logcat-notebook.txt)"; exit 1; }
+log "PHASE 6b WALK DONE: $N steps"

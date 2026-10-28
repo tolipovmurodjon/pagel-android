@@ -422,4 +422,122 @@ def _compass_get(self):
 
 H.do_PUT, H.do_GET = _compass_put, _compass_get
 
+# ── Phase 6b · the second brain + the locked journal (dashboard vault-api.ts, search.ts, recall-store.ts, journal-api.ts)
+# Fixture notes only (never Boss's vault). "Notes" starts closed: the walkthrough opens it with its switch, reads
+# "Spaced recall", finds it in search, grades the due card. Kundalik is listed locked and refuses to open (400).
+# PUT /api/v1/journal/entries/<id> takes {blob, deleted, base} only, the blob sealed (version byte 1).
+from urllib.parse import unquote, urlparse, parse_qs
+VAULT = {"Kundalik": False, "Notes": False, "Sources": False}
+VAULT_NOTES = {
+    "Notes/Spaced recall.md": ("Spaced recall", "# Spaced recall\n\nAnswer a question **just before** you would forget it. See [[Ideas]].\n\n- Review 5 cards a day\n- [x] Set up the cards\n"),
+    "Notes/Ideas.md": ("Ideas", "# Ideas\n\n- Link [[Spaced recall]] to the Humopedia lessons\n"),
+}
+NOTE_VERSIONS = {}
+CARDS = [{"id": "c_ci1", "question": "What makes recall stick?", "answer": "Spacing: answer it again just before you would forget.",
+          "due": "2026-10-01T00:00:00.000Z", "source_kind": "vault_note", "source_id": "Notes/Spaced recall.md"}]
+GRADED = []
+JOURNAL = {}
+JOURNAL_KEYS = {"blob", "deleted", "base"}
+
+def vault_open(p):
+    return "/" in p and VAULT.get(p.split("/")[0]) is True and not p.lower().startswith("kundalik")
+
+def folders_body():
+    return {"folders": [{"path": k, "allowed": v and k != "Kundalik", "set": v, "locked": k == "Kundalik",
+                         "notes": sum(1 for n in VAULT_NOTES if n.startswith(k + "/"))} for k, v in sorted(VAULT.items())], "locked": ["Kundalik"]}
+
+def note_body(p):
+    t, b = VAULT_NOTES[p]
+    back = [{"path": o, "title": VAULT_NOTES[o][0]} for o in VAULT_NOTES if o != p and f"[[{t}]]" in VAULT_NOTES[o][1] and vault_open(o)]
+    links = [{"target": "ideas", "path": "Notes/Ideas.md"}] if "[[Ideas]]" in b else []
+    return {"path": p, "title": t, "body": b, "hash": f"h{NOTE_VERSIONS.get(p, 1)}", "version": NOTE_VERSIONS.get(p, 1),
+            "updated_at": "2026-10-20T00:00:00.000Z", "links": links, "backlinks": back}
+
+_p6b_get = H.do_GET
+def _nb_get(self):
+    u = urlparse(self.path)
+    p, q = u.path, parse_qs(u.query)
+    mine = p.startswith("/api/v1/vault/") or p in ("/api/v1/search", "/api/v1/recall/due", "/api/v1/journal") or (p == "/api/v1/notes")
+    if not mine:
+        return _p6b_get(self)
+    LOG.write(f"GET {self.path} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    if p == "/api/v1/vault/folders":
+        return self.send(200, folders_body())
+    if p == "/api/v1/vault/notes":
+        return self.send(200, {"notes": [{"path": n, "title": t, "hash": f"h{NOTE_VERSIONS.get(n, 1)}", "version": NOTE_VERSIONS.get(n, 1),
+                                          "updated_at": "2026-10-20T00:00:00.000Z"} for n, (t, _) in sorted(VAULT_NOTES.items()) if vault_open(n)]})
+    if p.startswith("/api/v1/vault/notes/"):
+        n = unquote(p[len("/api/v1/vault/notes/"):])
+        return self.send(200, note_body(n)) if n in VAULT_NOTES and vault_open(n) else self.send(404, {"error": "No such note."})
+    if p == "/api/v1/vault/manifest":
+        return self.send(200, {"notes": [], "files": []})
+    if p == "/api/v1/search":
+        words = [w for w in (q.get("q", [""])[0]).lower().split() if w]
+        hits = [{"kind": "note", "path": n, "title": t, "snippet": t, "project": None, "updated": None}
+                for n, (t, b) in sorted(VAULT_NOTES.items()) if vault_open(n) and words and all(w in (t + " " + b).lower() for w in words)]
+        return self.send(200, {"q": q.get("q", [""])[0], "results": hits})
+    if p == "/api/v1/recall/due":
+        due = [c for c in CARDS if c["id"] not in GRADED]
+        return self.send(200, {"due": len(due), "cards": due})
+    if p == "/api/v1/notes":
+        return self.send(200, {"projects": []})
+    if p == "/api/v1/journal":
+        return self.send(200, {"entries": list(JOURNAL.values())})
+    return self.send(404, {"error": "Unknown path."})
+
+_p6b_put = H.do_PUT
+def _nb_put(self):
+    if not (self.path.startswith("/api/v1/vault/") or self.path.startswith("/api/v1/journal/")):
+        return _p6b_put(self)
+    body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode()
+    LOG.write(f"PUT {self.path} {body[:4000]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    b = json.loads(body or "{}")
+    if self.path == "/api/v1/vault/folders":
+        for f in b.get("folders", []):
+            if f.get("path", "").lower().startswith("kundalik") and f.get("allowed"):
+                return self.send(400, {"error": "Kundalik is closed for good."})
+        for f in b.get("folders", []):
+            VAULT[f["path"]] = bool(f["allowed"])
+        return self.send(200, {**folders_body(), "removed": 0})
+    if self.path == "/api/v1/vault/notes":
+        n = b.get("path", "")
+        if not vault_open(n):
+            return self.send(403, {"error": "That folder is closed. Open it on the phone first."})
+        VAULT_NOTES[n] = (b.get("body", "").split("\n")[0].lstrip("# ").strip() or n, b.get("body", ""))
+        NOTE_VERSIONS[n] = NOTE_VERSIONS.get(n, 0) + 1
+        return self.send(200, {"path": n, "hash": f"h{NOTE_VERSIONS[n]}", "version": NOTE_VERSIONS[n]})
+    parts = self.path.split("/")  # ['', 'api', 'v1', 'journal', 'entries', id]
+    if len(parts) == 6 and parts[4] == "entries":
+        extra = set(b) - JOURNAL_KEYS
+        if extra:
+            return self.send(400, {"error": "pagel.uz never takes journal words: " + ", ".join(sorted(extra))})
+        if not sealed(b.get("blob")):
+            return self.send(400, {"error": "blob must be the phone's sealed envelope (base64, version 1)."})
+        old = JOURNAL.get(parts[5], {}).get("version", 0)
+        if parts[5] in JOURNAL and int(b.get("base") or 0) != old:
+            return self.send(409, {"error": "A newer copy is on pagel.uz.", "version": old})
+        JOURNAL[parts[5]] = {"id": parts[5], "blob": b["blob"], "deleted": b.get("deleted") is True, "version": old + 1}
+        return self.send(200, {"id": parts[5], "version": old + 1})
+    return self.send(404, {"error": "Unknown path."})
+
+_p6b_post = H.do_POST
+def _nb_post(self):
+    if not self.path.startswith("/api/v1/recall/"):
+        return _p6b_post(self)
+    body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode()
+    LOG.write(f"POST {self.path} {body[:300]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    parts = self.path.split("/")  # ['', 'api', 'v1', 'recall', id, 'grade']
+    if len(parts) == 6 and parts[5] == "grade" and any(c["id"] == parts[4] for c in CARDS):
+        GRADED.append(parts[4])
+        return self.send(200, {"id": parts[4], "due": "2026-11-05T00:00:00.000Z"})
+    return self.send(404, {"error": "No such card."})
+
+H.do_GET, H.do_PUT, H.do_POST = _nb_get, _nb_put, _nb_post
+
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()
