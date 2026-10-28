@@ -83,6 +83,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
+        // The evening reminder's "Close the day" (Phase 5): the shell opens the ritual on Today's stack. Only PAGEL's own
+        // explicit PendingIntent sets it (the activity's only filter is the launcher), and only known names are opened.
+        intent?.getStringExtra(org.pagel.ai.ui.shell.OpenRequests.EXTRA)?.let { org.pagel.ai.ui.shell.OpenRequests.open(it) }
         if (intent?.action == Updater.ACTION_INSTALL) {
             // Boss tapped "PAGEL x ready": hand the verified download to Android's confirm screen, off the main thread.
             val updater = Updater(applicationContext)

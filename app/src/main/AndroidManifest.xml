@@ -122,6 +122,8 @@
         <!-- A habit's reminder and its Done button (Phase 3). Not exported: only PAGEL's own explicit, immutable
              PendingIntents reach it. -->
         <receiver android:name=".reminders.HabitAlarmReceiver" android:exported="false" />
+        <!-- The evening "Close the day" reminder (Phase 5). Not exported, as above. -->
+        <receiver android:name=".reminders.ShutdownAlarmReceiver" android:exported="false" />
 
         <!-- "Today's 3" home-screen widget. exported=true: the launcher sends APPWIDGET_UPDATE from outside. -->
         <receiver

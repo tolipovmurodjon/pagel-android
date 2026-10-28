@@ -157,3 +157,43 @@ data class CompletedResponse(
     /** Every finished task on pagel.uz, as the web counts them (dashboard 9815038); null from an older pagel.uz. */
     val total: Int? = null,
 )
+
+/** One row of a split dump (dashboard src/lib/sweep.ts): do it soon, maybe later, or nothing to do. */
+@Serializable
+data class SweepRowDto(val kind: String = "action", val text: String = "", val project: String = "me")
+
+/** `POST /api/v1/sweep {id, dump}` (dashboard src/lib/ritual-api.ts). */
+@Serializable
+data class SweepBody(val id: String, val dump: String)
+
+@Serializable
+data class SweepReply(val rows: List<SweepRowDto> = emptyList())
+
+/** `GET /api/v1/rituals`: the ritual day, closed tonight, the last weekly review, the projects with no next step. */
+@Serializable
+data class StuckDto(val project: String, val title: String = "")
+
+@Serializable
+data class RitualsResponse(
+    val day: String = "",
+    @SerialName("shut_today") val shutToday: Boolean = false,
+    @SerialName("last_review") val lastReview: String? = null,
+    @SerialName("review_due") val reviewDue: Boolean = false,
+    val stuck: List<StuckDto> = emptyList(),
+)
+
+/** `POST /api/v1/rituals`: a ritual closed on the phone; the task changes went as their own PATCH/POST. */
+@Serializable
+data class RitualBody(
+    val action: String,
+    val id: String,
+    val day: String,
+    val kept: Int = 0,
+    val pushed: Int = 0,
+    val dropped: Int = 0,
+    val picked: Int = 0,
+    val added: Int = 0,
+)
+
+@Serializable
+data class RitualReply(val ok: Boolean = false, val already: Boolean = false)

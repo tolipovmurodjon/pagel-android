@@ -57,7 +57,7 @@ class MigrationTest {
             assertEquals("done", op.op)
             assertNull(op.body)
             assertFalse(op.waitsForServer)
-            assertEquals(5, db.openHelper.readableDatabase.version)
+            assertEquals(6, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }
@@ -95,7 +95,7 @@ class MigrationTest {
             assertEquals("""{"set":{"priority":0}}""", op.body)
             assertEquals(0, db.inbox().deckSize())
             assertNull(db.inbox().stateOnce())
-            assertEquals(5, db.openHelper.readableDatabase.version)
+            assertEquals(6, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }
@@ -136,7 +136,43 @@ class MigrationTest {
             assertEquals(listOf("t_h"), db.dao().habitsOnce().map { it.id })
             assertEquals(emptyList<Any>(), db.dao().habitTicksOf("t_h"))
             assertEquals(emptyList<Any>(), db.dao().remindersOnce())
-            assertEquals(5, db.openHelper.readableDatabase.version)
+            assertEquals(6, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
+
+    /** v5 → v6 (Rituals): a phone on 0.8.x keeps its tasks and waiting edits; the dumps and the rituals' state start empty. */
+    @Test fun fiveToSixKeepsTasksAndAddsEmptyRituals() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/5.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(5, schema["version"]!!.jsonPrimitive.content.toInt())
+
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("""INSERT INTO tasks (id, project, phase, sort, text, title, status, priority, star, due, every, doneWhen, doneAt, updatedAt, serverVersion, syncStatus, lastModified, phaseSort, phaseNow)
+                VALUES ('t_s', 'me', 'Now', 1.0, 'Call the bank', NULL, 'open', 1, 1, NULL, NULL, NULL, NULL, '2026-10-27T10:00:00Z', 1, 'pending', 5, 0, 1)""")
+            old.execSQL("""INSERT INTO outbox (taskId, op, createdAt, attempts, refused, body, waitsForServer) VALUES ('t_s', 'patch', 7, 0, NULL, '{"set":{"star":false},"was":{"star":true}}', 0)""")
+            old.execSQL("INSERT INTO habit_reminders (taskId, enabled) VALUES ('t_h', 1)")
+            old.version = 5
+        }
+
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            assertEquals("Call the bank", db.dao().taskOnce("t_s")!!.text)
+            assertEquals("patch", db.dao().waitingOutbox().single().op)
+            assertEquals(1, db.dao().remindersOnce().size)
+            assertNull(db.rituals().stateOnce())
+            assertNull(db.rituals().sweepOnce("anything"))
+            assertEquals(6, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }

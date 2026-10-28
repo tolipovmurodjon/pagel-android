@@ -448,7 +448,7 @@ private fun Hint(text: String) {
 
 /** A missing grant: its icon and name, and the one word that opens the right Settings page, on a 48 dp row. */
 @Composable
-private fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String, tone: Color, onClick: () -> Unit) {
+internal fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String, tone: Color, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp).heightIn(min = 48.dp).pressScale(press)
@@ -467,7 +467,7 @@ private fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label:
 
 /** Apple's switch: a capsule that fills mint, a white knob that springs across. Drawn only; the row is the target. */
 @Composable
-private fun Switch(on: Boolean) {
+internal fun Switch(on: Boolean) {
     val x by animateFloatAsState(if (on) 1f else 0f, spring(dampingRatio = 1f, stiffness = 500f), label = "knob")
     Box(
         // On = bright mint (Boss's colour theory), not a solid #1C7E69 slab (checker #9); the white knob carries the shape.

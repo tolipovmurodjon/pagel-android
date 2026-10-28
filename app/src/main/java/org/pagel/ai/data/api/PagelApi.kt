@@ -25,6 +25,9 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
     /** Streams stay open for minutes; the server pings every 20 s, so 60 s of silence means the line is dead. */
     private val streamHttp = http.newBuilder().readTimeout(60, TimeUnit.SECONDS).build()
 
+    /** The AI's split: pagel.uz gives it 90 s; Cloudflare closes at 100. */
+    private val slowHttp = http.newBuilder().readTimeout(100, TimeUnit.SECONDS).build()
+
     suspend fun pair(baseUrl: String, code: String, name: String): Outcome<PairResponse> = call {
         val body = json.encodeToString(PairRequest.serializer(), PairRequest(code, name)).toRequestBody(JSON)
         http.newCall(Request.Builder().url(url(baseUrl, "/api/v1/devices/pair")).post(body).build()).execute().use { r ->
@@ -90,6 +93,23 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         }
         val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox")).post(body.toString().toRequestBody(JSON)), token).build()
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(TriageReply.serializer(), it) } }
+    }
+
+    /** The rituals' state (Phase 5): the ritual day, closed tonight, the last review, the stuck projects. */
+    suspend fun rituals(baseUrl: String, token: String): Outcome<RitualsResponse> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/rituals")), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(RitualsResponse.serializer(), it) } }
+    }
+
+    suspend fun ritual(baseUrl: String, token: String, body: RitualBody): Outcome<RitualReply> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/rituals")).post(json.encodeToString(RitualBody.serializer(), body).toRequestBody(JSON)), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(RitualReply.serializer(), it) } }
+    }
+
+    /** The AI splits a dump on pagel.uz (10-30 s, up to 90 s), so this call waits longer than the others. */
+    suspend fun sweep(baseUrl: String, token: String, body: SweepBody): Outcome<SweepReply> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/sweep")).post(json.encodeToString(SweepBody.serializer(), body).toRequestBody(JSON)), token).build()
+        slowHttp.newCall(req).execute().use { r -> read(r) { json.decodeFromString(SweepReply.serializer(), it) } }
     }
 
     /** A save's own picture as bytes; Ok(null) when the post has none (404), so the phone stops asking for it. */

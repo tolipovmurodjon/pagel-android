@@ -30,3 +30,28 @@ enum class Tab(val label: String, val root: NavKey, val icon: ImageVector) {
     Notebook("Notebook", NotebookRoute, TabIcons.Notebook),
     More("More", MoreRoute, TabIcons.More),
 }
+
+/** Empty your head (the web's /sweep), Close the day (/shutdown), the weekly review (/review): Phase 5's rituals. */
+@Serializable data object SweepRoute : NavKey
+@Serializable data object ShutdownRoute : NavKey
+@Serializable data object ReviewRoute : NavKey
+
+/**
+ * A screen asked for from outside the shell (the evening notification's "Close the day"): MainActivity puts the name
+ * here, the shell opens it on Today's stack and clears it. Only the names below are opened.
+ */
+object OpenRequests {
+    const val EXTRA = "pagel.open"
+    const val SHUTDOWN = "shutdown"
+    private val names = setOf(SHUTDOWN)
+    val pending = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+
+    fun open(name: String) {
+        if (name in names) pending.value = name
+    }
+
+    fun route(name: String): NavKey? = when (name) {
+        SHUTDOWN -> ShutdownRoute
+        else -> null
+    }
+}

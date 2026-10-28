@@ -249,4 +249,94 @@ class H(BaseHTTPRequestHandler):
             return
         self.send(404, {"error": "Unknown path."})
 
+# ── Phase 5 · Rituals (Empty your head, Close the day, the weekly review) ──────────────────────────────────────────
+# POST /api/v1/sweep splits a dump line by line (the real one asks the AI: dashboard ritual-api.ts); POST /api/v1/tasks
+# gives every new task its own id (the first is still t_ci6, as the Add walk expects); POST /api/v1/rituals logs a
+# ritual once per id; GET /api/v1/rituals answers with the ritual day (Tashkent; until 05:00 it is still last night).
+# A removed task leaves /sync; the sweep's tasks join it, as pagel.uz would show them.
+SWEEPS = {}    # id -> rows
+RITUALS = []   # (action, body) in the order taken
+ADDED = []     # (id, body) of POST /api/v1/tasks
+REMOVED = set()
+SWEEP_KINDS = [("action", "humopedia"), ("action", "me"), ("someday", "ababil")]
+
+def ritual_day():
+    return (datetime.now(TASHKENT) - timedelta(hours=5)).strftime("%Y-%m-%d")
+
+_p4_post, _p4_patch, _p4_get, _p4_sync = H.do_POST, H.do_PATCH, H.do_GET, sync_body
+
+def sync_body():
+    s = _p4_sync()
+    swept = {r["text"] for rows in SWEEPS.values() for r in rows}
+    added = [{"id": tid, "project": b["project"], "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 90 + k, "text": b["text"], "status": "open",
+              "priority": b.get("priority", 2), "star": False, "due": None, "updated_at": "2026-10-28T10:00:00Z", "version": 1, "steps": [], **EDITS.get(tid, {})}
+             for k, (tid, b) in enumerate(ADDED) if b.get("text") in swept]
+    s["tasks"] = [t for t in s["tasks"] + added if t["id"] not in REMOVED]
+    return s
+
+def _p5_post(self):
+    if self.path not in ("/api/v1/sweep", "/api/v1/rituals", "/api/v1/tasks"):
+        return _p4_post(self)
+    body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode()
+    LOG.write(f"POST {self.path} {body[:300]}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    b = json.loads(body or "{}")
+    if self.path == "/api/v1/tasks":
+        if not b.get("project") or not b.get("text"):
+            return self.send(400, {"error": "Send {project, text}."})
+        tid = f"t_ci{6 + len(ADDED)}"
+        ADDED.append((tid, b))
+        return self.send(201, {"id": tid, "project": b["project"], "text": b["text"], "status": "open"})
+    if self.path == "/api/v1/sweep":
+        sid, dump = str(b.get("id", "")), str(b.get("dump", ""))
+        if len(sid) < 6 or not dump.strip():
+            return self.send(400, {"error": "Write what is on your mind first."})
+        if sid not in SWEEPS:
+            lines = [l.strip() for l in dump.splitlines() if l.strip()]
+            SWEEPS[sid] = [{"kind": k, "text": l[:1].upper() + l[1:], "project": p} for l, (k, p) in zip(lines, SWEEP_KINDS * 10)]
+        return self.send(200, {"rows": SWEEPS[sid]})
+    if b.get("action") not in ("shutdown", "review") or len(str(b.get("id", ""))) < 6:
+        return self.send(400, {"error": 'action is "shutdown" or "review".'})
+    if any(x.get("id") == b.get("id") for _, x in RITUALS):
+        return self.send(200, {"ok": True, "already": True})
+    RITUALS.append((b["action"], b))
+    return self.send(201, {"ok": True, "day": b.get("day")})
+
+def _p5_patch(self):
+    tid = self.path.rsplit("/", 1)[-1]
+    if not any(tid == a for a, _ in ADDED) and tid not in {i for i, *_ in TODAY} | {u for u, *_ in UPCOMING}:
+        return _p4_patch(self)
+    body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode()
+    LOG.write(f"PATCH {self.path} {body[:300]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    b = json.loads(body or "{}")
+    if b.get("remove") is True:
+        REMOVED.add(tid)
+    if b.get("restore") is True:
+        REMOVED.discard(tid)
+    if "done" in b:
+        (DONE.add if b["done"] is True else DONE.discard)(tid)
+    if "steps" in b:
+        STEPS[tid] = [[t, n in set(b.get("ticked", []))] for n, t in enumerate(b["steps"])]
+    for k in ("priority", "due", "title", "every", "star", "text", "done_when"):
+        if k in b:
+            EDITS.setdefault(tid, {})[k] = b[k]
+    self.send(200, {"id": tid, "status": "dropped" if tid in REMOVED else ("done" if tid in DONE else "open"), "applied": list(b.keys())})
+
+def _p5_get(self):
+    if not self.path.startswith("/api/v1/rituals"):
+        return _p4_get(self)
+    LOG.write(f"GET {self.path} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    reviews = [x.get("day") for a, x in RITUALS if a == "review"]
+    last = max(reviews) if reviews else "2026-10-14"
+    due = (datetime.strptime(ritual_day(), "%Y-%m-%d") - datetime.strptime(last, "%Y-%m-%d")).days >= 7
+    return self.send(200, {"day": ritual_day(), "shut_today": any(a == "shutdown" and x.get("day") == ritual_day() for a, x in RITUALS),
+                           "last_review": last, "review_due": due, "review_days": 7, "stuck": [{"project": "labs", "title": "Labs"}], "sweeps_left": 20})
+
+H.do_POST, H.do_PATCH, H.do_GET = _p5_post, _p5_patch, _p5_get
+
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()

@@ -2,6 +2,7 @@ package org.pagel.ai.ui.shell
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -194,6 +195,24 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     var firstTab by remember { mutableStateOf(true) }
     LaunchedEffect(selected) { if (firstTab) firstTab = false else haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
 
+    // A ritual's "go to Today": every stack back to its root, then the Today tab (Phase 5).
+    fun goToday() {
+        for (s in listOf(stack, stacks[0])) while (s.size > 1) s.removeLastOrNull()
+        selected = 0
+    }
+    // The evening notification's "Close the day" (MainActivity → OpenRequests): opened on Today's stack.
+    val opening by OpenRequests.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(opening) {
+        val name = opening ?: return@LaunchedEffect
+        OpenRequests.route(name)?.let { r ->
+            val today = stacks[0]
+            while (today.size > 1) today.removeLastOrNull()
+            today.add(r)
+            selected = 0
+        }
+        OpenRequests.pending.value = null
+    }
+
     // Back leaves a tab's own stack first, then returns to Today, then leaves the app (RULES.md, navigation).
     BackHandler(enabled = selected != 0 && stack.size == 1) { selected = 0 }
 
@@ -225,13 +244,23 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 onBack = { stack.removeLastOrNull() },
                 entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator<NavKey>(), rememberViewModelStoreNavEntryDecorator<NavKey>()),
                 entryProvider = entryProvider<NavKey> {
-                    entry<TodayRoute> { TodayScreenRoute(padding, reselect) }
+                    entry<TodayRoute> {
+                        TodayScreenRoute(padding, reselect, links = org.pagel.ai.ui.rituals.RitualLinks(
+                            sweep = { stack.add(SweepRoute) }, shutdown = { stack.add(ShutdownRoute) }, review = { stack.add(ReviewRoute) },
+                        ))
+                    }
+                    entry<SweepRoute> { org.pagel.ai.ui.rituals.SweepRoute(padding, onToday = ::goToday) }
+                    entry<ShutdownRoute> { org.pagel.ai.ui.rituals.ShutdownRoute(padding, onToday = ::goToday) }
+                    entry<ReviewRoute> {
+                        org.pagel.ai.ui.rituals.ReviewRoute(padding, onInbox = { selected = 1 }, onSweep = { stack.add(SweepRoute) }, onToday = ::goToday)
+                    }
                     entry<InboxRoute> { InboxScreenRoute(padding, reselect) }
                     entry<HabitsRoute> { HabitsScreenRoute(padding, reselect) }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
                     entry<MoreRoute> {
                         More(
                             padding, onOpenUpcoming = { stack.add(UpcomingListRoute) }, onOpenCompleted = { stack.add(CompletedListRoute) },
+                            onOpenRitual = { stack.add(it) },
                             onOpenProjects = { stack.add(ProjectListRoute) }, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect,
                         )
                     }
@@ -273,6 +302,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         }
         val pageTitle = when (top) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
+            SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
         val density = androidx.compose.ui.platform.LocalDensity.current
@@ -447,8 +477,9 @@ private fun Coming(title: String, path: String, padding: PaddingValues, onOpenWe
 }
 
 @Composable
-private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompleted: () -> Unit, onOpenProjects: () -> Unit, onOpenWeb: () -> Unit, onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(padding).padding(20.dp)) {
+private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompleted: () -> Unit, onOpenRitual: (NavKey) -> Unit, onOpenProjects: () -> Unit, onOpenWeb: () -> Unit, onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
+    // Nine rows pass a 640-dp screen's height: More scrolls, so Disconnect is never stuck under the bar.
+    Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(padding).padding(20.dp)) {
         Text("More", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         Spacer(Modifier.height(16.dp))
         Pane(Modifier.fillMaxWidth()) {
@@ -456,6 +487,10 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 // The web's phone bar keeps Upcoming and Completed under More too (dashboard nav.tsx PHONE).
                 MoreRow(TabIcons.Calendar, "Upcoming", Color(0xFFD9620B), onOpenUpcoming)
                 MoreRow(TabIcons.Done, "Completed", Color(0xFF0E7490), onOpenCompleted)
+                // The rituals sit beside the lists, as the web's sidebar (nav.tsx: Empty head, Close day, Review).
+                MoreRow(TabIcons.Sparkles, "Empty your head", Color(0xFF7C4DDB)) { onOpenRitual(SweepRoute) }
+                MoreRow(TabIcons.Moon, "Close the day", Color(0xFF5B4BC4)) { onOpenRitual(ShutdownRoute) }
+                MoreRow(TabIcons.CalendarCheck, "Weekly review", Color(0xFFBE123C)) { onOpenRitual(ReviewRoute) }
                 MoreRow(TabIcons.Folder, "Projects", Glass.Primary, onOpenProjects)
                 MoreRow(TabIcons.Globe, "pagel.uz", Color(0xFF246FE0), onOpenWeb)
                 MoreRow(TabIcons.Phone, "Phone", Color(0xFF692FC2), onOpenPhone)

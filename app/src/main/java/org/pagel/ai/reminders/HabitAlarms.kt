@@ -52,6 +52,8 @@ class HabitAlarms(
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** The evening "Close the day" reminder (Phase 5) rides on the same planner, so boot and updates plan it too. */
+    private val rituals: org.pagel.ai.data.db.RitualsDao? = null,
 ) : ReminderPlanner {
     private var job: Job? = null
 
@@ -64,6 +66,7 @@ class HabitAlarms(
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
         val habits = dao.habitsOnce().associateBy { it.id }
         val now = ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), HabitsRepository.TASHKENT)
+        rituals?.let { runCatching { planEvening(am, it, now) } }
         for (r in dao.remindersOnce()) {
             val pi = fireIntent(ctx, r.taskId)
             val h = habits[r.taskId]
@@ -78,6 +81,20 @@ class HabitAlarms(
             } catch (_: SecurityException) {
                 runCatching { am.setWindow(AlarmManager.RTC_WAKEUP, ms, ReminderMath.WINDOW_MS, pi) }
             }
+        }
+    }
+
+    /** Every evening at Boss's time (21:30 unless he set one): "Close the day". Off = no alarm at all. */
+    private suspend fun planEvening(am: AlarmManager, rituals: org.pagel.ai.data.db.RitualsDao, now: ZonedDateTime) {
+        val s = rituals.stateOnce() ?: org.pagel.ai.data.db.RitualStateEntity()
+        val pi = ShutdownAlarmReceiver.fireIntent(ctx)
+        if (!s.eveningOn) { am.cancel(pi); return }
+        val ms = org.pagel.ai.data.rituals.Rituals.nextEvening(s.eveningAt, now).toInstant().toEpochMilli()
+        try {
+            if (canExact(am)) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, pi)
+            else am.setWindow(AlarmManager.RTC_WAKEUP, ms, ReminderMath.WINDOW_MS, pi)
+        } catch (_: SecurityException) {
+            runCatching { am.setWindow(AlarmManager.RTC_WAKEUP, ms, ReminderMath.WINDOW_MS, pi) }
         }
     }
 

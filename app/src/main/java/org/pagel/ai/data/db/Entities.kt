@@ -103,6 +103,10 @@ data class OutboxEntity(
         const val PATCH = "patch"
         /** One Inbox choice (Phase 2): [taskId] holds the save's file, [body] the `POST /api/v1/inbox` JSON. */
         const val SORT = "sort"
+        /** A dump for the AI to split (Phase 5): [taskId] holds the sweep's id; its text lives in `sweeps`. */
+        const val SWEEP = "sweep"
+        /** A ritual closed on the phone (Phase 5): [body] is the `POST /api/v1/rituals` JSON, [taskId] its own id. */
+        const val RITUAL = "ritual"
     }
 }
 
@@ -172,3 +176,53 @@ data class HabitReminderEntity(
     @PrimaryKey val taskId: String,
     val enabled: Boolean,
 )
+
+/**
+ * One "Empty your head" dump (Phase 5, the web's /sweep). Saved as Boss types ([state] draft), so nothing he wrote is
+ * ever lost; "Turn into steps" makes it waiting: the outbox sends it to pagel.uz's AI when online (reading), and the rows
+ * come back as JSON ([rows], `[{kind, text, project}]`) that he edits here before "Add N" turns them into tasks (added,
+ * with the phone's ids of those tasks in [addedIds], for Undo). A refusal (the AI could not split it, the day's cap)
+ * is failed with pagel.uz's words in [message]; the dump stays for another try.
+ */
+@Entity(tableName = "sweeps")
+data class SweepEntity(
+    @PrimaryKey val id: String,
+    val dump: String,
+    val state: String,
+    val rows: String = "[]",
+    val message: String? = null,
+    val addedIds: String = "",
+    val createdAt: Long,
+    val updatedAt: Long,
+) {
+    companion object {
+        const val DRAFT = "draft"
+        const val WAITING = "waiting"
+        const val READING = "reading"
+        const val READY = "ready"
+        /** "Add N" is running: claimed once (compare-and-set), so a second tap adds nothing. */
+        const val ADDING = "adding"
+        const val FAILED = "failed"
+        const val ADDED = "added"
+    }
+}
+
+/**
+ * The rituals' state on the phone (Phase 5): what pagel.uz said at the last refresh (`GET /api/v1/rituals`) merged with
+ * what was closed here since ([shutDay], [lastReview] are ritual days: until 05:00 it is still last night), the stuck
+ * projects as JSON (`[{project, title}]`), and the evening "Close the day" reminder (only on this phone).
+ */
+@Entity(tableName = "ritual_state")
+data class RitualStateEntity(
+    @PrimaryKey val id: String = ID,
+    val shutDay: String? = null,
+    val lastReview: String? = null,
+    val stuck: String = "[]",
+    val fetchedAt: Long = 0,
+    val eveningOn: Boolean = true,
+    val eveningAt: String = "21:30",
+) {
+    companion object {
+        const val ID = "rituals"
+    }
+}

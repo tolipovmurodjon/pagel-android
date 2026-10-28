@@ -90,9 +90,14 @@ class OutboxSender(
     private val clock: () -> Long = System::currentTimeMillis,
     /** Sends the Inbox's choices (Phase 2); without it they wait. */
     private val inbox: InboxSender? = null,
+    /** Sends the rituals and the dumps for the AI (Phase 5); without it they wait. */
+    private val rituals: org.pagel.ai.data.rituals.RitualSender? = null,
 ) {
     suspend fun sendAll(account: Account): SendResult {
         val held = mutableSetOf<String>()
+        // A dump waits for the AI 10-30 s: it goes after everything else, so a tick made meanwhile is never behind it.
+        val sweeps = mutableListOf<OutboxEntity>()
+        var later = false
         // Inbox choices go in the order they were made: one held (a Drop inside its Undo) holds the ones after it.
         var sortsHeld = false
         for (op in dao.waitingOutbox()) {
@@ -105,6 +110,17 @@ class OutboxSender(
                     SortStep.HOLD -> { sortsHeld = true; held += op.taskId }
                     SortStep.SIGNED_OUT -> return SendResult.SIGNED_OUT
                     SortStep.TRY_LATER -> return SendResult.TRY_LATER
+                }
+                continue
+            }
+            if (op.op == OutboxEntity.SWEEP) { sweeps += op; continue }
+            if (op.op == OutboxEntity.RITUAL) {
+                val sender = rituals ?: continue
+                when (sender.send(account, op)) {
+                    org.pagel.ai.data.rituals.RitualStep.SENT -> {}
+                    org.pagel.ai.data.rituals.RitualStep.LATER -> later = true
+                    org.pagel.ai.data.rituals.RitualStep.SIGNED_OUT -> return SendResult.SIGNED_OUT
+                    org.pagel.ai.data.rituals.RitualStep.TRY_LATER -> return SendResult.TRY_LATER
                 }
                 continue
             }
@@ -145,8 +161,18 @@ class OutboxSender(
                 }
             }
         }
+        for (op in sweeps) {
+            val sender = rituals ?: break
+            when (sender.split(account, op)) {
+                org.pagel.ai.data.rituals.RitualStep.SENT -> {}
+                // pagel.uz's AI is busy with another dump: this one is read on a later pass.
+                org.pagel.ai.data.rituals.RitualStep.LATER -> later = true
+                org.pagel.ai.data.rituals.RitualStep.SIGNED_OUT -> return SendResult.SIGNED_OUT
+                org.pagel.ai.data.rituals.RitualStep.TRY_LATER -> return SendResult.TRY_LATER
+            }
+        }
         // A delete still inside its Undo window: come back for it (WorkManager's first retry is ~10 s later).
-        return if (held.isEmpty()) SendResult.ALL_SENT else SendResult.TRY_LATER
+        return if (held.isEmpty() && !later) SendResult.ALL_SENT else SendResult.TRY_LATER
     }
 
     private enum class Patch { SENT, HOLD, SIGNED_OUT, TRY_LATER }

@@ -41,6 +41,85 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v15 · PHASE 5 OF 10 = RITUALS (merged into feat/native-app by the lead) (2026-10-28, builder agent, branch `feat/phase5-rituals`)
+**Checker round (docs/qa/phase5-checker.md, 7.5/10), its top 10, data safety first:**
+- **#1 Edit text gave the old rows:** every "Turn into steps" gives the dump a fresh id (`RitualsRepository.split`,
+  `RitualsDao.replaceSweep`: the old row and its waiting read go), so pagel.uz's 24 h cache by id can never answer an
+  edited dump with old rows. No server change. Test `anEditedDumpGetsItsOwnRowsNotTheOldOnes` (a mock that caches by id).
+- **#2 double taps:** each VM has an in-flight guard; "Add N" claims the dump once (`claimAdd`: compare-and-set
+  ready → adding, ids written row by row so a claim taken again after a killed app skips what exists); Close the day and
+  Finish review carry one token per opened screen and the repository closes a token once (Undo frees it). Tests: add,
+  close, finish twice at once → 3 POSTs / 1 event / 1 task.
+- **#3 the pick cap is gone** (Boss's web rule: "No cap here… keep my current ones"); "Today shows them 3 at a time".
+- **#4 Today:** Empty your head is a 48 dp sparkle beside the title; one pill row that never wraps, only when it has
+  something to say: Close the day from 18:00 to 05:00 Tashkent (a minute tick moves it), Review while due. The
+  rituals' GET starts 1.5 s after Today opens.
+- **#5** the evening notification: its own group on a HIGH channel ("evening"; channels cannot be raised once made),
+  BigText; the walk taps it in the shade again. **#6** shorter words: Keep · Later · Drop (one size), "Close", "Again",
+  "Today's 3", steps "Inbox · Head · Steps · Someday" never below 11 sp. **#7** a picked star is #C2410C (~5:1).
+  **#8** the evening row shows "Notifications off · Turn on"; the wheel saves once it settles (0.6 s). The default
+  stays 21:30 (the phase brief); **Boss's question: 20:45 (his "day close") or 21:30?** **#9** "Open the Inbox" /
+  "Empty your head" in the review are quiet buttons; a closed day has "Go to Today" and says its line once. **#10** a
+  404 makes a dump or a ritual wait (an older pagel.uz), the review's next step has the 20-word check, Close the day's
+  head is the ritual date (01:30 = yesterday), "Day closed" leaves at 05:00, Undo finds a sent next step only among
+  tasks made since the review. Also: More's sweep tile violet, review rose; springs at damping 1.0; a removed row has
+  Undo; landscape shots for Close the day and the sweep.
+- **Not done:** `POST /api/v1/tasks` still has no idempotency id (older code; a lost reply + retry = a duplicate task).
+The web's `/sweep`, `/shutdown`, `/review` on the phone (`ui/rituals/`, `data/rituals/`), offline-first. Built in its own
+worktree (`D:\PAGEL\android-p5`) while another builder fixes Inbox/Upcoming on `feat/native-app`; the lead merges both.
+- **Where they live: Today's header + More.** Today gets three glass pills under its count line, as the web's loop
+  (gtd/page.tsx) and its today-note: **Empty your head** (sparkles), **Close the day** (moon; "Day closed ✓" once closed
+  tonight), **Weekly review** (calendar-check, amber) only while the review is due (7+ days, the web's REVIEW_DAYS). Today
+  is where the day starts and ends, so the evening ritual is one tap from it; the same three are rows under More (the
+  web's sidebar keeps them beside the lists). A tab of its own was the other choice: it would push the bar to six.
+- **Server** (dashboard `feat/gtd-core`, **DEPLOY NEEDED e21b07e**): `GET /api/v1/rituals` (ritual day: until 05:00
+  it is still last night; closed tonight; last review + due; stuck projects; AI reads left), `POST /api/v1/rituals
+  {action: shutdown|review, id, day, counts}` = the web's own event + "brain: shutdown <day>" commit (editPlans with the
+  phone as actor), once per phone id; `POST /api/v1/sweep {id, dump}` = the web's sweep.ts split: one AI run at a time
+  (503 busy), 20 a Tashkent day (429), the run is not tied to the request and its rows are kept 24 h by id. The task
+  changes themselves go as the existing PATCH/POST /api/v1/tasks. vitest `ritual-api.test.ts` 10/10 (04:30/05:01 and
+  23:59/00:01 +05:00), review/plans/sweep/task-api green, `tsc --noEmit` clean. Until deployed, the old pagel.uz answers
+  404 to the three calls: the dump waits ("Saved. The AI reads it next."), the ritual event waits in the outbox; the
+  task changes (stars, drops, new tasks) reach pagel.uz anyway.
+- **Room v6** (AutoMigration, test `fiveToSixKeepsTasksAndAddsEmptyRituals`): `sweeps` (the dump, saved as Boss types,
+  its state draft → waiting → reading → ready → added/failed, the AI's rows, the added tasks' ids for Undo) and
+  `ritual_state` (closed tonight, last review, stuck projects, the evening reminder on/time).
+- **Empty your head**: one big box + Allen's trigger prompts (the web's list); "Turn into steps" queues the dump in the
+  outbox (op `sweep`, sent after every tick so a 20 s AI read never holds one); while it waits: a skeleton row per line
+  and one short line ("Saved. The AI reads it once PAGEL is online." / "The AI is reading it · about 20 s"). Rows: the
+  step (tap to edit), Do · Someday · Drop (segmented), the project (glass menu), ✕. "Add N" = one `POST /api/v1/tasks`
+  per kept row (Do = P1, Someday = P3, as saveRows), Room first; Undo takes them back (or deletes them once sent). A row
+  over 20 words is flagged and blocks Add (pagel.uz would refuse it and the row would be lost).
+- **Close the day**: today's open stars one card at a time (Tomorrow · Later · Drop, a Back arrow), then tomorrow's
+  candidates (each project's next action first; no habits, no someday) with **at most 3 picks** (the brief's cap; keeps
+  are not capped, so "keep my current ones" still works), then Close the day: Later = `{star:false}`, Drop = the delete
+  (5 s Undo), pick = `{star:true}`, then the shutdown event; "Day closed · Undo" puts it all back.
+- **Evening reminder** (on by default, 21:30 Tashkent, Boss sets the time with the wheel): planned by the habits'
+  planner (`HabitAlarms.planEvening`, so boot/updates re-plan it), `ShutdownAlarmReceiver` asks pagel.uz first (5 s) and
+  rings only if the day is still open: "Close the day · N stars still open" with a button that opens the ritual
+  (`OpenRequests`, MainActivity's extra `pagel.open=shutdown`). Notifications are asked for when the switch is turned on.
+- **Weekly review**: a 4-step stepper (Inbox count + Open the Inbox · Empty your head · a next step for each stuck
+  project · Drop/Undo on someday), Finish = new steps (P1) + drops + the review event; "Review done · Undo".
+- **Tests**: `RitualLogicTest` (ritual day at +05:00, review due, stars, candidates, pick cap, someday, stuck, rows, the
+  evening time), `RitualsRepositoryTest` (offline dump split when online, a busy AI never holds a tick, a refused dump
+  is not retried, Add 3 → 3 POSTs and the ids follow, Undo before/after sending, close the day → PATCHes before the
+  event, at most 3 picks, review), `RitualsScreenshotTest` (sweep rows 360 + 1.5×, waiting offline, the box; star card
+  360 + 1.5×; picks 360 + 1.5×; done; review next steps / someday / inbox 1.5×; Today's pills 360 + 1.5×). Walk (new
+  block at the end of walkthrough.sh; fake-pagel.py block before its last line): 3 lines → 3 tasks on pagel.uz; the
+  evening alarm's notification opens Close the day; Tomorrow/Tomorrow/Later/Drop + a pick → 3 PATCHes + the shutdown
+  event; the evening alarm in `dumpsys alarm`; the review → its event.
+- **Not done**: the review's "Open the Inbox" switches tabs but does not bring Boss back to step 2 by itself; a ritual
+  event already on pagel.uz is not taken back by Undo (its task changes are). Room's 6.json schema is CI's own export
+  (run 40654552767).
+- **CI**: run 40654552767 build ✅ (Migration 4/4, RitualLogic 9/9, RitualsRepository 15/15, RitualsScreenshot 16/16);
+  its smoke stopped in the Phase 2 Inbox walk (the old swipe-up flake that feat/native-app a713747 fixes), before the
+  Phase 5 block. Screenshot round 1 fixes: "Tomorrow" was cut at 1.5x (it now shrinks to fit), the evening row broke
+  into five lines at 1.5x (two rows now), "1 of 3" was in the pixel number face (body face now), the review's step
+  names were cut at 1.5x (one line that shrinks to fit), "Back to the text" wrapped (now "Edit text").
+  Run 40657424080: build ✅, smoke reached the Phase 5 block: 3 lines → 3 tasks on pagel.uz ✅; the evening notification
+  posted ✅ but a tap in the shade opened the anchor notification it is bundled with, so the walk now checks the
+  notification in `dumpsys notification` and sends its intent (`pagel.open=shutdown`).
+
 ## START HERE v14 · COLD-START ANR: FLAT FIRST FRAME, GLASS ON AFTER FOCUS (2026-10-28, builder agent)
 a713747 = build ✅ smoke ❌: "PAGEL isn't responding" over the walk's first step (CI 40656925148). Measured, not guessed
 (`.github/scripts/launch-numbers.py` splits each Davey line; every number below is CI's software GPU, not the A05s):

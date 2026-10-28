@@ -90,9 +90,13 @@ private val FLAGS = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE
 private val RingIdle = Color(0xFF9AA2BB)
 
 @Composable
-fun TodayRoute(contentPadding: PaddingValues, reselect: Int, vm: TodayViewModel = hiltViewModel()) {
+fun TodayRoute(
+    contentPadding: PaddingValues, reselect: Int, links: org.pagel.ai.ui.rituals.RitualLinks = org.pagel.ai.ui.rituals.RitualLinks(),
+    vm: TodayViewModel = hiltViewModel(), rituals: org.pagel.ai.ui.rituals.RitualPillsViewModel = hiltViewModel(),
+) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo)
+    val pills by rituals.pills.collectAsStateWithLifecycle()
+    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links)
 }
 
 /** Today, native (NATIVE-PLAN Phase 2): the web's 3 at a time, a ring tick with ding, confetti and fold, undo. */
@@ -104,6 +108,9 @@ fun TodayScreen(
     onTick: (String) -> Unit = {},
     onUndo: (String) -> Unit = {},
     today: LocalDate = LocalDate.now(TASHKENT),
+    /** The rituals' entry points (Phase 5): Empty your head · Close the day · the weekly review when due. */
+    pills: org.pagel.ai.ui.rituals.RitualPills? = null,
+    links: org.pagel.ai.ui.rituals.RitualLinks = org.pagel.ai.ui.rituals.RitualLinks(),
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -132,7 +139,11 @@ fun TodayScreen(
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot() }) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            item(key = "head", contentType = "head") { Header(ui, today) }
+            item(key = "head", contentType = "head") { Header(ui, today, onSweep = if (pills != null) links.sweep else null) }
+            // One row, only when it has something to say: Close the day in the evening, the review while due (checker P5 #4).
+            if (pills != null && pills.any) item(key = "rituals", contentType = "pills") {
+                org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.animateItem().padding(start = 16.dp, end = 16.dp, bottom = 4.dp))
+            }
             when {
                 ui.loading -> item(key = "loading", contentType = "note") {
                     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
@@ -166,8 +177,9 @@ fun TodayScreen(
 }
 
 @Composable
-private fun Header(ui: TodayUiState, today: LocalDate) {
-    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
+private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.weight(1f).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
         Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Today", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         val count = when {
@@ -175,6 +187,9 @@ private fun Header(ui: TodayUiState, today: LocalDate) {
             else -> "${ui.open} today"
         }
         Text(if (ui.status.isEmpty()) count else "$count · ${ui.status}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+    }
+    // Empty your head: a 48 dp sparkle beside the title, any time of day (Phase 5).
+    if (onSweep != null) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.Sparkles, "Empty your head", Modifier.padding(end = 12.dp), tint = Glass.Primary, onClick = onSweep)
     }
 }
 
