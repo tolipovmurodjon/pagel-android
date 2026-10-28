@@ -41,6 +41,59 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v18 · ROUND D = HABITS 2.0 (THE CHAIN, OUR OWN LOOK), NAMOZ, THE ICON, HUMAN-MADE EMOJI (2026-10-29, builder agent, branch `feat/roundD-habits`)
+- **Order Boss set:** 0a habits (rebuilt from zero in our own glass, ideas from his 4 loved screens in `D:\00_inbox\taste\habit-*__loved__pagel-habits.jpg`),
+  0b icon, 0c emoji, Namoz (Boss 2026-10-28: "start tracking namaz fully … from 1 November"). Items 1 (amount + calories photo), 2 (Inbox
+  "where did it go") and 3 (Plan it) are NOT built this round: see "Not done" below.
+- **0b icon (9f3e267):** adaptive `mipmap-anydpi/ic_launcher(_round).xml`: background = 3 OKLCH stops lit top-left (#65DFAF → #00AD88 → #006C63)
+  + a white glow top-left; foreground = the web's P (`public/logos/pagel.svg`) ×1.25 in the 66 dp safe circle with a deep-teal 1.5 dp
+  shadow + the brand's #FFD166 dot; `monochrome` layer (Android 13 themed icons); `values-v31` splash = page colour + the icon; status-bar
+  silhouette `drawable/ic_stat_pagel.xml` (AnchorService uses it; the reminder receivers keep `ic_stat_bell` until round C's files settle).
+  Proof: `AppIconScreenshotTest` → `app-icon.png` (108/48 dp, squircle + circle, light + dark wallpaper, themed). The robot is gone.
+- **0c emoji (9f3e267):** Microsoft Fluent Emoji 3D (★10,185, MIT, pushed 2026-08-24, LICENSE checked; credit in `NOTICE`), 55 bundled as
+  144 px WebP in `res/drawable-nodpi/emoji_*.webp` (~225 KB). `ui/glass/Emoji.kt`: `keyFor(title, chosen)` (English + Uzbek keywords,
+  Boss's pick wins), `res(key)`, `glyph(key)`, `Notice` (morning plan ☕, close the day 🌙, streak 🔥, gym 🏋️, food 🍽️, water 💧, inbox 📥,
+  overdue ⏰, day cleared 🎉, prayer 🕌) and `largeIcon(ctx, key)` for notifications. Used on every habit card, the part pills, the
+  all-done card, empty states, History badges. Boss picks a habit's emoji on its page (a sideways row, current one marked).
+- **0a Habits 2.0:** see the screens below. Data: `data/habits/HabitBoard.kt` (pure: `Mark`, `links` = the chain, `chainStreak`/`chainBest`
+  with freezes, `neverMissTwice`, `completion`, `minutesOf`, `clearOf`, `monthMarks`, `achievements`, `habitBoard`), Room **v8**
+  (`habit_prefs`: emoji, after, identity, minutes; `habit_freezes`; `tasks.habitGroup`), `HabitPrefsRepository` (2 freezes a month).
+  Screen: `ui/habits/HabitsScreen.kt` (header + day ring + History, the week chain strip with swipe + "› Today" pill, Morning ·
+  Afternoon · Evening pills that start on the clock, the Namoz group, one bold glass card per habit: gradient emoji tile, bold title,
+  progress "0 / 10 min" · "2 / 3" · the repeat, 🔥 streak, amber "Never miss twice", "after X", "•••" menu (details, reminder, freeze,
+  take back, reset timer), the time tab hanging on the card's edge; the check outside the card; a done card goes quiet "✓ Finished"),
+  `HabitDetail.kt` (page: back/edit/share, title, chips, identity line, 3 stat cards, month chain ‹ ›, 6 week rows, emoji picker, habit
+  stacking; History: Calendar (Habits | Namoz) · All habits · Achievements). Timed habits: tap the card → the clock runs (ring round the
+  tile, `m:ss / 10 min`), it ticks itself at the end with the finish moment. Removed on purpose: "Coming up" (non-habits live in Upcoming),
+  the 7 tiny dots, the stray bell.
+- **Namoz:** `data/habits/Namoz.kt` with batoulapps **Adhan 1.2.1** (Java, MIT, ★413, no dependencies; adhan-kotlin ★225 is KMP and pulls
+  more). Method = the Muslim Board of Uzbekistan's table: Fajr 15.5°, Isha 15°, Hanafi Asr, Peshin +4 min, Shom +1, Xufton −1.
+  **Checked against namozvaqti.uz/oylik/11/toshkent: all 180 November times within 1 minute** (`NamozTest`, table in
+  `test/resources/namoz-tashkent-2026-11.txt`). 1 November published vs ours: Bomdod 05:35/05:34 · Quyosh 06:54/06:54 · Peshin 12:11/12:11 ·
+  Asr 15:37/15:37 · Shom 17:20/17:21 · Xufton 18:35/18:35. The group card: ring "3/5", one row per prayer with today's window
+  (Peshin 12:11–15:37), the current prayer softly marked; "Start tracking" adds the 5 as daily habits `group = "namoz"` dated 1 Nov; before
+  1 Nov the rows wait ("From 1 November"); no chain, no miss before it; no never-miss-twice, no shaming, a miss is an empty link. Reminders
+  off by default, one switch per prayer in the group's sheet; the notice is only "Peshin vaqti kirdi · 12:11". The "learn" hook: Phase 6.
+- **Notifications (a5a906c, after the rebase onto round C):** every reminder's large icon is its Fluent emoji and its title/text
+  starts with the glyph (morning plan ☕, overdue ⏰, evening nudge 🌙, a task by its words, a habit by its words); the small icon is the
+  P silhouette. A prayer rings at that day's own time (`HabitAlarms` → `Namoz.nextStart`), the notice is only the plain line + Done.
+- **Boss's reference next to the build** (same 4 screens; his are dark navy/blue, ours mint glass): Today =
+  `habit-today__loved` ↔ `habits-360x800.png`; week chain = `habit-today-weekchain__loved` ↔ `habits-past-day.png`; detail =
+  `habit-detail__loved` ↔ `habit-detail.png`; History = `habit-history__loved` ↔ `habits-history.png` + `habits-achievements.png`
+  (CI artifact `screenshots-and-reports`). Taken: the chained week strip, the 3 part pills, a bold card per habit with progress,
+  "•••" and the time tab on its edge, the check outside the card, "Finished", the "› Today" pill, chips + 3 stat cards + chain
+  calendar, History's Calendar · All habits · Achievements, timed habits. Not taken: the saturated full-colour cards (white glass +
+  a gradient emoji tile instead: text stays ink, contrast ≥ 4.5), the dark theme, the bottom tabs (Habits stays one tab).
+- **From the apps the brief named:** Streaks (big tappable emoji tiles, a ring per habit), Loop Habit Tracker (frequency rules, a
+  per-habit history calendar, strength over raw streak), Habitify (time-of-day sections + the timer habit), Apple Fitness (one ring
+  for the day, segmented rings for counts), Cal AI / MyFitnessPal (quick add in 2 taps: kept for item 1, not built).
+- **Not done this round (and why):** 2 more directions as mock screens (the lead's ask, replaced by Boss's own reference + "rebuild
+  from zero"); item 1 amount habits + calories photo (needs server fields `unit/goal/goal_kind`, a habit_log event and a vision
+  endpoint: next round, start from `HabitBoard.progressText`); item 2 Inbox "where did it go" (toasts with the destination, the
+  sorted-today list, the native Notes list); item 3 Plan it (round B's F). Freezes, emoji picks, identity lines and "after" live in
+  Room only (v8 `habit_prefs`/`habit_freezes`); pagel.uz has no fields for them yet. Namoz's "learn" link waits for Phase 6.
+- **Server (DEPLOY NEEDED, see report):** `feat/roundD-server` e39b7b6: `tasks.habit_group`, POST /api/v1/tasks takes `group` (one lower-case
+  word), /sync + task reads send `group`; vitest. Until deployed, the phone still finds the prayers by their names.
 ## START HERE · Phase 6a Compass FIX ROUND = the security checker's 6/10 list (docs/qa/compass-checker.md) (2026-10-29, builder agent, branch `feat/compass-fix`)
 - **Not built yet:** CI was blocked (billing) while this was written; nothing was compiled or run. Push once with `[smoke]`.
 - **Windows:** every Compass sheet's own window is FLAG_SECURE (`GlassSheet(secure = true)` → `ModalBottomSheetProperties
@@ -106,78 +159,6 @@ tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test agai
   habit does not rename the habit (rename it in Habits); the keyboard's "incognito" flag (Compose BasicTextField has
   no IME_FLAG_NO_PERSONALIZED_LEARNING switch); a second device syncing back (the phone is the only writer, by design).
 
-<<<<<<< HEAD
-## START HERE v17.1 · ROUND C FIX ROUND = THE CHECKER'S 7/10 LIST (docs/qa/roundC-checker.md) (2026-10-29, builder agent)
-- **Data:** server **ef3f671 (DEPLOY NEEDED; it contains ad76178)**: the web's Close the day keeps a due's time
-  ("15:00" stays), never pulls a later due back, and caps kept stars at 3 too (over the cap = pushed). Phone: kept
-  stars over 3 go to Later; the Tomorrow peek reads the ritual day + 1 (a close after midnight still peeks).
-- **Checker list:** #4 no permission ask at launch (MainActivity; first use only). #1 month days ≥ 28 dp, one line.
-  #2 view switch: 44 dp parts with a gap. #3 the tone switch fills the width (Segmented `fill`), FixRow 2 lines.
-  #5 hours as "05", GUTTER 36 dp, timed daily habits fold into All day in 3 days / Week, titles clip by the block's
-  height (11 sp in narrow lanes). #6 day heads on the timeline's columns inside the glass (DayHeads; the grid now ends
-  at the glass's inner edge), Day's header = its day, 3 days = its range. #7 copy: 32 lines per task tone, 10 per
-  daily nudge, counts that read right for 1 ("left: 1"), no topic lines in the pools; `NotifyCopy.keywordLine` matches
-  a task's own words (pay → "money moves only"). #9 a dropped block stays put until Room moves it, and snaps to the
-  15-min grid / column while dragging. #10 an hour label under the glass top is not drawn.
-- **Also:** What's new keeps its quotes (escaped), adds the two Boss notes (empty Today after Close the day; the mint
-  status bar), untried rings ≥ 3:1. A repeating timed task rings too (unless its own habit bell does). The spacing gate
-  counts 2 and 6 dp now (baseline 250).
-- **Not done:** the group summary still mixes Tasks + Rituals in one day group (checker data note); keyword lines are
-  English only.
-=======
-## START HERE v18 · ROUND D = HABITS 2.0 (THE CHAIN, OUR OWN LOOK), NAMOZ, THE ICON, HUMAN-MADE EMOJI (2026-10-29, builder agent, branch `feat/roundD-habits`)
-- **Order Boss set:** 0a habits (rebuilt from zero in our own glass, ideas from his 4 loved screens in `D:\00_inbox\taste\habit-*__loved__pagel-habits.jpg`),
-  0b icon, 0c emoji, Namoz (Boss 2026-10-28: "start tracking namaz fully … from 1 November"). Items 1 (amount + calories photo), 2 (Inbox
-  "where did it go") and 3 (Plan it) are NOT built this round: see "Not done" below.
-- **0b icon (9f3e267):** adaptive `mipmap-anydpi/ic_launcher(_round).xml`: background = 3 OKLCH stops lit top-left (#65DFAF → #00AD88 → #006C63)
-  + a white glow top-left; foreground = the web's P (`public/logos/pagel.svg`) ×1.25 in the 66 dp safe circle with a deep-teal 1.5 dp
-  shadow + the brand's #FFD166 dot; `monochrome` layer (Android 13 themed icons); `values-v31` splash = page colour + the icon; status-bar
-  silhouette `drawable/ic_stat_pagel.xml` (AnchorService uses it; the reminder receivers keep `ic_stat_bell` until round C's files settle).
-  Proof: `AppIconScreenshotTest` → `app-icon.png` (108/48 dp, squircle + circle, light + dark wallpaper, themed). The robot is gone.
-- **0c emoji (9f3e267):** Microsoft Fluent Emoji 3D (★10,185, MIT, pushed 2026-08-24, LICENSE checked; credit in `NOTICE`), 55 bundled as
-  144 px WebP in `res/drawable-nodpi/emoji_*.webp` (~225 KB). `ui/glass/Emoji.kt`: `keyFor(title, chosen)` (English + Uzbek keywords,
-  Boss's pick wins), `res(key)`, `glyph(key)`, `Notice` (morning plan ☕, close the day 🌙, streak 🔥, gym 🏋️, food 🍽️, water 💧, inbox 📥,
-  overdue ⏰, day cleared 🎉, prayer 🕌) and `largeIcon(ctx, key)` for notifications. Used on every habit card, the part pills, the
-  all-done card, empty states, History badges. Boss picks a habit's emoji on its page (a sideways row, current one marked).
-- **0a Habits 2.0:** see the screens below. Data: `data/habits/HabitBoard.kt` (pure: `Mark`, `links` = the chain, `chainStreak`/`chainBest`
-  with freezes, `neverMissTwice`, `completion`, `minutesOf`, `clearOf`, `monthMarks`, `achievements`, `habitBoard`), Room **v8**
-  (`habit_prefs`: emoji, after, identity, minutes; `habit_freezes`; `tasks.habitGroup`), `HabitPrefsRepository` (2 freezes a month).
-  Screen: `ui/habits/HabitsScreen.kt` (header + day ring + History, the week chain strip with swipe + "› Today" pill, Morning ·
-  Afternoon · Evening pills that start on the clock, the Namoz group, one bold glass card per habit: gradient emoji tile, bold title,
-  progress "0 / 10 min" · "2 / 3" · the repeat, 🔥 streak, amber "Never miss twice", "after X", "•••" menu (details, reminder, freeze,
-  take back, reset timer), the time tab hanging on the card's edge; the check outside the card; a done card goes quiet "✓ Finished"),
-  `HabitDetail.kt` (page: back/edit/share, title, chips, identity line, 3 stat cards, month chain ‹ ›, 6 week rows, emoji picker, habit
-  stacking; History: Calendar (Habits | Namoz) · All habits · Achievements). Timed habits: tap the card → the clock runs (ring round the
-  tile, `m:ss / 10 min`), it ticks itself at the end with the finish moment. Removed on purpose: "Coming up" (non-habits live in Upcoming),
-  the 7 tiny dots, the stray bell.
-- **Namoz:** `data/habits/Namoz.kt` with batoulapps **Adhan 1.2.1** (Java, MIT, ★413, no dependencies; adhan-kotlin ★225 is KMP and pulls
-  more). Method = the Muslim Board of Uzbekistan's table: Fajr 15.5°, Isha 15°, Hanafi Asr, Peshin +4 min, Shom +1, Xufton −1.
-  **Checked against namozvaqti.uz/oylik/11/toshkent: all 180 November times within 1 minute** (`NamozTest`, table in
-  `test/resources/namoz-tashkent-2026-11.txt`). 1 November published vs ours: Bomdod 05:35/05:34 · Quyosh 06:54/06:54 · Peshin 12:11/12:11 ·
-  Asr 15:37/15:37 · Shom 17:20/17:21 · Xufton 18:35/18:35. The group card: ring "3/5", one row per prayer with today's window
-  (Peshin 12:11–15:37), the current prayer softly marked; "Start tracking" adds the 5 as daily habits `group = "namoz"` dated 1 Nov; before
-  1 Nov the rows wait ("From 1 November"); no chain, no miss before it; no never-miss-twice, no shaming, a miss is an empty link. Reminders
-  off by default, one switch per prayer in the group's sheet; the notice is only "Peshin vaqti kirdi · 12:11". The "learn" hook: Phase 6.
-- **Notifications (a5a906c, after the rebase onto round C):** every reminder's large icon is its Fluent emoji and its title/text
-  starts with the glyph (morning plan ☕, overdue ⏰, evening nudge 🌙, a task by its words, a habit by its words); the small icon is the
-  P silhouette. A prayer rings at that day's own time (`HabitAlarms` → `Namoz.nextStart`), the notice is only the plain line + Done.
-- **Boss's reference next to the build** (same 4 screens; his are dark navy/blue, ours mint glass): Today =
-  `habit-today__loved` ↔ `habits-360x800.png`; week chain = `habit-today-weekchain__loved` ↔ `habits-past-day.png`; detail =
-  `habit-detail__loved` ↔ `habit-detail.png`; History = `habit-history__loved` ↔ `habits-history.png` + `habits-achievements.png`
-  (CI artifact `screenshots-and-reports`). Taken: the chained week strip, the 3 part pills, a bold card per habit with progress,
-  "•••" and the time tab on its edge, the check outside the card, "Finished", the "› Today" pill, chips + 3 stat cards + chain
-  calendar, History's Calendar · All habits · Achievements, timed habits. Not taken: the saturated full-colour cards (white glass +
-  a gradient emoji tile instead: text stays ink, contrast ≥ 4.5), the dark theme, the bottom tabs (Habits stays one tab).
-- **From the apps the brief named:** Streaks (big tappable emoji tiles, a ring per habit), Loop Habit Tracker (frequency rules, a
-  per-habit history calendar, strength over raw streak), Habitify (time-of-day sections + the timer habit), Apple Fitness (one ring
-  for the day, segmented rings for counts), Cal AI / MyFitnessPal (quick add in 2 taps: kept for item 1, not built).
-- **Not done this round (and why):** 2 more directions as mock screens (the lead's ask, replaced by Boss's own reference + "rebuild
-  from zero"); item 1 amount habits + calories photo (needs server fields `unit/goal/goal_kind`, a habit_log event and a vision
-  endpoint: next round, start from `HabitBoard.progressText`); item 2 Inbox "where did it go" (toasts with the destination, the
-  sorted-today list, the native Notes list); item 3 Plan it (round B's F). Freezes, emoji picks, identity lines and "after" live in
-  Room only (v8 `habit_prefs`/`habit_freezes`); pagel.uz has no fields for them yet. Namoz's "learn" link waits for Phase 6.
-- **Server (DEPLOY NEEDED, see report):** `feat/roundD-server` e39b7b6: `tasks.habit_group`, POST /api/v1/tasks takes `group` (one lower-case
-  word), /sync + task reads send `group`; vitest. Until deployed, the phone still finds the prayers by their names.
 ## START HERE v17.1 · ROUND C FIX ROUND = THE CHECKER'S 7/10 LIST (docs/qa/roundC-checker.md) (2026-10-29, builder agent)
 - **Data:** server **ef3f671 (DEPLOY NEEDED; it contains ad76178)**: the web's Close the day keeps a due's time
   ("15:00" stays), never pulls a later due back, and caps kept stars at 3 too (over the cap = pushed). Phone: kept

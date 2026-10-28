@@ -348,7 +348,6 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
             org.pagel.ai.ui.compass.CompassRoute -> "Compass"
-            is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"
             is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"; SortedTodayRoute -> "Sorted today"; is NotesRoute -> "Notes"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
