@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -72,20 +73,23 @@ internal fun PathStop(first: Boolean, last: Boolean, mark: StopMark, modifier: M
     Row(
         modifier.fillMaxWidth().drawBehind {
             val x = RailWidth.toPx() / 2f
-            val markY = 26.dp.toPx()
+            val markY = MarkCentre.toPx()
             val w = 1.5.dp.toPx()
             if (!first) drawLine(PathLine, Offset(x, 0f), Offset(x, markY), w)
             if (!last) drawLine(PathLine, Offset(x, markY), Offset(x, size.height), w)
         },
     ) {
         Box(Modifier.width(RailWidth).heightIn(min = 52.dp), contentAlignment = Alignment.TopCenter) {
-            Box(Modifier.padding(top = Space.xl - mark.size / 2 + 6.dp)) { Mark(mark) }
+            Box(Modifier.offset(y = MarkCentre - mark.size / 2)) { Mark(mark) }
         }
         Box(Modifier.weight(1f).padding(bottom = Space.md)) { content() }
     }
 }
 
 enum class StopMark(val size: Dp) { STAR(24.dp), FULL(12.dp), RING(12.dp) }
+
+/** Where a stop's mark sits on the rail: level with the first line of its card. */
+private val MarkCentre = 26.dp
 
 @Composable
 private fun Mark(mark: StopMark) {
@@ -139,11 +143,11 @@ internal fun CompassSwitch(on: Boolean) {
     val x by animateFloatAsState(if (on) 1f else 0f, spring(dampingRatio = 1f, stiffness = 500f), label = "knob")
     Box(
         Modifier.size(width = 51.dp, height = 31.dp)
-            .background(if (on) Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)) else SolidColor(Glass.Ink.copy(alpha = 0.16f)), CircleShape)
-            .padding(2.dp),
+            .background(if (on) Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)) else SolidColor(Glass.Ink.copy(alpha = 0.16f)), CircleShape),
         contentAlignment = Alignment.CenterStart,
     ) {
-        Box(Modifier.graphicsLayer { translationX = x * 20.dp.toPx() }.size(27.dp).background(Color.White, CircleShape))
+        // A 27 dp knob with a 2 dp inset, sliding 20 dp.
+        Box(Modifier.graphicsLayer { translationX = 2.dp.toPx() + x * 20.dp.toPx() }.size(27.dp).background(Color.White, CircleShape))
     }
 }
 
