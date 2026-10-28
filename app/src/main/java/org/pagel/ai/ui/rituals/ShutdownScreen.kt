@@ -53,6 +53,7 @@ import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -180,7 +181,7 @@ fun ShutdownScreen(
 private fun StarCard(t: RitualTask, step: Int, total: Int, onBack: () -> Unit, onChoose: (Move) -> Unit) {
     Column {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("${step + 1} of $total", style = Glass.NumberText, color = Glass.Muted, modifier = Modifier.semantics { contentDescription = "Star ${step + 1} of $total" })
+            Text("${step + 1} of $total", style = MaterialTheme.typography.labelSmall, color = Glass.Ink, modifier = Modifier.semantics { contentDescription = "Star ${step + 1} of $total" })
             Spacer(Modifier.width(8.dp))
             Text("Today's open stars", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
             if (step > 0) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.ChevronLeft, "Back one star", plain = true, onClick = onBack)
@@ -223,7 +224,12 @@ private fun MoveButton(move: Move, icon: androidx.compose.ui.graphics.vector.Ima
         verticalArrangement = Arrangement.Center,
     ) {
         Icon(icon, contentDescription = null, tint = if (move == Move.DROP) Glass.Risk else Glass.Ink, modifier = Modifier.size(20.dp))
-        Text(move.label, style = MaterialTheme.typography.labelLarge, color = if (move == Move.DROP) Glass.Risk else Glass.Ink, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+        // At 1.5x "Tomorrow" was cut ("Tomorr"): the word shrinks to fit its third of the card, never below 10 sp.
+        androidx.compose.foundation.text.BasicText(
+            move.label, style = MaterialTheme.typography.labelLarge.copy(color = if (move == Move.DROP) Glass.Risk else Glass.Ink),
+            maxLines = 1, softWrap = false, modifier = Modifier.padding(top = 4.dp),
+            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = MaterialTheme.typography.labelLarge.fontSize, stepSize = 0.5.sp),
+        )
     }
 }
 
@@ -253,13 +259,22 @@ private fun EveningRow(on: Boolean, at: String, onToggle: (Boolean) -> Unit, onT
     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         val press = remember { MutableInteractionSource() }
         val haptics = LocalHapticFeedback.current
-        Row(Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 16.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Two rows, so at 1.5x the words keep the width (one row broke "Every evening, unless…" into five lines).
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp, bottom = 10.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (on) TabIcons.BellRing else TabIcons.Bell, contentDescription = null, tint = if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Evening reminder", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink)
-                Hint(if (on) "Every evening, unless the day is closed" else "Off")
-            }
+            Text("Evening reminder", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f))
+            Box(
+                Modifier.heightIn(min = TouchMin).pressScale(press)
+                    .clickable(press, indication = null, role = Role.Switch) { haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn); onToggle(!on) }
+                    .semantics { toggleableState = ToggleableState(on); stateDescription = if (on) "On" else "Off"; contentDescription = "Evening reminder" },
+                contentAlignment = Alignment.Center,
+            ) { Switch(on) }
+        }
+        Row(Modifier.fillMaxWidth().padding(start = 32.dp), verticalAlignment = Alignment.CenterVertically) {
+            Hint(if (on) "Every evening, unless the day is closed" else "Off", modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
             val timePress = remember { MutableInteractionSource() }
             Box(
                 Modifier.heightIn(min = TouchMin).pressScale(timePress)
@@ -270,13 +285,7 @@ private fun EveningRow(on: Boolean, at: String, onToggle: (Boolean) -> Unit, onT
                 Text(at, style = Glass.NumberText.copy(fontSize = MaterialTheme.typography.labelLarge.fontSize), color = Glass.PrimaryInk,
                     modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = 12.dp, vertical = 6.dp))
             }
-            Spacer(Modifier.width(8.dp))
-            Box(
-                Modifier.heightIn(min = TouchMin).pressScale(press)
-                    .clickable(press, indication = null, role = Role.Switch) { haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn); onToggle(!on) }
-                    .semantics { toggleableState = ToggleableState(on); stateDescription = if (on) "On" else "Off"; contentDescription = "Evening reminder" },
-                contentAlignment = Alignment.Center,
-            ) { Switch(on) }
+        }
         }
     }
 }

@@ -86,7 +86,13 @@ worktree (`D:\PAGEL\android-p5`) while another builder fixes Inbox/Upcoming on `
   evening alarm's notification opens Close the day; Tomorrow/Tomorrow/Later/Drop + a pick → 3 PATCHes + the shutdown
   event; the evening alarm in `dumpsys alarm`; the review → its event.
 - **Not done**: the review's "Open the Inbox" switches tabs but does not bring Boss back to step 2 by itself; a ritual
-  event already on pagel.uz is not taken back by Undo (its task changes are); the 6.json schema is committed from CI.
+  event already on pagel.uz is not taken back by Undo (its task changes are). Room's 6.json schema is CI's own export
+  (run 40654552767).
+- **CI**: run 40654552767 build ✅ (Migration 4/4, RitualLogic 9/9, RitualsRepository 15/15, RitualsScreenshot 16/16);
+  its smoke stopped in the Phase 2 Inbox walk (the old swipe-up flake that feat/native-app a713747 fixes), before the
+  Phase 5 block. Screenshot round 1 fixes: "Tomorrow" was cut at 1.5x (it now shrinks to fit), the evening row broke
+  into five lines at 1.5x (two rows now), "1 of 3" was in the pixel number face (body face now), the review's step
+  names were cut at 1.5x (two lines), "Back to the text" wrapped (now "Edit text").
 
 ## START HERE v12 · PHASE 4 FIX ROUND = THE CHECKER'S TOP 10 (2026-10-28, builder agent)
 No new phase (Phase 5 waits for Boss's phone test). The list: `docs/qa/phase4-checker.md` (8.5/10), in its order.

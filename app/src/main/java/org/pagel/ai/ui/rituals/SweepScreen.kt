@@ -160,7 +160,7 @@ fun SweepScreen(
                     }
                     Hint(line, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp).semantics { contentDescription = line })
                     Spacer(Modifier.size(12.dp))
-                    ButtonRow { QuietButton("Back to the text", TabIcons.ChevronLeft, Modifier.weight(1f), onClick = onBack) }
+                    ButtonRow { QuietButton("Edit text", TabIcons.ChevronLeft, Modifier.weight(1f), onClick = onBack) }
                 }
             }
             ui.state == SweepEntity.FAILED -> item(key = "failed", contentType = "pane") {
@@ -168,7 +168,7 @@ fun SweepScreen(
                     RitualPane("Not split") { Text(ui.message ?: "pagel.uz could not read it.", style = MaterialTheme.typography.bodyMedium, color = Glass.Risk) }
                     Spacer(Modifier.size(12.dp))
                     ButtonRow {
-                        QuietButton("Back to the text", TabIcons.ChevronLeft, Modifier.weight(1f), onClick = onBack)
+                        QuietButton("Edit text", TabIcons.ChevronLeft, Modifier.weight(1f), onClick = onBack)
                         MintButton("Try again", TabIcons.Refresh, Modifier.weight(1f), onClick = onRetry)
                     }
                 }
@@ -191,7 +191,7 @@ fun SweepScreen(
                 }
                 item(key = "add", contentType = "buttons") {
                     ButtonRow {
-                        QuietButton("Back to the text", TabIcons.ChevronLeft, Modifier.weight(1f), onClick = onBack)
+                        QuietButton("Edit text", TabIcons.ChevronLeft, Modifier.weight(1f), onClick = onBack)
                         MintButton("Add ${ui.keep}", TabIcons.Plus, Modifier.weight(1f), enabled = ui.keep > 0 && !ui.tooLong, onClick = onAdd)
                     }
                 }

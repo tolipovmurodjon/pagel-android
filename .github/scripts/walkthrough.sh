@@ -334,6 +334,8 @@ wait_log() {
 $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
 front p5-start
 tap Today; shot p5-today 2.5
+# The review pill waits for pagel.uz's answer (GET /api/v1/rituals): look again once if it is not there yet.
+grep -qF 'content-desc="Weekly review is due"' "$OUT/$(printf '%02d' $N)-p5-today.xml" || shot p5-today 4
 for want in 'content-desc="Empty your head"' 'content-desc="Close the day"' 'content-desc="Weekly review is due"'; do
   grep -qF "$want" "$OUT/$(printf '%02d' $N)-p5-today.xml" || { log "WALKTHROUGH: Today has no ritual pill $want"; exit 1; }
 done
