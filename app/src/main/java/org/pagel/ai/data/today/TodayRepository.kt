@@ -67,13 +67,14 @@ class TodayRepository(
      * A new task (Add task fast): it is on the phone at once, on Today when [onToday], and waits in the outbox; once sent
      * it takes pagel.uz's id. Returns the phone's id for it.
      */
-    suspend fun add(text: String, project: String, priority: Int, due: String?, every: String?, onToday: Boolean): String {
+    suspend fun add(text: String, project: String, priority: Int, due: String?, every: String?, onToday: Boolean, group: String? = null): String {
         val now = clock()
         val id = LOCAL_ID + java.util.UUID.randomUUID().toString().replace("-", "").take(12)
         dao.upsertTasks(listOf(TaskEntity(
             id = id, project = project, phase = "", sort = Double.MAX_VALUE, text = text, title = null, status = "open",
             priority = priority, star = false, due = due, every = every, doneWhen = null, doneAt = null,
             updatedAt = java.time.Instant.ofEpochMilli(now).toString(), serverVersion = 0, syncStatus = SyncStatus.PENDING, lastModified = now,
+            habitGroup = group,
         )))
         if (onToday) dao.appendToToday(id)
         dao.addToOutbox(OutboxEntity(taskId = id, op = OutboxEntity.ADD, createdAt = now))
@@ -228,7 +229,7 @@ class OutboxSender(
     /** One new task: created → it takes the server's id; refused → it leaves the phone and the UI says why. */
     private suspend fun sendAdd(account: Account, op: OutboxEntity): SendResult {
         val t = dao.taskOnce(op.taskId) ?: run { dao.removeFromOutbox(op.id); return SendResult.ALL_SENT }
-        return when (val out = api.addTask(account.serverUrl, account.token, NewTaskBody(t.project, t.text, t.priority, t.due, t.every, clientId = op.taskId))) {
+        return when (val out = api.addTask(account.serverUrl, account.token, NewTaskBody(t.project, t.text, t.priority, t.due, t.every, clientId = op.taskId, group = t.habitGroup))) {
             is Outcome.Ok -> {
                 dao.adoptServerId(op.taskId, out.value.id)
                 dao.removeFromOutbox(op.id)

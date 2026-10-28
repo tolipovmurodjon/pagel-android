@@ -249,29 +249,51 @@ grep -q 'POST /api/v1/inbox {"action":"triage","files":\[[^]]*"inbox/ib8.md"' "$
 log "   the AI was asked to read ib8 after ~${i} s online"
 shot inbox-online 2
 
-log "-- Habits (Phase 3): by part of the day; a tick reaches pagel.uz; a reminder; the notification's Done ticks another"
+log "-- Habits 2.0 (round D): the chain strip, Morning/Afternoon/Evening, bold cards; a tick reaches pagel.uz; a reminder; Namoz"
 tap Habits && shot habits 2.5
-for want in "Stretch for ten minutes" "Read 10 pages" "Drink water"; do
-  grep -q "text=\"$want\"" "$OUT/$(printf '%02d' $N)-habits.xml" || { log "WALKTHROUGH: Habits has no \"$want\""; exit 1; }
+tap Morning && shot habits-morning 1.5
+for want in "Stretch for ten minutes" "Drink water"; do
+  grep -q "text=\"$want\"" "$OUT/$(printf '%02d' $N)-habits-morning.xml" || { log "WALKTHROUGH: Habits' Morning has no \"$want\""; exit 1; }
 done
-# Round B: four parts now (Log food is Afternoon), so Anytime's Drink water sits under the glass bar: scroll it up first.
+grep -q 'content-desc="Namoz"\|text="Namoz"' "$OUT/$(printf '%02d' $N)-habits-morning.xml" || log "   (WARN: no Namoz group on screen)"
+tap Evening && shot habits-evening 1.5
+grep -q 'text="Read 10 pages"' "$OUT/$(printf '%02d' $N)-habits-evening.xml" || { log "WALKTHROUGH: Habits' Evening has no \"Read 10 pages\""; exit 1; }
+tap Morning && sleep 1
+# The cards sit under the strip, the pills and the Namoz group: scroll the list up first.
 $T adb shell input swipe 160 460 160 260 400; sleep 1
-tapring "Done: Drink water" && shot habit-ticked 0.4
-shot habit-done-today 2.5
-grep -q 'text="Done today ✓"' "$OUT/$(printf '%02d' $N)-habit-done-today.xml" || { log "WALKTHROUGH: the ticked habit did not move to Done today"; exit 1; }
+tap "Done: Drink water" && shot habit-ticked 0.4
+shot habit-finished 2.5
+grep -q 'text="Finished"' "$OUT/$(printf '%02d' $N)-habit-finished.xml" || { log "WALKTHROUGH: the ticked habit's card did not go quiet with Finished"; exit 1; }
 TODAY=$(TZ=Asia/Tashkent date +%Y-%m-%d)
 H3="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$TODAY\",\"if_due\":\"$TODAY\",\"n\":1} auth=True"
 for i in $(seq 1 30); do grep -qF "$H3" "$FAKE_LOG" && break; sleep 1; done
 grep -qF "$H3" "$FAKE_LOG" || { log "WALKTHROUGH: the habit tick never reached pagel.uz as $H3"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   habit tick reached pagel.uz after ~${i} s"
-log "-- a 3x habit (round B, Boss: \"it should do like 3 times\"): Log food tapped 3 times, one segment each; pagel.uz gets 3 ticks"
-for k in 1 2 3; do tapring "Done: Log food" && shot "habit-3x-$k" 1.3 || { log "WALKTHROUGH: no \"Done: Log food\" row for tap $k"; exit 1; }; done
-grep -q 'text="2/3"' "$OUT/$(printf '%02d' $((N - 1)))-habit-3x-2.xml" || log "   (WARN: the 2nd tap's shot shows no 2/3)"
+log "-- a timed habit: tap Stretch's card, its 10-minute clock runs"
+tap "Stretch for ten minutes" && shot habit-timer 3
+grep -q 'text="0:0[1-9] / 10 min"\|text="0:1[0-9] / 10 min"' "$OUT/$(printf '%02d' $N)-habit-timer.xml" || log "   (WARN: the timer shows no running seconds)"
+tap "Stretch for ten minutes" && sleep 1
+log "-- a 3x habit (round B): Log food tapped 3 times in Afternoon; pagel.uz gets 3 ticks"
+$T adb shell input swipe 160 200 160 600 400; sleep 1
+tap Afternoon && sleep 1
+$T adb shell input swipe 160 460 160 260 400; sleep 1
+for k in 1 2 3; do tap "Done: Log food" && shot "habit-3x-$k" 1.3 || { log "WALKTHROUGH: no \"Done: Log food\" check for tap $k"; exit 1; }; done
+grep -q 'text="2 / 3"' "$OUT/$(printf '%02d' $((N - 1)))-habit-3x-2.xml" || log "   (WARN: the 2nd tap's shot shows no 2 / 3)"
 for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] && break; sleep 1; done
 [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] || { log "WALKTHROUGH: the 3x habit's taps did not all reach pagel.uz"; grep "t_h4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   3 taps reached pagel.uz after ~${i} s"
-# Back to the top, where Stretch's bell is.
+log "-- Namoz (Boss 2026-10-28): Start tracking adds the five prayers as daily habits in the group namoz, from 1 November"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
+tap "Start tracking" && shot namoz-started 3
+for i in $(seq 1 30); do [ "$(grep -c 'POST /api/v1/tasks .*"group":"namoz"' "$FAKE_LOG")" -ge 5 ] && break; sleep 1; done
+[ "$(grep -c 'POST /api/v1/tasks .*"group":"namoz"' "$FAKE_LOG")" -ge 5 ] || { log "WALKTHROUGH: the five prayers did not reach pagel.uz with group namoz"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   5 prayers reached pagel.uz after ~${i} s"
+shot namoz-group 2
+grep -q 'text="Bomdod"' "$OUT/$(printf '%02d' $N)-namoz-group.xml" || log "   (WARN: the Namoz group shows no Bomdod row yet)"
+tap History && shot habits-history 2
+$T adb shell input keyevent 4; sleep 1
+tap Morning && sleep 1
+# Back to the top, where Stretch's time tab is.
 # Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
 ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")

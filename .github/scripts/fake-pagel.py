@@ -421,5 +421,16 @@ def _compass_get(self):
                            "recovery": COMPASS_RECOVERY[0]})
 
 H.do_PUT, H.do_GET = _compass_put, _compass_get
+# ── Round D · Namoz: the five prayers the phone adds (POST /api/v1/tasks {group: "namoz", every: "day"}) stay in /sync
+# as daily habits with their group, as pagel.uz keeps them (dashboard task-store.ts `group`).
+_p5_sync = sync_body
+
+def sync_body():
+    s = _p5_sync()
+    s["tasks"] += [{"id": tid, "project": b["project"], "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 120 + k, "text": b["text"], "status": "open",
+                    "priority": b.get("priority", 2), "star": False, "due": b.get("due"), "every": b.get("every"), "group": b.get("group"),
+                    "updated_at": "2026-10-29T10:00:00Z", "version": 1, "steps": []}
+                   for k, (tid, b) in enumerate(ADDED) if b.get("group") == "namoz" and tid not in REMOVED]
+    return s
 
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()

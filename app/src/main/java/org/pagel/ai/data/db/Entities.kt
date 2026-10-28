@@ -48,6 +48,8 @@ data class TaskEntity(
     @ColumnInfo(defaultValue = "0") val phaseNow: Boolean = false,
     /** A habit done N times a day (v7, round B: "log food" 3x): each tap counts, the Nth moves it on. */
     @ColumnInfo(defaultValue = "1") val times: Int = 1,
+    /** The habit's group (v8, round D): "namoz" for the five prayers; pagel.uz sends `group`, an older one none. */
+    @ColumnInfo(defaultValue = "NULL") val habitGroup: String? = null,
 )
 
 @Entity(tableName = "steps", primaryKeys = ["taskId", "position"], indices = [Index("taskId")])
@@ -172,6 +174,27 @@ data class HabitTickEntity(
     val taskId: String,
     /** Taps that day (v7): a habit is done on a day once n reaches its times. */
     @ColumnInfo(defaultValue = "1") val n: Int = 1,
+)
+
+/**
+ * Boss's own touches on a habit (v8, round D), kept on this phone: the emoji he picked, the habit it follows ("after
+ * coffee"), the line he wrote about who he is ("I'm someone who trains 3x a week") and a timed habit's minutes when its
+ * title does not say. Null = not set (the title decides).
+ */
+@Entity(tableName = "habit_prefs")
+data class HabitPrefEntity(
+    @PrimaryKey val taskId: String,
+    val emoji: String? = null,
+    val after: String? = null,
+    val identity: String? = null,
+    val minutes: Int? = null,
+)
+
+/** A streak freeze (v8, round D, Duolingo's idea): a sick or travel day that holds the chain; 2 a month. */
+@Entity(tableName = "habit_freezes", primaryKeys = ["day", "taskId"])
+data class HabitFreezeEntity(
+    val day: String,
+    val taskId: String,
 )
 
 /** A habit's reminder (Phase 3): on = a notification at its time, with a Done button. Only on this phone. */

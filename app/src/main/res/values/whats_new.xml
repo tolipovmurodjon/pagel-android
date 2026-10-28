@@ -5,7 +5,7 @@
   update; More → What's new opens it again.
 -->
 <resources>
-    <string name="whats_new_title">Round C: calendar + notifications</string>
+    <string name="whats_new_title">Round D: habits 2.0, Namoz, the new icon</string>
     <string-array name="whats_new_items">
         <item>🧭 Compass: write your goals; only you can read them|compass</item>
         <item>Today’s goal line blocks screenshots while it shows|compass</item>
@@ -15,9 +15,16 @@
         <item>Notifications: pick your tone (chill · normal · no mercy) and the morning plan|notifications</item>
         <item>Open a task with a time: “Also 10 min before”|today</item>
         <item>Clear your last task from anywhere: the big confetti + chord|today</item>
-        <item>Habits: the week dots sit under the title; long-press a done habit to undo|habits</item>
-        <item>Close the day: your Today is empty after it, tomorrow\'s stars wait folded|shutdown</item>
+        <item>Close the day: your Today is empty after it, tomorrow's stars wait folded|shutdown</item>
         <item>The status bar and the sheets show the mint page, no white band|today</item>
+        <item>Habits: the week on top is a chain; tap a day to look back, the Today pill brings you home|habits</item>
+        <item>Morning · Afternoon · Evening pills: your habits for that part of the day|habits</item>
+        <item>Tap the Stretch card: its 10-minute timer runs and ticks itself|habits</item>
+        <item>The dots on a card: freeze a sick day (2 a month) or take a tick back|habits</item>
+        <item>Long-press a card: its page with the chain calendar, stats, emoji and its after habit|habits</item>
+        <item>History (calendar icon): Calendar · All habits · Achievements|habits</item>
+        <item>Namoz: Start tracking; the five prayers count from 1 November|habits</item>
+        <item>The new PAGEL icon on your home screen|more</item>
         <item>Close the day: the cards no longer jump between stars|shutdown</item>
     </string-array>
 </resources>
