@@ -228,7 +228,8 @@ class H(BaseHTTPRequestHandler):
         if self.path.startswith("/api/v1/inbox"):
             return self.send(200, inbox_body())
         if self.path.startswith("/api/v1/completed"):
-            return self.send(200, {"tasks": completed_rows(recent_only=False), "before": None})
+            # total = every finished task, as the web counts them; 4 were finished before done_at was kept (no row).
+            return self.send(200, {"tasks": completed_rows(recent_only=False), "before": None, "total": len(completed_rows(recent_only=False)) + 4})
         if self.path.startswith("/api/v1/sync"):
             return self.send(200, sync_body())
         if self.path.startswith("/api/v1/stream"):

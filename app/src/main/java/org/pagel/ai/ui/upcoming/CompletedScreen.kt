@@ -1,6 +1,15 @@
 package org.pagel.ai.ui.upcoming
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -109,8 +119,18 @@ private fun DayPane(g: DoneGroup, ui: CompletedUi, onOpen: (String) -> Unit, onR
                 Text("${g.tasks.size}", style = Glass.NumberText, color = Glass.Muted, modifier = Modifier.semantics { contentDescription = "${g.tasks.size} done" })
             }
             for ((i, t) in g.tasks.withIndex()) key(t.id) {
-                if (i > 0) HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
-                DoneRow(t, ui, onOpen, onReopen)
+                val leaving = t.id in ui.reopening
+                // Unticked: the check empties first, then the row folds away; it never vanishes in one frame (checker P4 #5).
+                AnimatedVisibility(
+                    visible = !leaving,
+                    enter = EnterTransition.None,
+                    exit = shrinkVertically(tween(420, delayMillis = 200, easing = FastOutSlowInEasing)) + fadeOut(tween(320, delayMillis = 200)),
+                ) {
+                    Column {
+                        if (i > 0) HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
+                        DoneRow(t, ui, leaving, onOpen, onReopen)
+                    }
+                }
             }
         }
     }
@@ -119,19 +139,26 @@ private fun DayPane(g: DoneGroup, ui: CompletedUi, onOpen: (String) -> Unit, onR
 /** One done task: the filled check (tap = open it again), the title, then the time it was done · project. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun DoneRow(t: TaskEntity, ui: CompletedUi, onOpen: (String) -> Unit, onReopen: (String) -> Unit) {
+private fun DoneRow(t: TaskEntity, ui: CompletedUi, leaving: Boolean, onOpen: (String) -> Unit, onReopen: (String) -> Unit) {
     val title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
     val haptics = LocalHapticFeedback.current
+    // The disc drains back into an empty ring (no bounce: a tap has no momentum).
+    val fill by animateFloatAsState(if (leaving) 0f else 1f, spring(dampingRatio = 1f, stiffness = 500f), label = "undone")
     Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 16.dp), verticalAlignment = Alignment.Top) {
         val press = remember { MutableInteractionSource() }
         Box(
             Modifier.size(48.dp).pressScale(press)
-                .clickable(press, indication = null, role = Role.Checkbox) { haptics.performHapticFeedback(HapticFeedbackType.ToggleOff); onReopen(t.id) }
-                .semantics { contentDescription = "Undo: $title"; stateDescription = "Done" },
+                .clickable(press, indication = null, enabled = !leaving, role = Role.Checkbox) { haptics.performHapticFeedback(HapticFeedbackType.ToggleOff); onReopen(t.id) }
+                .semantics { contentDescription = "Undo: $title"; stateDescription = if (leaving) "Not done" else "Done" },
             contentAlignment = Alignment.Center,
         ) {
+            Box(Modifier.size(22.dp).border(1.5.dp, Glass.Ink.copy(alpha = 0.30f * (1f - fill)), CircleShape))
             // Bright mint with an ink tick: done, without a 4th green (Boss's colour theory).
-            Box(Modifier.size(22.dp).background(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), CircleShape), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(22.dp).graphicsLayer { scaleX = fill; scaleY = fill; alpha = fill }
+                    .background(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(TabIcons.Check, contentDescription = null, tint = Glass.Ink, modifier = Modifier.size(14.dp))
             }
         }

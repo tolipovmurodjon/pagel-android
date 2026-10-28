@@ -151,4 +151,9 @@ data class TriageReply(val started: Boolean = false, @SerialName("wait_s") val w
 
 /** One finished task from `GET /api/v1/completed`, with the Tashkent day it was finished (dashboard src/lib/sync.ts). */
 @Serializable
-data class CompletedResponse(val tasks: List<SyncTaskDto> = emptyList(), val before: String? = null)
+data class CompletedResponse(
+    val tasks: List<SyncTaskDto> = emptyList(),
+    val before: String? = null,
+    /** Every finished task on pagel.uz, as the web counts them (dashboard 9815038); null from an older pagel.uz. */
+    val total: Int? = null,
+)

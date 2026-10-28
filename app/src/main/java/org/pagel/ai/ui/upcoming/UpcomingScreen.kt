@@ -5,6 +5,7 @@ import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -35,8 +36,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -75,6 +79,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.pagel.ai.data.db.TaskEntity
 import org.pagel.ai.data.upcoming.UpcomingDay
+import org.pagel.ai.data.upcoming.plannedLine
 import org.pagel.ai.data.upcoming.stripDayAt
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.Pane
@@ -97,6 +102,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 private val DAY_TITLE = DateTimeFormatter.ofPattern("EEEE d MMM", Locale.UK)
+/** "Tomorrow · Thu 29 Oct": the long name left "Oct" alone on a line at 1.5x (checker P4 #7). */
+private val DAY_SHORT = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
 private val SPOKEN = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
 private val LETTER = DateTimeFormatter.ofPattern("EEE", Locale.UK)
 
@@ -117,8 +124,16 @@ private class Drag {
     var origin = Offset.Zero
     var finger = Offset.Zero
     var size by mutableStateOf(IntSize.Zero)
+    /** The held row's own width, so the card is the row (ring + title where the row drew them), not a title alone. */
+    var rowWidth by mutableIntStateOf(0)
+    var due by mutableStateOf<String?>(null)
+    var priority by mutableIntStateOf(2)
+    /** The screen's width: the card stays 8 dp inside it (walk 45 had it off the left edge). */
+    var screenWidth by mutableFloatStateOf(0f)
     val pos = Animatable(Offset.Zero, Offset.VectorConverter)
     val scale = Animatable(1f)
+    /** 0 → 1 over the strip: the card shrinks to 0.6 and rises 56 dp above the finger, so the ink day shows (iOS). */
+    val lift = Animatable(0f)
 }
 
 /**
@@ -151,6 +166,15 @@ fun UpcomingScreen(
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
     // One tick for each day the finger crosses (Apple's picker detents), none when it leaves the strip.
     LaunchedEffect(drag.hovered) { if (drag.hovered != null) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+    val over = drag.hovered != null
+    LaunchedEffect(over) { drag.lift.animateTo(if (over) 1f else 0f, spring(dampingRatio = 1f, stiffness = 600f)) }
+    // "You are here": the day at the top of the list gets a thin ink ring on the strip (today is marked already).
+    val atTop by remember {
+        derivedStateOf {
+            val k = list.layoutInfo.visibleItemsInfo.firstOrNull { (it.key as? String)?.startsWith("day-") == true }?.key as? String
+            days.indexOfFirst { "day-${it.day}" == k }.takeIf { it > 0 }
+        }
+    }
 
     fun dayUnder(finger: Offset): Int? {
         val c = strip[0]?.takeIf { it.isAttached } ?: return null
@@ -165,10 +189,14 @@ fun UpcomingScreen(
     }
     val handlers = remember {
         DragHandlers(
-            start = { t, rowAt, local ->
-                drag.id = t.id; drag.title = titleOf(t); drag.grab = local; drag.origin = rowAt; drag.finger = rowAt + local; drag.shown = true
+            start = { t, rowAt, local, rowSize ->
+                drag.id = t.id; drag.title = titleOf(t); drag.due = t.due; drag.priority = t.priority; drag.rowWidth = rowSize.width
+                drag.grab = local; drag.origin = rowAt; drag.finger = rowAt + local; drag.shown = true
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                scope.launch { drag.pos.snapTo(rowAt); drag.scale.snapTo(1f); drag.scale.animateTo(1.04f, spring(dampingRatio = 0.7f, stiffness = 600f)) }
+                scope.launch {
+                    drag.pos.snapTo(rowAt); drag.lift.snapTo(0f); drag.scale.snapTo(1f)
+                    drag.scale.animateTo(1.04f, spring(dampingRatio = 0.7f, stiffness = 600f))
+                }
             },
             move = { delta ->
                 drag.finger += delta
@@ -191,27 +219,30 @@ fun UpcomingScreen(
                         drag.shown = false
                     }
                 } else scope.launch {
-                    drag.id = null
                     launch { drag.scale.animateTo(1f, spring(dampingRatio = 1f, stiffness = 500f)) }
                     drag.pos.animateTo(drag.origin, spring(dampingRatio = 0.8f, stiffness = 500f))
+                    // Only now the row comes back: un-dimming it while the card still flew showed two copies (checker #10).
+                    drag.id = null
                     drag.shown = false
                 }
             },
         )
     }
 
-    Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot() }) {
+    Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot(); drag.screenWidth = it.size.width.toFloat() }) {
         Column(Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding())) {
-            Header(ui)
+            // Only the strip is pinned (it is the drop target); the title scrolls with the list, so landscape and 1.5x
+            // keep room for the days (checker P4 #3: title + strip took ~180 dp).
             WeekStrip(
-                ui.view.days, ui.today, drag.hovered,
-                Modifier.padding(horizontal = 16.dp).onGloballyPositioned { strip[0] = it },
-            ) { i -> scope.launch { list.animateScrollToItem(if (i == 0) 0 else overdueFirst + i) } } // today = the top, Overdue included
+                ui.view.days, ui.today, drag.hovered, atTop,
+                Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp).onGloballyPositioned { strip[0] = it },
+            ) { i -> scope.launch { list.animateScrollToItem(if (i == 0) 0 else 1 + overdueFirst + i) } } // today = the top, Overdue included
             LazyColumn(
                 Modifier.fillMaxWidth().weight(1f), state = list,
-                contentPadding = PaddingValues(top = 12.dp, bottom = contentPadding.calculateBottomPadding() + 8.dp),
+                contentPadding = PaddingValues(top = 4.dp, bottom = contentPadding.calculateBottomPadding() + 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                item(key = "head", contentType = "head") { Header(ui) }
                 when {
                     ui.loading -> item(key = "loading", contentType = "note") {
                         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
@@ -234,7 +265,7 @@ fun UpcomingScreen(
 
 /** What a row needs to start, move and end a drag; the screen owns the state. */
 private class DragHandlers(
-    val start: (TaskEntity, Offset, Offset) -> Unit,
+    val start: (TaskEntity, Offset, Offset, IntSize) -> Unit,
     val move: (Offset) -> Unit,
     val end: (cancelled: Boolean) -> Unit,
 )
@@ -243,12 +274,10 @@ private fun titleOf(t: TaskEntity) = t.title?.takeIf(String::isNotBlank) ?: head
 
 @Composable
 private fun Header(ui: UpcomingUi) {
-    val planned = ui.view.days.sumOf { it.tasks.size }
-    val late = ui.view.overdue.size
-    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 10.dp)) {
+    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp)) {
         Text("Next 7 days", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Upcoming", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
-        Text(if (late > 0) "$planned planned · $late overdue" else "$planned planned", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+        Text(plannedLine(ui.view), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
     }
 }
 
@@ -257,13 +286,14 @@ private fun Header(ui: UpcomingUi) {
  * number; the day under a dragged row fills ink and grows, so the drop target is never in doubt.
  */
 @Composable
-private fun WeekStrip(days: List<UpcomingDay>, today: LocalDate, hovered: Int?, modifier: Modifier, onTap: (Int) -> Unit) {
+private fun WeekStrip(days: List<UpcomingDay>, today: LocalDate, hovered: Int?, shown: Int?, modifier: Modifier, onTap: (Int) -> Unit) {
     Pane(modifier.fillMaxWidth(), radius = 22.dp) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)) {
             for ((i, d) in days.withIndex()) key(d.day) {
                 val isToday = d.day == today
                 val over = hovered == i
-                val grow by animateFloatAsState(if (over) 1.16f else 1f, spring(dampingRatio = 0.6f, stiffness = 700f), label = "cell")
+                // No bounce: hovering has no momentum (apple §4; checker P4 #10 had .6).
+                val grow by animateFloatAsState(if (over) 1.16f else 1f, spring(dampingRatio = 1f, stiffness = 700f), label = "cell")
                 val press = remember { MutableInteractionSource() }
                 Column(
                     Modifier.weight(1f).heightIn(min = 48.dp).pressScale(press)
@@ -282,6 +312,7 @@ private fun WeekStrip(days: List<UpcomingDay>, today: LocalDate, hovered: Int?, 
                                 when {
                                     over -> Modifier.background(Glass.Ink, CircleShape)
                                     isToday -> Modifier.background(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), CircleShape)
+                                    shown == i -> Modifier.border(1.25.dp, Glass.Ink, CircleShape)
                                     else -> Modifier
                                 },
                             ),
@@ -340,7 +371,8 @@ private fun OverduePane(ui: UpcomingUi, drag: Drag, handlers: DragHandlers, onMo
 
 @Composable
 private fun DayPane(d: UpcomingDay, i: Int, ui: UpcomingUi, drag: Drag, handlers: DragHandlers, onOpen: (String) -> Unit, onFinish: (String) -> Unit, modifier: Modifier) {
-    val title = when (i) { 0 -> "Today · "; 1 -> "Tomorrow · "; else -> "" } + d.day.format(DAY_TITLE)
+    val short = i <= 1 || LocalDensity.current.fontScale > 1.3f
+    val title = when (i) { 0 -> "Today · "; 1 -> "Tomorrow · "; else -> "" } + d.day.format(if (short) DAY_SHORT else DAY_TITLE)
     Pane(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Column(Modifier.padding(bottom = 6.dp)) {
             PaneTitle(title)
@@ -378,7 +410,7 @@ private fun TaskRow(t: TaskEntity, ui: UpcomingUi, held: Boolean, handlers: Drag
                 if (!t.every.isNullOrBlank()) Modifier
                 else Modifier.pointerInput(t.id) {
                     detectDragGesturesAfterLongPress(
-                        onDragStart = { local -> coords[0]?.takeIf { it.isAttached }?.let { handlers.start(t, it.positionInRoot(), local) } },
+                        onDragStart = { local -> coords[0]?.takeIf { it.isAttached }?.let { handlers.start(t, it.positionInRoot(), local, it.size) } },
                         onDrag = { change, amount -> change.consume(); handlers.move(amount) },
                         onDragEnd = { handlers.end(false) },
                         onDragCancel = { handlers.end(true) },
@@ -430,28 +462,57 @@ private fun Meta(t: TaskEntity, ui: UpcomingUi, late: Boolean) {
     }
 }
 
-/** The held row, lifted: white glass with a shadow, following the finger; it drops into a day or springs home. */
+/**
+ * The held row, lifted: the row itself (its ring and title where the row drew them, so nothing jumps under the finger)
+ * on white glass with a shadow. Over the strip it shrinks to 0.6 and rises 56 dp above the finger, so the ink day under
+ * the thumb shows; it always stays 8 dp inside the screen. It drops into a day or springs home.
+ */
 @Composable
 private fun Ghost(drag: Drag, rootAt: Offset) {
-    Box(
+    val width = with(LocalDensity.current) { drag.rowWidth.toDp() }
+    Row(
         Modifier
             .offset { val p = drag.pos.value - rootAt; IntOffset(p.x.roundToInt(), p.y.roundToInt()) }
+            .then(if (drag.rowWidth > 0) Modifier.width(width) else Modifier.widthIn(max = 340.dp))
             .onSizeChanged { drag.size = it }
             .graphicsLayer {
-                val s = drag.scale.value
+                val lift = drag.lift.value
+                val s = drag.scale.value * (1f - 0.4f * lift)
                 scaleX = s; scaleY = s
-                // Over the strip the card lets the ink target cell show through it.
-                alpha = ((s - 0.2f) / 0.8f).coerceIn(0f, 1f) * if (drag.hovered != null) 0.82f else 1f
+                val gx = drag.grab.x.coerceIn(0f, size.width)
+                val gy = drag.grab.y.coerceIn(0f, size.height)
+                transformOrigin = if (size.width > 0f && size.height > 0f) TransformOrigin(gx / size.width, gy / size.height) else TransformOrigin.Center
+                // Keep the card as drawn (scaled about the finger) 8 dp inside the screen's sides and 4 dp below its top.
+                val margin = 8.dp.toPx()
+                val left = drag.pos.value.x - rootAt.x + gx * (1f - s)
+                val w = size.width * s
+                val room = drag.screenWidth - w - margin
+                val wantLeft = if (room < margin) (drag.screenWidth - w) / 2f else left.coerceIn(margin, room)
+                translationX = wantLeft - left
+                val rise = -56.dp.toPx() * lift
+                val top = drag.pos.value.y - rootAt.y + gy * (1f - s) + rise
+                translationY = rise + (4.dp.toPx() - top).coerceAtLeast(0f)
+                alpha = ((s - 0.2f) / 0.8f).coerceIn(0f, 1f)
                 shadowElevation = 18.dp.toPx()
                 shape = RoundedCornerShape(18.dp)
                 clip = true
-                transformOrigin = if (drag.size.width > 0) TransformOrigin(drag.grab.x / drag.size.width, drag.grab.y / drag.size.height) else TransformOrigin.Center
             }
             .background(Color.White.copy(alpha = 0.94f))
-            .widthIn(max = 340.dp)
             .clearAndSetSemantics {}
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .padding(start = 6.dp, end = 16.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Text(drag.title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(22.dp).border(1.5.dp, GhostRing.getOrElse(drag.priority) { Glass.Muted }, CircleShape))
+        }
+        Column(Modifier.weight(1f).padding(top = 12.dp, bottom = 12.dp)) {
+            Text(drag.title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            drag.due?.drop(11)?.trim()?.takeIf(String::isNotEmpty)?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
+            }
+        }
     }
 }
+
+/** The ring's colour by priority, as Today's TickRing draws it (P0 red, P1 orange, P2 blue; else grey). */
+private val GhostRing = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE0))

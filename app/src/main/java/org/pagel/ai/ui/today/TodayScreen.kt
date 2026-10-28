@@ -43,6 +43,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -87,7 +88,6 @@ private val HEAD_DATE = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
 /** Todoist's flag colours, as the web: P0 red, P1 orange, P2 blue, P3 none (today-list.tsx FLAG). */
 private val FLAGS = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE0))
 private val RingIdle = Color(0xFF9AA2BB)
-private val RingDone = Color(0xFF058527)
 
 @Composable
 fun TodayRoute(contentPadding: PaddingValues, reselect: Int, vm: TodayViewModel = hiltViewModel()) {
@@ -276,7 +276,8 @@ internal fun TickRing(priority: Int, done: Boolean, title: String, onTick: (Offs
         Canvas(Modifier.size(22.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }) {
             val r = size.minDimension / 2
             val line = 1.5.dp.toPx()
-            if (done) drawCircle(flag ?: RingDone, r)
+            // Done = bright mint with an ink tick, as Habits, Completed and the panel draw it (no 4th green).
+            if (done) drawCircle(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), r)
             else {
                 if (flag != null) drawCircle(flag.copy(alpha = 0.08f), r)
                 drawCircle(flag ?: RingIdle, r - line / 2, style = Stroke(line))
@@ -287,8 +288,8 @@ internal fun TickRing(priority: Int, done: Boolean, title: String, onTick: (Offs
             val first = (b - a).getDistance(); val total = first + (c - b).getDistance()
             val d = draw.value * total
             val w = 2.2f * u
-            if (d > 0f) drawLine(Color.White, a, if (d <= first) a + (b - a) * (d / first) else b, w, StrokeCap.Round)
-            if (d > first) drawLine(Color.White, b, b + (c - b) * ((d - first) / (total - first)), w, StrokeCap.Round)
+            if (d > 0f) drawLine(Glass.Ink, a, if (d <= first) a + (b - a) * (d / first) else b, w, StrokeCap.Round)
+            if (d > first) drawLine(Glass.Ink, b, b + (c - b) * ((d - first) / (total - first)), w, StrokeCap.Round)
         }
     }
 }

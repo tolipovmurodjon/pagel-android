@@ -35,6 +35,24 @@ fun upcomingView(open: List<TaskEntity>, today: LocalDate, days: Int = 7): Upcom
     return UpcomingView(overdue, list)
 }
 
+/**
+ * Upcoming's count line: the tasks in it, each once ("5 tasks · 2 late"). A habit is not counted: it shows on every day
+ * it falls on, so counting rows said "21 planned" for 4 tasks (checker P4 #4); the web shows no count at all.
+ */
+fun plannedLine(view: UpcomingView): String {
+    val tasks = (view.overdue + view.days.flatMap { it.tasks }).filter { it.every.isNullOrBlank() }.mapTo(HashSet()) { it.id }.size
+    val late = view.overdue.count { it.every.isNullOrBlank() }
+    val head = if (tasks == 1) "1 task" else "$tasks tasks"
+    return if (late > 0) "$head · $late late" else head
+}
+
+/**
+ * Completed's "N tasks done". pagel.uz's [total] (GET /api/v1/completed) counts every finished task, as the web does;
+ * Room holds only some of them. Changes after that answer ([room] now vs [roomAtTotal] then: a tick, an untick) move
+ * it by the same amount. With no total yet (offline, an older pagel.uz) it is what Room has.
+ */
+fun doneCount(room: Int, total: Int?, roomAtTotal: Int): Int = if (total == null) room else maxOf(room, total + room - roomAtTotal)
+
 /** A task dropped on [day]: its time stays ("2026-10-29 10:00" on Saturday → "2026-10-31 10:00"). */
 fun movedTo(due: String?, day: LocalDate): String = day.toString() + (due?.drop(10)?.takeIf(String::isNotBlank) ?: "")
 

@@ -487,11 +487,13 @@ private fun Note(ui: PanelUi, a: PanelActions) {
  * A done task's panel: what it was and when it was finished, read only. Reopen (pagel.uz's undone) is the one action;
  * every field becomes editable again once it is open.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DoneContent(ui: PanelUi, today: LocalDate, a: PanelActions) {
     val day = ui.doneAt?.let { org.pagel.ai.data.upcoming.doneDayOf(it) }
     val time = ui.doneAt?.let { org.pagel.ai.data.upcoming.doneTimeOf(it) }.orEmpty()
-    val word = day?.let { org.pagel.ai.data.upcoming.doneDayLabel(it, today) }?.let { if (it == "Today" || it == "Yesterday") it.lowercase() else it }
+    // "Yesterday 07:00": the check icon already says done (checker P4 #8: "Done yesterday 07:00" wrapped at 320 dp).
+    val word = day?.let { org.pagel.ai.data.upcoming.doneDayLabel(it, today) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
         Header(ui, stopping = false, a, onStop = {}, canStop = false)
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp), verticalAlignment = Alignment.Top) {
@@ -506,10 +508,17 @@ private fun DoneContent(ui: PanelUi, today: LocalDate, a: PanelActions) {
         }
         Spacer(Modifier.height(14.dp))
         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(TabIcons.Done, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
-                Spacer(Modifier.width(12.dp))
-                Text(listOfNotNull("Done", word, time.ifEmpty { null }).joinToString(" "), style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f))
+            // At large font Reopen wraps under the day instead of squeezing it (FlowRow), and keeps 12 dp off the rim.
+            FlowRow(
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(Modifier.heightIn(min = TouchMin), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(TabIcons.Done, contentDescription = "Done", tint = Glass.Primary, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text(listOfNotNull(word ?: "Done", time.ifEmpty { null }).joinToString(" "), style = MaterialTheme.typography.bodyLarge, color = Glass.Ink)
+                }
                 val press = remember { MutableInteractionSource() }
                 Row(
                     Modifier.heightIn(min = TouchMin).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = a.onReopen)
@@ -530,7 +539,10 @@ private fun DoneContent(ui: PanelUi, today: LocalDate, a: PanelActions) {
                 Column(Modifier.padding(vertical = 8.dp)) {
                     for (s in ui.steps) Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (s.done) Icon(TabIcons.Done, contentDescription = "Done", tint = Glass.Primary, modifier = Modifier.size(16.dp))
-                        else Box(Modifier.size(16.dp).border(1.5.dp, Glass.Ink.copy(alpha = 0.30f), CircleShape).semantics { contentDescription = "Not done" })
+                        // A dot, not an empty ring: a ring looks tappable, and this panel is read only (checker P4 #8).
+                        else Box(Modifier.size(16.dp).semantics { contentDescription = "Not done" }, contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(4.dp).background(Glass.Muted, CircleShape))
+                        }
                         Spacer(Modifier.width(10.dp))
                         Text(s.text, style = MaterialTheme.typography.bodyMedium.copy(textDecoration = if (s.done) TextDecoration.LineThrough else null), color = if (s.done) Glass.Muted else Glass.Ink)
                     }

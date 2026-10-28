@@ -60,7 +60,7 @@ class UpcomingRepositoryTest {
                     }
                     request.method == "GET" && path.startsWith("/api/v1/completed") -> MockResponse().setBody(
                         """{"tasks":[{"id":"t_old","project":"me","text":"Renew the domain","status":"done","done_at":"2026-10-02T04:00:00.000Z","day":"2026-10-02","steps":[]},""" +
-                            """{"id":"t_mine","project":"me","text":"Server copy","status":"done","done_at":"2026-10-20T04:00:00.000Z","day":"2026-10-20","steps":[]}],"before":null}""",
+                            """{"id":"t_mine","project":"me","text":"Server copy","status":"done","done_at":"2026-10-20T04:00:00.000Z","day":"2026-10-20","steps":[]}],"before":null,"total":9}""",
                     )
                     else -> MockResponse().setResponseCode(404)
                 }
@@ -162,7 +162,8 @@ class UpcomingRepositoryTest {
         db.dao().upsertTasks(listOf(task("t_mine", null, status = "done", doneAt = "2026-10-20T04:00:00.000Z")))
         val r = repo()
         r.reopen("t_mine")
-        r.refreshCompleted(account)
+        // pagel.uz's count of all finished tasks comes with the page (Completed's header shows it, checker P4 #9).
+        assertEquals(Outcome.Ok(9), r.refreshCompleted(account))
         assertEquals("Renew the domain", db.dao().taskOnce("t_old")!!.text)
         assertEquals("done", db.dao().taskOnce("t_old")!!.status)
         // Reopened here and still waiting: the phone's copy stays.

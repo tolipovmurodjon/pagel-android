@@ -68,16 +68,17 @@ class UpcomingRepository(
     suspend fun undoReopen(id: String, op: Long) { if (!tasks.takeBack(id, op)) tasks.finish(id) }
 
     /**
-     * Finished tasks older than /sync's 14 days, newest first ([PAGE] of them). Offline, or a pagel.uz without
-     * /api/v1/completed yet, it fails silently and Completed shows what Room has.
+     * Finished tasks older than /sync's 14 days, newest first ([PAGE] of them), and pagel.uz's count of all of them
+     * (null from a pagel.uz without it). Offline, or a pagel.uz without /api/v1/completed yet, it fails silently and
+     * Completed shows what Room has.
      */
-    suspend fun refreshCompleted(account: Account): Outcome<Unit> =
+    suspend fun refreshCompleted(account: Account): Outcome<Int?> =
         when (val r = api.completed(account.serverUrl, account.token, PAGE)) {
             is Outcome.Failed -> r
             is Outcome.Ok -> {
                 val now = clock()
                 dao.applyCompleted(r.value.tasks.map { it.toEntity(now) }, r.value.tasks.flatMap { it.stepEntities() })
-                Outcome.Ok(Unit)
+                Outcome.Ok(r.value.total)
             }
         }
 

@@ -101,7 +101,8 @@ class UpcomingScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-360.png")
         compose.onNodeWithText("Overdue").assertIsDisplayed()
         compose.onNodeWithContentDescription("Move all to today").assertIsDisplayed()
-        compose.onNodeWithText("6 planned · 2 overdue").assertIsDisplayed()
+        // Each task once, habits not counted ("21 planned" for 4 tasks, checker P4 #4).
+        compose.onNodeWithText("5 tasks · 2 late").assertIsDisplayed()
         // The strip: today and the days with tasks say so.
         compose.onNodeWithContentDescription("Thursday 29 October, 2 tasks").assertIsDisplayed()
         compose.onNodeWithContentDescription("Saturday 31 October, 1 task").assertIsDisplayed()
@@ -118,7 +119,8 @@ class UpcomingScreenshotTest {
         show { UpcomingScreen(upcoming(open.drop(2)), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-no-overdue.png")
         compose.onNodeWithText("Overdue").assertDoesNotExist()
-        compose.onNodeWithText("Today · Wednesday 28 Oct").assertIsDisplayed()
+        compose.onNodeWithText("Today · Wed 28 Oct").assertIsDisplayed()
+        compose.onNodeWithText("Friday 30 Oct").assertIsDisplayed()
     }
 
     @Test fun moveAllToTodayCallsBackWithTheOverdueOldestFirst() {
@@ -188,7 +190,7 @@ class UpcomingScreenshotTest {
         )
         show { Column(Modifier.padding(top = 16.dp)) { TaskPanelContent(ui, today, PanelActions()) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-done-read-only.png")
-        compose.onNodeWithText("Done today 09:12").assertIsDisplayed()
+        compose.onNodeWithText("Today 09:12").assertIsDisplayed()
         compose.onNodeWithContentDescription("Reopen").assertIsDisplayed()
         compose.onNodeWithContentDescription("Won't do, with the reason").assertDoesNotExist()
     }

@@ -41,6 +41,42 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v12 · PHASE 4 FIX ROUND = THE CHECKER'S TOP 10 (2026-10-28, builder agent)
+No new phase (Phase 5 waits for Boss's phone test). The list: `docs/qa/phase4-checker.md` (8.5/10), in its order.
+- **#1 first, pushed alone (917e2b0, CI 40635928160): a habit can no longer be dragged.** Its due is the series: a drop
+  moved Gym (tue,thu,sun) onto a Monday and took Thursday away, and a drop on Today undid today's tick on pagel.uz
+  (`habit_undone`). Habit rows have no drag gesture (`UpcomingScreen.kt` TaskRow), and `UpcomingRepository.reschedule`
+  returns null for a repeating task, so **Move all to today leaves late habits to Habits** too (the checker's parity note).
+  Tests: `aHabitRowCannotBeDragged` + `aTaskDraggedOntoADayOfTheStripMovesThere` (a real long-press drag on Robolectric,
+  so the "no" is not vacuous), `aHabitIsNeverRescheduledNeitherByADropNorByMoveAll` (nothing reaches the outbox).
+- **#2 the drag card** is the row itself (its ring + title where the row drew them, the row's width: nothing jumps ~48 dp
+  under the finger), stays 8 dp inside the screen (it was off the left edge), and over the strip shrinks to 0.6 and rises
+  56 dp above the finger (spring, no bounce) so the ink day shows; it comes back down into the cell on the drop.
+- **#3 only the strip is pinned**; "Next 7 days / Upcoming / count" is the list's first item and scrolls away. Walk shots
+  added on the 320 dp emulator: `upcoming-landscape`, `upcoming-landscape-scrolled`, `upcoming-font-1.5` (each asserts the
+  strip is still there).
+- **#4** the count line is "5 tasks · 2 late": each task once, no habit (`plannedLine`, it said "21 planned" for 4 tasks).
+- **#5** Completed's untick no longer teleports: the check drains to an empty ring (spring), the row folds (420 ms after
+  200 ms), then leaves (`reopening`, 650 ms, like Upcoming's `finishing`); Undo puts it back at once.
+- **#6** a starred task with a later date leaves Today until its day (`TaskRepository.placeOnToday` = views.ts todayView).
+- **#7** "Today · Wed 28 Oct", "Tomorrow · Thu 29 Oct"; every day short at font > 1.3x ("Oct" was alone on a line).
+- **#8** the done panel says "Yesterday 07:00" (the check says done), 12 dp off the rim, Reopen wraps under at large font
+  (FlowRow); an open step in the read-only panel is a 4 dp dot, not a ring that looks tappable.
+- **#9 server: dashboard `feat/gtd-core` 9815038 — DEPLOY NEEDED.** `GET /api/v1/completed` carries `total` (every finished
+  task, as the web's /completed counts them: any age, with or without done_at); vitest `sync.test.ts` 7/7 (no done_at,
+  23:59/00:01 +05:00, the same total on every page), `tsc --noEmit` clean. The phone shows `doneCount` = the total moved by
+  ticks/unticks made since it came; an older pagel.uz (no `total`) = Room's count, silently. Fake pagel.uz sends 3 rows +
+  4 = 7 and the walk asserts "7 tasks done".
+- **#10** strip hover and switch knob springs damping 1.0 (no bounce); a cancelled drag un-dims its row only after the card
+  is home; the day at the top of the list gets a thin ink ring on the strip ("you are here"); the reminder's collapsed
+  line: title "Time for it" (· 🔥 n), the habit as the text, the time as sub text (the title was cut).
+- **Also:** Today's tick ring is the same bright mint with an ink tick as Habits/Completed/the panel (#058527 is gone from
+  the app; only the confetti keeps a green).
+- **Not done:** the Action/Note #1C7E69 buttons (Boss's open question, untouched); the toast covering the landed row (pulse
+  the target cell); inbox-guide cut at the sheet cap, the FAB over "+1" at 1.5x, the landscape bar over row 3 (Phase 3
+  leftovers); the Done list only from open habits; Undo of a habit tick after a send uses today; Completed paging past 200.
+- **CI**: see the run on the last commit of this round (`gh run list -R tolipovmurodjon/pagel-android --branch feat/native-app`).
+
 ## START HERE v11 · PHASE 4 OF 10 = UPCOMING · COMPLETED · OVERDUE, + THE PHASE 3 CHECKER'S FIXES (2026-10-28, builder agent)
 The web's `/upcoming` and `/completed` on the phone (`ui/upcoming/`, `data/upcoming/`), offline-first, plus the Phase 3
 checker's top 10 (`docs/qa/phase3-checker.md`).

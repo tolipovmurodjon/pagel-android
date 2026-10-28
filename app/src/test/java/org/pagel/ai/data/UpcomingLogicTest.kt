@@ -6,9 +6,11 @@ import org.junit.Test
 import org.pagel.ai.data.db.TaskEntity
 import org.pagel.ai.data.upcoming.completedGroups
 import org.pagel.ai.data.upcoming.doneDayLabel
+import org.pagel.ai.data.upcoming.doneCount
 import org.pagel.ai.data.upcoming.doneDayOf
 import org.pagel.ai.data.upcoming.doneTimeOf
 import org.pagel.ai.data.upcoming.movedTo
+import org.pagel.ai.data.upcoming.plannedLine
 import org.pagel.ai.data.upcoming.stripDayAt
 import org.pagel.ai.data.upcoming.upcomingView
 import java.time.LocalDate
@@ -95,5 +97,30 @@ class UpcomingLogicTest {
         assertEquals("Yesterday", doneDayLabel(today.minusDays(1), today))
         assertEquals("Thursday", doneDayLabel(today.minusDays(6), today))
         assertEquals("21 October", doneDayLabel(today.minusDays(7), today))
+    }
+
+    /** Checker P4 #4: "21 planned" for 4 tasks. Each task once; a habit on every day it falls on is not counted. */
+    @Test fun theCountLineCountsEachTaskOnceAndNoHabit() {
+        val v = upcomingView(
+            listOf(
+                task("late", "2026-10-26"), task("late-habit", "2026-10-26 07:30", every = "day"),
+                task("thu", "2026-10-29"), task("sat", "2026-10-31 10:00"),
+                task("gym", "2026-10-29 18:00", every = "tue,thu,sun"), task("water", "2026-10-28", every = "day"),
+            ),
+            today,
+        )
+        assertEquals("3 tasks · 1 late", plannedLine(v))
+        assertEquals("1 task", plannedLine(upcomingView(listOf(task("thu", "2026-10-29"), task("gym", "2026-10-29", every = "day")), today)))
+        assertEquals("0 tasks", plannedLine(upcomingView(emptyList(), today)))
+    }
+
+    /** Checker P4 #9: pagel.uz's total wins; a tick or an untick here moves it by one; no total = what Room holds. */
+    @Test fun theDoneCountIsPagelUzsTotalMovedByWhatChangedSince() {
+        assertEquals(3, doneCount(room = 3, total = null, roomAtTotal = 0))
+        assertEquals(7, doneCount(room = 3, total = 7, roomAtTotal = 3))
+        assertEquals(6, doneCount(room = 2, total = 7, roomAtTotal = 3))
+        assertEquals(8, doneCount(room = 4, total = 7, roomAtTotal = 3))
+        // Never fewer than the rows on screen.
+        assertEquals(5, doneCount(room = 5, total = 1, roomAtTotal = 3))
     }
 }

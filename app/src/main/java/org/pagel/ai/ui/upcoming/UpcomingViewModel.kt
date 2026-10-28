@@ -10,10 +10,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.pagel.ai.data.Outcome
 import org.pagel.ai.data.account.AccountState
 import org.pagel.ai.data.account.AccountStore
 import org.pagel.ai.data.db.ProjectEntity
@@ -24,6 +26,7 @@ import org.pagel.ai.data.upcoming.DoneGroup
 import org.pagel.ai.data.upcoming.UpcomingRepository
 import org.pagel.ai.data.upcoming.UpcomingView
 import org.pagel.ai.data.upcoming.completedGroups
+import org.pagel.ai.data.upcoming.doneCount
 import org.pagel.ai.data.upcoming.upcomingView
 import org.pagel.ai.ui.glass.ToastCenter
 import java.time.LocalDate
@@ -116,7 +119,12 @@ data class CompletedUi(
     val groups: List<DoneGroup> = emptyList(),
     val count: Int = 0,
     val projects: Map<String, ProjectEntity> = emptyMap(),
+    /** Unticked here and still folding: Room has them open already, their done copy keeps the row for the fold. */
+    val reopening: Set<String> = emptySet(),
 )
+
+/** pagel.uz's count of finished tasks and how many Room held when it came (see [doneCount]). */
+internal data class ServerCount(val total: Int, val roomThen: Int)
 
 /** Completed (Phase 4, the web's /completed): by Tashkent day from Room; untick opens a task again through the outbox. */
 @HiltViewModel
@@ -126,28 +134,48 @@ class CompletedViewModel @Inject constructor(
     private val toasts: ToastCenter,
     session: Session,
 ) : ViewModel() {
-    val ui: StateFlow<CompletedUi> = combine(repo.completed, repo.days(), session.projects(), session.live) { done: List<TaskEntity>, today, projects, live ->
+    private val reopening = MutableStateFlow<Map<String, TaskEntity>>(emptyMap())
+    private val server = MutableStateFlow<ServerCount?>(null)
+
+    val ui: StateFlow<CompletedUi> = combine(
+        combine(repo.completed, reopening, server) { a, b, c -> Triple(a, b, c) }, repo.days(), session.projects(), session.live,
+    ) { room: Triple<List<TaskEntity>, Map<String, TaskEntity>, ServerCount?>, today, projects, live ->
+        val (done, folding, counted) = room
+        val ids = done.mapTo(HashSet()) { it.id }
         CompletedUi(
-            loading = done.isEmpty() && (live is LiveStatus.Idle || live is LiveStatus.Syncing),
+            loading = done.isEmpty() && folding.isEmpty() && (live is LiveStatus.Idle || live is LiveStatus.Syncing),
             today = today,
-            groups = completedGroups(done, today),
-            count = done.size,
+            groups = completedGroups(done + folding.values.filter { it.id !in ids }, today),
+            count = doneCount(done.size, counted?.total, counted?.roomThen ?: 0),
             projects = projects.associateBy(ProjectEntity::name),
+            reopening = folding.keys,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CompletedUi())
 
     init {
-        // The older ones (/sync keeps 14 days); offline, Room's copy stays and nothing is said.
+        // The older ones (/sync keeps 14 days) and pagel.uz's count of all; offline, Room's copy stays and nothing is said.
         viewModelScope.launch {
             val account = (accounts.load() as? AccountState.Paired)?.account ?: return@launch
-            repo.refreshCompleted(account)
+            val r = repo.refreshCompleted(account)
+            val total = (r as? Outcome.Ok)?.value ?: return@launch
+            server.value = ServerCount(total, repo.completed.first().size)
         }
     }
 
+    /** The check empties, the row folds, then it leaves (checker P4 #5: it vanished in one frame); Undo puts it back. */
     fun reopen(id: String) {
+        val t = ui.value.groups.firstNotNullOfOrNull { g -> g.tasks.firstOrNull { it.id == id } } ?: return
+        reopening.update { it + (id to t) }
         viewModelScope.launch {
-            val op = repo.reopen(id) ?: return@launch
-            toasts.show("Back on your list", action = "Undo") { viewModelScope.launch { repo.undoReopen(id, op) } }
+            val op = repo.reopen(id)
+            if (op == null) { reopening.update { it - id }; return@launch }
+            toasts.show("Back on your list", action = "Undo") { reopening.update { it - id }; viewModelScope.launch { repo.undoReopen(id, op) } }
+            delay(REOPEN_MS)
+            reopening.update { it - id }
         }
+    }
+
+    companion object {
+        const val REOPEN_MS = 650L
     }
 }

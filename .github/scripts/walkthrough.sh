@@ -250,10 +250,22 @@ for id in t_u2 t_u1; do
 done
 log "   pagel.uz got both overdue tasks moved to $TODAY"
 grep -q 'text="Overdue"' "$OUT/$(printf '%02d' $N)-upcoming-moved-all.xml" && { log "WALKTHROUGH: Overdue still shows after Move all to today"; exit 1; }
+log "-- Upcoming in landscape and at 1.5x on the 320 dp screen (checker P4 #3: only the strip is pinned now)"
+$T adb shell settings put system accelerometer_rotation 0
+$T adb shell settings put system user_rotation 1; sleep 3; front upcoming-landscape; shot upcoming-landscape 1
+grep -qF "content-desc=\"$TODAY_SPOKEN" "$OUT/$(printf '%02d' $N)-upcoming-landscape.xml" || { log "WALKTHROUGH: Upcoming's strip is gone in landscape"; exit 1; }
+$T adb shell input swipe 320 240 320 90 300; shot upcoming-landscape-scrolled 1
+$T adb shell settings put system user_rotation 0; sleep 3; front upcoming-portrait
+$T adb shell settings put system font_scale 1.5; sleep 3; front upcoming-font-1.5; shot upcoming-font-1.5 1
+grep -qF "content-desc=\"$TODAY_SPOKEN" "$OUT/$(printf '%02d' $N)-upcoming-font-1.5.xml" || { log "WALKTHROUGH: Upcoming's strip is gone at 1.5x"; exit 1; }
+$T adb shell settings put system font_scale 1.0; sleep 3; front upcoming-font-1.0
 $T adb shell input keyevent 4; shot back-to-more-2 1.5
 tap Completed && shot completed 2.5
 grep -q 'text="Renew the domain"' "$OUT/$(printf '%02d' $N)-completed.xml" || { log "WALKTHROUGH: Completed has no \"Renew the domain\""; exit 1; }
 grep -q 'text="Export the hover log"' "$OUT/$(printf '%02d' $N)-completed.xml" && log "   the 20-day-old one came from /api/v1/completed"
+# The count is pagel.uz's total (3 rows + 4 with no done_at = 7), not the rows the phone holds (checker P4 #9).
+grep -q 'text="7 tasks done"' "$OUT/$(printf '%02d' $N)-completed.xml" || shot completed-count 3
+grep -q 'text="7 tasks done"' "$OUT/$(printf '%02d' $N)-completed"*.xml || { log "WALKTHROUGH: Completed does not show pagel.uz's total (7 tasks done)"; grep -oE 'text="[0-9]+ tasks? done"' "$OUT/$(printf '%02d' $N)-"*.xml | tee -a "$OUT/steps.txt"; exit 1; }
 tap "Undo: Renew the domain" && shot completed-unticked 1.5
 WANT='PATCH /api/v1/tasks/t_c1 {"done":false} auth=True'
 for i in $(seq 1 30); do grep -qF "$WANT" "$FAKE_LOG" && break; sleep 1; done

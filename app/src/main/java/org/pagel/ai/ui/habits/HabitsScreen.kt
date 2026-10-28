@@ -468,7 +468,7 @@ private fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label:
 /** Apple's switch: a capsule that fills mint, a white knob that springs across. Drawn only; the row is the target. */
 @Composable
 private fun Switch(on: Boolean) {
-    val x by animateFloatAsState(if (on) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 500f), label = "knob")
+    val x by animateFloatAsState(if (on) 1f else 0f, spring(dampingRatio = 1f, stiffness = 500f), label = "knob")
     Box(
         // On = bright mint (Boss's colour theory), not a solid #1C7E69 slab (checker #9); the white knob carries the shape.
         Modifier.size(width = 51.dp, height = 31.dp)

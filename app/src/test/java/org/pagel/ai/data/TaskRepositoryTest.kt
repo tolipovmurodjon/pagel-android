@@ -141,6 +141,16 @@ class TaskRepositoryTest {
         assertEquals("That task is gone. Refresh and try again.", db.dao().refusedOutbox().first().single().refused)
     }
 
+    /** Checker P4 #6: a star with a later date waits for its day, as the web (views.ts todayView); no date = back. */
+    @Test fun aStarredTaskMovedToALaterDayLeavesTodayUntilItsDay() = runBlocking {
+        synced()
+        assertTrue(task("t_a").star)
+        tasks().due("t_a", "2026-11-05")
+        assertEquals(listOf("t_b"), todayIds())
+        tasks().due("t_a", null)
+        assertTrue("a star with no date is on Today", "t_a" in todayIds())
+    }
+
     @Test fun aRefusedPriorityRollsBackOnlyThatField() = runBlocking {
         synced()
         val r = tasks()

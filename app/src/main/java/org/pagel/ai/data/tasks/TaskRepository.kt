@@ -200,7 +200,11 @@ class TaskRepository(
      * not a habit. A date later takes it off Today until its day; a habit lives on Habits.
      */
     private suspend fun placeOnToday(t: TaskEntity) {
-        val on = t.status == "open" && t.every == null && (t.star || (t.due != null && t.due.take(10) <= tashkentDay()))
+        val day = tashkentDay()
+        // A star with a later date waits for its day, as the web (views.ts todayView; checker P4 #6: a drag of a starred
+        // task onto Friday left it on Today).
+        val later = t.due != null && t.due.take(10) > day
+        val on = t.status == "open" && t.every == null && ((t.star && !later) || (t.due != null && t.due.take(10) <= day))
         if (on) dao.ensureOnToday(t.id) else dao.removeFromToday(t.id)
     }
 

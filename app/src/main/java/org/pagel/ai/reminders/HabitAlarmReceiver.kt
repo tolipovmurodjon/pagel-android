@@ -73,12 +73,12 @@ class HabitAlarmReceiver : BroadcastReceiver() {
         // Already ticked today (in the app, on the web, or by an earlier Done): no ring for a done habit (checker #3).
         if (t != null && on && t.status == "open" && !t.every.isNullOrBlank() && (due == null || due.take(10) <= today) && today !in days) {
             val streak = streakOf(t.every, days, today) ?: 0
-            post(ctx, id, t.title?.takeIf(String::isNotBlank) ?: headline(t.text), listOfNotNull(due?.drop(11)?.takeIf(String::isNotBlank), if (streak > 1) "🔥 $streak" else null).joinToString(" · "))
+            post(ctx, id, t.title?.takeIf(String::isNotBlank) ?: headline(t.text), due?.drop(11)?.trim().orEmpty(), streak)
         }
         habits.replan()
     }
 
-    private fun post(ctx: Context, id: String, title: String, line: String) {
+    private fun post(ctx: Context, id: String, habit: String, time: String, streak: Int) {
         if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Habits", NotificationManager.IMPORTANCE_HIGH).apply { description = "A habit's reminder at its time" })
@@ -95,10 +95,12 @@ class HabitAlarmReceiver : BroadcastReceiver() {
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_bell)
             .setColor(0xFF1C7E69.toInt())
-            .setContentTitle(title)
-            .setContentText(line.ifEmpty { "Time for it" })
-            // The whole habit, never "Stretch for ten min…" (walk 40).
-            .setStyle(NotificationCompat.BigTextStyle().setBigContentTitle(title).bigText(line.ifEmpty { "Time for it" }))
+            // Collapsed, a long habit as the title was cut ("Stretch for ten min…", walk 40, also with BigTextStyle):
+            // a short title, the habit in the text line (it wraps when expanded), the time in the header.
+            .setContentTitle(if (streak > 1) "Time for it · 🔥 $streak" else "Time for it")
+            .setContentText(habit)
+            .apply { if (time.isNotEmpty()) setSubText(time) }
+            .setStyle(NotificationCompat.BigTextStyle().bigText(habit))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(open)
             .setAutoCancel(true)
