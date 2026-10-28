@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.pagel.ai.data.compass.CompassRepository
 import org.pagel.ai.data.compass.CompassRules
 import org.pagel.ai.data.compass.Goal
 import org.pagel.ai.data.compass.GoalBody
@@ -80,6 +81,8 @@ data class CompassActions(
     val setRecovery: (CharArray?) -> Unit = {},
     val lock: () -> Unit = {},
     val openSettings: () -> Unit = {},
+    val setBirthday: (Boolean) -> Unit = {},
+    val setReview: (Boolean) -> Unit = {},
 )
 
 /** The Compass behind More (Phase 6a): screenshots blocked, the key wiped 60 s after Boss leaves. */
@@ -89,24 +92,25 @@ fun CompassRouteScreen(padding: PaddingValues, vm: CompassViewModel = hiltViewMo
     val ctx = LocalContext.current
     SecureWindow()
     AutoLock(onLeave = vm::leave, onStay = vm::stay)
-    fun ask(after: () -> Unit) {
+    fun ask(after: (javax.crypto.Cipher) -> Unit) {
         val activity = ctx.findActivity() ?: return
-        vm.beforeUnlock()
-        askUnlock(activity, "Open your Compass") { a ->
-            when (a) {
-                UnlockAnswer.Ok -> after()
-                UnlockAnswer.Cancelled -> {}
-                is UnlockAnswer.Failed -> vm.said(a.why)
+        vm.beginUnlock { cipher ->
+            askUnlock(activity, "Open your Compass", cipher) { a ->
+                when (a) {
+                    is UnlockAnswer.Ok -> after(a.cipher)
+                    UnlockAnswer.Cancelled -> {}
+                    is UnlockAnswer.Failed -> vm.said(a.why)
+                }
             }
         }
     }
     CompassScreen(
         ui, padding,
         CompassActions(
-            unlock = { pass, over -> ask { vm.unlocked(pass, over) } },
+            unlock = { pass, over -> ask { c -> vm.unlocked(c, pass, over) } },
             save = vm::save, delete = vm::delete, tickKeyResult = vm::tickKeyResult, door = vm::closeAsDoor, reset = vm::reset,
             note = { kind, day, answers, id -> vm.saveNote(kind, day, answers, id) },
-            setLine = vm::setLine, setRecovery = vm::setRecovery, lock = vm::lock,
+            setLine = vm::setLine, setRecovery = vm::setRecovery, lock = vm::lock, setBirthday = vm::setBirthday, setReview = vm::setReview,
             openSettings = { runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)) } },
         ),
     )
@@ -182,8 +186,8 @@ private fun LostFrame(ui: CompassUi, padding: PaddingValues, act: CompassActions
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(Space.md)) {
             if (canRecover) {
-                SealedField(pass, { pass = it }, label = "Recovery passphrase", hint = "Your passphrase")
-                MintButton("Open with passphrase", CompassIcons.KeyRound, Modifier.fillMaxWidth(), enabled = pass.length >= 8) {
+                SealedField(pass, { pass = it }, label = "Recovery passphrase", hint = "Your passphrase", secret = true)
+                MintButton("Open with passphrase", CompassIcons.KeyRound, Modifier.fillMaxWidth(), enabled = pass.length >= CompassRules.PASSPHRASE_MIN) {
                     act.unlock(pass.toCharArray(), false)
                     pass = ""
                 }
@@ -313,8 +317,9 @@ private fun LazyListScope.pathItems(ui: CompassUi, act: CompassActions, onWrite:
 
 private fun seasonLine(ui: CompassUi): String {
     val s = ui.season
-    val week = if (ui.week > CompassRules.WEEKS) "review week" else "week ${ui.week} of ${CompassRules.WEEKS}"
-    return "Season ${s.n} · $week · ${s.starts.format(DAY)} → ${s.ends.format(DAY)}"
+    // 12 working weeks, then the review week (compass checker: "week 3 of 12 · → 30 Jan" mixed 12 with the 13-week end).
+    return if (ui.week > CompassRules.WEEKS) "Season ${s.n} · review week · to ${s.ends.format(DAY)}"
+    else "Season ${s.n} · week ${ui.week} of ${CompassRules.WEEKS} · ${s.starts.format(DAY)} → ${s.workEnds.format(DAY)}, review to ${s.ends.format(DAY)}"
 }
 
 @Composable
@@ -368,6 +373,18 @@ private fun Counts(p: GoalProgress, ui: CompassUi, modifier: Modifier = Modifier
     }
 }
 
+/** Asks for the notification permission the first time a Compass reminder is turned on (never at launch). */
+@Composable
+private fun notifyAsker(): () -> Unit {
+    val ctx = LocalContext.current
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
+    return {
+        val need = android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (need) runCatching { launcher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+    }
+}
+
 @Composable
 private fun SettingsPane(ui: CompassUi, act: CompassActions, onRecovery: () -> Unit) {
     val candidates = ui.seasonGoals + ui.opened.goals.filter { it.level == Level.YEAR } + ui.at(Level.PURPOSE)
@@ -395,9 +412,20 @@ private fun SettingsPane(ui: CompassUi, act: CompassActions, onRecovery: () -> U
                 }
             }
             Hint(
-                "One quiet line on Today, unlocked. It is kept sealed on this phone only.",
+                "One quiet line on Today, sealed on this phone only. Screenshots of Today are blocked while it shows.",
                 modifier = Modifier.padding(start = Space.rowText, end = Space.lg, bottom = Space.sm), lines = 2,
             )
+            val askNotify = notifyAsker()
+            SettingRow(TabIcons.Bell, "Birthday morning", if (ui.vault.birthdayOn) "On" else "Off", onClick = {
+                if (!ui.vault.birthdayOn) askNotify()
+                act.setBirthday(!ui.vault.birthdayOn)
+            }) { CompassSwitch(ui.vault.birthdayOn) }
+            Hint("1 November, 08:00: your new year starts. The note never shows a goal.", modifier = Modifier.padding(start = Space.rowText, end = Space.lg, bottom = Space.sm), lines = 2)
+            SettingRow(TabIcons.CalendarCheck, "Season review", if (ui.vault.reviewOn) "On" else "Off", onClick = {
+                if (!ui.vault.reviewOn) askNotify()
+                act.setReview(!ui.vault.reviewOn)
+            }) { CompassSwitch(ui.vault.reviewOn) }
+            Hint("Week 13, 09:00, only for a season with goals.", modifier = Modifier.padding(start = Space.rowText, end = Space.lg, bottom = Space.sm), lines = 2)
             SettingRow(CompassIcons.KeyRound, "Recovery passphrase", if (ui.vault.recovery != null) "On" else "Off", onClick = onRecovery) {
                 Text(if (ui.vault.recovery != null) "On" else "Off", style = MaterialTheme.typography.bodyMedium, color = Glass.PrimaryInk, maxLines = 1)
             }
@@ -443,8 +471,10 @@ private fun SeasonCard(g: Goal, score: Score, p: GoalProgress, ui: CompassUi, ac
     val b = g.body
     val win = score.win
     Box(Modifier.padding(horizontal = Space.gutter)) {
+        // A win is the same white glass with a mint rim and the "✓ Win" pill, never a mint slab (compass checker design:
+        // the slab read as "selected" and left "Not in my hands" at 4.50:1; on glass every line is ink or muted ≥ 4.5:1).
         Pane(Modifier.fillMaxWidth(), radius = 22.dp) {
-            if (win) Box(Modifier.matchParentSize().background(Brush.linearGradient(listOf(Glass.Aurora2.copy(alpha = 0.85f), Glass.Aurora1.copy(alpha = 0.75f))), RoundedCornerShape(22.dp)))
+            if (win) Box(Modifier.matchParentSize().border(2.dp, Glass.Primary.copy(alpha = 0.7f), RoundedCornerShape(22.dp)))
             Column(Modifier.padding(horizontal = Space.paneInset, vertical = Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 val press = remember { MutableInteractionSource() }
                 Row(
@@ -497,7 +527,8 @@ private fun WeekDots(ui: CompassUi, b: GoalBody, p: GoalProgress) {
             for (w in 1..CompassRules.WEEKS) {
                 val start = CompassRules.weekStart(ui.season, w)
                 val hit = (0 until 7).any { start.plusDays(it.toLong()).toString() in p.hitDays }
-                val excused = start.toString() in b.excused
+                // Weeks before the goal was written, or set aside by a reset, never count: faint, never grey.
+                val excused = start.toString() in b.excused || w < CompassRules.firstWeek(ui.season, b)
                 val fill = when {
                     hit -> Glass.Primary
                     w > now || excused -> Color.White.copy(alpha = 0.5f)
@@ -572,7 +603,9 @@ private fun LazyListScope.yearItems(ui: CompassUi, act: CompassActions, onWrite:
             }
             Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 NumberTile(ui.report.bestRun, "days in a row, best", Modifier.weight(1f))
-                NumberTile(ui.report.namazDays, "namaz days, from 1 Nov", Modifier.weight(1f))
+                // Namaz is counted from 1 Nov 2026: the first report says when it starts, never a guilty 0 (checker).
+                if (end.isBefore(java.time.LocalDate.parse(CompassRepository.NAMAZ_FROM))) WordTile(namazStart(ui.today), "namaz", Modifier.weight(1f))
+                else NumberTile(ui.report.namazDays, "namaz days", Modifier.weight(1f))
             }
         }
     }
@@ -585,6 +618,27 @@ private fun LazyListScope.yearItems(ui: CompassUi, act: CompassActions, onWrite:
                 val start = end.plusDays(1)
                 onWrite(Draft(Goal("", Level.YEAR, parents.firstOrNull()?.id, start.toString(), CompassRules.yearEnd(start).toString(), GoalBody()), parents))
             }
+        }
+    }
+}
+
+/** "starts today" on 1 Nov, "starts 1 Nov" before it, "started 1 Nov" after. */
+private fun namazStart(today: java.time.LocalDate): String {
+    val from = java.time.LocalDate.parse(CompassRepository.NAMAZ_FROM)
+    return when {
+        today == from -> "starts today"
+        today.isBefore(from) -> "starts 1 Nov"
+        else -> "started 1 Nov"
+    }
+}
+
+/** A tile whose value is words (the first report's namaz tile): the heading face, never Departure Mono. */
+@Composable
+private fun WordTile(words: String, label: String, modifier: Modifier = Modifier) {
+    Pane(modifier.semantics(mergeDescendants = true) { contentDescription = "$label: $words" }, radius = 20.dp) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = Space.lg, vertical = Space.md)) {
+            Text(words, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, maxLines = 2)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
         }
     }
 }

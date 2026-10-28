@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -61,11 +62,14 @@ import org.pagel.ai.ui.rituals.QuietButton
 /** Writing one goal: a full glass sheet, its own window secured (FLAG_SECURE), nothing leaves the phone in words. */
 @Composable
 fun GoalSheet(draft: Draft, ui: CompassUi, act: CompassActions, onDismiss: () -> Unit) {
-    GlassSheet(onDismiss = onDismiss, full = true) {
+    GlassSheet(onDismiss = onDismiss, full = true, secure = true) {
         SecureWindow()
         GoalForm(draft, ui, onSave = { g, why -> act.save(g, why); onDismiss() }, onDelete = { g, why -> act.delete(g, why); onDismiss() }, onDoor = { act.door(it); onDismiss() })
     }
 }
+
+/** A Serves chip's widest text: about two thirds of a 360 dp phone, so the next chip still peeks in. */
+private val ChipMax = 220.dp
 
 private val LEVEL_HINT = mapOf(
     Level.PURPOSE to "The one goal every other goal leads to.",
@@ -107,7 +111,8 @@ fun GoalForm(draft: Draft, ui: CompassUi, onSave: (Goal, String?) -> Unit, onDel
     )
 
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = Space.gutter), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
-        Column(Modifier.heightIn(min = Space.sheetTitle).padding(start = Space.xs)) {
+        // Top air under the handle (checker: at 1.5× the overline touched the sheet's edge).
+        Column(Modifier.heightIn(min = Space.sheetTitle).padding(start = Space.xs, top = Space.md)) {
             Text(if (level == Level.YEAR) CompassRules.yearTitle(java.time.LocalDate.parse(g.starts ?: ui.yearStart.toString())) else level.label, style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
             Text(if (isNew) "Write it in your words" else "Your goal", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
             Hint(LEVEL_HINT[level].orEmpty(), lines = 2)
@@ -115,7 +120,8 @@ fun GoalForm(draft: Draft, ui: CompassUi, onSave: (Goal, String?) -> Unit, onDel
         if (draft.parents.isNotEmpty() && level.parentLevel != null || (level == Level.SOMEDAY && draft.parents.isNotEmpty())) {
             Column {
                 Text("Serves", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, bottom = Space.xs))
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.chipGap)) {
+                // The row scrolls to the sheet's edge and ends a gutter in; a long goal's chip ends in "…" (never cut mid-word).
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(end = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.chipGap)) {
                     if (level == Level.SOMEDAY) ParentChip("Nothing yet", parent == null) { parent = null }
                     for (p in draft.parents) ParentChip(CompassRules.firstWords(p.body.title), parent == p.id) { parent = p.id }
                 }
@@ -155,7 +161,7 @@ fun GoalForm(draft: Draft, ui: CompassUi, onSave: (Goal, String?) -> Unit, onDel
             Column {
                 SealedField(lead, { lead = it }, label = "One weekly step", hint = "Small enough for a bad week")
                 Hint(
-                    if (g.body.habitId == null) "It becomes a weekly habit in Habits. Only these words go there, never the goal's." else "Already a weekly habit in Habits.",
+                    if (g.body.habitId == null) "It becomes a weekly habit called “🧭 Compass step”. These words stay sealed here." else "Your weekly habit: " + (g.body.habitTitle ?: CompassRules.STEP),
                     modifier = Modifier.padding(start = Space.xs, top = Space.xs), lines = 2,
                 )
             }
@@ -193,7 +199,7 @@ private fun ParentChip(text: String, on: Boolean, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (on) { Icon(TabIcons.Check, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(Space.xs)) }
-            Text(text, style = MaterialTheme.typography.labelLarge, color = if (on) Glass.PrimaryInk else Glass.Ink, maxLines = 1)
+            Text(text, style = MaterialTheme.typography.labelLarge, color = if (on) Glass.PrimaryInk else Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = ChipMax))
         }
     }
 }
@@ -201,7 +207,7 @@ private fun ParentChip(text: String, on: Boolean, onClick: () -> Unit) {
 /** The optional recovery passphrase: off by default, explained in one line, typed twice. */
 @Composable
 fun RecoverySheet(on: Boolean, act: CompassActions, onDismiss: () -> Unit) {
-    GlassSheet(onDismiss = onDismiss) {
+    GlassSheet(onDismiss = onDismiss, secure = true) {
         SecureWindow()
         RecoveryForm(on, onSet = { act.setRecovery(it); onDismiss() }, onOff = { act.setRecovery(null); onDismiss() })
     }
@@ -211,12 +217,14 @@ fun RecoverySheet(on: Boolean, act: CompassActions, onDismiss: () -> Unit) {
 fun RecoveryForm(on: Boolean, onSet: (CharArray) -> Unit, onOff: () -> Unit) {
     var a by remember { mutableStateOf("") }
     var b by remember { mutableStateOf("") }
-    val ok = a.length >= 12 && a == b
+    val ok = CompassRules.passphraseOk(a) && a == b
     Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter).padding(bottom = Space.xl), verticalArrangement = Arrangement.spacedBy(Space.md)) {
         Text("Recovery passphrase", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         Hint("If this phone is lost, only this passphrase opens your goals on a new one. Nobody can reset it.", lines = 2)
-        SealedField(a, { a = it }, label = "Passphrase", hint = "12 letters or more")
-        SealedField(b, { b = it }, label = "Same passphrase again", hint = "Type it again")
+        SealedField(a, { a = it }, label = "Passphrase", hint = "${CompassRules.PASSPHRASE_MIN}+ letters, a few words", secret = true)
+        SealedField(b, { b = it }, label = "Same passphrase again", hint = "Type it again", secret = true)
+        // The rule in one line, always laid out (Layout 1): it never moves the button.
+        Hint(if (a.isNotEmpty() && !CompassRules.passphraseOk(a)) "Too short or too simple: use a few words." else if (b.isNotEmpty() && a != b) "The two do not match yet." else " ")
         MintButton(if (on) "Change passphrase" else "Turn on", CompassIcons.KeyRound, Modifier.fillMaxWidth(), enabled = ok) { onSet(a.toCharArray()); a = ""; b = "" }
         if (on) QuietButton("Turn off", TabIcons.Close, Modifier.fillMaxWidth(), onClick = onOff)
     }
@@ -228,6 +236,8 @@ object CompassIcons {
     val Compass = icon("compass", "M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0", "m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z")
     val KeyRound = icon("key-round", "M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z", "M16 7.5a.5.5 0 1 0 1 0a.5.5 0 1 0 -1 0")
     val Door = icon("door-open", "M11 20H2", "M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z", "M11 4H8a2 2 0 0 0-2 2v14", "M14 12h.01", "M22 20h-3")
+    val Eye = icon("eye", "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0", "M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0")
+    val EyeOff = icon("eye-off", "M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49", "M14.084 14.158a3 3 0 0 1-4.242-4.242", "M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143", "m2 2 20 20")
     val Reset = icon("rotate-ccw", "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5")
 
     private fun icon(name: String, vararg paths: String): ImageVector {

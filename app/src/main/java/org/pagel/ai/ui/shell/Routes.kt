@@ -45,7 +45,9 @@ enum class Tab(val label: String, val root: NavKey, val icon: ImageVector) {
 object OpenRequests {
     const val EXTRA = "pagel.open"
     const val SHUTDOWN = "shutdown"
-    private val names = setOf(SHUTDOWN)
+    /** The Compass's birthday and season-review notifications (Phase 6a). */
+    const val COMPASS = "compass"
+    private val names = setOf(SHUTDOWN, COMPASS)
     val pending = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
     fun open(name: String) {
@@ -54,6 +56,7 @@ object OpenRequests {
 
     fun route(name: String): NavKey? = when (name) {
         SHUTDOWN -> ShutdownRoute
+        COMPASS -> org.pagel.ai.ui.compass.CompassRoute
         else -> null
     }
 }

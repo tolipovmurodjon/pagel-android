@@ -58,6 +58,8 @@
     <application
         android:name=".PagelApp"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/compass_data_extraction_rules"
+        android:fullBackupContent="@xml/compass_backup_rules"
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="PAGEL"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -131,6 +133,8 @@
         <receiver android:name=".reminders.TaskAlarmReceiver" android:exported="false" />
         <!-- The evening "Close the day" reminder (Phase 5). Not exported, as above. -->
         <receiver android:name=".reminders.ShutdownAlarmReceiver" android:exported="false" />
+        <!-- The Compass's birthday morning and season review (Phase 6a): plain words, never a goal's. -->
+        <receiver android:name=".reminders.CompassAlarmReceiver" android:exported="false" />
 
         <!-- "Today's 3" home-screen widget. exported=true: the launcher sends APPWIDGET_UPDATE from outside. -->
         <receiver

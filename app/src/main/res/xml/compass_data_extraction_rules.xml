@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ backup and device-to-device transfer (compass checker #10). allowBackup="false" already stops cloud
+  backup, but not a phone-to-phone transfer: the Compass's sealed database never moves (its Keystore key cannot move
+  with it, so the copy would only show "LOST"); a new phone opens the sealed copy with Boss's recovery passphrase.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="database" path="compass.db" />
+        <exclude domain="database" path="compass.db-wal" />
+        <exclude domain="database" path="compass.db-shm" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="database" path="compass.db" />
+        <exclude domain="database" path="compass.db-wal" />
+        <exclude domain="database" path="compass.db-shm" />
+    </device-transfer>
+</data-extraction-rules>

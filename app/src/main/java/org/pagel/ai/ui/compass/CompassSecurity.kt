@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import javax.crypto.Cipher
 
 /**
  * FLAG_SECURE on the window that shows this composable (the activity, or a sheet's own dialog window): no screenshot,
@@ -81,18 +82,19 @@ fun AutoLock(onLeave: () -> Unit, onStay: () -> Unit) {
     }
 }
 
-/** What the system unlock answered. */
+/** What the system unlock answered. [Ok.cipher] is the one-use cipher the prompt authorised. */
 sealed interface UnlockAnswer {
-    data object Ok : UnlockAnswer
+    data class Ok(val cipher: Cipher) : UnlockAnswer
     data object Cancelled : UnlockAnswer
     data class Failed(val why: String) : UnlockAnswer
 }
 
 /**
- * Android's own unlock sheet: fingerprint, or the screen-lock PIN/pattern/password instead. The Keystore guard key
- * opens for 60 s after it. Never shows goal words.
+ * Android's own unlock sheet: fingerprint, or the screen-lock PIN/pattern/password instead. It authorises exactly
+ * [cipher] (a CryptoObject; the Keystore key needs it for every use), so only this prompt opens the key, never the
+ * plain lock screen (compass checker #9). Never shows goal words.
  */
-fun askUnlock(activity: Activity, title: String, answer: (UnlockAnswer) -> Unit) {
+fun askUnlock(activity: Activity, title: String, cipher: Cipher, answer: (UnlockAnswer) -> Unit) {
     val allowed = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
     val prompt = BiometricPrompt.Builder(activity)
         .setTitle(title)
@@ -100,10 +102,12 @@ fun askUnlock(activity: Activity, title: String, answer: (UnlockAnswer) -> Unit)
         .setAllowedAuthenticators(allowed)
         .build()
     prompt.authenticate(
+        BiometricPrompt.CryptoObject(cipher),
         CancellationSignal(),
         activity.mainExecutor,
         object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = answer(UnlockAnswer.Ok)
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) =
+                answer(UnlockAnswer.Ok(result.cryptoObject?.cipher ?: cipher))
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) = answer(
                 if (errorCode == BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED || errorCode == BiometricPrompt.BIOMETRIC_ERROR_CANCELED) UnlockAnswer.Cancelled
                 else UnlockAnswer.Failed(errString.toString()),

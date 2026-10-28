@@ -15,6 +15,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
@@ -186,6 +188,16 @@ class CompassScreenshotTest {
         val draft = Draft(goals.first { it.id == "g_s1" }, goals.filter { it.level == Level.YEAR })
         show(1.5f) { GoalForm(draft, open(), onSave = { _, _ -> }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/compass-goal-sheet-360x800-font-1.5.png")
+    }
+
+    /** Checker #3: the passphrase is masked, with an eye; the rule line is always laid out. */
+    @Test fun theRecoveryPassphraseIsMasked() {
+        show { org.pagel.ai.ui.compass.RecoveryForm(on = false, onSet = {}, onOff = {}) }
+        compose.onNodeWithContentDescription("Passphrase").performClick()
+        compose.onNodeWithContentDescription("Passphrase").performTextInput("tea under the old walnut")
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/compass-recovery-masked-360x800.png")
+        compose.onAllNodesWithContentDescription("Show passphrase")[0].performClick()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/compass-recovery-shown-360x800.png")
     }
 
     /** RULES.md Layout 3: switching Path → Season never moves the head or the switch (equal tops). */

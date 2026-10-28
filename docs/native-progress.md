@@ -41,6 +41,37 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE · Phase 6a Compass FIX ROUND = the security checker's 6/10 list (docs/qa/compass-checker.md) (2026-10-29, builder agent, branch `feat/compass-fix`)
+- **Not built yet:** CI was blocked (billing) while this was written; nothing was compiled or run. Push once with `[smoke]`.
+- **Windows:** every Compass sheet's own window is FLAG_SECURE (`GlassSheet(secure = true)` → `ModalBottomSheetProperties
+  (securePolicy = SecureOn)`; Material's Inherit had copied the plain project page: walk shot 108 showed a goal).
+  Today's quiet line: chosen = Today's window is FLAG_SECURE while the line is on screen (a tap-to-reveal line would
+  still sit on a plain window once shown); no description repeats its words.
+- **Weekly step:** the habit is "🧭 Compass step" (2, 3… when several); the step's words stay sealed, shown only in the
+  unlocked Compass. CompassPrivacyTest marks the step's words and scans pagel.db's task rows.
+- **Keyboard:** every Compass field asks the keyboard not to learn (`PrivateKeyboard`: InterceptPlatformTextInput →
+  IME_FLAG_NO_PERSONALIZED_LEARNING); the passphrase is masked (eye to show), password keyboard, no autocorrect, no
+  auto-caps, not copyable; 12+ characters, 6+ different, not an obvious word (one rule on both screens).
+- **Keys:** the guard key is per-use (timeout 0) and only the Compass's own prompt authorises it (BiometricPrompt
+  CryptoObject), so the plain lock screen never opens it; alias `pagel_compass_guard_v2`. Recovery KDF = Argon2id 64 MB,
+  3 passes (BouncyCastle). AEAD associated data = id + kind + parent + dates. Server **388549b DEPLOY NEEDED** (on top
+  of 6cbb4cb): PUT items takes `base` (the version the phone saw); a stale base = 409, so no device overwrites another's
+  newer copy. The phone sends `base` (an older 6cbb4cb server answers 400: deploy 388549b first).
+- **Backup:** `compass_data_extraction_rules.xml` + `compass_backup_rules.xml` keep compass.db out of cloud backup and
+  phone-to-phone transfer (the Keystore keys never move anyway). **Crashes:** a crash through a `.compass.` class goes
+  to pagel.uz with its frames and types only, no message.
+- **Known exposure (by choice):** accessibility stays on so Boss can use TalkBack: any accessibility service he enables
+  can read the Compass's words on screen (uiautomator could too, which the walkthrough uses). Clipboard: goal fields
+  can still be copied by Boss himself.
+- **Ritual math:** the date is read again at every Tashkent midnight and on coming back (Year 19 on his birthday
+  morning; CompassDayTest); the first age report's namaz tile says "starts today" (1 Nov) instead of 0; a goal's score
+  counts from the week it was written; the season line says "week 3 of 12 · 1 Nov → 23 Jan, review to 30 Jan".
+- **Design:** a win is white glass with a mint rim + the "✓ Win" pill (no slab); the goal sheet has top air and its
+  Serves chips end in "…" with an end gutter.
+- **Reminders:** More → Compass → Birthday morning (opt-in: 1 Nov 08:00, "Year 19 starts today") and Season review (on;
+  week 13's first day 09:00, only for a season with goals). Plain words only; planned with the habits' alarms
+  (`CompassAlarms` in `HabitAlarms.plan`), `CompassAlarmReceiver`, notification permission asked when a switch turns on.
+
 ## START HERE · Phase 6a Compass (2026-10-29, builder agent, branch `feat/compass`, server `feat/compass-server`)
 - **What it is:** More → Compass. Boss's goals, sealed on the phone (Boss: "my goals are sacred, no AI ever will read
   them… build the frame and I put them in"). The app ships an EMPTY frame; no goal was read, imported or written by AI.

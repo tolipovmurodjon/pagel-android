@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older (minSdk 30): the same exclusion for the old backup path. -->
+<full-backup-content>
+    <exclude domain="database" path="compass.db" />
+    <exclude domain="database" path="compass.db-wal" />
+    <exclude domain="database" path="compass.db-shm" />
+</full-backup-content>
