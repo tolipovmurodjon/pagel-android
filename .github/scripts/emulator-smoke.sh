@@ -13,6 +13,18 @@ OUT=smoke-out
 mkdir -p "$OUT"
 APK=$(ls apk/*.apk | head -1)
 fail() { echo "SMOKE FAILED: $*"; timeout 30 adb logcat -d > "$OUT/logcat-at-failure.txt"; exit 1; }
+# A cold start draws a flat first frame and turns the glass on once the window has focus (GlassStage). The frame that
+# turns it on builds the glass shaders: up to 7 s on this software GPU when the cache is empty (CI 40656925148). A tap
+# while Main waits behind that frame is an ANR, so wait for this process's "glass on" line and that frame first.
+wait_glass() {
+  local pid; pid=$($T adb shell pidof "$PKG" | tr -d '\r')
+  for i in $(seq 1 30); do
+    $T adb logcat -d -s PagelGlass:I | grep -q " $pid .*glass on" && break
+    sleep 1
+  done
+  echo "glass on: $($T adb logcat -d -s PagelGlass:I | grep " $pid " | tail -1 | sed 's/.*PagelGlass: //')"
+  sleep 8
+}
 
 echo "== root adb (google_apis image): debuggerd -j needs it to dump the freeze stacks"
 $T adb root; $T adb wait-for-device
@@ -72,7 +84,7 @@ sleep 1
 $T adb reverse tcp:8799 tcp:8799
 $T adb shell am force-stop "$PKG"
 $T adb shell am start -W -n "$PKG/.MainActivity" --es pagel.server http://127.0.0.1:8799 > /dev/null
-sleep 4
+wait_glass
 $T adb exec-out screencap -p > "$OUT/pair-screen.png"
 $T adb shell input text 482913
 sleep 1
@@ -124,17 +136,9 @@ for i in $(seq 1 20); do
   grep -q 'text="Ship the native app"' "$OUT/cold-start-ui.xml" && break
 done
 grep -q 'text="Ship the native app"' "$OUT/cold-start-ui.xml" || fail "after a cold start the app asked to pair again (no Today)"
-# The UI tree exists before the first frame is on screen. CI 40656925148: that frame took 7,055 ms on the render thread
-# (glass shaders built for the first time on the software GPU), the screenshot here was black, and the walk began on it:
-# its first step met a main thread waiting for the GPU and Android called the 5 s FocusEvent wait an ANR. Wait until the
-# frame is really shown (a black 320x640 PNG is ~2 KB, Today ~150 KB), then 3 s for the frames behind it.
-for i in $(seq 1 30); do
-  $T adb exec-out screencap -p > "$OUT/cold-start.png"
-  [ "$(wc -c < "$OUT/cold-start.png")" -gt 20000 ] && break
-  sleep 1
-done
-echo "cold Today on screen after ~$((i)) s of polling"
-sleep 3
+$T adb exec-out screencap -p > "$OUT/cold-start.png"
+wait_glass
+$T adb exec-out screencap -p > "$OUT/cold-start-glass.png"
 grep -q "POST /api/v1/app/crash .*AccountUnreadable" "$OUT/fake-pagel.log" && fail "the saved account could not be opened (AccountUnreadable)"
 echo "ok: force-stop and relaunch: still paired, Today on screen"
 $T adb logcat -d > "$OUT/logcat-cold.txt"
@@ -142,10 +146,10 @@ python3 .github/scripts/launch-numbers.py "cold Today" "$OUT/am-start-cold.txt" 
 COLD=$(tail -1 "$OUT/launch-numbers.txt")
 echo "$COLD" | grep -q "anr=YES" && fail "ANR after a cold start (see logcat-cold.txt)"
 TOTAL=$(echo "$COLD" | grep -oE 'TotalTime=[0-9-]+' | cut -d= -f2)
-SKIP=$(echo "$COLD" | grep -oE 'skipped=[0-9]+' | cut -d= -f2)
+SKIP=$(echo "$COLD" | grep -oE 'skipped-launch=[0-9]+' | cut -d= -f2)
 ISSUE=$(echo "$COLD" | grep -oE 'max-issue=[0-9]+' | cut -d= -f2)
-# Targets, not gates: a frame's render time here depends on whether CI's shader cache already holds the glass (51 ms when
-# it does, 7,055 ms when it does not, same code; CI 40666139501). The ANR above is the gate.
+# Targets, not gates: the glass frame's render time depends on whether CI's shader cache already holds the glass (51 ms
+# when it does, 6,004-7,055 ms when it does not, same code; CI 40666139501, 40679698108). The ANR above is the gate.
 [ "${ISSUE:-0}" -lt 4000 ] || echo "WARN: a cold Today frame spent ${ISSUE} ms on the render thread (target < 4000)"
 [ "${TOTAL:-99999}" -lt 4000 ] || echo "WARN: cold Today TotalTime ${TOTAL} ms (target < 4000)"
 [ "${SKIP:-0}" -le 100 ] || echo "WARN: cold Today skipped ${SKIP} frames at launch (target <= 100)"

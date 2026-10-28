@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import org.pagel.ai.data.session.Session
 import org.pagel.ai.service.AnchorService
 import org.pagel.ai.ui.gateway.GatewayDebugScreen
+import org.pagel.ai.ui.glass.GlassStage
 import org.pagel.ai.ui.home.HomeScreen
 import org.pagel.ai.ui.hud.BootScreen
 import org.pagel.ai.ui.shell.AppShell
@@ -54,6 +55,7 @@ class MainActivity : ComponentActivity() {
         ensureNotifPermission()
         ContextCompat.startForegroundService(this, Intent(this, AnchorService::class.java))
         handle(intent)
+        GlassStage.coldStart()
         setContent {
             PagelTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
