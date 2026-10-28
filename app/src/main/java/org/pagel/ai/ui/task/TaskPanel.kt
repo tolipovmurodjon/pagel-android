@@ -487,8 +487,8 @@ private fun Note(ui: PanelUi, a: PanelActions) {
  */
 @Composable
 private fun DoneContent(ui: PanelUi, today: LocalDate, a: PanelActions) {
-    val day = ui.doneAt?.let(org.pagel.ai.data.upcoming::doneDayOf)
-    val time = ui.doneAt?.let(org.pagel.ai.data.upcoming::doneTimeOf).orEmpty()
+    val day = ui.doneAt?.let { org.pagel.ai.data.upcoming.doneDayOf(it) }
+    val time = ui.doneAt?.let { org.pagel.ai.data.upcoming.doneTimeOf(it) }.orEmpty()
     val word = day?.let { org.pagel.ai.data.upcoming.doneDayLabel(it, today) }?.let { if (it == "Today" || it == "Yesterday") it.lowercase() else it }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
         Header(ui, stopping = false, a, onStop = {}, canStop = false)
