@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Round C (Boss: "better funny Gen-Z notifications to do my job"): short, funny, kind, never shaming, never about salah.
+  The task's own title goes in the text line, in Boss's language as he wrote it; these are the titles. Rotated by
+  NotifyCopy so a line never comes back within 7 days. Three tones: chill, normal, no mercy (More → Notifications).
+-->
+<resources>
+    <string-array name="notify_task_chill">
+        <item>soft reminder, no pressure 🌱</item>
+        <item>tiny step time, you got this ☁️</item>
+        <item>5 calm minutes on this? 🍵</item>
+        <item>future you says thanks in advance 💌</item>
+        <item>gentle nudge, big energy ✨</item>
+        <item>one small thing, then a snack 🍪</item>
+        <item>vibes are right for this one 🌤️</item>
+        <item>slow is fine, started is better 🐢</item>
+        <item>quick one, then you\'re free 🕊️</item>
+        <item>it\'s giving productive (gently) 🌸</item>
+        <item>little win incoming 🎈</item>
+        <item>breathe in, tap Done after 🌬️</item>
+        <item>your list misses you a bit 🫶</item>
+        <item>soft launch this task 🚀</item>
+    </string-array>
+    <string-array name="notify_task_normal">
+        <item>lock in. 1 task. 10 min. go 🔒</item>
+        <item>main character energy: this one ✨</item>
+        <item>bro this task won\'t do itself 💪</item>
+        <item>it\'s time. you know it\'s time ⏰</item>
+        <item>no cap, this is the move 🧢</item>
+        <item>speedrun this one? 🏃</item>
+        <item>W incoming, just start it 🏆</item>
+        <item>quick side quest unlocked 🗝️</item>
+        <item>tap in, knock it out 👊</item>
+        <item>your future self is watching 👀</item>
+        <item>let him cook 🍳</item>
+        <item>one tap away from a dopamine hit 🔥</item>
+        <item>this one hits different when it\'s done ✅</item>
+        <item>certified doer moment 📜</item>
+    </string-array>
+    <string-array name="notify_task_nomercy">
+        <item>NOW. not in 5 min. now ⚡</item>
+        <item>no more scrolling, chief. this one 📵</item>
+        <item>legends finish. be a legend 🦁</item>
+        <item>excuses loading… cancelled ❌</item>
+        <item>open it. do it. done. 🔨</item>
+        <item>the gym won\'t lift itself 💪</item>
+        <item>you said you would. so 👀</item>
+        <item>zero mercy mode: GO 🚨</item>
+        <item>stop reading this and start 🏁</item>
+        <item>beast mode, 10 minutes, timer on ⏱️</item>
+        <item>discipline > motivation. move 🧱</item>
+        <item>clock\'s ticking, boss 🕰️</item>
+        <item>finish line is right there 🏃‍♂️</item>
+        <item>no snooze for champions 🥇</item>
+    </string-array>
+    <string-array name="notify_morning">
+        <item>gm ☀️ %1$d things today. first up:</item>
+        <item>new day, new W\'s 🌅 %1$d on the list. start with:</item>
+        <item>rise and lock in 🔒 %1$d today. step one:</item>
+        <item>morning, legend ✨ %1$d moves today. open with:</item>
+        <item>coffee + %1$d tasks = main character day ☕ first:</item>
+        <item>today\'s quest log has %1$d 📜 begin with:</item>
+    </string-array>
+    <string-array name="notify_evening">
+        <item>main character energy: %1$d left today ✨</item>
+        <item>%1$d stars still glowing ⭐ finish strong?</item>
+        <item>almost there: %1$d to go before you close the day 🌙</item>
+        <item>last lap 🏁 %1$d left, then rest</item>
+        <item>%1$d more and the day is cleared 🎉</item>
+        <item>sunset push 🌇 %1$d left on Today</item>
+    </string-array>
+    <string-array name="notify_overdue">
+        <item>%1$d from before are waiting, no stress, pick one 🧹</item>
+        <item>old quests: %1$d. clear one, feel great 🗡️</item>
+        <item>%1$d overdue, a 2-min triage? 🩺</item>
+        <item>backlog check: %1$d. move or do 📦</item>
+        <item>%1$d leftovers, tiny cleanup? 🧽</item>
+        <item>%1$d old ones say hi 👋 sort them in a minute</item>
+    </string-array>
+</resources>

@@ -35,6 +35,8 @@ enum class Tab(val label: String, val root: NavKey, val icon: ImageVector) {
 @Serializable data object SweepRoute : NavKey
 @Serializable data object ShutdownRoute : NavKey
 @Serializable data object ReviewRoute : NavKey
+/** More → Notifications (round C): tone, morning plan, evening nudge, channels. */
+@Serializable data object NotificationsRoute : NavKey
 
 /**
  * A screen asked for from outside the shell (the evening notification's "Close the day"): MainActivity puts the name

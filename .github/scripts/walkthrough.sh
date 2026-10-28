@@ -370,6 +370,23 @@ for v in Day Week Month; do
 done
 grep -q 'content-desc="Previous month"' "$OUT/$(printf '%02d' $N)-calendar-month.xml" || { log "WALKTHROUGH: the Month view has no month bar"; exit 1; }
 tap "View: List" && shot calendar-list 1.5
+log "-- Round C notifications: the task, morning-plan alarms are on AlarmManager; a reminder's Done ticks offline"
+sleep 3
+$T adb shell dumpsys alarm > "$OUT/alarm-dump-tasks.txt"
+TASK_ALARMS=$(grep -c "org.pagel.ai.TASK_FIRE" "$OUT/alarm-dump-tasks.txt" || true)
+MORNING_ALARMS=$(grep -c "org.pagel.ai.MORNING_FIRE" "$OUT/alarm-dump-tasks.txt" || true)
+log "   alarms: TASK_FIRE $TASK_ALARMS, MORNING_FIRE $MORNING_ALARMS"
+[ "$MORNING_ALARMS" -ge 1 ] || { log "WALKTHROUGH: no morning-plan alarm"; exit 1; }
+[ "$TASK_ALARMS" -ge 1 ] || { log "WALKTHROUGH: no task reminder alarm (the range task should have one)"; grep -i "pagel" "$OUT/alarm-dump-tasks.txt" | head -20 | tee -a "$OUT/steps.txt"; exit 1; }
+$T adb shell am broadcast -n "$PKG/.reminders.TaskAlarmReceiver" -a org.pagel.ai.TASK_DONE -d pagel://task-done/t_u1 --es task t_u1 > /dev/null
+WANT='PATCH /api/v1/tasks/t_u1 {"done":true} auth=True'
+for i in $(seq 1 30); do grep -qF "$WANT" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$WANT" "$FAKE_LOG" || { log "WALKTHROUGH: the reminder's Done never reached pagel.uz as $WANT"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   the reminder's Done reached pagel.uz after ~${i} s"
+$T adb shell input keyevent 4; sleep 1
+tap "Notifications" && shot notify-settings 2 || { log "WALKTHROUGH: no Notifications row in More"; exit 1; }
+grep -q 'content-desc="Tone: No mercy"' "$OUT/$(printf '%02d' $N)-notify-settings.xml" || log "   (WARN: no tone switch on the Notifications page)"
+$T adb shell input keyevent 4; sleep 1; tap Upcoming && sleep 2
 log "-- Upcoming in landscape and at 1.5x on the 320 dp screen (checker P4 #3: only the strip is pinned now)"
 $T adb shell settings put system accelerometer_rotation 0
 $T adb shell settings put system user_rotation 1; sleep 3; front upcoming-landscape; shot upcoming-landscape 1

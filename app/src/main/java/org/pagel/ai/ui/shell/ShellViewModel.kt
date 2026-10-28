@@ -17,6 +17,7 @@ import org.pagel.ai.ui.today.TodayCounts
 import org.pagel.ai.ui.today.clearChange
 import org.pagel.ai.ui.today.clearedStreak
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import javax.inject.Inject
 
 /** Which root the app shows: nothing yet (reading the account off Main), pairing, or the tabs. */
@@ -26,10 +27,16 @@ class ShellViewModel @Inject constructor(
     private val today: TodayRepository,
     val toasts: ToastCenter,
     @dagger.hilt.android.qualifiers.ApplicationContext private val ctx: android.content.Context,
+    private val reminders: org.pagel.ai.data.habits.ReminderPlanner,
+    private val upcoming: org.pagel.ai.data.upcoming.UpcomingRepository,
 ) : ViewModel() {
     val account: StateFlow<AccountState?> = session.account
 
     init {
+        // Round C: a sync or an edit that changes a task's date or time plans its reminder again (2 s after the last).
+        viewModelScope.launch {
+            upcoming.dated.collectLatest { kotlinx.coroutines.delay(2_000); reminders.replan() }
+        }
         // The day cleared, from any screen (round B checker #9): the last open task of Today ticked here marks the day
         // and says it once; an Undo that brings a task back takes the day back, so the streak never inflates.
         viewModelScope.launch {

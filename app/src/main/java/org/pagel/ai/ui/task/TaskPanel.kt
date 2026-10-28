@@ -473,7 +473,38 @@ private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (Strin
             PropRow(TabIcons.Flag, "Priority", "P${ui.priority + 1}", set = true, valueColor = PriorityColors.getOrNull(ui.priority)) { onPick("priority") }
             Line()
             PinRow(ui, today) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); a.onStar(!ui.star) }
+            // Round C: a task with a time rings at it; this adds a ring 10 minutes before.
+            if ((ui.due?.length ?: 0) >= 16 && ui.every.isNullOrBlank()) { Line(); EarlyRow(ui.id) }
         }
+    }
+}
+
+/** "Also 10 min before": kept on the phone (NotifyPrefs), planned at once; notifications asked for at first use. */
+@Composable
+private fun EarlyRow(id: String) {
+    val ctx = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    var on by remember(id) { mutableStateOf(false) }
+    LaunchedEffect(id) { on = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { id in org.pagel.ai.reminders.NotifyPrefs.early(ctx) } }
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
+    fun toggle() {
+        haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
+        on = !on
+        val now = on
+        if (now && android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            runCatching { ask.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+        }
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            org.pagel.ai.reminders.NotifyPrefs.setEarly(ctx, id, now)
+            runCatching { dagger.hilt.android.EntryPointAccessors.fromApplication(ctx, org.pagel.ai.service.BootReceiver.Parts::class.java).reminders().replan() }
+        }
+    }
+    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = Space.lg, end = Space.lg), verticalAlignment = Alignment.CenterVertically) {
+        Icon(TabIcons.BellRing, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(Space.md))
+        Text("Also 10 min before", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        GlassSwitch(on, said = "Remind 10 min before", state = if (on) "On" else "Off") { toggle() }
     }
 }
 
@@ -537,12 +568,12 @@ private fun PropRow(icon: ImageVector, label: String, value: String, set: Boolea
 
 /** An Apple-style switch in mint: the knob springs across; off and greyed when [enabled] is false (3 pinned). */
 @Composable
-private fun GlassSwitch(on: Boolean, enabled: Boolean = true, onToggle: () -> Unit) {
+private fun GlassSwitch(on: Boolean, enabled: Boolean = true, said: String = "Pin to Today", state: String = if (on) "Pinned" else "Not pinned", onToggle: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     val knob by animateDpAsState(if (on) 20.dp else 2.dp, spring(dampingRatio = 1f, stiffness = 500f), label = "knob")
     Box(
         Modifier.heightIn(min = TouchMin).pressScale(press).clickable(press, indication = null, enabled = enabled, role = Role.Switch, onClick = onToggle)
-            .semantics(mergeDescendants = true) { contentDescription = "Pin to Today"; stateDescription = if (on) "Pinned" else "Not pinned" },
+            .semantics(mergeDescendants = true) { contentDescription = said; stateDescription = state },
         contentAlignment = Alignment.Center,
     ) {
         // Off: an ink track with an ink rim, ≥ 3:1 on the pane (round B checker #7: 1.44:1, the switch was invisible).

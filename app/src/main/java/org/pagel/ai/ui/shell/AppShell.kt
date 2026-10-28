@@ -273,6 +273,12 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         )
                     }
                     entry<UpcomingListRoute> { UpcomingScreenRoute(padding, reselect) }
+                    entry<NotificationsRoute> {
+                        val app = androidx.compose.ui.platform.LocalContext.current.applicationContext
+                        org.pagel.ai.ui.rituals.NotifyRoute(padding) {
+                            runCatching { dagger.hilt.android.EntryPointAccessors.fromApplication(app, org.pagel.ai.service.BootReceiver.Parts::class.java).reminders().replan() }
+                        }
+                    }
                     entry<CompletedListRoute> { CompletedScreenRoute(padding, reselect) }
                     entry<ProjectListRoute> { ProjectsRoute(padding, reselect, onOpenProject = { stack.add(ProjectPageRoute(it)) }) }
                     entry<ProjectPageRoute> { r -> ProjectScreenRoute(r.name, padding, reselect, onOpenTask = { openTask = it }, onAdd = { adding = it }) }
@@ -310,7 +316,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         }
         val pageTitle = when (top) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
-            SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"
+            SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
         val density = androidx.compose.ui.platform.LocalDensity.current
@@ -507,6 +513,7 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 MoreRow(TabIcons.Sparkles, "Empty your head", Color(0xFF7C4DDB)) { onOpenRitual(SweepRoute) }
                 MoreRow(TabIcons.Moon, "Close the day", Color(0xFF5B4BC4)) { onOpenRitual(ShutdownRoute) }
                 MoreRow(TabIcons.CalendarCheck, "Weekly review", Color(0xFFBE123C)) { onOpenRitual(ReviewRoute) }
+                MoreRow(TabIcons.Bell, "Notifications", Color(0xFFC2410C)) { onOpenRitual(NotificationsRoute) }
                 MoreRow(TabIcons.Folder, "Projects", Glass.Primary, onOpenProjects)
                 MoreRow(TabIcons.Globe, "pagel.uz", Color(0xFF246FE0), onOpenWeb)
                 MoreRow(TabIcons.Phone, "Phone", Color(0xFF692FC2), onOpenPhone)

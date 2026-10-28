@@ -41,6 +41,40 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v17 · ROUND C = A REAL CALENDAR + REAL NOTIFICATIONS, + THE SPACING LEFTOVERS AND ROUND B'S CHECKER (2026-10-28, builder agent)
+- **First push (ce87619 + 705445c):** spacing audit #7-#22 (each `// slot:` in code), `Space` roles (textEdge, paneInset,
+  headerTop, rowLead/rowText, touch, row, sheetTitle, messageSlot), the CI gate `.github/scripts/dp-gate.sh` (off-scale dp
+  in spacing calls outside ui/glass may only go down; baseline 159 in `dp-baseline.txt`), and Layout-rule-3 asserts:
+  date sheet calendar→wheel (`SameHeight`: the wheel takes the grid's measured height), panel To tasks→Made, Add sheet
+  too long (`WordCount` slot), Inbox dock card→card, Close the day choices star→star.
+- **Round B checker (docs/qa/roundB-checker.md, 7/10), all 13:** server **172673e (deployed by the lead)**: a past dot is
+  logged for its own day and never moves the habit, a count tap carries `n` (a retry counts once), 7 dot days (was 8),
+  an Undo carries its `day`. Phone: `n` on every tap, 7 days, Undo's `day`; sheet titles one whole line; week dots under
+  the title (at the meta line's end, so the row's centre still ticks; walk taps the ring: `tapring`); week-sheet days
+  ≥ 48 dp; Won't-do slot kept; a range's end moves with its start (`DatePick.shiftEnd`); off switch ≥ 3:1, the pin
+  reason muted; missed dots 0.55 / empty arcs 0.6; **Day cleared from ANY screen** (`ShellViewModel` + `clearChange`
+  + `DayClear`: one 140-bit burst from the screen centre, 2.2 s, the chord; Undo unmarks the day); no "Syncing" word;
+  3+ in a row = a bigger burst + a third note (`Ding.combo`); a done habit's long press undoes; tokens. Ding stays on
+  in silent mode by default.
+- **Calendar (808b1d5):** the pinned top is real liquid glass (`GlassTop` over the screen's own layer, the list scrolls
+  under it); the strip pages by week (pager, tick per week, "Today" pill, its slot kept); views List · Day · 3 days ·
+  Week · Month (remembered, `CalendarPrefs`); timeline from 05:00 with All day + folded daily habits, blocks in the
+  project's colour (ranges tall, overlaps share), red now-line; Month grid with coloured bars + the day's list; drag a
+  block = 15-min steps, Room + outbox (`UpcomingRepository.moveTo`), Undo; habits not draggable.
+- **Notifications:** `TaskAlarms` (planned with the habits by `HabitAlarms.replan`: boot, update, TIME_SET,
+  TIMEZONE_CHANGED, and 2 s after any change to dated tasks from `ShellViewModel`): each timed task rings at its time (a
+  range at its start), +10 min before when the panel's "Also 10 min before" is on; actions ✓ Done (outbox), ⏰ +15 min,
+  📅 Tomorrow; grouped per day; channels Tasks / Habits / Rituals; morning plan 08:00 (first task + its next step) with
+  the overdue nudge once a day; evening nudge 30 min before Close the day while stars are left; quiet 23:00-07:00.
+  Copy: `res/values/notify_copy.xml` (60 lines, 3 tones), `NotifyCopy.pick` never repeats within 7 days (test).
+  More → Notifications: tone, morning time (wheel), evening nudge, channel rows; permission asked there or at the
+  panel's toggle, never at launch.
+- **Not done (why):** no walk step drags a calendar block on the emulator (the drag is proven by
+  `aBlockDraggedAnHourDownMovesItsTime` on Robolectric; adb motion events over a pager + scroll were not risked in
+  this round); the walk asserts TASK_FIRE/MORNING_FIRE counts, not one alarm per range (dumpsys shows actions, not
+  data URIs); the evening nudge and the overdue nudge have no emulator proof; the confetti of Day cleared draws
+  under an open sheet (the panel is its own window); round B's F (Plan it) and I (speed numbers) are still open.
+
 ## START HERE v16 · ROUND B = BOSS'S PHONE NOTES: DATA, DOPAMINE, HABITS, PANEL TICK, RANGES (2026-10-28, builder agent)
 Brief order B, H, C, G, F, D, E, I, J, A. Done: B, H, C, G, D, E, J, A's chip. Not done: F, I (below, with why).
 - **Boss note: Close the day spacing** ("spacing is trash"): `StarCard`'s counter row had no fixed height; the 48 dp Back

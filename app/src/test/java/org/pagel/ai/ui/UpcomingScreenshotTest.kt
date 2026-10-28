@@ -22,6 +22,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -135,7 +136,8 @@ class UpcomingScreenshotTest {
         val list = compose.onNode(hasScrollAction())
         list.performScrollToNode(hasContentDescription("4 daily habits, folded"))
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-habits-folded.png")
-        compose.onAllNodesWithContentDescription("4 daily habits, folded")[0].performClick()
+        // The scroll brings the line to the list's top edge, under the glass top (round C): tap it by its action.
+        compose.onAllNodesWithContentDescription("4 daily habits, folded")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         compose.onNodeWithContentDescription("4 daily habits, shown").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-habits-open.png")
     }

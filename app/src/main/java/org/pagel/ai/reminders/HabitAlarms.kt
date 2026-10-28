@@ -67,6 +67,8 @@ class HabitAlarms(
         val habits = dao.habitsOnce().associateBy { it.id }
         val now = ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), HabitsRepository.TASHKENT)
         rituals?.let { runCatching { planEvening(am, it, now) } }
+        // Round C: the tasks' reminders, the morning plan and the evening nudge ride on the same planner.
+        runCatching { TaskAlarms.plan(ctx, dao, rituals, am, now) }
         for (r in dao.remindersOnce()) {
             val pi = fireIntent(ctx, r.taskId)
             val h = habits[r.taskId]

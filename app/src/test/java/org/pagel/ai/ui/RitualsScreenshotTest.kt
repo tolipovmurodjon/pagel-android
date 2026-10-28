@@ -281,4 +281,17 @@ class RitualsScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/review-next-step-3-360x800.png")
         assertEquals("Next moved: $tops", 1, tops.distinct().size)
     }
+
+    // Round C: More → Notifications (tone, morning plan, evening nudge, channels).
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun notificationSettings360() {
+        show { org.pagel.ai.ui.rituals.NotifyScreen(org.pagel.ai.ui.rituals.NotifyUi(), pad) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/notify-settings-360x800.png")
+        compose.onNodeWithContentDescription("Tone: No mercy").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Morning plan at 08:00").assertIsDisplayed()
+    }
+
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun notificationSettings360Font15() {
+        show(1.5f) { org.pagel.ai.ui.rituals.NotifyScreen(org.pagel.ai.ui.rituals.NotifyUi(tone = "nomercy", allowed = false), pad) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/notify-settings-360x800-font-1.5.png")
+    }
 }

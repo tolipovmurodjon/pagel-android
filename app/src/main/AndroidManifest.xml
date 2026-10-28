@@ -116,12 +116,17 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <!-- Boss granted exact alarms in Settings: the habits' reminders are planned again, on time. -->
                 <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+                <!-- Round C: a clock or time-zone change plans every reminder again. -->
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
         </receiver>
 
         <!-- A habit's reminder and its Done button (Phase 3). Not exported: only PAGEL's own explicit, immutable
              PendingIntents reach it. -->
         <receiver android:name=".reminders.HabitAlarmReceiver" android:exported="false" />
+        <!-- Round C: a task's reminder and its Done / +15 min / Tomorrow, the morning plan, the evening nudge. -->
+        <receiver android:name=".reminders.TaskAlarmReceiver" android:exported="false" />
         <!-- The evening "Close the day" reminder (Phase 5). Not exported, as above. -->
         <receiver android:name=".reminders.ShutdownAlarmReceiver" android:exported="false" />
 
