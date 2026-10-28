@@ -4,4 +4,8 @@
     <exclude domain="database" path="compass.db" />
     <exclude domain="database" path="compass.db-wal" />
     <exclude domain="database" path="compass.db-shm" />
+    <!-- The locked journal (Phase 6b): sealed the same way, its key never moves either. -->
+    <exclude domain="database" path="journal.db" />
+    <exclude domain="database" path="journal.db-wal" />
+    <exclude domain="database" path="journal.db-shm" />
 </full-backup-content>

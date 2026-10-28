@@ -44,8 +44,11 @@ object CrashLog {
 
     private fun chain(e: Throwable) = generateSequence(e) { t -> t.cause?.takeIf { it !== t } }.take(20)
 
-    /** Any frame of the throwable or its causes in a Compass package. */
-    fun touchesCompass(e: Throwable): Boolean = chain(e).any { t -> t.stackTrace.any { ".compass." in it.className } }
+    /**
+     * Any frame of the throwable or its causes in a Compass or journal package (Phase 6b: the locked journal is sealed
+     * the same way, so its crashes keep frames and types only, never a message that could hold his words).
+     */
+    fun touchesCompass(e: Throwable): Boolean = chain(e).any { t -> t.stackTrace.any { ".compass." in it.className || ".journal." in it.className } }
 
     /** The stack as types and frames only ("Caused by: <type>", then its frames), no messages. */
     private fun quietTrace(e: Throwable): String = buildString {

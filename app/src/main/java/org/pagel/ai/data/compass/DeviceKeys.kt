@@ -46,13 +46,17 @@ interface DeviceKeys {
     fun openLine(blob: String): ByteArray?
 }
 
-class KeystoreDeviceKeys(private val ctx: Context) : DeviceKeys {
+/**
+ * [guardAlias]: the Compass's guard key by default; the locked journal (Phase 6b) passes its own, so one unlock never opens
+ * the other's data key.
+ */
+class KeystoreDeviceKeys(private val ctx: Context, private val guardAlias: String = GUARD) : DeviceKeys {
     private val store: KeyStore by lazy { KeyStore.getInstance(KEYSTORE).apply { load(null) } }
 
     override fun hasScreenLock(): Boolean = ctx.getSystemService(KeyguardManager::class.java)?.isDeviceSecure == true
 
     override fun cipherFor(wrapped: String?, fresh: Boolean): Cipher {
-        if (fresh) runCatching { store.deleteEntry(GUARD) }
+        if (fresh) runCatching { store.deleteEntry(guardAlias) }
         val c = Cipher.getInstance(GCM)
         try {
             if (wrapped == null) {
@@ -89,9 +93,9 @@ class KeystoreDeviceKeys(private val ctx: Context) : DeviceKeys {
     }.getOrNull()
 
     private fun guard(create: Boolean): SecretKey {
-        (store.getKey(GUARD, null) as? SecretKey)?.let { return it }
+        (store.getKey(guardAlias, null) as? SecretKey)?.let { return it }
         if (!create) throw KeyGone()
-        val spec = KeyGenParameterSpec.Builder(GUARD, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+        val spec = KeyGenParameterSpec.Builder(guardAlias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
             .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)

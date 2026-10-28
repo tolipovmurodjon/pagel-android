@@ -327,4 +327,11 @@ abstract class PagelDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun setReminder(row: HabitReminderEntity)
+
+    /** What the Notebook's search box reads on the phone (Phase 6b): open and done tasks, never dropped ones. */
+    @Query("SELECT * FROM tasks WHERE status IN ('open', 'done')")
+    abstract suspend fun searchableTasks(): List<TaskEntity>
+
+    @Query("SELECT * FROM steps")
+    abstract suspend fun allSteps(): List<StepEntity>
 }
