@@ -49,8 +49,14 @@ object GlassStage {
             snapshotFlow { window.isWindowFocused }.first { it }
             withFrameNanos { }
             on = true
-            // The smoke waits on this line before it touches the screen.
-            android.util.Log.i("PagelGlass", "glass on at +${SystemClock.uptimeMillis() - t0} ms")
+            val t1 = SystemClock.uptimeMillis()
+            android.util.Log.i("PagelGlass", "glass on at +${t1 - t0} ms")
+            // The second frame after this one starts only once the render thread has finished the glass frame (the
+            // first waits for it in syncAndDrawFrame). The smoke waits on this line before it touches the screen:
+            // CI 40681742567's glass frame took 11,256 ms with an empty shader cache.
+            withFrameNanos { }
+            withFrameNanos { }
+            android.util.Log.i("PagelGlass", "glass drawn in ${SystemClock.uptimeMillis() - t1} ms")
         }
     }
 }

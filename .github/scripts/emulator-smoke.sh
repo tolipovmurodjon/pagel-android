@@ -14,16 +14,17 @@ mkdir -p "$OUT"
 APK=$(ls apk/*.apk | head -1)
 fail() { echo "SMOKE FAILED: $*"; timeout 30 adb logcat -d > "$OUT/logcat-at-failure.txt"; exit 1; }
 # A cold start draws a flat first frame and turns the glass on once the window has focus (GlassStage). The frame that
-# turns it on builds the glass shaders: up to 7 s on this software GPU when the cache is empty (CI 40656925148). A tap
-# while Main waits behind that frame is an ANR, so wait for this process's "glass on" line and that frame first.
+# turns it on builds the glass shaders: 11,256 ms on this software GPU with an empty cache (CI 40681742567). A tap while
+# Main waits behind that frame is an ANR, so wait for this process's "glass drawn" line (the app logs it two frames
+# after the glass frame, i.e. once the render thread has finished it).
 wait_glass() {
   local pid; pid=$($T adb shell pidof "$PKG" | tr -d '\r')
-  for i in $(seq 1 30); do
-    $T adb logcat -d -s PagelGlass:I | grep -q " $pid .*glass on" && break
+  for i in $(seq 1 45); do
+    $T adb logcat -d -s PagelGlass:I | grep -q " $pid .*glass drawn" && break
     sleep 1
   done
-  echo "glass on: $($T adb logcat -d -s PagelGlass:I | grep " $pid " | tail -1 | sed 's/.*PagelGlass: //')"
-  sleep 8
+  echo "glass: $($T adb logcat -d -s PagelGlass:I | grep " $pid " | sed 's/.*PagelGlass: //' | paste -sd ';' -)"
+  sleep 1
 }
 
 echo "== root adb (google_apis image): debuggerd -j needs it to dump the freeze stacks"

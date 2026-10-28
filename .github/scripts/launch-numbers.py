@@ -9,7 +9,8 @@ first-issue the first frame's render-thread time issuing draw commands (Davey Is
 max-issue   the longest such time in any frame of the app in this logcat.
 skipped     the largest "Skipped N frames" of the app's main thread (N x 16.7 ms it could not draw or take input), up to
             the glass coming on ("launch") and over the whole log ("all").
-glass-on    when GlassStage turned the glass on after the flat first frame (PagelGlass line), ms after the screen was ready.
+glass-on    when GlassStage turned the glass on after the flat first frame (PagelGlass line), ms after the screen was ready;
+            glass-drawn how long until the render thread had finished that glass frame.
 anr         whether "ANR in org.pagel.ai" appears for this launch's process.
 """
 import re
@@ -23,7 +24,7 @@ log = open(log_path, errors="ignore").read().splitlines()
 
 pids = re.findall(r"Start proc (\d+):org\.pagel\.ai/", "\n".join(log))
 pid = pids[-1] if pids else None
-first_issue, max_issue, skipped, skipped_launch, glass_on = -1, 0, 0, 0, "-"
+first_issue, max_issue, skipped, skipped_launch, glass_on, glass_drawn = -1, 0, 0, 0, "-", "-"
 for line in log:
     parts = line.split()
     if len(parts) < 4 or parts[2] != pid:
@@ -43,6 +44,9 @@ for line in log:
     m = re.search(r"PagelGlass: glass on at \+(\d+) ms", line)
     if m:
         glass_on = m.group(1)
+    m = re.search(r"PagelGlass: glass drawn in (\d+) ms", line)
+    if m:
+        glass_drawn = m.group(1)
 # An ANR of this launch's process. A force-stopped earlier process can be reported after `logcat -c` (CI 40666139501:
 # "No response to onStartJob" for the pid stopped 2 s before), so the "PID:" line under it must be this one.
 anr = False
@@ -53,5 +57,5 @@ for i, l in enumerate(log):
 # A Davey line is written only for frames over 700 ms: no line means the first frame was faster than that.
 fi = f"{first_issue}" if first_issue >= 0 else "<700"
 print(f"{label:<22} TotalTime={total} first-issue={fi} max-issue={max_issue} skipped-launch={skipped_launch} "
-      f"skipped-all={skipped} glass-on=+{glass_on}ms "
+      f"skipped-all={skipped} glass-on=+{glass_on}ms glass-drawn={glass_drawn}ms "
       f"anr={'YES' if anr else 'no'}")
