@@ -44,9 +44,12 @@ TRIAGED = set()  # saves the AI has read since the phone asked (POST {action: "t
 
 # Habits (Phase 3): repeating tasks in /sync, due today; a tick (PATCH done:true) moves the date a day on and counts the
 # day; an Undo (PATCH {due: the old date, undo: true}) takes the day out (dashboard task-store.ts, habits-api.ts).
-HABITS = [("t_h1", "Stretch for ten minutes", "07:30"), ("t_h2", "Read 10 pages", "21:30"), ("t_h3", "Drink water", None)]
+HABITS = [("t_h1", "Stretch for ten minutes", "07:30"), ("t_h2", "Read 10 pages", "21:30"), ("t_h3", "Drink water", None),
+          ("t_h4", "Log food", "13:00")]
+# Round B: "Log food" is done 3 times a day; each tap is one tick, the 3rd moves it on (task-store.ts habitTaps).
+HABIT_TIMES = {"t_h4": 3}
 HABIT_DUE = {}
-HABIT_TICKS = []  # (day, id)
+HABIT_TICKS = []  # (day, id), one per tap
 def habit_due(hid, at):
     return HABIT_DUE.get(hid, today() + (f" {at}" if at else ""))
 
@@ -99,7 +102,8 @@ def sync_body():
                        "steps": [{"text": t, "done": d} for t, d in STEPS.get(i, [])], **EDITS.get(i, {})}
                       for k, (i, p, text, pr, due) in enumerate(TODAY)]
                      + [{"id": hid, "project": "me", "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 50 + k, "text": text, "status": "open",
-                         "priority": 2, "star": False, "due": habit_due(hid, at), "every": "day", "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": []}
+                         "priority": 2, "star": False, "due": habit_due(hid, at), "every": "day", "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": [],
+                         "times": HABIT_TIMES.get(hid, 1)}
                         for k, (hid, text, at) in enumerate(HABITS)]
                      + [{"id": uid, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 60 + k, "text": text, "status": "open",
                          "priority": pr, "star": False, "due": day_from_today(n), "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": [], **EDITS.get(uid, {})}
@@ -184,10 +188,23 @@ class H(BaseHTTPRequestHandler):
             yesterday = (datetime.now(TASHKENT) - timedelta(days=1)).strftime("%Y-%m-%d")
             tick_day = b.get("day") if b.get("day") in (day, yesterday) else day
             moved = "if_due" in b and b["if_due"] != habit_due(tid, at)
-            if b.get("done") is True and not moved:
+            times = HABIT_TIMES.get(tid, 1)
+            taps = lambda d: sum(1 for x in HABIT_TICKS if x == (d, tid))
+            # A dot (round B): a day before the habit's date, or an untick, counts for that day only; the date stays.
+            dot = b.get("day") and b["day"] >= (datetime.now(TASHKENT) - timedelta(days=7)).strftime("%Y-%m-%d") and \
+                (b.get("done") is False or b["day"] < habit_due(tid, at)[:10])
+            if dot and not moved:
+                if b["done"] is True and taps(b["day"]) < times:
+                    HABIT_TICKS.append((b["day"], tid))
+                elif b["done"] is False and taps(b["day"]) > 0:
+                    if b["day"] == day and taps(day) == times and habit_due(tid, at)[:10] > day:
+                        HABIT_DUE[tid] = day + (f" {at}" if at else "")
+                    HABIT_TICKS.remove((b["day"], tid))
+            elif b.get("done") is True and not moved and taps(tick_day) < times:
                 HABIT_TICKS.append((tick_day, tid))
-                nxt = (datetime.strptime(tick_day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-                HABIT_DUE[tid] = nxt + (f" {at}" if at else "")
+                if taps(tick_day) >= times:
+                    nxt = (datetime.strptime(tick_day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+                    HABIT_DUE[tid] = nxt + (f" {at}" if at else "")
             if "due" in b:
                 HABIT_DUE[tid] = b["due"]
                 # Only an Undo (undo: true) takes the day's tick out; a new time keeps it (task-store.ts, 2026-10-28).
@@ -215,7 +232,11 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/api/v1/today":
             return self.send(200, {"day": "2026-10-27", "shown_at_once": 3, "tasks": [{"id": i} for i, *_ in TODAY if i not in DONE]})
         if self.path.startswith("/api/v1/habits"):
-            return self.send(200, {"day": today(), "done_today": [h for d, h in HABIT_TICKS if d == today()], "ticks": [{"day": d, "id": h} for d, h in HABIT_TICKS]})
+            n = {}
+            for k in HABIT_TICKS:
+                n[k] = n.get(k, 0) + 1
+            return self.send(200, {"day": today(), "done_today": [h for (d, h), c in n.items() if d == today() and c >= HABIT_TIMES.get(h, 1)],
+                                   "ticks": [{"day": d, "id": h, "n": c} for (d, h), c in n.items()]})
         if self.path.startswith("/api/v1/inbox/picture"):
             if any(f"{i}.md" in self.path and pic for i, *_, pic in INBOX):
                 self.send_response(200)

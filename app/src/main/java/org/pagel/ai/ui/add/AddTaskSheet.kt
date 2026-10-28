@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -84,7 +85,9 @@ fun AddTaskSheet(onClose: () -> Unit, project: String? = null, vm: AddTaskViewMo
     val projects by vm.projects.collectAsStateWithLifecycle()
     val notSaved by vm.notSaved.collectAsStateWithLifecycle()
     GlassSheet(onClose) {
-        AddTaskContent(projects, home = project ?: "me", toToday = project == null, now = vm::now, notSaved = notSaved, onSave = vm::save)
+        // The sheet closes once a task is added (round B: the toast showed and the sheet stayed); a long press on the
+        // arrow adds and keeps it open with the project, for a quick second one.
+        AddTaskContent(projects, home = project ?: "me", toToday = project == null, now = vm::now, notSaved = notSaved, onAdded = onClose, onSave = vm::save)
         Spacer(Modifier.height(SheetBottom))
     }
 }
@@ -96,6 +99,7 @@ private val FieldRim = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95
  * the pickers (date with a calendar, priority with flags, repeat, project with search). The typed line is read live
  * ("Call the bank tomorrow 3pm #me p1"); a pick beats what was typed, a typed #project beats the picked one.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun AddTaskContent(
     projects: List<ProjectEntity>,
@@ -106,6 +110,8 @@ fun AddTaskContent(
     initialPicks: Picks = Picks(),
     autoFocus: Boolean = true,
     notSaved: List<NotSaved> = emptyList(),
+    /** After a task is added (not on a long press of the arrow): the sheet closes. */
+    onAdded: () -> Unit = {},
     onSave: (String, String, Picks, Boolean) -> Boolean,
 ) {
     var typed by rememberSaveable { mutableStateOf(initial) }
@@ -133,10 +139,11 @@ fun AddTaskContent(
     LaunchedEffect(Unit) { if (autoFocus) runCatching { focus.requestFocus() } }
     val ready = plan.text.isNotBlank() && !plan.tooLong
 
-    fun submit() {
+    fun submit(keepOpen: Boolean = false) {
         if (onSave(typed, pick, picks, toToday)) {
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
             typed = ""; dueSet = false; due = null; everySet = false; every = null; priority = null
+            if (!keepOpen) onAdded()
         } else if (plan.tooLong) haptics.performHapticFeedback(HapticFeedbackType.Reject)
     }
 
@@ -175,7 +182,7 @@ fun AddTaskContent(
             val fill by animateColorAsState(if (ready) Glass.Primary else Color.White.copy(alpha = 0.72f), label = "send")
             Box(
                 Modifier.size(TouchMin).pressScale(press)
-                    .clickable(press, indication = null, enabled = ready, role = Role.Button) { submit() }
+                    .combinedClickable(press, indication = null, enabled = ready, role = Role.Button, onLongClickLabel = "Add and keep open", onLongClick = { submit(keepOpen = true) }) { submit() }
                     .semantics { contentDescription = "Add task" },
                 contentAlignment = Alignment.Center,
             ) {

@@ -152,4 +152,22 @@ class TaskLogicTest {
         assertEquals(false, Repeat.isMonthly("month 32"))
         assertEquals(emptyList<Int>(), Repeat.monthDays("month"))
     }
+
+    // Round B (D): "10:00-12:00, 24 hour".
+    @Test fun aTimeRangeIsAStartAndAnEndAfterIt() {
+        assertEquals("10:00", DatePick.startOf("10:00-12:00"))
+        assertEquals("12:00", DatePick.endOf("10:00-12:00"))
+        assertNull(DatePick.endOf("10:00"))
+        assertEquals("", DatePick.startOf(""))
+        assertEquals("10:00-12:00", DatePick.range("10:00", "12:00"))
+        // An end at or before the start is dropped: a range never crosses midnight.
+        assertEquals("10:00", DatePick.range("10:00", "09:00"))
+        assertNull(DatePick.range(null, "12:00"))
+        assertEquals("10:00", DatePick.plusHour("09:00"))
+        assertEquals("23:55", DatePick.plusHour("23:30"))
+        val day = LocalDate.of(2026, 10, 28)
+        assertEquals("Today 10:00–12:00", DatePick.dueText("2026-10-28 10:00-12:00", day))
+        assertEquals("2026-10-30 10:00-12:00", DatePick.due(LocalDate.of(2026, 10, 30), "10:00-12:00"))
+        assertEquals("Today 10:00–12:00", org.pagel.ai.ui.today.dueLabel("2026-10-28 10:00-12:00", day)!!.text)
+    }
 }

@@ -87,9 +87,12 @@ tap "Add a task" && shot add-sheet 2
 $T adb shell "input text 'Call%sAziz%stomorrow%s3pm%s#me%sp1'"; shot add-typed 1.5
 tap "Add task" && shot add-saved 1.5
 for i in $(seq 1 30); do grep -q 'POST /api/v1/tasks .*"text":"Call Aziz"' "$FAKE_LOG" && break; sleep 1; done
-grep -q 'POST /api/v1/tasks {"project":"me","text":"Call Aziz","priority":0,"due":"[0-9-]* 15:00"}' "$FAKE_LOG"   || { log "WALKTHROUGH: the added task never reached pagel.uz as {me, Call Aziz, P0, tomorrow 15:00}"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+grep -qE 'POST /api/v1/tasks \{"project":"me","text":"Call Aziz","priority":0,"due":"[0-9-]* 15:00","client_id":"local_[0-9a-z]+"\}' "$FAKE_LOG"   || { log "WALKTHROUGH: the added task never reached pagel.uz as {me, Call Aziz, P0, tomorrow 15:00}"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   added task reached pagel.uz after ~${i} s"
-$T adb shell input keyevent 4; sleep 1; $T adb shell input keyevent 4; shot after-add 1.5
+# Round B (E): the sheet closes by itself once the task is added (it used to stay open under the toast).
+shot after-add 1.5
+grep -q 'content-desc="Add task"' "$OUT/$(printf '%02d' $N)-after-add.xml" && { log "WALKTHROUGH: the Add sheet stayed open after the task was added"; exit 1; }
+front after-add
 
 log "-- the task panel (Phase 1): tap a row → its panel; tick step 1, set P1, pick a day 2 days ahead in the calendar"
 DAY=$(TZ=Asia/Tashkent date -d '+2 days' +%Y-%m-%d)
@@ -108,6 +111,17 @@ for want in '{"steps":["Find the account number","Call at 10"],"ticked":[0]}' '{
   grep -qF "PATCH /api/v1/tasks/t_ci2 $want auth=True" "$FAKE_LOG" || { log "WALKTHROUGH: pagel.uz never got $want"; grep "PATCH" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
   log "   pagel.uz got $want"
 done
+log "-- a time range (round B, D: \"10:00-12:00, 24 hour\"): Date -> Add time -> 09:00 -> + End -> Done; pagel.uz gets DAY 09:00-10:00"
+tap 'Date: [^"]*' && shot panel-date-again 2
+tap "Add time" && shot panel-time-wheel 1.5
+tap "Set 09:00" && shot panel-time-start 1.5
+tap "Add an end time" && shot panel-time-range 1.5
+grep -q 'content-desc="End 10:00"' "$OUT/$(printf '%02d' $N)-panel-time-range.xml" || { log "WALKTHROUGH: the date sheet shows no end chip 10:00"; exit 1; }
+tap "Done" && shot panel-range-done 1.5
+for i in $(seq 1 30); do grep -qF "PATCH /api/v1/tasks/t_ci2 {\"due\":\"$DAY 09:00-10:00\"} auth=True" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "PATCH /api/v1/tasks/t_ci2 {\"due\":\"$DAY 09:00-10:00\"} auth=True" "$FAKE_LOG" || { log "WALKTHROUGH: pagel.uz never got the range"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got $DAY 09:00-10:00"
+grep -q 'content-desc="Date: [^"]*09:00–10:00"' "$OUT/$(printf '%02d' $N)-panel-range-done.xml" || log "   (WARN: the panel's Date row does not read 09:00–10:00)"
 log "-- the panel's ring (Boss 2026-10-28: \"no sound, no toast, not marking strike\"): the panel stays open on the done task with Reopen and a Done · Undo toast; pagel.uz gets done, then Reopen opens it again"
 $T adb logcat -c
 tap "Complete: Call the bank about the report" && shot panel-ticked 0.6
@@ -236,6 +250,12 @@ H3="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$TODAY\",\"if_due\":\"$TOD
 for i in $(seq 1 30); do grep -qF "$H3" "$FAKE_LOG" && break; sleep 1; done
 grep -qF "$H3" "$FAKE_LOG" || { log "WALKTHROUGH: the habit tick never reached pagel.uz as $H3"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   habit tick reached pagel.uz after ~${i} s"
+log "-- a 3x habit (round B, Boss: \"it should do like 3 times\"): Log food tapped 3 times, one segment each; pagel.uz gets 3 ticks"
+for k in 1 2 3; do tap "Done: Log food" && shot "habit-3x-$k" 1.3 || { log "WALKTHROUGH: no \"Done: Log food\" row for tap $k"; exit 1; }; done
+grep -q 'text="2/3"' "$OUT/$(printf '%02d' $((N - 1)))-habit-3x-2.xml" || log "   (WARN: the 2nd tap's shot shows no 2/3)"
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] || { log "WALKTHROUGH: the 3x habit's taps did not all reach pagel.uz"; grep "t_h4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   3 taps reached pagel.uz after ~${i} s"
 # Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
 ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")
@@ -430,7 +450,8 @@ shot p5-sweep-rows 2.5
 grep -qi 'Call mom about sunday' "$OUT/$(printf '%02d' $N)-p5-sweep-rows.xml" || { log "WALKTHROUGH: the AI's rows are not on screen"; exit 1; }
 tap_scroll "Add 3" || { log "WALKTHROUGH: no Add 3"; exit 1; }
 shot p5-sweep-added 1.5
-for want in '{"project":"humopedia","text":"Call mom about sunday","priority":1}' '{"project":"me","text":"Fix the login bug","priority":1}' '{"project":"ababil","text":"Learn the guitar","priority":3}'; do
+# Each add carries the phone's client_id after these fields (round B, J).
+for want in '{"project":"humopedia","text":"Call mom about sunday","priority":1,' '{"project":"me","text":"Fix the login bug","priority":1,' '{"project":"ababil","text":"Learn the guitar","priority":3,'; do
   wait_log "POST /api/v1/tasks $want" || { log "WALKTHROUGH: pagel.uz never got the task $want"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 done
 log "   3 lines -> 3 tasks on pagel.uz"

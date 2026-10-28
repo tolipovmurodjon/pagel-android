@@ -223,7 +223,7 @@ class OutboxSender(
     /** One new task: created → it takes the server's id; refused → it leaves the phone and the UI says why. */
     private suspend fun sendAdd(account: Account, op: OutboxEntity): SendResult {
         val t = dao.taskOnce(op.taskId) ?: run { dao.removeFromOutbox(op.id); return SendResult.ALL_SENT }
-        return when (val out = api.addTask(account.serverUrl, account.token, NewTaskBody(t.project, t.text, t.priority, t.due, t.every))) {
+        return when (val out = api.addTask(account.serverUrl, account.token, NewTaskBody(t.project, t.text, t.priority, t.due, t.every, clientId = op.taskId))) {
             is Outcome.Ok -> {
                 dao.adoptServerId(op.taskId, out.value.id)
                 dao.removeFromOutbox(op.id)

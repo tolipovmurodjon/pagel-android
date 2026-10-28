@@ -102,15 +102,34 @@ class HabitsViewModel @Inject constructor(
 
     fun replan() = repo.replan()
 
+    /**
+     * One tap: a habit done once a day is finished (ring, fold to Done today); a count habit ("log food" 3x) fills one
+     * segment and stays until its Nth tap, which finishes it the same way.
+     */
     fun tick(id: String) {
-        finishing.update { it + id }
+        val item = ui.value.day.parts.flatMap { it.second }.firstOrNull { it.task.id == id }
+        val last = item == null || item.taps + 1 >= item.times
+        if (last) finishing.update { it + id }
         viewModelScope.launch {
             val t = repo.tick(id)
             if (t == null) { finishing.update { it - id }; return@launch }
-            toasts.show("Done", action = "Undo") { undo(id, t) }
+            val inRow = org.pagel.ai.ui.today.Combo.app.tick(System.currentTimeMillis())
+            val said = if (last) org.pagel.ai.ui.today.comboText(inRow) else "${(item?.taps ?: 0) + 1} of ${item?.times}"
+            toasts.show(said, action = "Undo") { org.pagel.ai.ui.today.Combo.app.undo(); undo(id, t) }
+            if (!last) return@launch
             delay(FOLD_MS)
             finishing.update { it - id }
         }
+    }
+
+    /** A long press on a count ring: one tap of today taken off. */
+    fun untickOne(id: String) {
+        viewModelScope.launch { if (repo.setDay(id, repo.today(), done = false)) toasts.show("One taken off") }
+    }
+
+    /** A day of the habit's last week ticked or unticked (the week sheet). */
+    fun setDay(id: String, day: String, done: Boolean) {
+        viewModelScope.launch { repo.setDay(id, day, done) }
     }
 
     private fun undo(id: String, t: org.pagel.ai.data.habits.Ticked) {

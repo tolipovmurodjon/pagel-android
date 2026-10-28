@@ -46,6 +46,8 @@ data class TaskEntity(
     /** The phase's place in its plan and whether it is the NOW phase (v3): the project screen groups by them. */
     @ColumnInfo(defaultValue = "0") val phaseSort: Int = 0,
     @ColumnInfo(defaultValue = "0") val phaseNow: Boolean = false,
+    /** A habit done N times a day (v7, round B: "log food" 3x): each tap counts, the Nth moves it on. */
+    @ColumnInfo(defaultValue = "1") val times: Int = 1,
 )
 
 @Entity(tableName = "steps", primaryKeys = ["taskId", "position"], indices = [Index("taskId")])
@@ -168,6 +170,8 @@ data class InboxStateEntity(
 data class HabitTickEntity(
     val day: String,
     val taskId: String,
+    /** Taps that day (v7): a habit is done on a day once n reaches its times. */
+    @ColumnInfo(defaultValue = "1") val n: Int = 1,
 )
 
 /** A habit's reminder (Phase 3): on = a notification at its time, with a Done button. Only on this phone. */

@@ -57,7 +57,7 @@ class MigrationTest {
             assertEquals("done", op.op)
             assertNull(op.body)
             assertFalse(op.waitsForServer)
-            assertEquals(6, db.openHelper.readableDatabase.version)
+            assertEquals(7, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }
@@ -95,7 +95,7 @@ class MigrationTest {
             assertEquals("""{"set":{"priority":0}}""", op.body)
             assertEquals(0, db.inbox().deckSize())
             assertNull(db.inbox().stateOnce())
-            assertEquals(6, db.openHelper.readableDatabase.version)
+            assertEquals(7, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }
@@ -136,7 +136,7 @@ class MigrationTest {
             assertEquals(listOf("t_h"), db.dao().habitsOnce().map { it.id })
             assertEquals(emptyList<Any>(), db.dao().habitTicksOf("t_h"))
             assertEquals(emptyList<Any>(), db.dao().remindersOnce())
-            assertEquals(6, db.openHelper.readableDatabase.version)
+            assertEquals(7, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }
@@ -172,7 +172,39 @@ class MigrationTest {
             assertEquals(1, db.dao().remindersOnce().size)
             assertNull(db.rituals().stateOnce())
             assertNull(db.rituals().sweepOnce("anything"))
-            assertEquals(6, db.openHelper.readableDatabase.version)
+            assertEquals(7, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
+
+    /** v7 (round B): a habit's times a day and a day's taps; an old habit is once a day and its old ticks count 1. */
+    @Test fun sixToSevenKeepsHabitsAndTheirTicksAsOnceADay() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/6.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(6, schema["version"]!!.jsonPrimitive.content.toInt())
+
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("""INSERT INTO tasks (id, project, phase, sort, text, title, status, priority, star, due, every, doneWhen, doneAt, updatedAt, serverVersion, syncStatus, lastModified, phaseSort, phaseNow)
+                VALUES ('t_h', 'me', 'Now', 1.0, 'Log food', NULL, 'open', 2, 0, '2026-10-28 13:00', 'day', NULL, NULL, '2026-10-27T10:00:00Z', 1, 'synced', 5, 0, 1)""")
+            old.execSQL("INSERT INTO habit_ticks (day, taskId) VALUES ('2026-10-27', 't_h')")
+            old.version = 6
+        }
+
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            assertEquals(1, db.dao().taskOnce("t_h")!!.times)
+            assertEquals(listOf(org.pagel.ai.data.db.HabitTickEntity("2026-10-27", "t_h", 1)), db.dao().habitTicksOf("t_h"))
+            assertEquals(7, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }

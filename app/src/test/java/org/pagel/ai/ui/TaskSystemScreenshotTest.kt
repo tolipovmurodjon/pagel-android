@@ -190,6 +190,28 @@ class TaskSystemScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-time-wheel-360-font-1.5.png")
     }
 
+    /** Round B (D + E): "10:00-12:00, 24 hour" from the wheel, and a Done in the header. */
+    @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun aTimeRangeFromTheWheelAndDone() {
+        val v = androidx.compose.runtime.mutableStateOf<String?>("2026-10-29 10:00")
+        var done = false
+        show { DateContent(v.value, day, onDone = { done = true }) { d, _ -> v.value = d } }
+        compose.onNodeWithContentDescription("Time 10:00").performClick()
+        compose.onNodeWithContentDescription("Add an end time").performClick()
+        assertEquals("2026-10-29 10:00-11:00", v.value)
+        compose.onNodeWithContentDescription("End 11:00").assertIsDisplayed()
+        compose.onNodeWithText("29 Oct 10:00–11:00").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-time-range-360x800.png")
+        compose.onNodeWithContentDescription("Done").performClick()
+        org.junit.Assert.assertTrue(done)
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun aTimeRangeAtLargeFont() {
+        show(1.5f) { DateContent("2026-10-29 10:00-12:00", day, onDone = {}) { _, _ -> } }
+        compose.onNodeWithContentDescription("End 12:00").performClick()
+        compose.onNodeWithContentDescription("Time wheel 12:00").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-time-range-360x800-font-1.5.png")
+    }
+
     /** Checker 2026-10-28 #5: opening the wheel writes nothing; the day chip goes back; a tap on the shown time saves it. */
     @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun timeWheelSavesNothingUntilAsked() {
         val picks = mutableListOf<String?>()

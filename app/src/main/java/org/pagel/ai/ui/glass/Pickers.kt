@@ -72,12 +72,32 @@ fun priorityItems(chosen: Int?): List<MenuItem> = (0..3).map {
     MenuItem(if (it == chosen) TabIcons.FlagFilled else TabIcons.Flag, "P${it + 1}", PriorityHints[it], PriorityColors[it], it == chosen)
 }
 
-/** A sheet's title row: the name, and what is chosen now in mono on the right. */
+/**
+ * A sheet's title row: the name, and what is chosen now in mono on the right. [onDone] adds a mint "Done" pill at the
+ * end (round B, Boss: "wheel is perfect but lacks confirm"); a tap outside still saves, as before.
+ */
 @Composable
-fun SheetTitle(title: String, trailing: String? = null) {
-    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+fun SheetTitle(title: String, trailing: String? = null, onDone: (() -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = if (onDone != null) 12.dp else 20.dp, top = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.weight(1f))
-        trailing?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk) }
+        trailing?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk, maxLines = 1) }
+        if (onDone != null) {
+            Spacer(Modifier.width(10.dp))
+            val press = remember { MutableInteractionSource() }
+            val haptics = LocalHapticFeedback.current
+            Row(
+                Modifier.heightIn(min = TouchMin).pressScale(press)
+                    .clickable(press, indication = null, role = Role.Button) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onDone() }
+                    .semantics(mergeDescendants = true) { contentDescription = "Done" },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(Modifier.background(Glass.Primary, CircleShape).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(TabIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("Done", style = MaterialTheme.typography.labelLarge, color = Color.White, maxLines = 1)
+                }
+            }
+        }
     }
 }
 
@@ -117,17 +137,21 @@ private fun Divider(start: Int = 50) = HorizontalDivider(Modifier.padding(start 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DateContent(value: String?, today: LocalDate, onPick: (String?, Boolean) -> Unit) {
+fun DateContent(value: String?, today: LocalDate, onDone: (() -> Unit)? = null, onPick: (String?, Boolean) -> Unit) {
     val haptics = LocalHapticFeedback.current
     val chosenDay = value?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     var month by remember(value?.take(10)) { mutableStateOf(YearMonth.from(chosenDay ?: today)) }
     val time = value?.drop(11).orEmpty()
-    var timeMode by rememberSaveable { mutableStateOf("") } // "" calendar · "wheel" · "type"
+    // A range "10:00-12:00" (round B, Boss: "date deadline like 10:00-12:00, 24 hour"): the wheel sets the start or the end.
+    val start = DatePick.startOf(time)
+    val end = DatePick.endOf(time)
+    var timeMode by rememberSaveable { mutableStateOf("") } // "" calendar · "wheel" (start) · "end" · "type"
     fun pickDay(d: LocalDate) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onPick(DatePick.due(d, time), true) }
-    fun setTime(t: String?) = onPick(DatePick.due(chosenDay ?: today, t), false)
+    fun setTime(t: String?) = onPick(DatePick.due(chosenDay ?: today, DatePick.range(t, end)), false)
+    fun setEnd(e: String?) { if (e == null || start.isEmpty() || e > start) onPick(DatePick.due(chosenDay ?: today, DatePick.range(start.ifEmpty { null }, e)), false) }
 
     Column(Modifier.fillMaxWidth()) {
-        SheetTitle("Date", DatePick.dueText(value, today).takeIf { value != null })
+        SheetTitle("Date", DatePick.dueText(value, today).takeIf { value != null }, onDone = onDone)
         // The quick days: one row of chips (checker 2026-10-28 #2: four list rows pushed the time below the fold).
         val quickScroll = rememberScrollState()
         Row(Modifier.fadeEnd({ quickScroll.canScrollForward }, 40.dp).horizontalScroll(quickScroll).padding(start = 16.dp, end = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -143,7 +167,8 @@ fun DateContent(value: String?, today: LocalDate, onPick: (String?, Boolean) -> 
         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp)) {
                 when (timeMode) {
-                    "wheel" -> TimeWheel(time.ifEmpty { DEFAULT_TIME }, onChange = { setTime(it) }, modifier = Modifier.padding(vertical = 6.dp))
+                    "wheel" -> TimeWheel(start.ifEmpty { DEFAULT_TIME }, onChange = { setTime(it) }, modifier = Modifier.padding(vertical = 6.dp))
+                    "end" -> TimeWheel(end ?: DatePick.plusHour(start.ifEmpty { DEFAULT_TIME }), onChange = { setEnd(it) }, modifier = Modifier.padding(vertical = 6.dp))
                     "type" -> TypedTime { t -> haptics.performHapticFeedback(HapticFeedbackType.Confirm); setTime(t); timeMode = "wheel" }
                     else -> MonthGrid(month, today, chosenDay, onMonth = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); month = it }, onPick = ::pickDay)
                 }
@@ -158,14 +183,22 @@ fun DateContent(value: String?, today: LocalDate, onPick: (String?, Boolean) -> 
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); timeMode = ""
                         }
                     }
-                    val shown = if (timeMode == "") time.ifEmpty { "Add time" } else time.ifEmpty { DEFAULT_TIME }
-                    val said = when { time.isNotEmpty() -> "Time $time"; timeMode == "" -> "Add time"; else -> "Set $DEFAULT_TIME" }
-                    GlassChip(TabIcons.Clock, shown, set = time.isNotEmpty(), description = said) {
+                    val shown = if (timeMode == "") start.ifEmpty { "Add time" } else start.ifEmpty { DEFAULT_TIME }
+                    val said = when { start.isNotEmpty() -> "Time $start"; timeMode == "" -> "Add time"; else -> "Set $DEFAULT_TIME" }
+                    GlassChip(TabIcons.Clock, shown, set = start.isNotEmpty(), checked = timeMode == "wheel" && end != null, description = said) {
                         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                         when {
-                            timeMode == "" -> timeMode = "wheel"
-                            time.isEmpty() -> setTime(DEFAULT_TIME)
+                            timeMode == "" || timeMode == "end" -> timeMode = "wheel"
+                            start.isEmpty() -> setTime(DEFAULT_TIME)
                             else -> timeMode = ""
+                        }
+                    }
+                    // The end of a range: "+ End" once there is a start (an hour later), then "– 12:00" to turn it.
+                    if (start.isNotEmpty()) {
+                        if (end == null) GlassChip(TabIcons.Plus, "End", set = false, description = "Add an end time") {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); setEnd(DatePick.plusHour(start)); timeMode = "end"
+                        } else GlassChip(TabIcons.Clock, "– $end", set = true, checked = timeMode == "end", description = "End $end") {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); timeMode = if (timeMode == "end") "" else "end"
                         }
                     }
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
@@ -268,7 +301,7 @@ private fun TypedTime(onPick: (String) -> Unit) {
 fun DateSheet(value: String?, today: LocalDate, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
     GlassSheet(onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            DateContent(value, today) { due, close -> onPick(due); if (close) onDismiss() }
+            DateContent(value, today, onDone = onDismiss) { due, close -> onPick(due); if (close) onDismiss() }
             Spacer(Modifier.height(SheetBottom))
         }
     }
@@ -282,7 +315,7 @@ fun DateSheet(value: String?, today: LocalDate, onPick: (String?) -> Unit, onDis
  * the sheet stays; "Never" closes it.
  */
 @Composable
-fun RepeatContent(value: String?, onChange: (String?, Boolean) -> Unit) {
+fun RepeatContent(value: String?, times: Int? = null, onTimes: (Int) -> Unit = {}, onChange: (String?, Boolean) -> Unit) {
     val haptics = LocalHapticFeedback.current
     val v = value.orEmpty()
     val monthly = Repeat.isMonthly(value)
@@ -313,6 +346,23 @@ fun RepeatContent(value: String?, onChange: (String?, Boolean) -> Unit) {
                 }
             }
         }
+        // A habit done more than once a day (round B: "log food" 3 times): a stepper, 1-12, shown once it repeats.
+        if (times != null && value != null) {
+            Spacer(Modifier.height(12.dp))
+            Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { TimesStepper(times) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onTimes(it) } }
+        }
+    }
+}
+
+/** "3 times a day" with − and + (48 dp each); 1 reads "Once a day". */
+@Composable
+private fun TimesStepper(times: Int, onTimes: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(TabIcons.Habits, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(if (times == 1) "Once a day" else "$times times a day", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f).semantics { contentDescription = "Times a day: $times" })
+        GlassIconButton(TabIcons.Minus, "Fewer times a day", size = 36.dp, onClick = { if (times > 1) onTimes(times - 1) })
+        GlassIconButton(TabIcons.Plus, "More times a day", size = 36.dp, onClick = { if (times < 12) onTimes(times + 1) })
     }
 }
 
@@ -368,10 +418,10 @@ private val RepeatIcons = mapOf(
 )
 
 @Composable
-fun RepeatSheet(value: String?, onChange: (String?) -> Unit, onDismiss: () -> Unit) {
+fun RepeatSheet(value: String?, onChange: (String?) -> Unit, onDismiss: () -> Unit, times: Int? = null, onTimes: (Int) -> Unit = {}) {
     GlassSheet(onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            RepeatContent(value) { every, close -> onChange(every); if (close) onDismiss() }
+            RepeatContent(value, times, onTimes) { every, close -> onChange(every); if (close) onDismiss() }
             Spacer(Modifier.height(SheetBottom))
         }
     }

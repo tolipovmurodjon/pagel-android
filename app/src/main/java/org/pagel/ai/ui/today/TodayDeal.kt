@@ -43,7 +43,7 @@ private val DAY = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
 fun dueLabel(due: String?, today: LocalDate): DueLabel? {
     if (due.isNullOrBlank() || due.length < 10) return null
     val day = runCatching { LocalDate.parse(due.take(10)) }.getOrNull() ?: return null
-    val time = due.drop(11).trim()
+    val time = org.pagel.ai.ui.glass.DatePick.timeText(due.drop(11).trim())
     val word = when {
         day == today -> "Today"
         day == today.plusDays(1) -> "Tomorrow"

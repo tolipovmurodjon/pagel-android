@@ -90,4 +90,23 @@ class HabitsLogicTest {
         assertNull(ReminderMath.nextFire("2026-10-28", "day", at("2026-10-28T06:00")))
         assertNull(ReminderMath.nextFire("2026-10-28 07:30", null, at("2026-10-28T06:00")))
     }
+
+    // Round B (C): a miss breaks the streak, it never leaves a red date on the row.
+    @Test fun aMissedDailyHabitShowsTodaysSlotAndADayHabitWaitsForItsDay() {
+        fun t(due: String, every: String) = org.pagel.ai.data.db.TaskEntity(
+            id = "x", project = "me", phase = "Now", sort = 1.0, text = "x", title = null, status = "open", priority = 2, star = false,
+            due = due, every = every, doneWhen = null, doneAt = null, updatedAt = "", serverVersion = 1, lastModified = 0,
+        )
+        assertEquals("2026-10-28 20:45", org.pagel.ai.data.habits.slotOf(t("2026-10-27 20:45", "day"), "2026-10-28"))
+        // Tue/Thu/Sun missed on Tuesday: Thursday, not today (Wednesday).
+        assertEquals("2026-10-29 18:00", org.pagel.ai.data.habits.slotOf(t("2026-10-27 18:00", "tue,thu,sun"), "2026-10-28"))
+        assertEquals("2026-10-30", org.pagel.ai.data.habits.slotOf(t("2026-10-30", "day"), "2026-10-28"))
+    }
+
+    @Test fun theBestRunIsTheLongestRunOfScheduledDaysDone() {
+        val days = setOf("2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-20", "2026-10-21")
+        assertEquals(4, org.pagel.ai.data.habits.bestStreak("day", days, "2026-10-28"))
+        // A week-long repeat has no day streak.
+        assertEquals(0, org.pagel.ai.data.habits.bestStreak("week", days, "2026-10-28"))
+    }
 }

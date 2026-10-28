@@ -25,7 +25,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 /** PATCH fields only the 2026-10-27 pagel.uz knows; it names what it understood in `applied` (task-api.ts). */
-val NEW_FIELDS = setOf("title", "every", "remove", "restore", "not_doing")
+val NEW_FIELDS = setOf("title", "every", "remove", "restore", "not_doing", "times")
 
 /** How long a delete waits on the phone before it leaves, so Undo costs pagel.uz nothing (Gmail's "Undo send"). */
 const val UNDO_WINDOW_MS = 5_000L
@@ -81,6 +81,12 @@ class TaskRepository(
     suspend fun every(id: String, every: String?) {
         val today = tashkentDay()
         edit(id, buildJsonObject { put("every", every) }, place = true) { it.copy(every = every, due = if (every != null && it.due == null) today else it.due) }
+    }
+
+    /** How many taps a habit needs a day (the Repeat sheet's "3 times a day"); 1 = once. */
+    suspend fun times(id: String, times: Int) {
+        val n = times.coerceIn(1, 12)
+        edit(id, buildJsonObject { put("times", n) }) { it.copy(times = n) }
     }
 
     suspend fun doneWhen(id: String, doneWhen: String) {
@@ -178,6 +184,7 @@ class TaskRepository(
                 "text" -> put("text", before.text)
                 "due" -> put("due", before.due)
                 "every" -> { put("every", before.every); put("due", before.due) }
+                "times" -> put("times", before.times)
                 "priority" -> put("priority", before.priority)
                 "star" -> put("star", before.star)
                 "done_when" -> put("done_when", before.doneWhen)
@@ -241,6 +248,7 @@ suspend fun PagelDao.applyWas(taskId: String, was: JsonObject, at: Long = System
         "text" -> t.copy(text = v.str() ?: t.text)
         "due" -> t.copy(due = v.str())
         "every" -> t.copy(every = v.str())
+        "times" -> t.copy(times = v.jsonPrimitive.intOrNull ?: t.times)
         "priority" -> t.copy(priority = v.jsonPrimitive.intOrNull ?: t.priority)
         "star" -> t.copy(star = v.jsonPrimitive.booleanOrNull ?: t.star)
         "done_when" -> t.copy(doneWhen = v.str())
@@ -257,6 +265,11 @@ suspend fun PagelDao.applyWas(taskId: String, was: JsonObject, at: Long = System
     // A habit's tick taken back (a refused tick) or given back (a refused Undo of one): its day in the habit log follows.
     (was["untick"] as? JsonPrimitive)?.contentOrNull?.let { deleteHabitTick(it, taskId) }
     (was["retick"] as? JsonPrimitive)?.contentOrNull?.let { addHabitTick(org.pagel.ai.data.db.HabitTickEntity(it, taskId)) }
+    // A count habit's tap (or a dot) refused: that day goes back to the taps it had ({"day": n}, 0 = none).
+    (was["taps"] as? JsonObject)?.forEach { (day, n) ->
+        val c = n.jsonPrimitive.intOrNull ?: 0
+        if (c > 0) setHabitTick(org.pagel.ai.data.db.HabitTickEntity(day, taskId, c)) else deleteHabitTick(day, taskId)
+    }
     when ((was["today"] as? JsonPrimitive)?.booleanOrNull) {
         true -> ensureOnToday(taskId)
         false -> removeFromToday(taskId)

@@ -286,6 +286,10 @@ abstract class PagelDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun addHabitTicks(rows: List<HabitTickEntity>)
 
+    /** A day's taps of a count habit (n), written over the old row. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun setHabitTick(row: HabitTickEntity)
+
     @Query("DELETE FROM habit_ticks WHERE day = :day AND taskId = :taskId")
     abstract suspend fun deleteHabitTick(day: String, taskId: String)
 
@@ -307,7 +311,7 @@ abstract class PagelDao {
     @Transaction
     open suspend fun tickHabit(task: TaskEntity, tick: HabitTickEntity, op: OutboxEntity): Long {
         upsertTasks(listOf(task))
-        addHabitTick(tick)
+        if (tick.n > 0) setHabitTick(tick) else deleteHabitTick(tick.day, tick.taskId)
         return addToOutbox(op)
     }
 

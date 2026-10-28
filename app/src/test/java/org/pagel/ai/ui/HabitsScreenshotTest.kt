@@ -30,6 +30,7 @@ import org.pagel.ai.ui.glass.GlassTheme
 import org.pagel.ai.ui.habits.HabitsScreen
 import org.pagel.ai.ui.habits.HabitsUi
 import org.pagel.ai.ui.habits.ReminderContent
+import org.pagel.ai.ui.habits.WeekContent
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -76,8 +77,9 @@ class HabitsScreenshotTest {
         show { HabitsScreen(ui(), PaddingValues(top = 16.dp, bottom = 96.dp)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-360.png")
         compose.onNodeWithText("🌅 Morning").assertIsDisplayed()
-        compose.onNodeWithText("1 of 5 done today").assertIsDisplayed()
-        compose.onNodeWithContentDescription("1 of 5 habits done today").assertIsDisplayed()
+        // The Monday habit missed on Tuesday waits for its next Monday (round B: a missed day is never a red row).
+        compose.onNodeWithText("1 of 4 done today").assertIsDisplayed()
+        compose.onNodeWithContentDescription("1 of 4 habits done today").assertIsDisplayed()
         // Three days in a row, today not done yet: the flame says 3.
         compose.onNodeWithContentDescription("3 in a row").assertIsDisplayed()
         compose.onNodeWithContentDescription("Reminder: Stretch for ten minutes").assertIsDisplayed()
@@ -119,5 +121,42 @@ class HabitsScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-reminder-font-1.5.png")
         // A missing grant is one tappable 48 dp row, not a 3-line red paragraph (checker 2026-10-28 #6).
         compose.onNodeWithContentDescription("Exact time · Allow").assertIsDisplayed()
+    }
+
+    // ── Round B: count habits, the week's dots and the week sheet ──
+    private val counted = habits.take(1) + habit("h7", "Log today's food and sugar, then shut down", "2026-10-28 13:00").copy(times = 3) +
+        habit("h8", "Do the five-minute floor routine", "2026-10-26 05:30")
+    private val countedTicks = ticks + HabitTickEntity(today, "h7", 2) + HabitTickEntity("2026-10-27", "h7", 3)
+
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun aCountHabitFillsOneSegmentPerTapAndAMissedDayIsNotRed() {
+        show { HabitsScreen(ui(counted, countedTicks), PaddingValues(top = 16.dp, bottom = 96.dp)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-compact-360x800.png")
+        compose.onNodeWithText("2/3").assertIsDisplayed()
+        // Missed on Monday and Tuesday: a daily habit shows today's slot, its time only, no red date.
+        compose.onNodeWithText("05:30").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Done: Do the five-minute floor routine").assertIsDisplayed()
+    }
+
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun compactRowsAtLargeFont() {
+        show(1.5f) { HabitsScreen(ui(counted, countedTicks), PaddingValues(top = 16.dp, bottom = 96.dp)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-compact-360x800-font-1.5.png")
+    }
+
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun theWeekSheetTicksAPastDay() {
+        val h = habitsDay(counted, countedTicks, today).parts.flatMap { it.second }.first { it.task.id == "h1" }
+        var got = ""
+        show { Column(Modifier.padding(top = 16.dp)) { WeekContent(h, java.time.LocalDate.parse(today)) { day, done -> got = "$day $done" } } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-week-360x800.png")
+        compose.onNodeWithText("Best 🔥 3").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Thursday 22 October").performClick()
+        assertEquals("2026-10-22 true", got)
+        compose.onNodeWithContentDescription("Tuesday 27 October").performClick()
+        assertEquals("2026-10-27 false", got)
+    }
+
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun theWeekSheetAtLargeFont() {
+        val h = habitsDay(counted, countedTicks, today).parts.flatMap { it.second }.first { it.task.id == "h1" }
+        show(1.5f) { Column(Modifier.padding(top = 16.dp)) { WeekContent(h, java.time.LocalDate.parse(today)) { _, _ -> } } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-week-360x800-font-1.5.png")
     }
 }

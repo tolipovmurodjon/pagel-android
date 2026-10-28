@@ -504,7 +504,7 @@ private fun Meta(t: TaskEntity, ui: UpcomingUi, late: Boolean) {
     val small = MaterialTheme.typography.labelSmall
     val icon = with(LocalDensity.current) { 13.sp.toDp() }
     FlowRow(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        val time = t.due?.drop(11)?.trim()?.takeIf(String::isNotEmpty)
+        val time = t.due?.drop(11)?.trim()?.takeIf(String::isNotEmpty)?.let(org.pagel.ai.ui.glass.DatePick::timeText)
         val lateLabel = if (late) dueLabel(t.due, ui.today)?.takeIf { it.tone == DueTone.LATE } else null
         if (lateLabel != null || time != null) Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(if (lateLabel != null) TabIcons.Calendar else TabIcons.Clock, contentDescription = null, tint = if (lateLabel != null) Glass.Risk else Glass.Muted, modifier = Modifier.size(icon))

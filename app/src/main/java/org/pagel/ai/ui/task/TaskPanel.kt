@@ -111,6 +111,8 @@ data class PanelActions(
     val onText: (String) -> Unit = {},
     val onDue: (String?) -> Unit = {},
     val onEvery: (String?) -> Unit = {},
+    /** A habit's taps a day (the Repeat sheet's stepper). */
+    val onTimes: (Int) -> Unit = {},
     val onPriority: (Int) -> Unit = {},
     val onStar: (Boolean) -> Unit = {},
     val onSteps: (List<String>, List<Int>) -> Unit = { _, _ -> },
@@ -154,7 +156,7 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
                 else -> TaskPanelContent(
                     ui, vm.dayToday(),
                     PanelActions(
-                        onTitle = vm::title, onDoneWhen = vm::doneWhen, onText = vm::text, onDue = vm::due, onEvery = vm::every,
+                        onTitle = vm::title, onDoneWhen = vm::doneWhen, onText = vm::text, onDue = vm::due, onEvery = vm::every, onTimes = vm::times,
                         onPriority = vm::priority, onStar = vm::star, onSteps = vm::steps, onMakeTasks = vm::makeStepsTasks,
                         // The same finish as Today: Confirm haptic, ding, confetti from the ring, the toast; the panel stays.
                         onComplete = { centre ->
@@ -207,7 +209,7 @@ fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: 
         }
     }
     if (picker == "date") DateSheet(ui.due, today, onPick = a.onDue, onDismiss = { picker = "" })
-    if (picker == "repeat") RepeatSheet(ui.every, onChange = a.onEvery, onDismiss = { picker = "" })
+    if (picker == "repeat") RepeatSheet(ui.every, onChange = a.onEvery, onDismiss = { picker = "" }, times = ui.times, onTimes = a.onTimes)
     if (picker == "priority") PrioritySheet(ui.priority, onPick = { if (it != ui.priority) a.onPriority(it) }, onDismiss = { picker = "" })
 }
 
@@ -455,7 +457,7 @@ private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (Strin
         Column(Modifier.padding(vertical = 4.dp)) {
             PropRow(TabIcons.Calendar, "Date", DatePick.dueText(ui.due, today).takeIf { ui.due != null } ?: "None", set = ui.due != null) { onPick("date") }
             Line()
-            PropRow(TabIcons.Habits, "Repeat", ui.every?.let(Repeat::label) ?: "Never", set = ui.every != null) { onPick("repeat") }
+            PropRow(TabIcons.Habits, "Repeat", ui.every?.let { Repeat.label(it) + if (ui.times > 1) " · ${ui.times}×" else "" } ?: "Never", set = ui.every != null) { onPick("repeat") }
             Line()
             // One row family, one selection mark (checker 2026-10-28 #8): Priority opens its own sheet, as Date and Repeat do.
             PropRow(TabIcons.Flag, "Priority", "P${ui.priority + 1}", set = true, valueColor = PriorityColors.getOrNull(ui.priority)) { onPick("priority") }

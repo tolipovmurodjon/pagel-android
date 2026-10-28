@@ -48,6 +48,8 @@ data class PanelUi(
     val held: Boolean = false,
     /** Open tasks pinned to Today by a star, this one included: at 3 the pin switch is off and says why. */
     val pinned: Int = 0,
+    /** A habit's taps a day (1 = once). */
+    val times: Int = 1,
 )
 
 /** The web's rule: at most 3 tasks pinned to Today by hand (a date puts more there by itself). */
@@ -74,7 +76,7 @@ class TaskPanelViewModel @Inject constructor(
                     loading = false, id = t.id, project = t.project, projectLabel = shortName(t.project, p?.title ?: t.project), projectColor = p?.color,
                     title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text), text = t.text, doneWhen = t.doneWhen.orEmpty(),
                     due = t.due, every = t.every, priority = t.priority, star = t.star, open = t.status == "open", doneAt = t.doneAt,
-                    steps = steps.map { PanelStep(it.text, it.done) }, held = held > 0, pinned = pinned,
+                    steps = steps.map { PanelStep(it.text, it.done) }, held = held > 0, pinned = pinned, times = t.times,
                 )
             }
         }
@@ -93,6 +95,7 @@ class TaskPanelViewModel @Inject constructor(
     fun priority(p: Int) = go { tasks.priority(it, p) }
     fun star(on: Boolean) = go { tasks.star(it, on) }
     fun every(v: String?) = go { tasks.every(it, v) }
+    fun times(n: Int) = go { tasks.times(it, n) }
 
     /** A date later than today takes the task off Today: say where it went, with Undo (the web's "Shows on its date"). */
     fun due(v: String?) {

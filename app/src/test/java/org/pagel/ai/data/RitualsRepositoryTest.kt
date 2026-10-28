@@ -183,9 +183,9 @@ class RitualsRepositoryTest {
         assertEquals(SendResult.ALL_SENT, sender.sendAll(account))
         assertEquals(
             listOf(
-                """POST /api/v1/tasks {"project":"me","text":"Call mom about Sunday","priority":1}""",
-                """POST /api/v1/tasks {"project":"pagel","text":"Fix the login bug on pagel.uz","priority":1}""",
-                """POST /api/v1/tasks {"project":"me","text":"Learn the guitar","priority":3}""",
+                """POST /api/v1/tasks {"project":"me","text":"Call mom about Sunday","priority":1,"client_id":"${local[0]}"}""",
+                """POST /api/v1/tasks {"project":"pagel","text":"Fix the login bug on pagel.uz","priority":1,"client_id":"${local[1]}"}""",
+                """POST /api/v1/tasks {"project":"me","text":"Learn the guitar","priority":3,"client_id":"${local[2]}"}""",
             ),
             calls.toList(),
         )
@@ -354,7 +354,7 @@ class RitualsRepositoryTest {
         assertEquals("2026-10-28", repo.state.first().lastReview)
         now += 6_000
         assertEquals(SendResult.ALL_SENT, sender.sendAll(account))
-        assertTrue("""POST /api/v1/tasks {"project":"ababil","text":"Write the test plan","priority":1}""" in calls)
+        assertTrue(calls.any { it.startsWith("""POST /api/v1/tasks {"project":"ababil","text":"Write the test plan","priority":1,"client_id":"local_""") })
         assertTrue("""PATCH /api/v1/tasks/p3 {"remove":true}""" in calls)
         assertTrue(calls.any { it.matches(Regex("""POST /api/v1/rituals \{"action":"review","id":"rv_[0-9a-f]{16}","day":"2026-10-28","dropped":1,"added":1}""")) })
         assertEquals(1, calls.count { it.startsWith("POST /api/v1/tasks") })

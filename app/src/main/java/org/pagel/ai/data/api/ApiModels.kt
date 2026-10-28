@@ -38,6 +38,8 @@ data class SyncTaskDto(
     @SerialName("updated_at") val updatedAt: String = "",
     val version: Int = 1,
     val steps: List<SyncStepDto> = emptyList(),
+    /** Taps a habit needs a day (round B); an older pagel.uz sends none = 1. */
+    val times: Int = 1,
 )
 
 @Serializable
@@ -65,7 +67,11 @@ data class DonePatch(val done: Boolean, val star: Boolean? = null)
 
 /** `POST /api/v1/tasks`: null fields are left out (the JSON writer skips defaults), as the server expects. */
 @Serializable
-data class NewTaskBody(val project: String, val text: String, val priority: Int, val due: String? = null, val every: String? = null)
+data class NewTaskBody(
+    val project: String, val text: String, val priority: Int, val due: String? = null, val every: String? = null,
+    /** The phone's own id for this add (round B): a retry after a lost reply gets the same task back, never a second. */
+    @SerialName("client_id") val clientId: String? = null,
+)
 
 /** The created task; only its id is needed here, the next sync brings the rest. */
 @Serializable
@@ -135,7 +141,7 @@ data class SortReply(
 
 /** One day a habit was ticked, by task id (dashboard src/lib/habits-api.ts). */
 @Serializable
-data class HabitTickDto(val day: String, val id: String)
+data class HabitTickDto(val day: String, val id: String, val n: Int = 1)
 
 /** `GET /api/v1/habits`: the phone needs the ticks; the habits themselves come with /sync. */
 @Serializable

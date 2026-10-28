@@ -63,22 +63,68 @@ class HabitsRepository(
         val every = t.every?.takeIf(String::isNotBlank) ?: return null
         val today = today()
         if (t.status != "open" || (t.due != null && t.due.take(10) > today)) return null
-        if (dao.habitTicksOf(id).any { it.day == today }) return null
+        val times = t.times.coerceAtLeast(1)
+        val taps = dao.habitTicksOf(id).firstOrNull { it.day == today }?.n ?: 0
+        if (taps >= times) return null
         val now = clock()
-        val next = Repeat.nextAfter(t.due?.takeIf { it.length >= 10 } ?: today, every, today)
+        // A habit done N times a day (round B): taps before the Nth count and keep it on today; the Nth moves it on.
+        val last = taps + 1 >= times
+        val next = if (last) Repeat.nextAfter(t.due?.takeIf { it.length >= 10 } ?: today, every, today) else t.due
         val body = buildJsonObject {
             putJsonObject("set") { put("done", true); put("day", today); put("if_due", t.due) }
-            putJsonObject("was") { put("due", t.due); put("untick", today) }
+            putJsonObject("was") {
+                put("due", t.due)
+                if (times == 1) put("untick", today) else putJsonObject("taps") { put(today, taps) }
+            }
         }
         touched[id] = now
         val op = dao.tickHabit(
             t.copy(due = next, syncStatus = SyncStatus.PENDING, lastModified = now),
-            HabitTickEntity(today, id),
+            HabitTickEntity(today, id, taps + 1),
             OutboxEntity(taskId = id, op = OutboxEntity.PATCH, createdAt = now, body = body.toString()),
         )
         scheduler.kick()
         reminders.replan()
         return Ticked(op, t.due)
+    }
+
+    /** Today's taps of a habit (0 = none yet). */
+    suspend fun tapsToday(id: String): Int = dao.habitTicksOf(id).firstOrNull { it.day == today() }?.n ?: 0
+
+    /**
+     * One day of the habit's last week, ticked or unticked from its dots (round B: "a habit tracker fully"), or one tap
+     * taken off today (a long press on a count ring). Counted for that day only: `PATCH {done, day}`, which pagel.uz
+     * logs for that day without moving the date. Unticking today's last tap of a habit that had moved on brings it back
+     * to today (pagel.uz does the same). Days older than 7 are not touched.
+     */
+    suspend fun setDay(id: String, day: String, done: Boolean): Boolean {
+        val t = dao.taskOnce(id) ?: return false
+        if (t.every.isNullOrBlank() || t.status != "open") return false
+        val today = today()
+        val back = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(day), java.time.LocalDate.parse(today))
+        if (back !in 0L..7L) return false
+        // Today's tick with the habit still on today is the ring's own tap: it moves the habit as the ring does.
+        if (done && day == today && (t.due == null || t.due.take(10) <= today)) return tick(id) != null
+        val times = t.times.coerceAtLeast(1)
+        val taps = dao.habitTicksOf(id).firstOrNull { it.day == day }?.n ?: 0
+        val n = if (done) taps + 1 else taps - 1
+        if (n < 0 || n > times) return false
+        val now = clock()
+        val due = t.due.orEmpty()
+        val bringBack = !done && day == today && taps == times && due.take(10) > today
+        val body = buildJsonObject {
+            putJsonObject("set") { put("done", done); put("day", day) }
+            putJsonObject("was") { put("due", t.due); putJsonObject("taps") { put(day, taps) } }
+        }
+        touched[id] = now
+        dao.tickHabit(
+            t.copy(due = if (bringBack) today + due.drop(10) else t.due, syncStatus = SyncStatus.PENDING, lastModified = now),
+            HabitTickEntity(day, id, n),
+            OutboxEntity(taskId = id, op = OutboxEntity.PATCH, createdAt = now, body = body.toString()),
+        )
+        scheduler.kick()
+        reminders.replan()
+        return true
     }
 
     /** Undo of [tick]: taken back if it is still on the phone, otherwise the old date goes back to pagel.uz. */
@@ -95,12 +141,13 @@ class HabitsRepository(
         val now = clock()
         touched[id] = now
         dao.upsertTasks(listOf(t.copy(due = ticked.was, syncStatus = SyncStatus.PENDING, lastModified = now)))
-        dao.deleteHabitTick(today, id)
+        val taps = dao.habitTicksOf(id).firstOrNull { it.day == today }?.n ?: 0
+        if (taps > 1) dao.setHabitTick(HabitTickEntity(today, id, taps - 1)) else dao.deleteHabitTick(today, id)
         val body = buildJsonObject {
             // undo: true = pagel.uz takes that day's tick out (habit_undone). A plain due change on a habit (a new time
             // from the reminder wheel) keeps the tick (2026-10-28: "Wind down" set to 04:55 erased Tuesday's tick).
             putJsonObject("set") { put("due", ticked.was); put("undo", true) }
-            putJsonObject("was") { put("due", t.due); put("retick", today) }
+            putJsonObject("was") { put("due", t.due); if (taps <= 1) put("retick", today) else putJsonObject("taps") { put(today, taps) } }
         }
         dao.addToOutbox(OutboxEntity(taskId = id, op = OutboxEntity.PATCH, createdAt = now, body = body.toString()))
         scheduler.kick()
@@ -118,7 +165,7 @@ class HabitsRepository(
             is Outcome.Failed -> r
             is Outcome.Ok -> {
                 val keep = touched.filterValues { it > started }.keys
-                dao.replaceHabitTicks(r.value.ticks.map { HabitTickEntity(it.day, it.id) }, keep)
+                dao.replaceHabitTicks(r.value.ticks.map { HabitTickEntity(it.day, it.id, it.n) }, keep)
                 Outcome.Ok(Unit)
             }
         }

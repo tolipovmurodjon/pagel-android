@@ -76,7 +76,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.pagel.ai.data.db.TaskEntity
+import org.pagel.ai.data.habits.Dot
 import org.pagel.ai.data.habits.HabitItem
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import org.pagel.ai.data.habits.Part
 import org.pagel.ai.reminders.HabitAlarms
 import org.pagel.ai.ui.glass.Glass
@@ -96,9 +101,6 @@ import org.pagel.ai.ui.task.LocalTaskOpener
 import org.pagel.ai.ui.today.Burst
 import org.pagel.ai.ui.today.ConfettiBurst
 import org.pagel.ai.ui.today.Ding
-import org.pagel.ai.ui.today.TickRing
-import org.pagel.ai.ui.today.dueLabel
-import org.pagel.ai.ui.today.DueTone
 import org.pagel.ai.ui.today.headline
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -111,6 +113,7 @@ fun HabitsRoute(contentPadding: PaddingValues, reselect: Int, vm: HabitsViewMode
     val ui by vm.ui.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     var bell by remember { mutableStateOf<String?>(null) }
+    var week by remember { mutableStateOf<String?>(null) }
     var celebrate by remember { mutableStateOf(0) }
     var exact by remember { mutableStateOf(true) }
     var notify by remember { mutableStateOf(true) }
@@ -150,7 +153,12 @@ fun HabitsRoute(contentPadding: PaddingValues, reselect: Int, vm: HabitsViewMode
         runCatching { ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}"))) }
     }
 
-    HabitsScreen(ui, contentPadding, reselect, celebrate = celebrate, onTick = vm::tick, onBell = { bell = it })
+    HabitsScreen(ui, contentPadding, reselect, celebrate = celebrate, onTick = vm::tick, onBell = { bell = it }, onUntick = vm::untickOne, onWeek = { week = it })
+    week?.let { id ->
+        val h = (ui.day.parts.flatMap { it.second } + ui.day.done).firstOrNull { it.task.id == id }
+        if (h == null) week = null
+        else WeekSheet(h, runCatching { LocalDate.parse(ui.today) }.getOrElse { LocalDate.now() }, onSet = { day, done -> vm.setDay(id, day, done) }) { week = null }
+    }
     bell?.let { id ->
         ui.byId[id]?.let { t ->
             ReminderSheet(
@@ -174,6 +182,10 @@ fun HabitsScreen(
     celebrate: Int = 0,
     onTick: (String) -> Unit = {},
     onBell: (String) -> Unit = {},
+    /** A long press on a ticked count ring: one tap taken off. */
+    onUntick: (String) -> Unit = {},
+    /** The dots tapped: the habit's last 7 days as a sheet. */
+    onWeek: (String) -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -184,7 +196,6 @@ fun HabitsScreen(
     var rootAt by remember { mutableStateOf(Offset.Zero) }
     var allDoneAt by remember { mutableStateOf(Offset.Zero) }
     val list = rememberLazyListState()
-    val today = remember(ui.today) { runCatching { LocalDate.parse(ui.today) }.getOrElse { LocalDate.now() } }
 
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
     LaunchedEffect(celebrate) {
@@ -223,9 +234,9 @@ fun HabitsScreen(
             // Panes slide to their new place when one grows or shrinks (apple-design §7, spatial consistency): a ticked
             // habit's row folds out of its part and "Done today" grows, instead of the row teleporting (checker #10).
             for ((part, items) in d.parts) item(key = "part-${part.name}", contentType = "part") {
-                PartPane(part, items, ui, today, onTick = ::tick, onOpen = openTask, onBell = onBell, modifier = Modifier.animateItem())
+                PartPane(part, items, ui, onTick = ::tick, onOpen = openTask, onBell = onBell, onUntick = onUntick, onWeek = onWeek, modifier = Modifier.animateItem())
             }
-            if (d.done.isNotEmpty()) item(key = "done", contentType = "done") { DonePane(d.done, Modifier.animateItem()) }
+            if (d.done.isNotEmpty()) item(key = "done", contentType = "done") { DonePane(d.done, onUntick = onUntick, onWeek = onWeek, modifier = Modifier.animateItem()) }
             if (d.coming.isNotEmpty()) item(key = "coming", contentType = "coming") { ComingPane(d.coming, Modifier.animateItem()) }
         }
         for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
@@ -282,51 +293,134 @@ private fun PaneTitle(text: String) {
 }
 
 @Composable
-private fun PartPane(part: Part, items: List<HabitItem>, ui: HabitsUi, today: LocalDate, onTick: (String, Offset) -> Unit, onOpen: (String) -> Unit, onBell: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun PartPane(
+    part: Part, items: List<HabitItem>, ui: HabitsUi, onTick: (String, Offset) -> Unit, onOpen: (String) -> Unit, onBell: (String) -> Unit,
+    onUntick: (String) -> Unit, onWeek: (String) -> Unit, modifier: Modifier = Modifier,
+) {
     Pane(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Column(Modifier.animateContentSize(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)).padding(bottom = 6.dp)) {
+        Column(Modifier.animateContentSize(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)).padding(bottom = 4.dp)) {
             PaneTitle("${part.icon} ${part.label}")
             for ((i, h) in items.withIndex()) key(h.task.id) {
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
-                HabitRow(h, done = h.task.id in ui.finishing, reminder = h.task.id in ui.reminders, today = today, onTick = onTick, onOpen = onOpen, onBell = onBell)
+                HabitRow(h, done = h.task.id in ui.finishing, reminder = h.task.id in ui.reminders, onTick = onTick, onOpen = onOpen, onBell = onBell, onUntick = onUntick, onWeek = onWeek)
             }
         }
     }
 }
 
-private fun titleOf(t: TaskEntity) = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
+internal fun titleOf(t: TaskEntity) = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
 
-/** One habit: the tick ring, its words, its time · repeat · 🔥 streak, and the bell when it has a time. */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+/**
+ * One habit, compact (round B, Boss: "they are kind of big, it is daily habits"; Streaks / Apple Fitness): the ring on
+ * the left (segmented for a habit done N times a day), the title on at most 2 lines, then a small time chip, today's
+ * count, the 🔥 streak and the last 7 days as dots. The whole row is the tick; a long press takes one tap off (a count
+ * habit) or opens the task; the dots open the week; the bell sets the reminder. A missed day is never a red date: the
+ * row shows today's slot and the miss only breaks the streak.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun HabitRow(h: HabitItem, done: Boolean, reminder: Boolean, today: LocalDate, onTick: (String, Offset) -> Unit, onOpen: (String) -> Unit, onBell: (String) -> Unit) {
+private fun HabitRow(
+    h: HabitItem, done: Boolean, reminder: Boolean, onTick: (String, Offset) -> Unit, onOpen: (String) -> Unit, onBell: (String) -> Unit,
+    onUntick: (String) -> Unit, onWeek: (String) -> Unit,
+) {
     val t = h.task
     val title = titleOf(t)
-    val time = t.due?.drop(11)?.trim()?.takeIf(String::isNotEmpty)
-    Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        TickRing(t.priority, done, title) { centre -> if (!done) onTick(t.id, centre) }
-        val open = remember { MutableInteractionSource() }
-        Column(
-            Modifier.weight(1f).pressOnTouch().clickable(open, indication = null, enabled = !done, role = Role.Button, onClickLabel = "Open") { onOpen(t.id) }
-                .padding(top = 12.dp, bottom = 10.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = if (done) Glass.Muted else Glass.Ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            // The meta wraps instead of cutting (at 1.5x a late date pushed the repeat out of the row).
-            FlowRow(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    val time = h.slot?.drop(11)?.trim()?.takeIf(String::isNotEmpty)?.let(org.pagel.ai.ui.glass.DatePick::timeText)
+    val haptics = LocalHapticFeedback.current
+    var centre by remember { mutableStateOf(Offset.Zero) }
+    val press = remember { MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).pressScale(press)
+            .combinedClickable(
+                press, indication = null, enabled = !done, role = Role.Checkbox,
+                onLongClickLabel = if (h.taps > 0) "Take one off" else "Open",
+                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); if (h.taps > 0) onUntick(t.id) else onOpen(t.id) },
+            ) { onTick(t.id, centre) }
+            .semantics { contentDescription = "Done: $title"; if (h.times > 1) stateDescription = "${h.taps} of ${h.times}" }
+            .padding(start = 6.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(48.dp).onGloballyPositioned { centre = it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f) }, contentAlignment = Alignment.Center) {
+            HabitRing(t.priority, h.times, if (done) h.times else h.taps, done)
+        }
+        Column(Modifier.weight(1f).padding(top = 8.dp, bottom = 8.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, color = if (done) Glass.Muted else Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // The meta wraps at 1.5x instead of cutting.
+            FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 val small = MaterialTheme.typography.labelSmall
-                val late = dueLabel(t.due, today)?.takeIf { it.tone == DueTone.LATE }
-                if (late != null || time != null) Row(verticalAlignment = Alignment.CenterVertically) {
-                    // The icon grows with the words (13 sp, not 13 dp): at 1.5x it stayed small beside big text.
-                    Icon(if (late != null) TabIcons.Calendar else TabIcons.Clock, contentDescription = null, tint = if (late != null) Glass.Risk else Glass.Muted,
-                        modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { 13.sp.toDp() }))
-                    Spacer(Modifier.width(4.dp))
-                    Text(late?.text ?: time.orEmpty(), style = small, color = if (late != null) Glass.Risk else Glass.Muted)
+                if (time != null) Row(
+                    Modifier.background(Glass.Ink.copy(alpha = 0.05f), CircleShape).padding(horizontal = 7.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(TabIcons.Clock, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { 12.sp.toDp() }))
+                    Spacer(Modifier.width(3.dp))
+                    Text(time, style = small, color = Glass.Muted)
                 }
-                t.every?.let { Text(Repeat.label(it), style = small, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                if (h.times > 1) Text("${if (done) h.times else h.taps}/${h.times}", style = Glass.NumberText, color = Glass.PrimaryInk)
                 if (h.streak > 0) Streak(h.streak)
+                WeekDots(h.week) { onWeek(t.id) }
             }
         }
         if (time != null) GlassIconButton(if (reminder) TabIcons.BellRing else TabIcons.Bell, "Reminder: $title", plain = true, on = reminder) { onBell(t.id) }
+    }
+}
+
+/**
+ * The tick ring, 22 dp: once a day = the ring that fills mint with an ink tick (Today's); N times a day = N arcs with
+ * gaps, one filling per tap (Apple Fitness), the tick drawn once all are full.
+ */
+@Composable
+private fun HabitRing(priority: Int, times: Int, taps: Int, done: Boolean) {
+    val flag = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE0)).getOrNull(priority) ?: Color(0xFF9AA2BB)
+    val full = done || taps >= times
+    val pop by animateFloatAsState(if (full) 1f else 0f, spring(dampingRatio = 0.5f, stiffness = 500f), label = "pop")
+    Canvas(Modifier.size(22.dp).graphicsLayer { val k = 1f + 0.12f * pop * (1f - pop) * 4f; scaleX = k; scaleY = k }) {
+        val r = size.minDimension / 2
+        val line = 2.dp.toPx()
+        if (full) drawCircle(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), r)
+        else if (times <= 1) { drawCircle(flag.copy(alpha = 0.08f), r); drawCircle(flag, r - line / 2, style = Stroke(1.5.dp.toPx())) }
+        else {
+            val gap = 360f / times * 0.18f
+            val sweep = 360f / times - gap
+            val inset = line / 2
+            for (i in 0 until times) {
+                drawArc(
+                    if (i < taps) Glass.Primary else flag.copy(alpha = 0.35f), startAngle = -90f + i * 360f / times + gap / 2, sweepAngle = sweep, useCenter = false,
+                    topLeft = Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - line, size.height - line), style = Stroke(line, cap = StrokeCap.Round),
+                )
+            }
+        }
+        if (full) {
+            val u = size.minDimension / 20f
+            drawLine(Glass.Ink, Offset(5.5f * u, 10.5f * u), Offset(8.5f * u, 13.5f * u), 2.2f * u, StrokeCap.Round)
+            drawLine(Glass.Ink, Offset(8.5f * u, 13.5f * u), Offset(14.5f * u, 6.5f * u), 2.2f * u, StrokeCap.Round)
+        }
+    }
+}
+
+/** The last 7 days, oldest first: filled mint = done, half = some taps, hollow ring = missed, faint = not its day. */
+@Composable
+private fun WeekDots(week: List<Dot>, onClick: () -> Unit) {
+    if (week.isEmpty()) return
+    val press = remember { MutableInteractionSource() }
+    val done = week.count { it == Dot.DONE }
+    Row(
+        Modifier.heightIn(min = 32.dp).pressScale(press).clickable(press, indication = null, role = Role.Button, onClickLabel = "Open the week", onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Last 7 days: $done done" }
+            .padding(horizontal = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        for (d in week) Canvas(Modifier.size(8.dp)) {
+            val r = size.minDimension / 2
+            when (d) {
+                Dot.DONE -> drawCircle(Glass.Primary, r)
+                Dot.PARTIAL -> { drawCircle(Glass.Primary.copy(alpha = 0.35f), r); drawCircle(Glass.Primary, r - 0.6.dp.toPx(), style = Stroke(1.2.dp.toPx())) }
+                Dot.MISSED -> drawCircle(Glass.Ink.copy(alpha = 0.40f), r - 0.6.dp.toPx(), style = Stroke(1.2.dp.toPx()))
+                Dot.TODAY -> drawCircle(Glass.Primary, r - 0.6.dp.toPx(), style = Stroke(1.2.dp.toPx()))
+                Dot.OFF -> drawCircle(Glass.Ink.copy(alpha = 0.12f), r * 0.5f)
+            }
+        }
     }
 }
 
@@ -340,13 +434,24 @@ private fun Streak(n: Int) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun DonePane(done: List<HabitItem>, modifier: Modifier = Modifier) {
+private fun DonePane(done: List<HabitItem>, onUntick: (String) -> Unit, onWeek: (String) -> Unit, modifier: Modifier = Modifier) {
+    val haptics = LocalHapticFeedback.current
     Pane(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Column(Modifier.animateContentSize(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)).padding(bottom = 10.dp)) {
+        Column(Modifier.animateContentSize(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)).padding(bottom = 8.dp)) {
             PaneTitle("Done today ✓")
             for (h in done) key(h.task.id) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                val press = remember { MutableInteractionSource() }
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        // A long press takes today's last tap off (it comes back to its part), as on a count ring.
+                        .combinedClickable(press, indication = null, onLongClickLabel = "Take one off", onLongClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress); onUntick(h.task.id)
+                        }) {}
+                        .padding(horizontal = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     // Bright mint with an ink tick (Boss: "white, ink or bright mint"), not a 4th green (checker #9).
                     Box(Modifier.size(20.dp).background(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), CircleShape), contentAlignment = Alignment.Center) {
                         Icon(TabIcons.Check, contentDescription = null, tint = Glass.Ink, modifier = Modifier.size(13.dp))
@@ -354,9 +459,71 @@ private fun DonePane(done: List<HabitItem>, modifier: Modifier = Modifier) {
                     Spacer(Modifier.width(12.dp))
                     Text(titleOf(h.task), style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     if (h.streak > 1) { Spacer(Modifier.width(8.dp)); Streak(h.streak) }
+                    Spacer(Modifier.width(8.dp))
+                    WeekDots(h.week) { onWeek(h.task.id) }
                 }
             }
         }
+    }
+}
+
+/**
+ * A habit's last 7 days as big day circles (48 dp touch, the week's share of the width): tap a day to tick it or take
+ * one tap off (pagel.uz counts it for that day; the date does not move). The best run is under the title.
+ */
+@Composable
+internal fun WeekSheet(h: HabitItem, today: LocalDate, onSet: (String, Boolean) -> Unit, onDismiss: () -> Unit) {
+    GlassSheet(onDismiss) {
+        WeekContent(h, today, onSet)
+        Spacer(Modifier.height(SheetBottom))
+    }
+}
+
+@Composable
+internal fun WeekContent(h: HabitItem, today: LocalDate, onSet: (String, Boolean) -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Column(Modifier.fillMaxWidth()) {
+        SheetTitle("This week", if (h.best > 0) "Best 🔥 ${h.best}" else null)
+        Text(titleOf(h.task), style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp))
+        Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)) {
+                h.week.forEachIndexed { i, dot ->
+                    val day = today.minusDays((h.week.size - 1 - i).toLong())
+                    val on = dot == Dot.DONE
+                    val press = remember { MutableInteractionSource() }
+                    Column(
+                        Modifier.weight(1f).heightIn(min = 72.dp).pressScale(press)
+                            .clickable(press, indication = null, role = Role.Checkbox) { haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn); onSet(day.toString(), !on) }
+                            .semantics(mergeDescendants = true) {
+                                contentDescription = day.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM", java.util.Locale.UK))
+                                stateDescription = when (dot) { Dot.DONE -> "Done"; Dot.PARTIAL -> "Some"; Dot.MISSED -> "Missed"; Dot.TODAY -> "Today, not yet"; Dot.OFF -> "Not its day" }
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(day.dayOfWeek.getDisplayName(java.time.format.TextStyle.NARROW, java.util.Locale.UK), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                        Spacer(Modifier.height(4.dp))
+                        Box(
+                            Modifier.size(38.dp).then(
+                                when (dot) {
+                                    Dot.DONE -> Modifier.background(Glass.Primary, CircleShape)
+                                    Dot.PARTIAL -> Modifier.background(Glass.PrimarySoft, CircleShape)
+                                    Dot.OFF -> Modifier.background(Glass.Ink.copy(alpha = 0.04f), CircleShape)
+                                    else -> Modifier.background(Color.White.copy(alpha = 0.72f), CircleShape)
+                                },
+                            ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (dot == Dot.MISSED || dot == Dot.TODAY) Canvas(Modifier.size(38.dp)) {
+                                drawCircle(if (dot == Dot.TODAY) Glass.Primary else Glass.Ink.copy(alpha = 0.35f), size.minDimension / 2 - 0.75.dp.toPx(), style = Stroke(1.5.dp.toPx()))
+                            }
+                            Text("${day.dayOfMonth}", style = MaterialTheme.typography.labelLarge, color = if (on) Color.White else Glass.Ink)
+                        }
+                    }
+                }
+            }
+        }
+        Text("Tap a day to tick it or take it back. Missed days only break the streak.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp))
     }
 }
 
@@ -403,7 +570,8 @@ fun ReminderContent(
     t: TaskEntity, on: Boolean, exact: Boolean, onToggle: (Boolean) -> Unit, onTime: (String) -> Unit,
     notify: Boolean = true, onFixNotify: () -> Unit = {}, onFixExact: () -> Unit = {},
 ) {
-    val time = t.due?.drop(11)?.trim()?.takeIf(String::isNotEmpty) ?: "08:00"
+    // A range's reminder rings at its start.
+    val time = t.due?.drop(11)?.trim()?.take(5)?.takeIf(String::isNotEmpty) ?: "08:00"
     Column(Modifier.fillMaxWidth()) {
         SheetTitle("Reminder", time)
         Text(titleOf(t), style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp))

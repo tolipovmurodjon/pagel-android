@@ -308,9 +308,8 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         }
         val density = androidx.compose.ui.platform.LocalDensity.current
         // Read through derivedStateOf: the shell redraws when a switch flips, not on every scrolled pixel.
-        val moved by remember(density) { derivedStateOf { scrolled > with(density) { 8.dp.toPx() } } }
         val farDown by remember(density) { derivedStateOf { scrolled > with(density) { 72.dp.toPx() } } }
-        TopFade(visible = moved && pageTitle != null, modifier = Modifier.align(Alignment.TopCenter))
+        TopFade(visible = pageTitle != null, modifier = Modifier.align(Alignment.TopCenter))
         if (pageTitle != null) {
             TitleCapsule(
                 title = pageTitle,
@@ -360,9 +359,13 @@ private fun TabLabel(label: String) {
 @Composable
 private fun TopFade(visible: Boolean, modifier: Modifier) {
     val alpha by androidx.compose.animation.core.animateFloatAsState(if (visible) 1f else 0f, label = "fade")
-    val h = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 18.dp
+    val bar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val h = bar + 14.dp
+    // Solid under the clock, then a short fade (round B: "Habits" sat under the status bar). It no longer waits for a
+    // scroll seen by the shell: a tab whose list kept its place reported 0 scrolled and showed no fade at all.
+    val solid = if (h.value > 0f) bar.value / h.value else 0f
     Box(modifier.fillMaxWidth().height(h).graphicsLayer { this.alpha = alpha }
-        .background(Brush.verticalGradient(0f to Glass.Page.copy(alpha = 0.96f), 0.62f to Glass.Page.copy(alpha = 0.88f), 1f to Glass.Page.copy(alpha = 0f))))
+        .background(Brush.verticalGradient(0f to Glass.Page.copy(alpha = 0.97f), solid to Glass.Page.copy(alpha = 0.93f), 1f to Glass.Page.copy(alpha = 0f))))
 }
 
 /**

@@ -201,6 +201,46 @@ class HabitsRepositoryTest {
         assertEquals(listOf("""t_h {"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30"}""", """t_h {"due":"2026-10-28 07:30","undo":true}"""), patches)
     }
 
+    // Round B (C): "log food" 3 times a day.
+    @Test fun aThreeTimesHabitStaysOnTodayForTwoTapsAndMovesAtTheThird() = runBlocking {
+        db.dao().upsertTasks(listOf(habit("t_f", "Log food", "2026-10-28 13:00").copy(times = 3)))
+        val r = repo()
+        r.tick("t_f"); r.tick("t_f")
+        assertEquals("2026-10-28 13:00", db.dao().taskOnce("t_f")!!.due)
+        assertEquals(2, db.dao().habitTicksOf("t_f").single().n)
+        assertEquals(0, habitsDay(db.dao().habitsOnce(), db.dao().habitTicksOf("t_f"), "2026-10-28").doneCount)
+        r.tick("t_f")
+        assertEquals("2026-10-29 13:00", db.dao().taskOnce("t_f")!!.due)
+        assertEquals(1, habitsDay(db.dao().habitsOnce(), db.dao().habitTicksOf("t_f"), "2026-10-28").doneCount)
+        assertNull(r.tick("t_f"))
+        sender().sendAll(account)
+        assertEquals(3, patches.count { it.startsWith("""t_f {"done":true,"day":"2026-10-28"""") })
+    }
+
+    @Test fun aPastDotIsCountedForThatDayAndNeverMovesTheDate() = runBlocking {
+        seed()
+        val r = repo()
+        assertTrue(r.setDay("t_h", "2026-10-25", true))
+        assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_h")!!.due)
+        assertEquals(listOf("2026-10-25"), db.dao().habitTicksOf("t_h").map { it.day })
+        assertTrue(r.setDay("t_h", "2026-10-25", false))
+        assertTrue(db.dao().habitTicksOf("t_h").isEmpty())
+        // Older than a week: not the dots' business.
+        assertTrue(!r.setDay("t_h", "2026-10-19", true))
+        sender().sendAll(account)
+        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-25"}""", """t_h {"done":false,"day":"2026-10-25"}"""), patches)
+    }
+
+    @Test fun takingTodaysTapOffAfterTheHabitMovedOnBringsItBackToToday() = runBlocking {
+        seed()
+        val r = repo()
+        r.tick("t_h")
+        assertEquals("2026-10-29 07:30", db.dao().taskOnce("t_h")!!.due)
+        assertTrue(r.setDay("t_h", "2026-10-28", false))
+        assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_h")!!.due)
+        assertTrue(db.dao().habitTicksOf("t_h").isEmpty())
+    }
+
     // 2026-10-28: the reminder wheel set "Wind down" to 04:55 and pagel.uz took it for an Undo (that day's tick erased).
     @Test fun aNewTimeOnAHabitIsAPlainDueChangeNeverAnUndo() = runBlocking {
         seed()

@@ -164,7 +164,8 @@ class TodayRepositoryTest {
         assertEquals(listOf("t_b", "t_a", id), todayIds())
         assertEquals(1, kicks)
         assertEquals(SendResult.ALL_SENT, OutboxSender(api, db.dao()).sendAll(account))
-        assertEquals(listOf("""{"project":"me","text":"Call Aziz","priority":0,"due":"2026-10-27 15:00"}"""), posts.toList())
+        // The phone's own id goes along (round B, J): a retry after a lost reply gets the same task, never a second.
+        assertEquals(listOf("""{"project":"me","text":"Call Aziz","priority":0,"due":"2026-10-27 15:00","client_id":"$id"}"""), posts.toList())
         assertEquals(listOf("t_b", "t_a", "t_new"), todayIds())
         assertTrue(db.dao().waitingOutbox().isEmpty())
         assertEquals("synced", statusOf("t_new").syncStatus)

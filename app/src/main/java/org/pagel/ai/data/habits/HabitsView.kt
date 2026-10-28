@@ -23,14 +23,24 @@ enum class Part(val label: String, val icon: String) {
     }
 }
 
-/** One habit as the screen draws it. */
-data class HabitItem(val task: TaskEntity, val streak: Int)
+/** One day of a habit's last week (round B: "a habit tracker fully when missed"). */
+enum class Dot { DONE, PARTIAL, MISSED, OFF, TODAY }
 
 /**
- * What /habits shows on [today]: the habits due today or late by part of the day, the ones done today with their
- * flames, the ones coming up, and the day's progress. A habit being ticked ([finishing]) keeps its row while its ring
- * fills, then moves to "Done today".
+ * One habit as the screen draws it: [taps] today (of its times), its last 7 days oldest first, the best run, and its
+ * [slot] (the date it shows for: a daily habit missed yesterday shows today's slot, never a red date).
  */
+data class HabitItem(
+    val task: TaskEntity,
+    val streak: Int,
+    val taps: Int = 0,
+    val week: List<Dot> = emptyList(),
+    val best: Int = 0,
+    val slot: String? = task.due,
+) {
+    val times: Int get() = task.times.coerceAtLeast(1)
+}
+
 data class HabitsDay(
     val parts: List<Pair<Part, List<HabitItem>>>,
     val done: List<HabitItem>,
@@ -69,16 +79,69 @@ fun streakOf(every: String, days: Set<String>, today: String): Int? {
     return n
 }
 
+/** The web's repeat days for a streak: every day, Mon-Fri, or a set of days; none for week/month repeats. */
+private fun daysOn(every: String): List<Int> = when (every) {
+    "day" -> (0..6).toList()
+    "weekday" -> (1..5).toList()
+    else -> Repeat.daysOf(every)
+}
+
+/** The longest run of scheduled days done, back to 400 days (the panel's and the card's "best"). */
+fun bestStreak(every: String, days: Set<String>, today: String): Int {
+    val on = daysOn(every)
+    if (on.isEmpty()) return 0
+    var best = 0
+    var run = 0
+    var d = LocalDate.parse(today).minusDays(399)
+    val end = LocalDate.parse(today)
+    while (!d.isAfter(end)) {
+        if (jsDay(d) in on) { if (d.toString() in days) { run++; best = maxOf(best, run) } else if (d != end) run = 0 }
+        d = d.plusDays(1)
+    }
+    return best
+}
+
+/**
+ * Where a habit shows on [today]: its own date, or for a habit whose date passed, its first scheduled day from today on
+ * (a daily one: today; Tue/Thu/Sun missed on Tue: Thursday). A miss breaks the streak; it never makes the row red.
+ */
+fun slotOf(t: TaskEntity, today: String): String? {
+    val due = t.due?.takeIf { it.length >= 10 } ?: return t.due
+    val every = t.every?.takeIf(String::isNotBlank) ?: return due
+    return if (due.take(10) < today) Repeat.nextDue(due, every, today) else due
+}
+
 fun habitsDay(habits: List<TaskEntity>, ticks: List<HabitTickEntity>, today: String, finishing: Set<String> = emptySet()): HabitsDay {
-    val daysOf = ticks.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
-    val doneToday = ticks.filter { it.day == today }.map { it.taskId }.toSet()
-    fun item(t: TaskEntity) = HabitItem(t, streakOf(t.every.orEmpty(), daysOf[t.id].orEmpty(), today) ?: 0)
-    val now = habits.filter { it.id in finishing || (it.id !in doneToday && (it.due.isNullOrBlank() || it.due.take(10) <= today)) }
+    val taps = ticks.associate { "${it.day} ${it.taskId}" to it.n }
+    val byId = habits.associateBy { it.id }
+    // A day counts once the habit reached its times that day (1 for most).
+    val doneDays = ticks.filter { it.n >= (byId[it.taskId]?.times ?: 1).coerceAtLeast(1) }.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
+    val doneToday = habits.filter { today in doneDays[it.id].orEmpty() }.map { it.id }.toSet()
+    val week = (6 downTo 0).map { LocalDate.parse(today).minusDays(it.toLong()) }
+    fun item(t: TaskEntity): HabitItem {
+        val done = doneDays[t.id].orEmpty()
+        val on = daysOn(t.every.orEmpty())
+        val dots = week.map { d ->
+            val ymd = d.toString()
+            when {
+                ymd in done -> Dot.DONE
+                (taps["$ymd ${t.id}"] ?: 0) > 0 -> Dot.PARTIAL
+                ymd == today -> Dot.TODAY
+                jsDay(d) in on -> Dot.MISSED
+                else -> Dot.OFF
+            }
+        }
+        return HabitItem(t, streakOf(t.every.orEmpty(), done, today) ?: 0, taps["$today ${t.id}"] ?: 0, dots, bestStreak(t.every.orEmpty(), done, today), slotOf(t, today))
+    }
+    val slots = habits.associate { it.id to slotOf(it, today) }
+    val now = habits.filter { it.id in finishing || (it.id !in doneToday && (slots[it.id].isNullOrBlank() || slots[it.id]!!.take(10) <= today)) }
     val byTime = compareBy<TaskEntity>({ it.due?.drop(11).orEmpty() }, { it.priority })
     val parts = Part.entries.map { p -> p to now.filter { Part.of(it.due) == p }.sortedWith(byTime).map(::item) }.filter { it.second.isNotEmpty() }
     val done = habits.filter { it.id in doneToday && it.id !in finishing }.sortedWith(byTime).map(::item)
-    // A habit whose ring is still filling is not "coming up" yet, though its date already moved (checker #5).
-    val coming = habits.filter { !it.due.isNullOrBlank() && it.due.take(10) > today && it.id !in doneToday && it.id !in finishing }.sortedBy { it.due }
+    // A habit whose ring is still filling is not "coming up" yet, though its date already moved (checker #5). Coming
+    // up shows each habit at its slot (a missed Tue/Thu/Sun habit: its next day, not the missed one).
+    val coming = habits.filter { !slots[it.id].isNullOrBlank() && slots[it.id]!!.take(10) > today && it.id !in doneToday && it.id !in finishing }
+        .map { it.copy(due = slots[it.id]) }.sortedBy { it.due }
     // A habit whose ring is filling counts as done at the tap: Room's habits and its ticks are two reads, and the
     // header said "0 of 3" in the frame between them (checker 2026-10-28 #5, walk 35).
     return HabitsDay(parts, done, coming, doneCount = habits.count { it.id in doneToday || it.id in finishing }, left = now.count { it.id !in doneToday && it.id !in finishing })

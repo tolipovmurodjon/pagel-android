@@ -52,11 +52,34 @@ object DatePick {
     fun dueText(due: String?, today: LocalDate): String {
         if (due.isNullOrBlank()) return "Date"
         val day = runCatching { LocalDate.parse(due.take(10)) }.getOrNull() ?: return due
-        val time = due.drop(11)
+        val time = timeText(due.drop(11))
         val label = when (day) { today -> "Today"; today.plusDays(1) -> "Tomorrow"; else -> day.format(DAY_MONTH) }
         return if (time.isEmpty()) label else "$label $time"
     }
 
-    /** A day and an optional time as pagel.uz stores them: "2026-10-30" or "2026-10-30 15:00". */
+    /** A day and an optional time (or range) as pagel.uz stores them: "2026-10-30", "2026-10-30 15:00", "2026-10-30 10:00-12:00". */
     fun due(day: LocalDate, time: String?): String = if (time.isNullOrEmpty()) day.toString() else "$day $time"
+
+    /** The start of a time or a range ("10:00-12:00" → "10:00"); "" when there is none. */
+    fun startOf(time: String): String = time.take(5).takeIf { Regex("""^\d{2}:\d{2}$""").matches(it) }.orEmpty()
+
+    /** The end of a range ("10:00-12:00" → "12:00"); null for a single time. */
+    fun endOf(time: String): String? = time.substringAfter('-', "").takeIf { Regex("""^\d{2}:\d{2}$""").matches(it) }
+
+    /** A start and an end as one value: the end only when it is after the start (24 hours, no range over midnight). */
+    fun range(start: String?, end: String?): String? = when {
+        start.isNullOrEmpty() -> null
+        end != null && end > start -> "$start-$end"
+        else -> start
+    }
+
+    /** An hour after [time], never past 23:55 (a range stays inside its day). */
+    fun plusHour(time: String): String {
+        val t = runCatching { java.time.LocalTime.parse(time) }.getOrNull() ?: return "10:00"
+        val later = t.plusHours(1)
+        return if (later.isBefore(t)) "23:55" else "%02d:%02d".format(later.hour, later.minute)
+    }
+
+    /** How a time or a range reads: "10:00–12:00" (an en dash), as the web shows it. */
+    fun timeText(time: String): String = time.replace('-', '–')
 }
