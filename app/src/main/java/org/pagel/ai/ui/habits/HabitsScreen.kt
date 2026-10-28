@@ -628,8 +628,10 @@ internal fun HabitCardRow(
 @Composable
 private fun MetaLine(c: HabitCard, done: Boolean, timer: HabitTimer?, now: Long) {
     // Wraps instead of squeezing the chip at 1.5x font.
-    androidx.compose.foundation.layout.FlowRow(itemVerticalAlignment = Alignment.CenterVertically, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-        if (done) {
+    androidx.compose.foundation.layout.FlowRow(
+        itemVerticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs),
+    ) {
+        if (done) Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(TabIcons.Check, null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(Space.xs))
             Text("Finished", style = MaterialTheme.typography.labelMedium, color = Glass.Muted)
@@ -638,19 +640,17 @@ private fun MetaLine(c: HabitCard, done: Boolean, timer: HabitTimer?, now: Long)
         } else {
             Text(progressText(c, timer, now), style = if (c.times > 1 || c.minutes != null) Glass.NumberText.copy(fontSize = 13.sp) else MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1)
         }
-        if (c.streak > 0) {
-            Spacer(Modifier.width(Space.sm))
+        // The flame and its number stay one item, so they never wrap apart at 1.5x.
+        if (c.streak > 0) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = "${c.streak} in a row" }) {
             Text("🔥", style = Glass.NumberText, modifier = Modifier.clearAndSetSemantics {})
-            Text("${c.streak}", style = Glass.NumberText, color = Color(0xFFC2410C), modifier = Modifier.semantics { contentDescription = "${c.streak} in a row" })
+            Text("${c.streak}", style = Glass.NumberText, color = Color(0xFFC2410C), modifier = Modifier.clearAndSetSemantics {})
         }
         if (c.neverMissTwice && !done) {
-            Spacer(Modifier.width(Space.sm))
             Text(
                 "Never miss twice", style = MaterialTheme.typography.labelSmall, color = Color(0xFF8A4B00), maxLines = 1,
                 modifier = Modifier.background(Color(0xFFFFEDC7), CircleShape).padding(horizontal = Space.sm, vertical = 2.dp),
             )
         } else if (c.after != null && !done) {
-            Spacer(Modifier.width(Space.sm))
             Text("after ${c.after}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
