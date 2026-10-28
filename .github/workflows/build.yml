@@ -5,6 +5,7 @@ on:
   pull_request:
   push:
     branches: [main, "feat/**"]
+  workflow_dispatch:
 
 concurrency:
   group: build-${{ github.ref }}
@@ -49,6 +50,9 @@ jobs:
   # or a broken manifest; this can.
   smoke:
     needs: build
+    # Minutes cost money (2026-10-28: Actions stopped on billing). The emulator walk (~20 min) runs only when a round is
+    # ready to merge: a commit message with [smoke], a manual run, a pull request, or main.
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[smoke]') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
