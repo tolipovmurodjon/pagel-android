@@ -246,11 +246,21 @@ class RitualsRepositoryTest {
         assertTrue(calls[ritual].matches(Regex("""POST /api/v1/rituals \{"action":"shutdown","id":"sd_[0-9a-f]{16}","day":"2026-10-28","kept":1,"pushed":1,"dropped":1,"picked":1}""")))
     }
 
-    @Test fun closeTheDayStarsEveryPickWithNoCap() = runBlocking {
+    /**
+     * Boss 2026-10-28: "I closed the day but it shows tasks for today?! I should have an empty Today". Kept stars and
+     * picks become tomorrow's: dated 2026-10-29, so Today hides them tonight; kept + picked are 3 at most.
+     */
+    @Test fun closeTheDayMakesTomorrowsStarsThreeAtMostAndTodayEmpty() = runBlocking {
         val stars = dayOfStars()
         db.dao().upsertTasks(listOf(task("c2", "me"), task("c3", "ababil"), task("c4", "labs")))
-        repo.closeDay(stars, emptyMap(), listOf("c1", "c2", "c3", "c4"))
-        assertEquals(listOf(true, true, true, true), listOf("c1", "c2", "c3", "c4").map { db.dao().taskOnce(it)!!.star })
+        repo.closeDay(stars, mapOf("s2" to Move.LATER, "s3" to Move.DROP), listOf("c1", "c2", "c3", "c4"))
+        assertEquals(listOf(true, true, true, false, false), listOf("s1", "c1", "c2", "c3", "c4").map { db.dao().taskOnce(it)!!.star })
+        assertEquals(listOf("2026-10-29", "2026-10-29", "2026-10-29"), listOf("s1", "c1", "c2").map { db.dao().taskOnce(it)!!.due })
+        now += 6_000
+        sender.sendAll(account)
+        assertTrue("""PATCH /api/v1/tasks/s1 {"due":"2026-10-29"}""" in calls)
+        assertTrue("""PATCH /api/v1/tasks/c1 {"due":"2026-10-29"}""" in calls)
+        assertTrue(calls.single { it.startsWith("POST /api/v1/rituals") }.contains("\"kept\":1,\"pushed\":1,\"dropped\":1,\"picked\":2"))
     }
 
     /** Checker P5 #1: Edit text → a new dump → its own rows, never the old dump's (pagel.uz keeps rows by id for 24 h). */
@@ -328,6 +338,9 @@ class RitualsRepositoryTest {
         assertTrue(db.dao().taskOnce("s2")!!.star)
         assertEquals("open", db.dao().taskOnce("s3")!!.status)
         assertFalse(db.dao().taskOnce("c1")!!.star)
+        // Tomorrow's date is taken back too: the kept star and the pick are as they were.
+        assertNull(db.dao().taskOnce("c1")!!.due)
+        assertNull(db.dao().taskOnce("s1")!!.due)
         assertNull(repo.state.first().shutDay)
         assertTrue(db.dao().waitingOutbox().isEmpty())
         now += 6_000

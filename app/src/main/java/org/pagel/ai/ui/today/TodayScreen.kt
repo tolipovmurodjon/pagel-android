@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -126,6 +127,7 @@ fun TodayScreen(
     val toasts = LocalToasts.current
     val openTask = LocalTaskOpener.current
     val reduce = remember { reducedMotion(ctx) }
+    val closed = pills?.shutTonight == true
     val bursts = remember { mutableStateListOf<Burst>() }
     var nextBurst by remember { mutableLongStateOf(0L) }
     var overlayAt by remember { mutableStateOf(Offset.Zero) }
@@ -161,6 +163,15 @@ fun TodayScreen(
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
             item(key = "head", contentType = "head") {
                 Header(ui, today, onSweep = if (pills != null) links.sweep else null) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
+            }
+            // Boss 2026-10-28: "I closed the day … I should have an empty Today, so I can sleep well". After Close the
+            // day, Today is one calm card and a folded peek at tomorrow; no rows, no bar, no leftover habits.
+            if (closed) {
+                if (pills != null && pills.any) item(key = "rituals", contentType = "pills") {
+                    org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.padding(horizontal = Space.gutter))
+                }
+                item(key = "closed", contentType = "note") { DayClosedCard(ui.doneToday, ui.tomorrow) }
+                return@LazyColumn
             }
             // The day's progress grows with each tick (a game's level bar), with the next task's nudge under it.
             if (!ui.loading && ui.progress.total > 0) item(key = "progress", contentType = "progress") {
@@ -209,10 +220,8 @@ private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = 
     Column(Modifier.weight(1f).padding(start = Space.textEdge, end = Space.textEdge, top = Space.headerTop)) {
         Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Today", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
-        val count = when {
-            // The same "left" as the bar beside the tasks (one number, one meaning).
-            else -> "${ui.open} left today"
-        }
+        // One counting language on Today: "12 done · 4 left" lives in the bar; the header names the day only.
+        val count = if (closed) "Day closed" else "${ui.open} left"
         // Only "Offline" is worth a word (PHASE-BRIEF: no "Syncing"); the waiting chip already says what waits.
         Text(if (ui.status != "Offline") count else "$count · Offline", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
     }
@@ -404,6 +413,45 @@ internal fun TickRing(priority: Int, done: Boolean, title: String, onTick: (Offs
             val w = 2.2f * u
             if (d > 0f) drawLine(Glass.Ink, a, if (d <= first) a + (b - a) * (d / first) else b, w, StrokeCap.Round)
             if (d > first) drawLine(Glass.Ink, b, b + (c - b) * ((d - first) / (total - first)), w, StrokeCap.Round)
+        }
+    }
+}
+
+/**
+ * The closed day: "Day closed 🌙 · Nothing needs you tonight", what was done, and tomorrow's stars folded into one line
+ * ("Tomorrow · 3", a tap to peek). Boss 2026-10-28: an empty Today after Close the day, so he can sleep well.
+ */
+@Composable
+internal fun DayClosedCard(done: Int, tomorrow: List<TodayRow>) {
+    var peek by remember { mutableStateOf(false) }
+    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.xxl), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("🌙", style = MaterialTheme.typography.headlineLarge)
+            Text("Day closed", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
+            Spacer(Modifier.height(Space.xs))
+            Text("Nothing needs you tonight", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+            if (done > 0) {
+                Spacer(Modifier.height(Space.md))
+                Text("$done done today ✓", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk,
+                    modifier = Modifier.background(Glass.PrimarySoft, RoundedCornerShape(14.dp)).padding(horizontal = Space.lg, vertical = Space.sm))
+            }
+            if (tomorrow.isNotEmpty()) {
+                Spacer(Modifier.height(Space.lg))
+                val press = remember { MutableInteractionSource() }
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = Space.touch).pressScale(press)
+                        .clickable(press, indication = null, role = Role.Button, onClickLabel = if (peek) "Fold" else "Peek") { peek = !peek }
+                        .semantics(mergeDescendants = true) { contentDescription = "Tomorrow · ${tomorrow.size}" + if (peek) ", shown" else ", folded" },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(TabIcons.Sunrise, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(Space.sm))
+                    Text("Tomorrow · ${tomorrow.size}", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, modifier = Modifier.weight(1f))
+                    Icon(if (peek) TabIcons.ChevronDown else TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(16.dp))
+                }
+                if (peek) for (t in tomorrow) Text("☆  ${t.title}", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().padding(start = Space.xxl, top = Space.xs))
+            }
         }
     }
 }

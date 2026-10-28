@@ -543,6 +543,11 @@ grep -B2 -A6 "org.pagel.ai.EVENING_FIRE" "$OUT/alarm-dump-evening.txt" | head -1
 [ "$EVENING" -ge 1 ] || { log "WALKTHROUGH: no evening alarm is set"; exit 1; }
 grep -q 'content-desc="Go to Today"' "$OUT/$(printf '%02d' $N)-p5-closed.xml" || { log "WALKTHROUGH: the closed day has no way back to Today"; exit 1; }
 tap "Go to Today"; front p5-today-closed; shot p5-today-closed 2
+# Boss 2026-10-28: "I closed the day … I should have an empty Today". The calm card, and not one task row.
+grep -q 'Nothing needs you tonight' "$OUT/$(printf '%02d' $N)-p5-today-closed.xml" || { log "WALKTHROUGH: Today after Close the day has no closed card"; exit 1; }
+ROWS=$(grep -c 'content-desc="Done: ' "$OUT/$(printf '%02d' $N)-p5-today-closed.xml" || true)
+[ "$ROWS" -eq 0 ] || { log "WALKTHROUGH: Today still shows $ROWS task rows after Close the day"; exit 1; }
+for id in t_u2; do wait_log "PATCH /api/v1/tasks/$id {\"due\":\"$(TZ=Asia/Tashkent date -d '+1 day' +%Y-%m-%d)\"}" 40 || log "   (WARN: no tomorrow date for the pick $id)"; done
 if [ "$EVENING_NOW" = 1 ]; then
   grep -q 'content-desc="Close the day: closed tonight"' "$OUT/$(printf '%02d' $N)-p5-today-closed.xml" || { log "WALKTHROUGH: Today does not show the day as closed"; exit 1; }
 fi

@@ -50,6 +50,8 @@ data class TodayUiState(
     val clearedStreak: Int = 0,
     /** Changes waiting to reach pagel.uz: the "↑ 2 waiting" chip, tap = send now. */
     val outbox: Int = 0,
+    /** Tomorrow's stars (the closed day's folded "Tomorrow · 3"). */
+    val tomorrow: List<TodayRow> = emptyList(),
 ) {
     val progress: DayProgress get() = DayProgress(doneToday, open)
 }
@@ -64,10 +66,11 @@ class TodayViewModel @Inject constructor(
 ) : ViewModel() {
     private val finishing = MutableStateFlow<Set<String>>(emptySet())
     private val streak = DayClear.streak
-    private val counts = combine(repo.doneToday(), streak, repo.waiting) { done, s, w -> Triple(done, s, w) }
+    private val counts = combine(repo.doneToday(), streak, repo.waiting, repo.dated) { done, s, w, dated -> Counts(done, s, w, dated) }
+    private data class Counts(val done: Int, val streak: Int, val outbox: Int, val dated: List<org.pagel.ai.data.db.TaskEntity>)
 
     // A refused tick is said by the shell (ShellViewModel), for every screen at once.
-    val ui: StateFlow<TodayUiState> = combine(repo.today, finishing, session.projects(), session.live, counts) { tasks, folding, projects, live, (done, cleared, outbox) ->
+    val ui: StateFlow<TodayUiState> = combine(repo.today, finishing, session.projects(), session.live, counts) { tasks, folding, projects, live, (done, cleared, outbox, dated) ->
         val byName = projects.associateBy(ProjectEntity::name)
         val dealt = dealToday(tasks, folding)
         TodayUiState(
@@ -84,6 +87,12 @@ class TodayViewModel @Inject constructor(
             doneToday = done,
             clearedStreak = cleared,
             outbox = outbox,
+            tomorrow = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent")).plusDays(1).toString().let { tm ->
+                dated.filter { it.star && it.status == "open" && it.due?.take(10) == tm }.map { t ->
+                    val p = byName[t.project]
+                    TodayRow(t.id, t.title?.takeIf(String::isNotBlank) ?: headline(t.text), t.priority, t.due, t.every, t.project, p?.title ?: t.project, p?.color, done = false)
+                }
+            },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState())
 

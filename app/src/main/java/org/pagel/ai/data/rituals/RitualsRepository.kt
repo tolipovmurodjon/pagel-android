@@ -36,6 +36,9 @@ fun RitualStateEntity.stuckList(): List<StuckDto> = runCatching { ritualJson.dec
 data class Added(val sweep: String, val actions: Int, val someday: Int)
 
 /** One task change a ritual made: the op that carries it (Undo takes it back while it waits) and what it did. */
+/** Tomorrow's stars at most (the web's cap): kept + picked together. */
+const val MAX_STARS = 3
+
 data class RitualEdit(val taskId: String, val op: Long?, val kind: String, val project: String = "", val text: String = "", val at: Long = 0)
 
 /** A closed ritual: its task changes, its own outbox row and the state before, so Undo puts all of it back. */
@@ -183,11 +186,20 @@ class RitualsRepository(
             Move.LATER -> { edits += RitualEdit(t.id, tasks.star(t.id, false), "later"); pushed++ }
             Move.DROP -> { edits += RitualEdit(t.id, tasks.delete(t.id), "drop"); dropped++ }
         }
-        // No cap on picks: Today deals the stars 3 at a time (the web's shutdown, Boss 2026-10-27: "keep my current ones").
-        val picked = picks.distinct()
+        // Boss 2026-10-28: "I closed the day but it shows tasks for today?! I should have an empty Today". Kept stars and
+        // picks are TOMORROW's stars: starred and dated tomorrow (date only, a time kept), so Today (here, on the web and
+        // in pagel.uz's todayView) hides them tonight; the cap of 3 counts kept + picked together.
+        val keptIds = stars.filter { (moves[it.id] ?: Move.KEEP) == Move.KEEP }.map { it.id }
+        val picked = picks.distinct().filter { it !in keptIds }.take((MAX_STARS - keptIds.size).coerceAtLeast(0))
         for (id in picked) edits += RitualEdit(id, tasks.star(id, true), "pick")
-        val kept = stars.count { (moves[it.id] ?: Move.KEEP) == Move.KEEP }
+        val kept = keptIds.size
         val day = ritualDay()
+        val tomorrow = java.time.LocalDate.parse(day).plusDays(1).toString()
+        for (id in keptIds + picked) {
+            val t = dao.taskOnce(id) ?: continue
+            if (!t.every.isNullOrBlank() || (t.due?.take(10) ?: "") >= tomorrow) continue
+            edits += RitualEdit(id, tasks.due(id, tomorrow + (t.due?.drop(10) ?: "")), "due", text = t.due.orEmpty())
+        }
         val op = queueRitual(RitualBody("shutdown", newId("sd"), day, kept = kept, pushed = pushed, dropped = dropped, picked = picked.size))
         rituals.saveState(before.copy(shutDay = Rituals.later(before.shutDay, day)))
         reminders.replan()
@@ -225,6 +237,7 @@ class RitualsRepository(
         for (e in c.edits.asReversed()) when (e.kind) {
             "later" -> if (e.op == null || !tasks.takeBack(e.taskId, e.op)) tasks.star(e.taskId, true)
             "pick" -> if (e.op == null || !tasks.takeBack(e.taskId, e.op)) tasks.star(e.taskId, false)
+            "due" -> if (e.op == null || !tasks.takeBack(e.taskId, e.op)) tasks.due(e.taskId, e.text.ifEmpty { null })
             "drop" -> if (e.op != null) tasks.undoDelete(e.taskId, e.op)
             "add" -> undoNewTask(e)
         }

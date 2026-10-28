@@ -78,6 +78,16 @@ tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test agai
   and the header says "1 left today" (one number, one meaning). (5) "What's new" sheet once after an update
   (`res/values/whats_new.xml`, update it every round; More → What's new), each line opens its screen and ticks.
   Note: Robolectric draws no system bars, so the sheet asserts prove our window reaches both edges, not the OEM bar.
+- **Boss note: "I closed the day but it shows tasks for today?!"** (lead measured: the shutdown starred tomorrow's
+  picks at once; with the kept QUASAR star, 4 stars showed on Today that night). Now kept stars and picks are
+  TOMORROW's stars: starred and **dated tomorrow** (the due's date; the phone keeps a time part; habits untouched;
+  a due already later stays), kept + picked ≤ 3 (picks over the cap stay unstarred), Undo sends the old dates back
+  (RitualEdit "due"). pagel.uz's todayView already hides stars dated after today; the web's shutdown does the same
+  (server, review.ts, `TOMORROW_STARS`). After Close the day, Today is one calm card: "Day closed 🌙 · Nothing needs
+  you tonight", "12 done today ✓", a folded "Tomorrow · 3" peek; no rows, no bar, no leftover habits, until 05:00
+  (the ritual day). One counting language: the bar says "12 done · 4 left", the header only "4 left". Tests:
+  `closeTheDayMakesTomorrowsStarsThreeAtMostAndTodayEmpty`, undo restores the dates, `aClosedDayIsEmptyWithTomorrowFolded`;
+  walk: after Close the day, the closed card and 0 task rows.
 - **Not done (why):** no walk step drags a calendar block on the emulator (the drag is proven by
   `aBlockDraggedAnHourDownMovesItsTime` on Robolectric; adb motion events over a pager + scroll were not risked in
   this round); the walk asserts TASK_FIRE/MORNING_FIRE counts, not one alarm per range (dumpsys shows actions, not

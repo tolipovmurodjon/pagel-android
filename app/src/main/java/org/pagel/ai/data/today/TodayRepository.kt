@@ -37,6 +37,8 @@ class TodayRepository(
 ) {
     val today: Flow<List<TaskEntity>> = dao.todayTasks()
     val refused: Flow<List<OutboxEntity>> = dao.refusedOutbox()
+    /** Every open dated task (a closed day peeks at tomorrow's stars). */
+    val dated: Flow<List<TaskEntity>> = dao.datedOpen()
 
     /** Changes still on the phone, waiting for pagel.uz. */
     val waiting: Flow<Int> = dao.waitingCount()

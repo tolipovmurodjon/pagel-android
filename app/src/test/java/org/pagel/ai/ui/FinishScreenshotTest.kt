@@ -14,6 +14,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -158,5 +160,17 @@ class FinishScreenshotTest {
         nudge.value = "Next: Call the bank · 10 min?"
         compose.waitForIdle()
         org.junit.Assert.assertEquals(without, top(), 0.5f)
+    }
+
+    /** Boss 2026-10-28: "I closed the day but it shows tasks for today?!" A closed day is one calm card, no rows. */
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun aClosedDayIsEmptyWithTomorrowFolded() {
+        show { TodayScreen(TodayUiState(loading = false, rows = rows, open = 3, doneToday = 12, tomorrow = rows.take(2)), pad, today = day,
+            pills = org.pagel.ai.ui.rituals.RitualPills(shutTonight = true)) }
+        compose.onNodeWithText("Nothing needs you tonight").assertIsDisplayed()
+        compose.onNodeWithText("12 done today ✓").assertIsDisplayed()
+        compose.onAllNodes(androidx.compose.ui.test.hasContentDescription("Done:", substring = true)).assertCountEquals(0)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-day-closed-360x800.png")
+        compose.onNodeWithContentDescription("Tomorrow · 2, folded").performClick()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-day-closed-peek-360x800.png")
     }
 }
