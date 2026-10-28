@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -176,7 +177,8 @@ class CompassScreenshotTest {
         show { GoalForm(draft, open(), onSave = { _, _ -> }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/compass-goal-sheet-360x800.png")
         compose.onNodeWithContentDescription("The goal").assertIsDisplayed()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("Why change the season now?"))
+        // The parent chips scroll sideways too: scroll the field itself into view.
+        compose.onNodeWithContentDescription("Why change the season now?").performScrollTo()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/compass-goal-sheet-bottom-360x800.png")
     }
 
