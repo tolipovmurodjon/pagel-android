@@ -163,7 +163,7 @@ fun TodayScreen(
         // One gap between all blocks (spacing audit #19: 16 under the header, 12 under the bar, 8 under the pills).
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
             item(key = "head", contentType = "head") {
-                Header(ui, today, onSweep = if (pills != null) links.sweep else null) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
+                Header(ui, today, closed = closed, onSweep = if (pills != null) links.sweep else null) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
             }
             // Boss 2026-10-28: "I closed the day … I should have an empty Today, so I can sleep well". After Close the
             // day, Today is one calm card and a folded peek at tomorrow; no rows, no bar, no leftover habits.
@@ -216,13 +216,13 @@ fun TodayScreen(
 }
 
 @Composable
-private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = null, onSendNow: () -> Unit = {}) {
+private fun Header(ui: TodayUiState, today: LocalDate, closed: Boolean = false, onSweep: (() -> Unit)? = null, onSendNow: () -> Unit = {}) {
     Row(verticalAlignment = Alignment.CenterVertically) {
     Column(Modifier.weight(1f).padding(start = Space.textEdge, end = Space.textEdge, top = Space.headerTop)) {
         Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Today", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         // One counting language on Today: "12 done · 4 left" lives in the bar; the header names the day only.
-        val count = if (closed) "Day closed" else "${ui.open} left"
+        val count = if (closed) "Closed for tonight" else "${ui.open} left"
         // Only "Offline" is worth a word (PHASE-BRIEF: no "Syncing"); the waiting chip already says what waits.
         Text(if (ui.status != "Offline") count else "$count · Offline", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
     }
