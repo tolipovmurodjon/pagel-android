@@ -35,6 +35,18 @@ tap() {
   $T adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))
 }
 
+# A habit row's tick is its ring at the row's start: the row's centre can be its week dots (round B checker #4 put
+# them on the meta line under the title).
+tapring() {
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  local xml; xml=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null)
+  local b; b=$(echo "$xml" | tr '>' '\n' | grep -E "content-desc=\"$1\"" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+  [ -n "$b" ] || { log "   (no \"$1\" on screen)"; return 1; }
+  local n; n=$(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
+  set -- $n
+  $T adb shell input tap $(( $1 + 75 )) $(( ($2 + $4) / 2 ))
+}
+
 # The PAGEL screen must be the one in front before a step that judges it (checker 2026-10-27: steps 27-31 shot the Pixel
 # launcher, because Back on Today at step 26 had left the app). Waits up to 10 s for the focus to settle.
 front() {
@@ -244,16 +256,16 @@ for want in "Stretch for ten minutes" "Read 10 pages" "Drink water"; do
 done
 # Round B: four parts now (Log food is Afternoon), so Anytime's Drink water sits under the glass bar: scroll it up first.
 $T adb shell input swipe 160 460 160 260 400; sleep 1
-tap "Done: Drink water" && shot habit-ticked 0.4
+tapring "Done: Drink water" && shot habit-ticked 0.4
 shot habit-done-today 2.5
 grep -q 'text="Done today ✓"' "$OUT/$(printf '%02d' $N)-habit-done-today.xml" || { log "WALKTHROUGH: the ticked habit did not move to Done today"; exit 1; }
 TODAY=$(TZ=Asia/Tashkent date +%Y-%m-%d)
-H3="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$TODAY\",\"if_due\":\"$TODAY\"} auth=True"
+H3="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$TODAY\",\"if_due\":\"$TODAY\",\"n\":1} auth=True"
 for i in $(seq 1 30); do grep -qF "$H3" "$FAKE_LOG" && break; sleep 1; done
 grep -qF "$H3" "$FAKE_LOG" || { log "WALKTHROUGH: the habit tick never reached pagel.uz as $H3"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   habit tick reached pagel.uz after ~${i} s"
 log "-- a 3x habit (round B, Boss: \"it should do like 3 times\"): Log food tapped 3 times, one segment each; pagel.uz gets 3 ticks"
-for k in 1 2 3; do tap "Done: Log food" && shot "habit-3x-$k" 1.3 || { log "WALKTHROUGH: no \"Done: Log food\" row for tap $k"; exit 1; }; done
+for k in 1 2 3; do tapring "Done: Log food" && shot "habit-3x-$k" 1.3 || { log "WALKTHROUGH: no \"Done: Log food\" row for tap $k"; exit 1; }; done
 grep -q 'text="2/3"' "$OUT/$(printf '%02d' $((N - 1)))-habit-3x-2.xml" || log "   (WARN: the 2nd tap's shot shows no 2/3)"
 for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] && break; sleep 1; done
 [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] || { log "WALKTHROUGH: the 3x habit's taps did not all reach pagel.uz"; grep "t_h4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }

@@ -21,6 +21,9 @@ jobs:
           distribution: zulu
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      # RULES.md "Layout" rule 2: an off-scale dp in a spacing call outside ui/glass may never grow (per-file baseline).
+      - name: Spacing gate (Space tokens only)
+        run: bash .github/scripts/dp-gate.sh
       # roborazzi.test.record: the screenshot tests save their PNGs (app/build/outputs/roborazzi) for the artifact.
       - name: Unit tests, screenshot tests and debug build
         run: ./gradlew testDebugUnitTest assembleDebug -Proborazzi.test.record=true

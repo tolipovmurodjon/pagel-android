@@ -26,7 +26,8 @@ fun interface ReminderPlanner {
 }
 
 /** A tick on the phone: its outbox row (Undo takes it back while it waits) and the date it moved from. */
-data class Ticked(val op: Long, val was: String?)
+/** A tick's outbox row, the date it moved from, and the day it counted for (an Undo after midnight sends that day). */
+data class Ticked(val op: Long, val was: String?, val day: String = "")
 
 /**
  * Habits (Phase 3, the web's /habits): repeating tasks from /sync, plus the days each was ticked. A tick answers in
@@ -71,7 +72,8 @@ class HabitsRepository(
         val last = taps + 1 >= times
         val next = if (last) Repeat.nextAfter(t.due?.takeIf { it.length >= 10 } ?: today, every, today) else t.due
         val body = buildJsonObject {
-            putJsonObject("set") { put("done", true); put("day", today); put("if_due", t.due) }
+            // n: this tap's number for the day, so a retry after a lost reply is counted once (round B checker #2).
+            putJsonObject("set") { put("done", true); put("day", today); put("if_due", t.due); put("n", taps + 1) }
             putJsonObject("was") {
                 put("due", t.due)
                 if (times == 1) put("untick", today) else putJsonObject("taps") { put(today, taps) }
@@ -85,7 +87,7 @@ class HabitsRepository(
         )
         scheduler.kick()
         reminders.replan()
-        return Ticked(op, t.due)
+        return Ticked(op, t.due, today)
     }
 
     /** Today's taps of a habit (0 = none yet). */
@@ -102,7 +104,8 @@ class HabitsRepository(
         if (t.every.isNullOrBlank() || t.status != "open") return false
         val today = today()
         val back = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(day), java.time.LocalDate.parse(today))
-        if (back !in 0L..7L) return false
+        // The 7 dots: today and the 6 days before, as pagel.uz takes them (it used to be 8 on both sides).
+        if (back !in 0L until DOT_DAYS) return false
         // Today's tick with the habit still on today is the ring's own tap: it moves the habit as the ring does.
         if (done && day == today && (t.due == null || t.due.take(10) <= today)) return tick(id) != null
         val times = t.times.coerceAtLeast(1)
@@ -113,7 +116,7 @@ class HabitsRepository(
         val due = t.due.orEmpty()
         val bringBack = !done && day == today && taps == times && due.take(10) > today
         val body = buildJsonObject {
-            putJsonObject("set") { put("done", done); put("day", day) }
+            putJsonObject("set") { put("done", done); put("day", day); if (done) put("n", n) }
             putJsonObject("was") { put("due", t.due); putJsonObject("taps") { put(day, taps) } }
         }
         touched[id] = now
@@ -137,7 +140,8 @@ class HabitsRepository(
             return
         }
         val t = dao.taskOnce(id) ?: return
-        val today = today()
+        // The tick's own day, not the clock's: an Undo sent after midnight takes the tap off the day it was made.
+        val today = ticked.day.ifEmpty { today() }
         val now = clock()
         touched[id] = now
         dao.upsertTasks(listOf(t.copy(due = ticked.was, syncStatus = SyncStatus.PENDING, lastModified = now)))
@@ -146,7 +150,7 @@ class HabitsRepository(
         val body = buildJsonObject {
             // undo: true = pagel.uz takes that day's tick out (habit_undone). A plain due change on a habit (a new time
             // from the reminder wheel) keeps the tick (2026-10-28: "Wind down" set to 04:55 erased Tuesday's tick).
-            putJsonObject("set") { put("due", ticked.was); put("undo", true) }
+            putJsonObject("set") { put("due", ticked.was); put("undo", true); put("day", today) }
             putJsonObject("was") { put("due", t.due); if (taps <= 1) put("retick", today) else putJsonObject("taps") { put(today, taps) } }
         }
         dao.addToOutbox(OutboxEntity(taskId = id, op = OutboxEntity.PATCH, createdAt = now, body = body.toString()))
@@ -182,5 +186,7 @@ class HabitsRepository(
         val TASHKENT: ZoneId = ZoneId.of("Asia/Tashkent")
         /** As far back as the web counts a streak (habit-log.ts, 400 days); 60 capped a 75-day streak at ~60 (#8). */
         const val DAYS = 400
+        /** The week dots: today and the 6 days before (pagel.uz takes a dot for these 7 days only). */
+        const val DOT_DAYS = 7L
     }
 }

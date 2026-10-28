@@ -80,6 +80,20 @@ object DatePick {
         return if (later.isBefore(t)) "23:55" else "%02d:%02d".format(later.hour, later.minute)
     }
 
+    /**
+     * The end after the start moved from [from] to [to]: the same length, never past 23:55 (round B checker #6: a start
+     * turned past the end dropped the end). When even 23:55 is not after [to], the end goes (a single time is left).
+     */
+    fun shiftEnd(from: String, end: String, to: String): String? {
+        val f = runCatching { java.time.LocalTime.parse(from) }.getOrNull() ?: return end
+        val e = runCatching { java.time.LocalTime.parse(end) }.getOrNull() ?: return end
+        val t = runCatching { java.time.LocalTime.parse(to) }.getOrNull() ?: return end
+        val minutes = java.time.Duration.between(f, e).toMinutes()
+        val moved = (t.hour * 60 + t.minute + minutes).coerceAtMost(23 * 60 + 55L)
+        val out = "%02d:%02d".format(moved / 60, moved % 60)
+        return out.takeIf { it > to }
+    }
+
     /** How a time or a range reads: "10:00–12:00" (an en dash), as the web shows it. */
     fun timeText(time: String): String = time.replace('-', '–')
 }

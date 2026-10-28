@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -78,11 +79,17 @@ fun priorityItems(chosen: Int?): List<MenuItem> = (0..3).map {
  */
 @Composable
 fun SheetTitle(title: String, trailing: String? = null, onDone: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = if (onDone != null) 12.dp else 20.dp, top = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.weight(1f))
-        trailing?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk, maxLines = 1) }
+    // One height and one end inset with or without Done, so the title-to-content gap is the same on every sheet
+    // (spacing audit #18: 48 with Done, 28 without).
+    Row(Modifier.fillMaxWidth().heightIn(min = Space.sheetTitle).padding(start = Space.xl, end = Space.xl, bottom = Space.xs), verticalAlignment = Alignment.CenterVertically) {
+        // The title stays whole on one line; the summary gives way and ellipsizes (round B checker #3: "Dat / e" at 1.5x).
+        Text(title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, maxLines = 1, softWrap = false)
+        Spacer(Modifier.width(Space.md))
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            trailing?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.PrimaryInk, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End) }
+        }
         if (onDone != null) {
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(Space.sm))
             val press = remember { MutableInteractionSource() }
             val haptics = LocalHapticFeedback.current
             Row(
@@ -147,7 +154,8 @@ fun DateContent(value: String?, today: LocalDate, onDone: (() -> Unit)? = null, 
     val end = DatePick.endOf(time)
     var timeMode by rememberSaveable { mutableStateOf("") } // "" calendar · "wheel" (start) · "end" · "type"
     fun pickDay(d: LocalDate) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onPick(DatePick.due(d, time), true) }
-    fun setTime(t: String?) = onPick(DatePick.due(chosenDay ?: today, DatePick.range(t, end)), false)
+    // The end moves with the start, so a range keeps its length and never loses its end silently (round B checker #6).
+    fun setTime(t: String?) = onPick(DatePick.due(chosenDay ?: today, DatePick.range(t, if (t != null && end != null && start.isNotEmpty()) DatePick.shiftEnd(start, end, t) else end)), false)
     fun setEnd(e: String?) { if (e == null || start.isEmpty() || e > start) onPick(DatePick.due(chosenDay ?: today, DatePick.range(start.ifEmpty { null }, e)), false) }
 
     Column(Modifier.fillMaxWidth()) {
@@ -166,23 +174,23 @@ fun DateContent(value: String?, today: LocalDate, onDone: (() -> Unit)? = null, 
         Spacer(Modifier.height(8.dp))
         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 4.dp)) {
-                when (timeMode) {
-                    "wheel" -> TimeWheel(start.ifEmpty { DEFAULT_TIME }, onChange = { setTime(it) }, modifier = Modifier.padding(vertical = 6.dp))
-                    "end" -> TimeWheel(end ?: DatePick.plusHour(start.ifEmpty { DEFAULT_TIME }), onChange = { setEnd(it) }, modifier = Modifier.padding(vertical = 6.dp))
-                    "type" -> TypedTime { t -> haptics.performHapticFeedback(HapticFeedbackType.Confirm); setTime(t); timeMode = "wheel" }
-                    else -> MonthGrid(month, today, chosenDay, onMonth = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); month = it }, onPick = ::pickDay)
+                // slot: the wheel and the typed time take the month grid's own height (measured, never placed), so the
+                // swap never shrinks the pane and the title and quick days never jump (spacing audit #7).
+                SameHeight(reserve = {
+                    if (timeMode != "") Box(Modifier.clearAndSetSemantics {}) { MonthGrid(month, today, chosenDay, onMonth = {}, onPick = {}) }
+                }) {
+                    when (timeMode) {
+                        "wheel" -> TimeWheel(start.ifEmpty { DEFAULT_TIME }, onChange = { setTime(it) }, modifier = Modifier.padding(vertical = 6.dp))
+                        "end" -> TimeWheel(end ?: DatePick.plusHour(start.ifEmpty { DEFAULT_TIME }), onChange = { setEnd(it) }, modifier = Modifier.padding(vertical = 6.dp))
+                        "type" -> TypedTime { t -> haptics.performHapticFeedback(HapticFeedbackType.Confirm); setTime(t); timeMode = "wheel" }
+                        else -> MonthGrid(month, today, chosenDay, onMonth = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); month = it }, onPick = ::pickDay)
+                    }
                 }
                 HorizontalDivider(thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
                 // A flow: at 1.5x font the clear and keyboard buttons take a second line instead of cutting the time
                 // ("15:3" in picker-time-wheel-360-font-1.5, round 3).
-                FlowRow(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (timeMode != "") {
-                        // The day beside the time: a tap goes back to the calendar.
-                        val d = chosenDay ?: today
-                        GlassChip(TabIcons.Calendar, "${DatePick.weekday(d)} ${d.dayOfMonth}", set = false, description = "Back to the calendar") {
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); timeMode = ""
-                        }
-                    }
+                // slot: the time chip is always first, so the chip just tapped never slides right (spacing audit #7).
+                FlowRow(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(Space.chipGap)) {
                     val shown = if (timeMode == "") start.ifEmpty { "Add time" } else start.ifEmpty { DEFAULT_TIME }
                     val said = when { start.isNotEmpty() -> "Time $start"; timeMode == "" -> "Add time"; else -> "Set $DEFAULT_TIME" }
                     GlassChip(TabIcons.Clock, shown, set = start.isNotEmpty(), checked = timeMode == "wheel" && end != null, description = said) {
@@ -199,6 +207,13 @@ fun DateContent(value: String?, today: LocalDate, onDone: (() -> Unit)? = null, 
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); setEnd(DatePick.plusHour(start)); timeMode = "end"
                         } else GlassChip(TabIcons.Clock, "– $end", set = true, checked = timeMode == "end", description = "End $end") {
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); timeMode = if (timeMode == "end") "" else "end"
+                        }
+                    }
+                    if (timeMode != "") {
+                        // The day after the time: a tap goes back to the calendar.
+                        val d = chosenDay ?: today
+                        GlassChip(TabIcons.Calendar, "${DatePick.weekday(d)} ${d.dayOfMonth}", set = false, description = "Back to the calendar") {
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); timeMode = ""
                         }
                     }
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
@@ -519,5 +534,20 @@ fun ProjectSheet(projects: List<ProjectEntity>, value: String, onPick: (String) 
     GlassSheet(onDismiss) {
         ProjectContent(projects, value) { onPick(it); onDismiss() }
         Spacer(Modifier.height(SheetBottom))
+    }
+}
+
+/**
+ * Lays out [content] at least as tall as [reserve], which is measured but never placed (so never drawn, touched or
+ * read by TalkBack). A slot that swaps its body keeps one height.
+ */
+@Composable
+internal fun SameHeight(reserve: @Composable () -> Unit, content: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(contents = listOf(reserve, content)) { (r, c), constraints ->
+        val loose = constraints.copy(minHeight = 0)
+        val h = maxOf(r.maxOfOrNull { it.measure(loose).height } ?: 0, constraints.minHeight)
+        val placed = c.map { it.measure(loose) }
+        val height = maxOf(h, placed.maxOfOrNull { it.height } ?: 0)
+        layout(constraints.maxWidth, height) { placed.forEach { it.place(0, (height - it.height) / 2) } }
     }
 }

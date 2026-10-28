@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.TouchMin
 import org.pagel.ai.ui.glass.pressScale
 
@@ -102,7 +103,7 @@ internal fun QuietButton(label: String, icon: ImageVector?, modifier: Modifier =
 /** The bottom pair: the quiet one on the left, the main one on the right, each half the width (wrapping at 1.5×). */
 @Composable
 internal fun ButtonRow(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
-    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, content = content)
+    Row(modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.chipGap), verticalAlignment = Alignment.CenterVertically, content = content)
 }
 
 /**
@@ -169,8 +170,9 @@ internal fun StepDots(names: List<String>, current: Int, onGo: (Int) -> Unit) {
 /** A pane with a heading and its body: one idea per pane, as the web's ritual sections. */
 @Composable
 internal fun RitualPane(title: String?, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Pane(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 16.dp, bottom = 16.dp)) {
+    Pane(modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        // One inset for every pane on a ritual screen (spacing audit #15).
+        Column(Modifier.padding(horizontal = Space.paneInset, vertical = Space.lg)) {
             if (title != null) Text(title, style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(bottom = 8.dp).semantics { heading() })
             content()
         }
@@ -179,6 +181,6 @@ internal fun RitualPane(title: String?, modifier: Modifier = Modifier, content: 
 
 /** One short muted line (a hint, a state), never a paragraph. */
 @Composable
-internal fun Hint(text: String, color: Color = Glass.Muted, modifier: Modifier = Modifier) {
-    Text(text, style = MaterialTheme.typography.labelSmall, color = color, modifier = modifier)
+internal fun Hint(text: String, color: Color = Glass.Muted, modifier: Modifier = Modifier, lines: Int = 1) {
+    Text(text, style = MaterialTheme.typography.labelSmall, color = color, modifier = modifier, minLines = lines)
 }

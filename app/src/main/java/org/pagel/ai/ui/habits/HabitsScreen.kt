@@ -85,6 +85,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import org.pagel.ai.data.habits.Part
 import org.pagel.ai.reminders.HabitAlarms
 import org.pagel.ai.ui.glass.Glass
+import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.GlassIconButton
 import org.pagel.ai.ui.glass.GlassSheet
 import org.pagel.ai.ui.glass.Pane
@@ -332,10 +333,11 @@ private fun HabitRow(
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).pressScale(press)
             .combinedClickable(
-                press, indication = null, enabled = !done, role = Role.Checkbox,
-                onLongClickLabel = if (h.taps > 0) "Take one off" else "Open",
-                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); if (h.taps > 0) onUntick(t.id) else onOpen(t.id) },
-            ) { onTick(t.id, centre) }
+                // A done row stays pressable: its long press takes the tick back (round B checker #12: it was dead).
+                press, indication = null, role = Role.Checkbox,
+                onLongClickLabel = when { done -> "Undo"; h.taps > 0 -> "Take one off"; else -> "Open" },
+                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); if (done || h.taps > 0) onUntick(t.id) else onOpen(t.id) },
+            ) { if (!done) onTick(t.id, centre) }
             .semantics { contentDescription = "Done: $title"; if (h.times > 1) stateDescription = "${h.taps} of ${h.times}" }
             .padding(start = 6.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -346,7 +348,10 @@ private fun HabitRow(
         Column(Modifier.weight(1f).padding(top = 8.dp, bottom = 8.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = if (done) Glass.Muted else Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             // The meta wraps at 1.5x instead of cutting.
-            FlowRow(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+            // An empty meta adds no 4 dp under the title (spacing audit #20).
+            // The week's dots live on this meta line, under the title, so a title keeps the row's width (checker #4:
+            // "Read 10 / pages" wrapped at 1x with the dots and the bell at the row's end).
+            if (time != null || h.times > 1 || h.streak > 0 || h.week.isNotEmpty()) FlowRow(Modifier.padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 val small = MaterialTheme.typography.labelSmall
                 if (time != null) Row(
                     Modifier.background(Glass.Ink.copy(alpha = 0.05f), CircleShape).padding(horizontal = 7.dp, vertical = 2.dp),
@@ -358,11 +363,9 @@ private fun HabitRow(
                 }
                 if (h.times > 1) Text("${if (done) h.times else h.taps}/${h.times}", style = Glass.NumberText, color = Glass.PrimaryInk)
                 if (h.streak > 0) Streak(h.streak)
+                WeekDots(h.week) { onWeek(t.id) }
             }
         }
-        // The week at the row's end, never in its middle: a tap on the row's centre is the tick (CI 40703656629: the
-        // dots sat under the centre and the walk's tap opened the week instead of ticking).
-        WeekDots(h.week) { onWeek(t.id) }
         if (time != null) GlassIconButton(if (reminder) TabIcons.BellRing else TabIcons.Bell, "Reminder: $title", plain = true, on = reminder) { onBell(t.id) }
     }
 }
@@ -387,7 +390,8 @@ private fun HabitRing(priority: Int, times: Int, taps: Int, done: Boolean) {
             val inset = line / 2
             for (i in 0 until times) {
                 drawArc(
-                    if (i < taps) Glass.Primary else flag.copy(alpha = 0.35f), startAngle = -90f + i * 360f / times + gap / 2, sweepAngle = sweep, useCenter = false,
+                    // An empty arc ≥ 3:1 on the pane (checker #8: 0.35 read ~1.6:1, "1 of 3 left" was invisible).
+                    if (i < taps) Glass.Primary else flag.copy(alpha = 0.6f), startAngle = -90f + i * 360f / times + gap / 2, sweepAngle = sweep, useCenter = false,
                     topLeft = Offset(inset, inset), size = androidx.compose.ui.geometry.Size(size.width - line, size.height - line), style = Stroke(line, cap = StrokeCap.Round),
                 )
             }
@@ -418,7 +422,7 @@ private fun WeekDots(week: List<Dot>, onClick: () -> Unit) {
             when (d) {
                 Dot.DONE -> drawCircle(Glass.Primary, r)
                 Dot.PARTIAL -> { drawCircle(Glass.Primary.copy(alpha = 0.35f), r); drawCircle(Glass.Primary, r - 0.6.dp.toPx(), style = Stroke(1.2.dp.toPx())) }
-                Dot.MISSED -> drawCircle(Glass.Ink.copy(alpha = 0.40f), r - 0.6.dp.toPx(), style = Stroke(1.2.dp.toPx()))
+                Dot.MISSED -> drawCircle(Glass.Ink.copy(alpha = 0.55f), r - 0.6.dp.toPx(), style = Stroke(1.2.dp.toPx()))
                 Dot.TODAY -> drawCircle(Glass.Primary, r - 0.6.dp.toPx(), style = Stroke(1.2.dp.toPx()))
                 Dot.OFF -> drawCircle(Glass.Ink.copy(alpha = 0.12f), r * 0.5f)
             }
@@ -430,7 +434,8 @@ private fun WeekDots(week: List<Dot>, onClick: () -> Unit) {
 @Composable
 private fun Streak(n: Int) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = "$n in a row" }) {
-        Text("🔥", fontSize = 12.sp)
+        // The glyph in the number's own 16 sp line box, so it sits on the meta's baseline, not ~3 dp under it (#20).
+        Text("🔥", style = Glass.NumberText)
         Spacer(Modifier.width(2.dp))
         Text("$n", style = Glass.NumberText, color = Color(0xFFC2410C))
     }
@@ -487,8 +492,9 @@ internal fun WeekContent(h: HabitItem, today: LocalDate, onSet: (String, Boolean
     Column(Modifier.fillMaxWidth()) {
         SheetTitle("This week", if (h.best > 0) "Best 🔥 ${h.best}" else null)
         Text(titleOf(h.task), style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp))
-        Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)) {
+        // An 8 dp gutter here, so each of the 7 days is ≥ 48 dp wide at 360 dp (checker: 45.7 dp with 16 + 4).
+        Pane(Modifier.fillMaxWidth().padding(horizontal = Space.sm)) {
+            Row(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
                 h.week.forEachIndexed { i, dot ->
                     val day = today.minusDays((h.week.size - 1 - i).toLong())
                     val on = dot == Dot.DONE

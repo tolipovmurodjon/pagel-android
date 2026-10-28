@@ -165,6 +165,10 @@ class TaskLogicTest {
         assertNull(DatePick.range(null, "12:00"))
         assertEquals("10:00", DatePick.plusHour("09:00"))
         assertEquals("23:55", DatePick.plusHour("23:30"))
+        // The start turned past the end takes the end along (round B checker #6), clamped at 23:55.
+        assertEquals("13:00", DatePick.shiftEnd("10:00", "12:00", "11:00"))
+        assertEquals("23:55", DatePick.shiftEnd("10:00", "12:00", "22:30"))
+        assertNull(DatePick.shiftEnd("10:00", "12:00", "23:55"))
         val day = LocalDate.of(2026, 10, 28)
         assertEquals("Today 10:00–12:00", DatePick.dueText("2026-10-28 10:00-12:00", day))
         assertEquals("2026-10-30 10:00-12:00", DatePick.due(LocalDate.of(2026, 10, 30), "10:00-12:00"))

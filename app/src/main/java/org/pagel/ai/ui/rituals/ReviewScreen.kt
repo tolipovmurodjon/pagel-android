@@ -152,7 +152,10 @@ private fun Step(step: Int, ui: ReviewUi, onStep: (String, String) -> Unit, onDr
                 StepField(step, "Next step for ${shortName(s.project, s.title)}") { onStep(s.project, it) }
                 // pagel.uz takes 20 words; the sweep checks it, so does this (checker P5 #10).
                 val n = org.pagel.ai.data.rituals.Rituals.words(step)
-                if (n > org.pagel.ai.data.rituals.Rituals.MAX_WORDS) Hint("$n words: pagel.uz takes ${org.pagel.ai.data.rituals.Rituals.MAX_WORDS}. Cut it down.", Glass.Risk, Modifier.padding(top = 4.dp))
+                // slot: the counter's line is always laid out (spacing audit #12).
+                Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.CenterEnd) {
+                    org.pagel.ai.ui.glass.WordCount(n, org.pagel.ai.data.rituals.Rituals.MAX_WORDS)
+                }
             }
         }
         else -> RitualPane("4. Someday: still want these?") {

@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.SweepGradientShader
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -163,4 +164,20 @@ fun ProjectTile(project: String, color: String?, title: String, size: Dp = 36.dp
     ) {
         androidx.compose.material3.Icon(TabIcons.forProject(project), contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.6f))
     }
+}
+
+/**
+ * A word counter in a slot that is always laid out (spacing audit #11-12: the red "N words…" sentence came and went
+ * and moved the field, the send button and every row below while he typed). Clear under 3/4 of [max], muted
+ * "15/20" near it, red "23/20" over it; the field's own red rim says what is wrong.
+ */
+@Composable
+fun WordCount(n: Int, max: Int, modifier: Modifier = Modifier) {
+    val over = n > max
+    val shown = n * 4 >= max * 3
+    Text(
+        "$n/$max", style = Glass.NumberText, color = if (over) Glass.Risk else Glass.Muted, maxLines = 1,
+        modifier = modifier.height(16.dp).graphicsLayer { alpha = if (shown) 1f else 0f }
+            .clearAndSetSemantics { if (shown) contentDescription = if (over) "$n words, $max at most" else "$n of $max words" },
+    )
 }

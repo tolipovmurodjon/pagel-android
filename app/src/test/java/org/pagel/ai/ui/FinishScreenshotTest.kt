@@ -126,7 +126,7 @@ class FinishScreenshotTest {
 
     // Round B (A): "↑ 2 waiting" while changes wait for pagel.uz.
     @Test fun theWaitingChip() {
-        show { TodayScreen(TodayUiState(loading = false, rows = rows, open = 3, doneToday = 1, status = "Syncing", outbox = 2), pad, today = day) }
+        show { TodayScreen(TodayUiState(loading = false, rows = rows, open = 3, doneToday = 1, status = "", outbox = 2), pad, today = day) }
         compose.onNodeWithContentDescription("2 waiting to send · Send now").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-waiting-chip-360x800.png")
     }

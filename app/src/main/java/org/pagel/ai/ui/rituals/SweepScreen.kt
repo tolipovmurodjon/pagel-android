@@ -247,9 +247,13 @@ private fun SweepRow(i: Int, r: SweepRowDto, projects: List<ProjectEntity>, acti
                 MaterialTheme.typography.bodyLarge, Modifier.weight(1f).padding(top = 12.dp),
                 color = if (kind == Kind.DROP) Glass.Muted else Glass.Ink,
             ) { actions.text(i, it) }
-            GlassIconButton(TabIcons.Close, "Remove: ${r.text}", plain = true) { actions.remove(i) }
+            // slot: the word counter sits under the remove button, always laid out, so no row below moves while he
+            // types (spacing audit #12).
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                GlassIconButton(TabIcons.Close, "Remove: ${r.text}", plain = true) { actions.remove(i) }
+                org.pagel.ai.ui.glass.WordCount(if (kind == Kind.DROP) 0 else Rituals.words(r.text), Rituals.MAX_WORDS)
+            }
         }
-        if (Rituals.tooLong(r)) Hint("${Rituals.words(r.text)} words: pagel.uz takes ${Rituals.MAX_WORDS}. Cut it down.", Glass.Risk)
         androidx.compose.foundation.layout.FlowRow(Modifier.padding(end = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Segmented(Kind.entries.map { it.label }, kind.ordinal, "Kind of step ${i + 1}") { actions.kind(i, Kind.entries[it]) }
             val p = projects.firstOrNull { it.name == r.project }

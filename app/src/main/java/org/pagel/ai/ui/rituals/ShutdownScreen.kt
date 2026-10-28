@@ -213,14 +213,17 @@ private fun StarCard(t: RitualTask, step: Int, total: Int, onBack: () -> Unit, o
         }
         Spacer(Modifier.height(org.pagel.ai.ui.glass.Space.headerToCard))
         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Column(Modifier.padding(20.dp)) {
+            Column(Modifier.padding(horizontal = org.pagel.ai.ui.glass.Space.paneInset, vertical = org.pagel.ai.ui.glass.Space.xl)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ProjectTile(t.project, t.projectColor, t.projectTitle, size = 22.dp)
                     Spacer(Modifier.width(8.dp))
                     Text(shortName(t.project, t.projectTitle), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
                     FLAGS.getOrNull(t.priority)?.let { Icon(TabIcons.FlagFilled, contentDescription = "P${t.priority}", tint = it, modifier = Modifier.size(16.dp)) }
                 }
-                Text(t.title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(top = 12.dp, bottom = 18.dp))
+                // slot: the title always takes 2-3 lines, so Keep / Later / Drop stay at one height from star to star
+                // (spacing audit #10, a sibling of Boss's "spacing is trash").
+                Text(t.title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, minLines = 2, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = org.pagel.ai.ui.glass.Space.md, bottom = org.pagel.ai.ui.glass.Space.xl))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MoveButton(Move.KEEP, TabIcons.Sun, Modifier.weight(1f), t.title, onChoose)
                     MoveButton(Move.LATER, TabIcons.Hourglass, Modifier.weight(1f), t.title, onChoose)
@@ -281,7 +284,7 @@ private fun EveningRow(on: Boolean, at: String, notify: Boolean, onToggle: (Bool
         val press = remember { MutableInteractionSource() }
         val haptics = LocalHapticFeedback.current
         // Two rows, so at 1.5x the words keep the width (one row broke "Every evening, unless…" into five lines).
-        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp, bottom = 10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(start = org.pagel.ai.ui.glass.Space.paneInset, end = org.pagel.ai.ui.glass.Space.md, top = org.pagel.ai.ui.glass.Space.xs, bottom = org.pagel.ai.ui.glass.Space.md)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (on) TabIcons.BellRing else TabIcons.Bell, contentDescription = null, tint = if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
@@ -294,7 +297,8 @@ private fun EveningRow(on: Boolean, at: String, notify: Boolean, onToggle: (Bool
             ) { Switch(on) }
         }
         Row(Modifier.fillMaxWidth().padding(start = 32.dp), verticalAlignment = Alignment.CenterVertically) {
-            Hint(if (on) "Every evening, unless the day is closed" else "Off", modifier = Modifier.weight(1f))
+            // slot: two lines whether on or off, so the pane keeps its size on the toggle (spacing audit #10).
+            Hint(if (on) "Every evening, unless the day is closed" else "Off · tap the switch to turn it on", modifier = Modifier.weight(1f), lines = 2)
             Spacer(Modifier.width(8.dp))
             val timePress = remember { MutableInteractionSource() }
             Box(

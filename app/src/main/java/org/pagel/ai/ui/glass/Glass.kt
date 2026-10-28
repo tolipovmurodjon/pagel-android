@@ -47,7 +47,7 @@ object Glass {
 }
 
 private val GlassTypography = Typography(
-    headlineLarge = TextStyle(fontFamily = Glass.Heading, fontWeight = FontWeight.ExtraBold, fontSize = 32.sp, lineHeight = 36.sp, letterSpacing = (-0.96).sp),
+    headlineLarge = TextStyle(fontFamily = Glass.Heading, fontWeight = FontWeight.ExtraBold, fontSize = 32.sp, lineHeight = 36.sp, letterSpacing = (-0.5).sp),
     headlineSmall = TextStyle(fontFamily = Glass.Heading, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 26.sp, letterSpacing = (-0.4).sp),
     titleMedium = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 21.sp),
     bodyLarge = TextStyle(fontFamily = Glass.Body, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 22.sp),

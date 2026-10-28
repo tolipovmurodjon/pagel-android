@@ -73,13 +73,13 @@ fun GlassSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, full: Boole
             }
             if (toasts.sheets == level) {
                 if (full) {
-                    ToastHost(toasts, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 12.dp))
+                    ToastHost(toasts, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().padding(horizontal = Space.gutter, vertical = Space.md))
                 } else {
                     // Above the sheet's top edge, in the dimmed page (checker 2026-10-27: "Added · …" covered the Add
                     // sheet's chips). A popup, because the sheet clips its own content to its shape.
                     Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(0.dp)) {
                         Popup(popupPositionProvider = AboveTheSheet, properties = PopupProperties(focusable = false, clippingEnabled = false)) {
-                            ToastHost(toasts, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp))
+                            ToastHost(toasts, Modifier.fillMaxWidth().padding(horizontal = Space.gutter, vertical = Space.md))
                         }
                     }
                 }

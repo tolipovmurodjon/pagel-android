@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
@@ -73,6 +74,7 @@ import kotlinx.coroutines.launch
 import org.pagel.ai.ui.glass.EaseOutStrong
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.SkeletonRows
 import org.pagel.ai.ui.glass.ProjectTile
 import org.pagel.ai.ui.glass.pressScale
@@ -101,7 +103,7 @@ fun TodayRoute(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val pills by rituals.pills.collectAsStateWithLifecycle()
-    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onDayCleared = vm::dayCleared, onSendNow = vm::sendNow)
+    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onSendNow = vm::sendNow)
 }
 
 /** Today, native (NATIVE-PLAN Phase 2): the web's 3 at a time, a ring tick with ding, confetti and fold, undo. */
@@ -116,7 +118,6 @@ fun TodayScreen(
     /** The rituals' entry points (Phase 5): Empty your head · Close the day · the weekly review when due. */
     pills: org.pagel.ai.ui.rituals.RitualPills? = null,
     links: org.pagel.ai.ui.rituals.RitualLinks = org.pagel.ai.ui.rituals.RitualLinks(),
-    onDayCleared: () -> Unit = {},
     onSendNow: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
@@ -144,13 +145,11 @@ fun TodayScreen(
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         val app = ctx.applicationContext
         val cleared = ui.open == 1 && !row.done
-        scope.launch(Dispatchers.Default) { if (cleared) Ding.chord(app) else Ding.play(app) }
-        bursts += Burst(nextBurst++, ringCentre - overlayAt)
-        if (cleared) {
-            // The whole day done: confetti across the screen, the chord, the "Day cleared" card (a game's level end).
-            for (i in 0 until 5) bursts += Burst(nextBurst++, Offset(overlayWidth * (0.1f + 0.2f * i), 140f + (i % 2) * 90f))
-            onDayCleared()
-        }
+        // The run going up (checker #11): three or more in a row is a bigger burst and a third, higher note. The day
+        // cleared is the shell's (DayClear): one full-screen burst from the centre and the chord, from any screen.
+        val big = Combo.app.next(System.currentTimeMillis()) >= 3
+        if (!cleared) scope.launch(Dispatchers.Default) { if (big) Ding.combo(app) else Ding.play(app) }
+        bursts += Burst(nextBurst++, ringCentre - overlayAt, power = if (big) 1 else 0)
         val inRow = Combo.app.tick(System.currentTimeMillis())
         nudge = if (cleared) null else nudgeText(ui.rows.firstOrNull { !it.done && it.id != row.id }?.title)
         onTick(row.id)
@@ -158,17 +157,18 @@ fun TodayScreen(
     }
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot(); overlayWidth = it.size.width.toFloat() }) {
-        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // One gap between all blocks (spacing audit #19: 16 under the header, 12 under the bar, 8 under the pills).
+        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
             item(key = "head", contentType = "head") {
                 Header(ui, today, onSweep = if (pills != null) links.sweep else null) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
             }
             // The day's progress grows with each tick (a game's level bar), with the next task's nudge under it.
             if (!ui.loading && ui.progress.total > 0) item(key = "progress", contentType = "progress") {
-                DayProgressBar(ui.progress, nudge, Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
+                DayProgressBar(ui.progress, nudge, Modifier.padding(horizontal = Space.gutter))
             }
             // One row, only when it has something to say: Close the day in the evening, the review while due (checker P5 #4).
             if (pills != null && pills.any) item(key = "rituals", contentType = "pills") {
-                org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.animateItem().padding(start = 16.dp, end = 16.dp, bottom = 4.dp))
+                org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.animateItem().padding(horizontal = Space.gutter))
             }
             when {
                 ui.loading -> item(key = "loading", contentType = "note") {
@@ -206,18 +206,20 @@ fun TodayScreen(
 @Composable
 private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = null, onSendNow: () -> Unit = {}) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-    Column(Modifier.weight(1f).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
+    Column(Modifier.weight(1f).padding(start = Space.textEdge, end = Space.textEdge, top = Space.headerTop)) {
         Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Today", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         val count = when {
             ui.open == 0 -> "0 today"
             else -> "${ui.open} today"
         }
-        Text(if (ui.status.isEmpty()) count else "$count · ${ui.status}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+        // Only "Offline" is worth a word (PHASE-BRIEF: no "Syncing"); the waiting chip already says what waits.
+        Text(if (ui.status != "Offline") count else "$count · Offline", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
     }
     // Round B (A): what waits to reach pagel.uz is never invisible; a tap sends it now. In the header's row (taller than
     // the chip), never a list item: the list never moves when it comes or goes (spacing audit #3).
-    if (ui.outbox > 0) WaitingChip(ui.outbox, Modifier.padding(end = 4.dp), onClick = onSendNow)
+    // The chip keeps the 16 dp edge the left side keeps (checker #10: it sat 4 dp from the edge).
+    if (ui.outbox > 0) WaitingChip(ui.outbox, Modifier.padding(end = if (onSweep == null) Space.lg else Space.xs), onClick = onSendNow)
     // Empty your head: a 48 dp sparkle beside the title, any time of day (Phase 5).
     if (onSweep != null) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.Sparkles, "Empty your head", Modifier.padding(end = 12.dp), tint = Glass.Primary, onClick = onSweep)
     }
@@ -254,7 +256,9 @@ internal fun DayProgressBar(p: DayProgress, nudge: String?, modifier: Modifier =
                 Box(Modifier.fillMaxWidth(grown.coerceIn(0f, 1f)).height(8.dp).background(Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)), RoundedCornerShape(4.dp)))
             }
             Spacer(Modifier.width(10.dp))
-            Text(p.text, style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
+            // slot: tabular figures in a fixed least width, so "9 of 10 ✓" and "1 of 6 ✓" never change the bar's length (#22).
+            Text(p.text, style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"), color = Glass.PrimaryInk, maxLines = 1, softWrap = false,
+                textAlign = TextAlign.End, modifier = Modifier.widthIn(min = 64.dp))
         }
         // slot: the nudge's line is always laid out (empty and clear when there is none), so the tasks under it never
         // drop 22 dp after a tick and rise 8 s later (spacing audit #4).
@@ -283,7 +287,7 @@ internal fun DayClearedCard(done: Int, streak: Int) {
                 )
             }
             Spacer(Modifier.height(10.dp))
-            Text("Pick the next ones on pagel.uz; they show here in a second.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, textAlign = TextAlign.Center)
+            Text("Add the next one with +.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, textAlign = TextAlign.Center)
         }
     }
 }

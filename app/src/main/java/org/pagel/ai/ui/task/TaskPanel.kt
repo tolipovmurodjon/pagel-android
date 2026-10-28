@@ -93,6 +93,7 @@ import org.pagel.ai.ui.glass.GlassIconButton
 import org.pagel.ai.ui.glass.GlassSheet
 import org.pagel.ai.ui.glass.InlineField
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.PriorityColors
 import org.pagel.ai.ui.glass.ProjectTile
 import org.pagel.ai.ui.glass.Repeat
@@ -162,8 +163,9 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
                         onComplete = { centre ->
                             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                             val app = ctx.applicationContext
-                            scope.launch(Dispatchers.Default) { Ding.play(app) }
-                            bursts += Burst(nextBurst++, centre - rootAt)
+                            val big = org.pagel.ai.ui.today.Combo.app.next(System.currentTimeMillis()) >= 3
+                            scope.launch(Dispatchers.Default) { if (big) Ding.combo(app) else Ding.play(app) }
+                            bursts += Burst(nextBurst++, centre - rootAt, power = if (big) 1 else 0)
                             vm.complete()
                         },
                         onNotDoing = vm::notDoing, onDelete = { vm.delete(); onClose() }, onReopen = vm::reopen,
@@ -191,7 +193,6 @@ fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: 
     var picker by rememberSaveable(ui.id) { mutableStateOf(picker0) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
         Header(ui, stopping, a, onStop = { stopping = !stopping })
-        if (ui.held) Held()
         AnimatedVisibility(stopping, enter = expandVertically(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(), exit = shrinkVertically(tween(160)) + fadeOut()) {
             StopForm(onCancel = { stopping = false }) { kind, reason ->
                 a.onNotDoing(kind, reason).also { if (it == null) { stopping = false; if (kind == "drop") a.onClose() } }
@@ -221,10 +222,13 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
     // At 1.5x font the capsule kept only "PA…" (checker 2026-10-27): it shared the free width with a weighted spacer.
     // Now it owns all of it; the chevron goes first when the words are large.
     val big = LocalDensity.current.fontScale > 1.3f
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    // end 10: the Close disc's drawn edge lands on the panes' 16 dp edge (spacing audit #16).
+    Row(Modifier.fillMaxWidth().padding(start = Space.gutter, end = 10.dp, bottom = Space.sm), verticalAlignment = Alignment.CenterVertically) {
         val press = remember { MutableInteractionSource() }
-        Box(Modifier.weight(1f)) { Row(
-            Modifier.pressScale(press)
+        // slot: "waits for the pagel.uz update" is a cloud-off mark beside the project, never a row above the title that
+        // pushes the whole panel down (spacing audit #9).
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { Row(
+            Modifier.weight(1f, fill = false).pressScale(press)
                 .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(18.dp))
                 .border(1.dp, SolidColor(Glass.Ink.copy(alpha = 0.08f)), RoundedCornerShape(18.dp))
                 .clickable(press, indication = null, role = Role.Button, onClick = a.onOpenProject)
@@ -236,13 +240,17 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
             Spacer(Modifier.width(7.dp))
             Text(ui.projectLabel, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             if (!big) Icon(TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
-        } }
+        }
+            if (ui.held) Held()
+        }
         // Each icon says its word on a long press (a tooltip), so the row stays icons only.
         GlassIconButton(if (copied) TabIcons.Check else TabIcons.Copy, if (copied) "Copied" else "Copy as a Claude Code prompt", on = copied, size = 36.dp, label = "Copy as a prompt") {
             ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("PAGEL task", runPrompt(ui.project, ui.text, ui.priority)))
             copied = true
         }
+        // slot: a done task keeps the Won't-do place (empty), so Copy never slides 48 dp right (round B checker #5).
         if (canStop) GlassIconButton(TabIcons.Ban, "Won't do, with the reason", on = stopping, size = 36.dp, label = "Won't do", onClick = onStop)
+        else Spacer(Modifier.size(Space.touch))
         GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Risk, size = 36.dp, label = "Delete", rim = Glass.Risk, onClick = a.onDelete)
         GlassIconButton(TabIcons.Close, "Close", size = 36.dp, label = "Close", onClick = a.onClose)
     }
@@ -251,10 +259,8 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
 /** An edit an older pagel.uz cannot store yet: kept on the phone, sent again once the server learns it. */
 @Composable
 private fun Held() {
-    Row(Modifier.padding(start = 22.dp, bottom = 8.dp).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-        Icon(TabIcons.CloudOff, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(15.dp))
-        Spacer(Modifier.width(6.dp))
-        Text("Waits for the pagel.uz update", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+    Box(Modifier.size(Space.touch).semantics { contentDescription = "Waits for the pagel.uz update" }, contentAlignment = Alignment.Center) {
+        Icon(TabIcons.CloudOff, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(16.dp))
     }
 }
 
@@ -323,7 +329,7 @@ private fun StopForm(onCancel: () -> Unit, onSave: (String, String) -> String?) 
 @Composable
 private fun TitleBlock(ui: PanelUi, a: PanelActions) {
     val haptics = LocalHapticFeedback.current
-    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp), verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth().padding(start = Space.rowLead, end = Space.xl), verticalAlignment = Alignment.Top) {
         Ring(ui.priority, done = !ui.open, title = ui.title, onTick = a.onComplete)
         Column(Modifier.weight(1f).padding(top = 10.dp)) {
             InlineField(ui.title, "Name the next action", "Title", MaterialTheme.typography.headlineSmall, Modifier.fillMaxWidth(), onSave = a.onTitle)
@@ -393,14 +399,17 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
 
     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Column(Modifier.padding(vertical = 10.dp)) {
-            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            // slot: the count and the bar live in the title's own row, so the first step never adds a 24 dp bar row that
+            // pushes the panes below (spacing audit #9).
+            Row(Modifier.fillMaxWidth().heightIn(min = 28.dp).padding(horizontal = Space.paneInset), verticalAlignment = Alignment.CenterVertically) {
                 Text("Steps", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
-                if (texts.isNotEmpty()) { Spacer(Modifier.width(8.dp)); Text("${ticked.size}/${texts.size}", style = Glass.NumberText, color = Glass.PrimaryInk) }
-            }
-            if (texts.isNotEmpty()) {
-                val frac = ticked.size.toFloat() / texts.size
-                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).height(4.dp).background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(2.dp))) {
-                    Box(Modifier.fillMaxWidth(frac).height(4.dp).background(Glass.Primary, RoundedCornerShape(2.dp)))
+                if (texts.isNotEmpty()) {
+                    Spacer(Modifier.width(Space.sm)); Text("${ticked.size}/${texts.size}", style = Glass.NumberText, color = Glass.PrimaryInk)
+                    Spacer(Modifier.width(Space.md))
+                    val frac = ticked.size.toFloat() / texts.size
+                    Box(Modifier.weight(1f).height(4.dp).background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(2.dp))) {
+                        Box(Modifier.fillMaxWidth(frac).height(4.dp).background(Glass.Primary, RoundedCornerShape(2.dp)))
+                    }
                 }
             }
             ui.steps.forEachIndexed { i, s ->
@@ -440,10 +449,11 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
                     decorationBox = { inner -> Box { if (adding.isEmpty()) Text("Add a step", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
                 )
             }
-            if (texts.isNotEmpty() && !made) {
-                GlassChip(TabIcons.ListPlus, "To tasks", set = false, description = "Make these steps tasks in ${ui.projectLabel}", modifier = Modifier.padding(start = 12.dp)) {
+            // slot: once made, the chip stays as a quiet "Made ✓" so the Props pane never jumps up 48 dp (spacing audit #9).
+            if (texts.isNotEmpty()) {
+                if (!made) GlassChip(TabIcons.ListPlus, "To tasks", set = false, description = "Make these steps tasks in ${ui.projectLabel}", modifier = Modifier.padding(start = Space.md)) {
                     a.onMakeTasks(); made = true
-                }
+                } else GlassChip(TabIcons.Check, "Made", set = true, description = "Made into tasks", modifier = Modifier.padding(start = Space.md)) {}
             }
         }
     }
@@ -487,15 +497,16 @@ private fun PinRow(ui: PanelUi, today: LocalDate, onToggle: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text("Pin to Today", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // slot: two lines always, so the row never grows from 1 to 3 lines after the date sheet closes (#9).
             Text(
                 decided ?: if (full) "$MAX_PINNED already pinned · unpin one first" else "Shows on Today even without a date · max $MAX_PINNED",
-                style = MaterialTheme.typography.labelSmall, color = if (full) Glass.Risk else Glass.Muted,
+                // A normal state, not an alarm: muted ink (round B checker #7).
+                style = MaterialTheme.typography.labelSmall, color = Glass.Muted, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
         }
-        if (decided == null) {
-            Spacer(Modifier.width(8.dp))
-            GlassSwitch(ui.star, enabled = !full, onToggle = onToggle)
-        }
+        Spacer(Modifier.width(Space.sm))
+        // slot: the switch's 46 dp stays when a date decides instead, so the words keep their width.
+        if (decided == null) GlassSwitch(ui.star, enabled = !full, onToggle = onToggle) else Spacer(Modifier.width(46.dp))
     }
 }
 
@@ -534,7 +545,12 @@ private fun GlassSwitch(on: Boolean, enabled: Boolean = true, onToggle: () -> Un
             .semantics(mergeDescendants = true) { contentDescription = "Pin to Today"; stateDescription = if (on) "Pinned" else "Not pinned" },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(width = 46.dp, height = 28.dp).background(if (on) Glass.Primary else Glass.Ink.copy(alpha = if (enabled) 0.16f else 0.08f), RoundedCornerShape(14.dp))) {
+        // Off: an ink track with an ink rim, ≥ 3:1 on the pane (round B checker #7: 1.44:1, the switch was invisible).
+        Box(
+            Modifier.size(width = 46.dp, height = 28.dp)
+                .background(if (on) Glass.Primary else Glass.Ink.copy(alpha = if (enabled) 0.20f else 0.10f), RoundedCornerShape(14.dp))
+                .then(if (on) Modifier else Modifier.border(1.dp, Glass.Ink.copy(alpha = if (enabled) 0.45f else 0.25f), RoundedCornerShape(14.dp))),
+        ) {
             Box(Modifier.offset(x = knob, y = 2.dp).size(24.dp).background(Color.White.copy(alpha = if (enabled) 1f else 0.7f), CircleShape))
         }
     }

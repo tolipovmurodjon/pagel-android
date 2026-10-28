@@ -98,6 +98,7 @@ import org.pagel.ai.ui.glass.GlassTheme
 import org.pagel.ai.ui.glass.LiquidBottomTab
 import org.pagel.ai.ui.glass.LiquidBottomTabs
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.pair.PairRoute
@@ -217,18 +218,24 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     // Back leaves a tab's own stack first, then returns to Today, then leaves the app (RULES.md, navigation).
     BackHandler(enabled = selected != 0 && stack.size == 1) { selected = 0 }
 
+    val inProject = top as? ProjectPageRoute
+    val showFab = (onTop && selected == 0) || inProject != null
+    val fabAt = if (onTop) fabBottom else Space.lg
     androidx.compose.runtime.CompositionLocalProvider(LocalTaskOpener provides { id: String -> openTask = id }) {
     Box(Modifier.fillMaxSize()) {
         AuroraBackground(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-            val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + barSpace
+            // While the + shows, a list ends above it, not under it (spacing audit #8: the + covered the last row's
+            // title at 1.5x font even at the end of the scroll): the +'s top plus 12.
+            val clear = if (showFab) maxOf(barSpace, fabAt + 56.dp + Space.md) else barSpace
+            val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + clear
             val padding = PaddingValues(top = top, bottom = bottom)
             // Tabs are peers: switching never slides (emilkowalski/skills animate-expo). Each tab gets its own
             // NavDisplay, so only pushes inside a tab animate.
             // Scroll edge (Apple HIG): the CONTENT fades to 35 % where it meets the bar, as an alpha mask. It used to be
             // a page-coloured strip painted on top, which put near-white under the glass on every screen, so the bar
             // had nothing to bend and looked flat (Boss 2026-10-27: "liquid glass not working on More, it's simple").
-            val fadeTop = bottom + 8.dp
+            val fadeTop = bottom - clear + barSpace + Space.sm
             Box(
                 Modifier.fillMaxSize()
                     .nestedScroll(scrollWatch)
@@ -318,14 +325,14 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 modifier = Modifier.align(Alignment.TopCenter),
             ) { reselect++ }
         }
-        val inProject = top as? ProjectPageRoute
         // The Inbox has no + and its dock sits low: there the toast comes in under the status bar, so "Dropped · Undo"
         // never covers the next card's buttons (checker 2026-10-28 #2).
         BottomActions(
-            toasts, backdrop, bottom = if (onTop) fabBottom else 16.dp,
-            showFab = (onTop && selected == 0) || inProject != null,
+            toasts, backdrop, bottom = fabAt,
+            showFab = showFab,
             toastOnTop = onTop && Tab.entries[selected] == Tab.Inbox,
         ) { adding = inProject?.name ?: "" }
+        DayClearedBurst()
     }
     }
     adding?.let { target -> AddTaskSheet(onClose = { adding = null }, project = target.ifEmpty { null }) }
@@ -425,8 +432,8 @@ internal fun BoxScope.BottomActions(toasts: ToastCenter, backdrop: Backdrop, bot
     if (toasts.sheets == 0) {
         ToastHost(
             toasts,
-            if (toastOnTop) Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(start = 12.dp, end = 12.dp, top = 8.dp)
-            else Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(start = 12.dp, end = 12.dp, bottom = bottom)
+            if (toastOnTop) Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(start = Space.gutter, end = Space.gutter, top = Space.sm)
+            else Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(start = Space.gutter, end = Space.gutter, bottom = bottom)
                 .onSizeChanged { toastH = it.height },
             backdrop = backdrop,
         )
@@ -483,9 +490,14 @@ private fun Coming(title: String, path: String, padding: PaddingValues, onOpenWe
 @Composable
 private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompleted: () -> Unit, onOpenRitual: (NavKey) -> Unit, onOpenProjects: () -> Unit, onOpenWeb: () -> Unit, onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     // Nine rows pass a 640-dp screen's height: More scrolls, so Disconnect is never stuck under the bar.
-    Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(padding).padding(20.dp)) {
-        Text("More", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
-        Spacer(Modifier.height(16.dp))
+    // The same gutter and header as Today, Inbox and Habits (spacing audit #14: More's title sat ~8 dp off between tabs
+    // and its panes 20 dp from the edge, every other screen 16).
+    Column(Modifier.fillMaxSize().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(padding).padding(start = Space.gutter, end = Space.gutter, bottom = Space.xl)) {
+        Column(Modifier.padding(start = Space.textEdge - Space.gutter, top = Space.headerTop)) {
+            Text("Lists, rituals, settings", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
+            Text("More", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
+        }
+        Spacer(Modifier.height(Space.headerToCard))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 6.dp)) {
                 // The web's phone bar keeps Upcoming and Completed under More too (dashboard nav.tsx PHONE).
@@ -501,7 +513,7 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 MoreRow(TabIcons.LogOut, "Disconnect", Glass.Risk, onDisconnect)
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(Space.paneGap))
         Pane(Modifier.fillMaxWidth()) { SoundsRow() }
     }
 }
@@ -559,5 +571,30 @@ private fun MoreRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label
         ) { Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp)) }
         Spacer(Modifier.size(14.dp))
         Text(label, style = MaterialTheme.typography.titleMedium, color = if (color == Glass.Risk) Glass.Risk else Glass.Ink)
+    }
+}
+
+/**
+ * The day cleared, from any screen (round B checker #9): one full-screen burst from the screen's centre, the chord and
+ * a Success haptic. ShellViewModel watches Room (DayClear) so a tick from the panel, Upcoming or Habits counts too.
+ */
+@Composable
+private fun BoxScope.DayClearedBurst() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val haptics = LocalHapticFeedback.current
+    val bursts = remember { androidx.compose.runtime.mutableStateListOf<org.pagel.ai.ui.today.Burst>() }
+    var size by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    LaunchedEffect(Unit) {
+        var next = 0L
+        org.pagel.ai.ui.today.DayClear.events.collect {
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            launch(kotlinx.coroutines.Dispatchers.Default) { org.pagel.ai.ui.today.Ding.chord(ctx) }
+            bursts += org.pagel.ai.ui.today.Burst(next++, Offset(size.width / 2f, size.height / 2f), power = 2)
+        }
+    }
+    Box(Modifier.matchParentSize().onSizeChanged { size = it }) {
+        for (b in bursts) androidx.compose.runtime.key(b.id) {
+            org.pagel.ai.ui.today.ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize())
+        }
     }
 }

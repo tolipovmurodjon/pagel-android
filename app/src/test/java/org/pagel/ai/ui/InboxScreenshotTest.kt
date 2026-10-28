@@ -297,4 +297,19 @@ class InboxScreenshotTest {
         // The five gestures as one picture, said in one line for TalkBack.
         compose.onNodeWithContentDescription("Swipe up to shuffle, down to drop, left to learn, right for an action; hold for Do now").assertIsDisplayed()
     }
+
+    /** Layout rule 3 (spacing audit #2): every choice keeps its place whether the AI guessed Learn or Drop. */
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi")
+    @Test fun dockChoicesKeepTheirPlacesFromCardToCard() {
+        val top = androidx.compose.runtime.mutableStateOf(listOf(ig, meme))
+        show { InboxScreen(ui(top.value), leaving = null, pictures = mapOf(ig.file to picture), contentPadding = a05s) }
+        fun places() = listOf("Action", "Do now", "Later").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.let { b -> b.left to b.top } }
+        val a = places()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-state-a.png")
+        top.value = listOf(meme, ig)
+        compose.waitForIdle()
+        val b = places()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-state-b.png")
+        assertEquals("a choice moved between cards: $a vs $b", a, b)
+    }
 }

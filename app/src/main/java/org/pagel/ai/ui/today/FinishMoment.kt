@@ -21,6 +21,10 @@ class Combo(private val windowMs: Long = 10 * 60_000L) {
         return count
     }
 
+    /** What a tick at [now] would make, without counting it (the burst is drawn before the tick is saved). */
+    @Synchronized
+    fun next(now: Long): Int = if (last != Long.MIN_VALUE && now - last in 0..windowMs) count + 1 else 1
+
     /** Undo takes the last tick out of the run. */
     @Synchronized
     fun undo() { if (count > 0) count-- }
@@ -69,4 +73,32 @@ object ClearedDays {
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(KEY, days).apply()
         return clearedStreak(days, day)
     }
+
+    /** Undo of the tick that cleared [day]: the day is not cleared after all; returns the streak left. */
+    fun unmark(ctx: Context, day: LocalDate): Int {
+        val days = all(ctx) - day.toString()
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(KEY, days).apply()
+        return clearedStreak(days, day)
+    }
+}
+
+/**
+ * Today going from open tasks to none, from ANY screen (round B checker #9: only a Today row cleared the day; the panel,
+ * Upcoming and Habits did not). +1 = cleared now: open went to 0 because of a tick here (done grew, or a change waits
+ * to be sent), never a sync moving tasks away. -1 = an Undo brought a task back on a cleared day. 0 = nothing.
+ */
+fun clearChange(was: TodayCounts?, now: TodayCounts): Int = when {
+    was == null -> 0
+    was.open > 0 && now.open == 0 && now.done > 0 && (now.done > was.done || now.waiting > was.waiting) -> 1
+    was.open == 0 && now.open > 0 && (now.done < was.done || now.waiting != was.waiting) -> -1
+    else -> 0
+}
+
+data class TodayCounts(val open: Int, val done: Int, val waiting: Int)
+
+/** The cleared day, for the whole app: the shell watches Room and says it; Today reads the streak. */
+object DayClear {
+    val streak = kotlinx.coroutines.flow.MutableStateFlow(0)
+    /** One event per clear: the streak it makes. The shell throws the big burst and plays the chord. */
+    val events = kotlinx.coroutines.flow.MutableSharedFlow<Int>(extraBufferCapacity = 4)
 }

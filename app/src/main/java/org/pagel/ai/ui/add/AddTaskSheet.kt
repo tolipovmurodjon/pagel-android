@@ -56,6 +56,8 @@ import org.pagel.ai.data.db.ProjectEntity
 import org.pagel.ai.ui.glass.DatePick
 import org.pagel.ai.ui.glass.DateSheet
 import org.pagel.ai.ui.glass.Glass
+import org.pagel.ai.ui.glass.Space
+import org.pagel.ai.ui.glass.WordCount
 import org.pagel.ai.ui.glass.GlassChip
 import org.pagel.ai.ui.glass.GlassMenu
 import org.pagel.ai.ui.glass.GlassSheet
@@ -209,12 +211,13 @@ fun AddTaskContent(
                 leading = { ProjectTile(plan.project, p?.color, p?.title ?: plan.project, size = 20.dp) },
             ) { sheet = "project" }
         }
-        for (g in notSaved) NotSavedRow(g)
-        if (plan.tooLong) {
-            Spacer(Modifier.height(10.dp))
-            Text("One short line, $MAX_WORDS words at most. Put the detail in steps.", style = MaterialTheme.typography.bodyMedium, color = Glass.Risk, modifier = Modifier.padding(horizontal = 20.dp))
+        // slot: one fixed message line under the chips (spacing audit #11): the newest refused add, or the word
+        // counter. The sheet sits on the keyboard, so a growing message moved the field while he typed.
+        Box(Modifier.fillMaxWidth().height(Space.xxxl).padding(horizontal = Space.textEdge), contentAlignment = Alignment.CenterStart) {
+            val g = notSaved.lastOrNull()
+            if (g != null && !plan.tooLong) NotSavedRow(g)
+            else WordCount(org.pagel.ai.ui.inbox.words(plan.text), MAX_WORDS, Modifier.align(Alignment.CenterEnd))
         }
-        Spacer(Modifier.height(8.dp))
     }
     when (sheet) {
         "date" -> DateSheet(plan.due, today, onPick = { dueSet = true; due = it }, onDismiss = { sheet = "" })
@@ -227,7 +230,7 @@ fun AddTaskContent(
 @Composable
 private fun NotSavedRow(g: NotSaved) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 22.dp, end = 20.dp, top = 8.dp).semantics(mergeDescendants = true) {},
+        Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(TabIcons.Ban, contentDescription = null, tint = Glass.Risk, modifier = Modifier.size(16.dp))

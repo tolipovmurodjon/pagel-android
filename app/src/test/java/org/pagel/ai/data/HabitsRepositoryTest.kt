@@ -97,7 +97,7 @@ class HabitsRepositoryTest {
         assertEquals(listOf(HabitTickEntity("2026-10-28", "t_h")), db.dao().habitTicksOf("t_h"))
         assertEquals("2026-10-28 07:30", t.was)
         val op = db.dao().waitingOutbox().single()
-        assertEquals("""{"set":{"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30"},"was":{"due":"2026-10-28 07:30","untick":"2026-10-28"}}""", op.body)
+        assertEquals("""{"set":{"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30","n":1},"was":{"due":"2026-10-28 07:30","untick":"2026-10-28"}}""", op.body)
         assertEquals(1, kicks)
         assertEquals(1, plans)
         // Ticked already today (the notification's Done after the app's tick): nothing more happens.
@@ -134,7 +134,7 @@ class HabitsRepositoryTest {
         assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_h")!!.due)
         now = Instant.parse("2026-10-27T19:10:00Z").toEpochMilli() // Wed 00:10 Tashkent
         assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
-        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-27","if_due":"2026-10-27 07:30"}"""), patches)
+        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-27","if_due":"2026-10-27 07:30","n":1}"""), patches)
     }
 
     /**
@@ -172,7 +172,7 @@ class HabitsRepositoryTest {
         seed()
         repo().tick("t_h")
         assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
-        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30"}"""), patches)
+        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30","n":1}"""), patches)
         assertTrue(db.dao().waitingOutbox().isEmpty())
         assertEquals(SyncStatus.SYNCED, db.dao().taskOnce("t_h")!!.syncStatus)
     }
@@ -198,7 +198,7 @@ class HabitsRepositoryTest {
         assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_h")!!.due)
         assertTrue(db.dao().habitTicksOf("t_h").isEmpty())
         sender().sendAll(account)
-        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30"}""", """t_h {"due":"2026-10-28 07:30","undo":true}"""), patches)
+        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30","n":1}""", """t_h {"due":"2026-10-28 07:30","undo":true,"day":"2026-10-28"}"""), patches)
     }
 
     // Round B (C): "log food" 3 times a day.
@@ -215,6 +215,8 @@ class HabitsRepositoryTest {
         assertNull(r.tick("t_f"))
         sender().sendAll(account)
         assertEquals(3, patches.count { it.startsWith("""t_f {"done":true,"day":"2026-10-28"""") })
+        // Each tap names its number, so a retry after a lost reply is counted once on pagel.uz (round B checker #2).
+        assertEquals(listOf(1, 2, 3), patches.filter { it.startsWith("t_f ") }.map { Regex(""""n":(\d+)""").find(it)!!.groupValues[1].toInt() })
     }
 
     @Test fun aPastDotIsCountedForThatDayAndNeverMovesTheDate() = runBlocking {
@@ -225,10 +227,11 @@ class HabitsRepositoryTest {
         assertEquals(listOf("2026-10-25"), db.dao().habitTicksOf("t_h").map { it.day })
         assertTrue(r.setDay("t_h", "2026-10-25", false))
         assertTrue(db.dao().habitTicksOf("t_h").isEmpty())
-        // Older than a week: not the dots' business.
+        // The 7 dots are today and the 6 days before: 7 days back is not the dots' business (it was 8 on both sides).
+        assertTrue(!r.setDay("t_h", "2026-10-21", true))
         assertTrue(!r.setDay("t_h", "2026-10-19", true))
         sender().sendAll(account)
-        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-25"}""", """t_h {"done":false,"day":"2026-10-25"}"""), patches)
+        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-25","n":1}""", """t_h {"done":false,"day":"2026-10-25"}"""), patches)
     }
 
     @Test fun takingTodaysTapOffAfterTheHabitMovedOnBringsItBackToToday() = runBlocking {
@@ -291,5 +294,18 @@ class HabitsRepositoryTest {
         val folding = habitsDay(db.dao().habitsOnce(), db.dao().habitTicksOf("t_h"), "2026-10-28", finishing = setOf("t_h"))
         assertEquals(listOf("Morning", "Evening"), folding.parts.map { it.first.label })
         assertTrue(folding.done.isEmpty())
+    }
+
+    // Round B checker: an Undo that waited past midnight takes the tap off the day it was made, not the new day.
+    @Test fun anUndoAfterMidnightTakesTheTapOffItsOwnDay() = runBlocking {
+        seed()
+        val r = repo()
+        val t = r.tick("t_h")!!
+        sender().sendAll(account)
+        now = Instant.parse("2026-10-28T19:30:00Z").toEpochMilli() // 00:30 on 29 Oct in Tashkent
+        r.undo("t_h", t)
+        assertTrue(db.dao().habitTicksOf("t_h").none { it.day == "2026-10-28" })
+        sender().sendAll(account)
+        assertEquals("""t_h {"due":"2026-10-28 07:30","undo":true,"day":"2026-10-28"}""", patches.last())
     }
 }

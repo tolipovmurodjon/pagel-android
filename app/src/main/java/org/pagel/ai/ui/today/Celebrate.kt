@@ -86,6 +86,14 @@ object Ding {
         runCatching { start(chordTrack ?: build(samples(listOf(523.25 to 0.0, 659.25 to 0.09, 783.99 to 0.18, 1046.5 to 0.27), fade = 1.1, vol0 = 0.11)).also { chordTrack = it }) }
     }
 
+    /** Three or more in a row: the ding and a third note a fourth above (C6 G6 C7), so the run is heard going up. */
+    @Synchronized
+    fun combo(ctx: Context) {
+        if (!FinishSound.allowed(ctx)) return
+        runCatching { start(comboTrack ?: build(samples(listOf(1046.5 to 0.0, 1568.0 to 0.085, 2093.0 to 0.17))).also { comboTrack = it }) }
+    }
+    private var comboTrack: AudioTrack? = null
+
     /** The media stream is loud at the volume Boss sets for videos: the ding plays at 70 % of it. */
     private const val SOFT = 0.7f
 }
@@ -114,8 +122,11 @@ object FinishSound {
 fun reducedMotion(ctx: Context): Boolean =
     Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
 
-/** One burst from a ring's centre, in the overlay's own coordinates. */
-data class Burst(val id: Long, val origin: Offset)
+/**
+ * One burst from a ring's centre, in the overlay's own coordinates. [power] 0 = a tick (34 bits, 1.1 s), 1 = three or
+ * more in a row (64 bits, wider, 1.5 s), 2 = the day cleared (140 bits all round from the screen's centre, 2.2 s).
+ */
+data class Burst(val id: Long, val origin: Offset, val power: Int = 0)
 
 // The web's colours; the confetti is the one place the whole Todoist palette shows.
 private val CONFETTI = listOf(0xFFD1453B, 0xFFEB8909, 0xFFF6C445, 0xFF058527, 0xFF246FE0, 0xFF692FC2, 0xFFE05194).map { Color(it) }
@@ -130,20 +141,22 @@ private class Bit(var x: Float, var y: Float, var vx: Float, var vy: Float, val 
 @Composable
 fun ConfettiBurst(burst: Burst, onEnd: () -> Unit, modifier: Modifier = Modifier) {
     val bits = remember(burst.id) {
-        List(34) {
-            val a = -PI / 2 + (Random.nextDouble() - 0.5) * PI * 1.1
-            val v = 4 + Random.nextDouble() * 5
+        List(when (burst.power) { 0 -> 34; 1 -> 64; else -> 140 }) {
+            val fan = when (burst.power) { 0 -> 1.1; 1 -> 1.4; else -> 2.0 }
+            val a = -PI / 2 + (Random.nextDouble() - 0.5) * PI * fan
+            val v = when (burst.power) { 0 -> 4 + Random.nextDouble() * 5; 1 -> 5 + Random.nextDouble() * 7; else -> 6 + Random.nextDouble() * 12 }
             Bit(0f, 0f, (cos(a) * v).toFloat(), (sin(a) * v).toFloat(), 4 + Random.nextFloat() * 4, 6 + Random.nextFloat() * 5,
                 Random.nextFloat() * 6, (Random.nextFloat() - 0.5f) * 0.4f, CONFETTI[Random.nextInt(CONFETTI.size)], Random.nextFloat() < 0.3f)
         }
     }
     var elapsedMs by remember(burst.id) { mutableLongStateOf(0L) }
+    val life = when (burst.power) { 0 -> LIFE_MS; 1 -> 1_500L; else -> 2_200L }
     LaunchedEffect(burst.id) {
         // The walk reads this line as proof a tick threw confetti (a 1.1 s burst is gone before a UI dump).
-        android.util.Log.i("PagelFinish", "confetti ${burst.id}")
+        android.util.Log.i("PagelFinish", "confetti ${burst.id} power ${burst.power}")
         val start = withFrameNanos { it }
         var steps = 0
-        while (elapsedMs < LIFE_MS) {
+        while (elapsedMs < life) {
             withFrameNanos { now ->
                 elapsedMs = (now - start) / 1_000_000
                 val due = (elapsedMs / (1000f / 60f)).toInt()
@@ -156,7 +169,7 @@ fun ConfettiBurst(burst: Burst, onEnd: () -> Unit, modifier: Modifier = Modifier
         onEnd()
     }
     Canvas(modifier) {
-        val k = elapsedMs / LIFE_MS.toFloat()
+        val k = elapsedMs / life.toFloat()
         if (k >= 1f) return@Canvas
         val px = density // the web's numbers are CSS px; one CSS px = one dp
         for (b in bits) {

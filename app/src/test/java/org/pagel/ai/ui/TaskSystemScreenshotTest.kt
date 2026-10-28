@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.semantics.SemanticsActions
@@ -327,7 +331,7 @@ class TaskSystemScreenshotTest {
 
     @Test fun addSheetTooLong() {
         show { AddTaskContent(projects, now = { now }, initial = (1..22).joinToString(" ") { "word$it" }, autoFocus = false) { _, _, _, _ -> false } }
-        compose.onNodeWithText("One short line, 20 words at most. Put the detail in steps.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("22 words, 20 at most").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/add-too-long.png")
     }
 
@@ -371,5 +375,49 @@ class TaskSystemScreenshotTest {
         compose.onNodeWithText("No plan yet").assertIsDisplayed()
         compose.onNodeWithContentDescription("Add a task to Me").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-empty.png")
+    }
+
+    /** Layout rule 3 (spacing audit #7): calendar → wheel keeps the sheet's title and the time chip in place. */
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun dateSheetKeepsItsPlacesFromCalendarToWheel() {
+        show {
+            var v by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>("2026-10-29") }
+            Box(Modifier.testTag("sheet")) { DateContent(v, day) { nv, _ -> v = nv } }
+        }
+        fun at(desc: String) = compose.onNodeWithContentDescription(desc).fetchSemanticsNode().boundsInRoot
+        val title = compose.onNodeWithText("Date").fetchSemanticsNode().boundsInRoot.top
+        val chip = at("Add time").let { it.left to it.top }
+        val height = compose.onNodeWithTag("sheet").fetchSemanticsNode().boundsInRoot.height
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-date-state-a.png")
+        compose.onNodeWithContentDescription("Add time").performClick()
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/picker-date-state-b.png")
+        assertEquals(title, compose.onNodeWithText("Date").fetchSemanticsNode().boundsInRoot.top, 0.5f)
+        assertEquals("the time chip moved", chip, at("Set 09:00").let { it.left to it.top })
+        assertEquals(height, compose.onNodeWithTag("sheet").fetchSemanticsNode().boundsInRoot.height, 0.5f)
+    }
+
+    /** Layout rule 3 (spacing audit #9): "To tasks" becomes "Made", and the Props pane under it stays put. */
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun panelPropsStayWhenStepsBecomeTasks() {
+        show { TaskPanelContent(panel, day, PanelActions()) }
+        fun dateTop() = compose.onNodeWithContentDescription("Date: 29 Oct 15:00").fetchSemanticsNode().boundsInRoot.top
+        val before = dateTop()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-made-state-a.png")
+        compose.onNodeWithContentDescription("Make these steps tasks in PAGEL").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Made into tasks").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-made-state-b.png")
+        assertEquals(before, dateTop(), 0.5f)
+    }
+
+    /** Layout rule 3 (spacing audit #11): the Add sheet keeps its height while the line grows too long. */
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun addSheetKeepsItsHeightWhenTheLineIsTooLong() {
+        show { Box(Modifier.testTag("sheet")) { AddTaskContent(projects, now = { now }, autoFocus = false) { _, _, _, _ -> true } } }
+        val h = compose.onNodeWithTag("sheet").fetchSemanticsNode().boundsInRoot.height
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/add-state-a.png")
+        compose.onNodeWithContentDescription("New task").performTextInput((1..22).joinToString(" ") { "word$it" })
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("22 words, 20 at most").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/add-state-b.png")
+        assertEquals(h, compose.onNodeWithTag("sheet").fetchSemanticsNode().boundsInRoot.height, 0.5f)
     }
 }

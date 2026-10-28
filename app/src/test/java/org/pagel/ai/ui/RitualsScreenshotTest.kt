@@ -143,6 +143,13 @@ class RitualsScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/shutdown-star-2-360x800.png")
         assertEquals(first, second, 0.5f)
         org.junit.Assert.assertTrue("the counter touches the card: $counter vs $first", first - counter > 20f)
+        // The choices keep their height from star to star, whatever the title's length (spacing audit #10).
+        step.intValue = 0
+        compose.waitForIdle()
+        val keep1 = compose.onNodeWithContentDescription("Keep: Ship the native app").fetchSemanticsNode().boundsInRoot.top
+        step.intValue = 1
+        compose.waitForIdle()
+        assertEquals(keep1, compose.onNodeWithContentDescription("Keep: Call the bank about the report").fetchSemanticsNode().boundsInRoot.top, 0.5f)
     }
 
     @Test fun closeTheDayStarCardAtLargeFont() {

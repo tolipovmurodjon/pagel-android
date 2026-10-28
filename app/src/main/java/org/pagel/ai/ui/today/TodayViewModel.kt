@@ -63,7 +63,7 @@ class TodayViewModel @Inject constructor(
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
     private val finishing = MutableStateFlow<Set<String>>(emptySet())
-    private val streak = MutableStateFlow(0)
+    private val streak = DayClear.streak
     private val counts = combine(repo.doneToday(), streak, repo.waiting) { done, s, w -> Triple(done, s, w) }
 
     // A refused tick is said by the shell (ShellViewModel), for every screen at once.
@@ -97,20 +97,9 @@ class TodayViewModel @Inject constructor(
         }
     }
 
-    init {
-        viewModelScope.launch {
-            streak.value = withContext(io) { clearedStreak(ClearedDays.all(ctx), java.time.LocalDate.now(TASHKENT_ZONE)) }
-        }
-    }
-
     /** The chip's tap: send what waits now, not after the backoff (WorkManager's call blocks: off Main). */
     fun sendNow() {
         viewModelScope.launch(io) { org.pagel.ai.data.today.OutboxWorker.nudge(ctx) }
-    }
-
-    /** The last open task of the day was ticked: the day counts as cleared, and the streak grows. */
-    fun dayCleared() {
-        viewModelScope.launch { streak.value = withContext(io) { ClearedDays.mark(ctx, java.time.LocalDate.now(TASHKENT_ZONE)) } }
     }
 
     /** Undo from the snackbar: if the tick has not left the phone yet, pagel.uz never sees it. */
@@ -122,6 +111,5 @@ class TodayViewModel @Inject constructor(
     companion object {
         /** The web's finish: ring pop + tick draw, a 0.85 s pause, a 0.38 s fold (globals.css "The finish moment"). */
         const val FOLD_MS = 1_250L
-        private val TASHKENT_ZONE: java.time.ZoneId = java.time.ZoneId.of("Asia/Tashkent")
     }
 }

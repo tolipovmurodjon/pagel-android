@@ -94,6 +94,7 @@ import org.pagel.ai.data.upcoming.UpcomingDay
 import org.pagel.ai.data.upcoming.plannedLine
 import org.pagel.ai.data.upcoming.stripDayAt
 import org.pagel.ai.ui.glass.Glass
+import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.Pane
 import org.pagel.ai.ui.glass.ProjectTile
 import org.pagel.ai.ui.glass.Repeat
@@ -360,7 +361,8 @@ private fun WeekStrip(days: List<UpcomingDay>, today: LocalDate, hovered: Int?, 
 @Composable
 private fun PaneTitle(text: String, color: Color = Glass.Ink, trailing: (@Composable () -> Unit)? = null) {
     FlowRow(
-        Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 8.dp),
+        // Every pane title row is 48 dp, with or without a button, so the title-to-first-row gap is one (spacing audit #21).
+        Modifier.fillMaxWidth().heightIn(min = Space.touch).padding(start = Space.paneInset, end = 10.dp, top = Space.sm),
         horizontalArrangement = Arrangement.SpaceBetween,
         itemVerticalAlignment = Alignment.CenterVertically,
     ) {
