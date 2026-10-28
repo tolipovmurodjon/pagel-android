@@ -138,7 +138,8 @@ class UpcomingScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-habits-folded.png")
         // The scroll brings the line to the list's top edge, under the glass top (round C): tap it by its action.
         compose.onAllNodesWithContentDescription("4 daily habits, folded")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
-        compose.onNodeWithContentDescription("4 daily habits, shown").assertIsDisplayed()
+        // It may sit under the glass top after the scroll (round C), so the fold's state is what is checked.
+        compose.onAllNodesWithContentDescription("4 daily habits, shown")[0].assertExists()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-habits-open.png")
     }
 
