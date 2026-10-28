@@ -116,8 +116,13 @@ centre() {
   set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
   echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
 }
+RING=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox.xml" | grep -oE '[0-9]+' | head -1)
+[ -n "$RING" ] || { log "WALKTHROUGH: the Inbox ring says nothing"; exit 1; }
 P=$(centre "10 AI tools lists are mostly ads") || exit 1; set -- $P
 $T adb shell input swipe "$1" "$2" $(( $1 - 700 )) "$2" 250; shot inbox-swiped-left-drop 1.5
+grep -q "content-desc=\"$((RING + 1)) of 20 sorted today\"" "$OUT/$(printf '%02d' $N)-inbox-swiped-left-drop.xml" \
+  || { log "WALKTHROUGH: the ring did not go $RING -> $((RING + 1)) after one sort"; grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-swiped-left-drop.xml" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   the ring went $RING -> $((RING + 1))"
 P=$(centre "Quizzes beat rereading: recall builds memory") || exit 1; set -- $P
 $T adb shell input swipe "$1" "$2" "$1" $(( $2 - 800 )) 250; shot inbox-swiped-up-later 1.5
 P=$(centre "A meme about Mondays") || exit 1; set -- $P
@@ -142,7 +147,48 @@ done
 log "   pagel.uz got all 5 in order after ~${i} s: $GOT"
 grep -F 'POST /api/v1/inbox {"action":"act","file":"inbox/ib4.md","sentence":"Open the grant form and fill page one","project":"humopedia","someday":false}' "$FAKE_LOG" > /dev/null \
   || { log "WALKTHROUGH: the Action did not carry its step and project"; grep "POST /api/v1/inbox" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+for i in $(seq 1 60); do grep -q 'POST /api/v1/inbox {"action":"triage","files":\[[^]]*"inbox/ib8.md"' "$FAKE_LOG" && break; sleep 1; done
+grep -q 'POST /api/v1/inbox {"action":"triage","files":\[[^]]*"inbox/ib8.md"' "$FAKE_LOG" \
+  || { log "WALKTHROUGH: the unread save ib8 never asked pagel.uz's AI to read it"; grep "/api/v1/inbox" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   the AI was asked to read ib8 after ~${i} s online"
 shot inbox-online 2
+
+log "-- Habits (Phase 3): by part of the day; a tick reaches pagel.uz; a reminder; the notification's Done ticks another"
+tap Habits && shot habits 2.5
+for want in "Stretch for ten minutes" "Read 10 pages" "Drink water"; do
+  grep -q "text=\"$want\"" "$OUT/$(printf '%02d' $N)-habits.xml" || { log "WALKTHROUGH: Habits has no \"$want\""; exit 1; }
+done
+tap "Done: Drink water" && shot habit-ticked 0.4
+shot habit-done-today 2.5
+grep -q 'text="Done today ✓"' "$OUT/$(printf '%02d' $N)-habit-done-today.xml" || { log "WALKTHROUGH: the ticked habit did not move to Done today"; exit 1; }
+for i in $(seq 1 30); do grep -q 'PATCH /api/v1/tasks/t_h3 {"done":true} auth=True' "$FAKE_LOG" && break; sleep 1; done
+grep -q 'PATCH /api/v1/tasks/t_h3 {"done":true} auth=True' "$FAKE_LOG" || { log "WALKTHROUGH: the habit tick never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   habit tick reached pagel.uz after ~${i} s"
+# Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
+$T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
+tap "Reminder: Stretch for ten minutes" && shot reminder-sheet 2.5
+tap "Remind me" && shot reminder-on 1.5
+front reminder-on
+$T adb shell input keyevent 4; shot reminder-closed 1.5
+$T adb shell dumpsys alarm | grep -c "pagel://habit/t_h1" > "$OUT/alarm-count.txt"
+log "   alarms set for t_h1: $(cat "$OUT/alarm-count.txt")"
+# The alarm rings now: root adb sends the receiver the same intent PAGEL's own alarm carries.
+$T adb shell am broadcast -n "$PKG/.reminders.HabitAlarmReceiver" -a org.pagel.ai.HABIT_FIRE -d pagel://habit/t_h1 --es habit t_h1 > /dev/null
+sleep 2
+$T adb shell cmd statusbar expand-notifications
+shot notification 2.5
+grep -q 'Stretch for ten minutes' "$OUT/$(printf '%02d' $N)-notification.xml" || { log "WALKTHROUGH: no reminder notification for Stretch"; exit 1; }
+if tap "Done" || tap "DONE"; then log "   tapped the notification's Done"; else
+  log "   (Done not found in the shade; sending the Done button's own intent)"
+  $T adb shell am broadcast -n "$PKG/.reminders.HabitAlarmReceiver" -a org.pagel.ai.HABIT_DONE -d pagel://habit-done/t_h1 --es habit t_h1 > /dev/null
+fi
+sleep 1
+$T adb shell cmd statusbar collapse
+for i in $(seq 1 60); do grep -q 'PATCH /api/v1/tasks/t_h1 {"done":true} auth=True' "$FAKE_LOG" && break; sleep 1; done
+grep -q 'PATCH /api/v1/tasks/t_h1 {"done":true} auth=True' "$FAKE_LOG" || { log "WALKTHROUGH: the notification's Done never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   the notification's Done reached pagel.uz after ~${i} s"
+front habits-after-done
+shot habits-after-notification 2
 tap Today && shot today-after-inbox 1.5
 $T adb shell input swipe 540 1700 540 600 300; shot today-scrolled
 tap Today && shot today-retap-top

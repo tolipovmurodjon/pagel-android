@@ -145,8 +145,30 @@ data class InboxStateEntity(
     /** Saves on pagel.uz at the last refresh, less the ones sent since. */
     val total: Int,
     val fetchedAt: Long,
+    /**
+     * When a choice last reached pagel.uz (v5). A refresh whose GET left before it carries counts from before that
+     * choice, so it may only raise them, never step the ring back (checker 2026-10-28 #3).
+     */
+    @ColumnInfo(defaultValue = "0") val sentAt: Long = 0,
 ) {
     companion object {
         const val ID = "inbox"
     }
 }
+
+/**
+ * One day a habit was ticked (Phase 3): pagel.uz's history (`GET /api/v1/habits` ticks) plus the phone's own ticks
+ * still on their way. Streaks and "Done today" are counted from these, so a tick shows its flame at once, offline.
+ */
+@Entity(tableName = "habit_ticks", primaryKeys = ["day", "taskId"], indices = [Index("taskId")])
+data class HabitTickEntity(
+    val day: String,
+    val taskId: String,
+)
+
+/** A habit's reminder (Phase 3): on = a notification at its time, with a Done button. Only on this phone. */
+@Entity(tableName = "habit_reminders")
+data class HabitReminderEntity(
+    @PrimaryKey val taskId: String,
+    val enabled: Boolean,
+)

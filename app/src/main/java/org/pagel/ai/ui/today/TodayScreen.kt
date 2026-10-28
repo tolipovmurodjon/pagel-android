@@ -253,7 +253,7 @@ private fun Meta(row: TodayRow, today: LocalDate) {
 
 /** The tick ring: 22 dp drawn, 48 dp to touch. Its centre goes to [onTick] so the confetti starts from it. */
 @Composable
-private fun TickRing(priority: Int, done: Boolean, title: String, onTick: (Offset) -> Unit) {
+internal fun TickRing(priority: Int, done: Boolean, title: String, onTick: (Offset) -> Unit) {
     val flag = FLAGS.getOrNull(priority)
     val press = remember { MutableInteractionSource() }
     var centre by remember { mutableStateOf(Offset.Zero) }

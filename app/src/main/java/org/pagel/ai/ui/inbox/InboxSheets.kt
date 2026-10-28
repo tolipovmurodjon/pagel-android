@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -86,10 +87,10 @@ private fun Choice.button() = when (this) {
 }
 
 @Composable
-fun ChoiceFormSheet(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: () -> Unit, onDismiss: () -> Unit) {
+fun ChoiceFormSheet(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: () -> Unit, onDismiss: () -> Unit, withPicture: Boolean = false) {
     var picking by remember { mutableStateOf(false) }
     GlassSheet(onDismiss) {
-        ChoiceFormContent(form, ui, onEdit, onSubmit, onProject = { picking = true }, focus = true)
+        ChoiceFormContent(form, ui, onEdit, onSubmit, onProject = { picking = true }, focus = true, withPicture = withPicture)
         Spacer(Modifier.height(SheetBottom))
     }
     if (picking) ProjectSheet(ui.projects, form.project, onPick = { onEdit(form.copy(project = it)) }, onDismiss = { picking = false })
@@ -101,7 +102,7 @@ fun ChoiceFormSheet(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: (
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: () -> Unit, onProject: () -> Unit, focus: Boolean = false) {
+fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: () -> Unit, onProject: () -> Unit, focus: Boolean = false, withPicture: Boolean = false) {
     val look = form.choice.look
     val uri = LocalUriHandler.current
     val need = if (form.choice == Choice.KEEP) ui.minWords else 2
@@ -146,8 +147,7 @@ fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit:
         }
         val hint = when (form.choice) {
             Choice.KEEP -> if (ready) "Ready" else "${need - count} more words"
-            Choice.NOTE -> if (form.card.hasPicture) "With the picture → Notebook · Saved notes" else "→ Notebook · Saved notes"
-            Choice.ACT -> if (form.someday) "P3, someday" else "P1, this week"
+            Choice.NOTE -> if (withPicture) "With the picture → Notebook · Saved notes" else "→ Notebook · Saved notes"
             else -> null
         }
         hint?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(top = 6.dp, start = 4.dp)) }
@@ -185,7 +185,7 @@ private fun Segmented(options: List<String>, chosen: Int, onPick: (Int) -> Unit)
             val press = remember { MutableInteractionSource() }
             Box(
                 Modifier.heightIn(min = 42.dp).pressScale(press)
-                    .then(if (on) Modifier.background(Color.White, RoundedCornerShape(11.dp)).border(1.dp, SolidColor(Glass.Primary), RoundedCornerShape(11.dp)) else Modifier)
+                    .then(if (on) Modifier.shadow(3.dp, RoundedCornerShape(11.dp), ambientColor = Glass.Ink.copy(alpha = 0.10f), spotColor = Glass.Ink.copy(alpha = 0.18f)).background(Color.White, RoundedCornerShape(11.dp)) else Modifier)
                     .clickable(press, indication = null, role = Role.RadioButton) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick(i) }
                     .semantics { selected = on }
                     .padding(horizontal = 14.dp),

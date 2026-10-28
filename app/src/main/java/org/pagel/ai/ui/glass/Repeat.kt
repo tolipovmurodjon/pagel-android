@@ -65,4 +65,48 @@ object Repeat {
             else -> daySet(next)
         }
     }
+
+    private val EVERY_N = Regex("^(\\d+) (days|weeks|months)$")
+    private val FULL = listOf("sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
+
+    /** The web's getDay(): Sunday 0 … Saturday 6. */
+    private fun jsDay(d: java.time.LocalDate) = d.dayOfWeek.value % 7
+
+    /**
+     * The next date after [due] (its time kept), the web's nextDue (lib/repeat.ts) step for step: a habit ticked moves
+     * here. If that is still before [today] it keeps stepping, so a habit missed for days comes back once, not N times.
+     */
+    fun nextDue(due: String, every: String, today: String): String {
+        val time = due.drop(10)
+        val end = java.time.LocalDate.parse(today)
+        val n = EVERY_N.find(every)?.groupValues
+        fun step(x: java.time.LocalDate): java.time.LocalDate = when {
+            every == "day" -> x.plusDays(1)
+            every == "week" -> x.plusDays(7)
+            every == "2 weeks" -> x.plusDays(14)
+            every == "weekday" -> { var y = x.plusDays(1); while (jsDay(y) == 0 || jsDay(y) == 6) y = y.plusDays(1); y }
+            MONTH_DAYS.matches(every) -> {
+                val set = monthDays(every)
+                fun hit(y: java.time.LocalDate): Boolean { val last = y.lengthOfMonth(); return set.any { m -> if (m == LAST) y.dayOfMonth == last else m == y.dayOfMonth || (m > last && y.dayOfMonth == last) } }
+                var y = x.plusDays(1)
+                var i = 0
+                while (i < 62 && !hit(y)) { y = y.plusDays(1); i++ }
+                y
+            }
+            every == "month" || every == "year" || n?.get(2) == "months" -> x.plusMonths(if (every == "year") 12L else n?.get(1)?.toLong() ?: 1L)
+            n != null -> x.plusDays(n[1].toLong() * if (n[2] == "weeks") 7 else 1)
+            every in FULL -> { val w = FULL.indexOf(every); x.plusDays(((w - jsDay(x) + 7) % 7).let { if (it == 0) 7 else it }.toLong()) }
+            DAY_SET.matches(every) -> {
+                val set = daysOf(every)
+                var y = x.plusDays(1)
+                var i = 0
+                while (i < 7 && jsDay(y) !in set) { y = y.plusDays(1); i++ }
+                y
+            }
+            else -> x.plusDays(1)
+        }
+        var d = java.time.LocalDate.parse(due.take(10))
+        do d = step(d) while (d < end)
+        return d.toString() + time
+    }
 }

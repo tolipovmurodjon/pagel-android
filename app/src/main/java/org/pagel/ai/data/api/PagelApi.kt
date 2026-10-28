@@ -70,6 +70,21 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(SortReply.serializer(), it) } }
     }
 
+    suspend fun habits(baseUrl: String, token: String, days: Int): Outcome<HabitsResponse> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/habits?days=$days")), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(HabitsResponse.serializer(), it) } }
+    }
+
+    /** The action goes first on the wire (`{"action":"triage",…}`), as the web posts it. */
+    suspend fun triage(baseUrl: String, token: String, files: List<String>): Outcome<TriageReply> = call {
+        val body = kotlinx.serialization.json.buildJsonObject {
+            put("action", kotlinx.serialization.json.JsonPrimitive("triage"))
+            put("files", kotlinx.serialization.json.JsonArray(files.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        }
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox")).post(body.toString().toRequestBody(JSON)), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(TriageReply.serializer(), it) } }
+    }
+
     /** A save's own picture as bytes; Ok(null) when the post has none (404), so the phone stops asking for it. */
     suspend fun picture(baseUrl: String, token: String, file: String): Outcome<ByteArray?> = call {
         val q = java.net.URLEncoder.encode(file, "UTF-8")

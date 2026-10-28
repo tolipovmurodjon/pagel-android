@@ -20,6 +20,10 @@
          only dataSync/camera/mediaPlayback/phoneCall/mediaProjection/microphone from BOOT_COMPLETED,
          and ours is specialUse|location. Normal permission, granted at install. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Phase 3: a habit's reminder rings at its time. Android 14+ denies this by default to new installs; PAGEL asks
+         once, at the first reminder Boss turns on (Settings > Alarms & reminders), and falls back to a 10-minute
+         window without it. Not USE_EXACT_ALARM: Play keeps that for alarm-clock and calendar apps. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Load-bearing, not a nicety: exempting PAGEL from battery optimisation is Android's
          exemption 13 for starting a foreground service from the background, which is the ONLY
          reason AnchorWatchdogWorker can restart the service after a kill. Boss grants it from the
@@ -110,8 +114,14 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <!-- Boss granted exact alarms in Settings: the habits' reminders are planned again, on time. -->
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!-- A habit's reminder and its Done button (Phase 3). Not exported: only PAGEL's own explicit, immutable
+             PendingIntents reach it. -->
+        <receiver android:name=".reminders.HabitAlarmReceiver" android:exported="false" />
 
         <!-- "Today's 3" home-screen widget. exported=true: the launcher sends APPWIDGET_UPDATE from outside. -->
         <receiver

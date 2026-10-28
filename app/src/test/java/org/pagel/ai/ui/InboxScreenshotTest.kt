@@ -67,10 +67,10 @@ class InboxScreenshotTest {
     private val meme = row("inbox/meme.md", "https://x.com/a/status/1", "A meme about Mondays", "not tied to your work", "all", "drop", "memes", pic = false)
     private val grant = row("inbox/grant.md", "https://www.linkedin.com/posts/grant", "The IT Park grant round closes on 15 November", "Humopedia can apply for the startup grant", "humopedia", "action", "IT Park", pic = false, next = "Open the grant form and fill page one")
 
-    private fun ui(rows: List<InboxItemEntity>, sorted: Int = 7, kept: Int = 2) = InboxUi(
+    private fun ui(rows: List<InboxItemEntity>, sorted: Int = 7, kept: Int = 2, left: Int = 214) = InboxUi(
         loading = false,
         cards = rows.map { InboxViewModel.card(it, kept >= 5, projects.firstOrNull { p -> p.name == it.project }) },
-        sorted = sorted, goal = 20, kept = kept, cap = 5, minWords = 6, left = 214, streak = 3, projects = projects,
+        sorted = sorted, goal = 20, kept = kept, cap = 5, minWords = 6, left = left, streak = 3, projects = projects,
     )
 
     /** A post picture: the mint-to-violet gradient the fake pagel.uz serves in CI. */
@@ -114,6 +114,11 @@ class InboxScreenshotTest {
         oneWholeLine("Inbox")
         oneWholeLine("Drop")
         oneWholeLine("Later")
+        // The AI's pick stays on the 780 dp screen at 1.5x (checker 2026-10-28 #1).
+        compose.onNodeWithContentDescription("AI pick: Learn").assertIsDisplayed()
+        val pick = compose.onNodeWithContentDescription("AI pick: Learn").fetchSemanticsNode().boundsInRoot
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue("the AI's pick ends at ${pick.bottom} px of ${root.bottom}: under the 96 dp the tab bar takes", pick.bottom <= root.bottom - 96 * 3f)
     }
 
     @Test fun cardMidSwipeShowsItsStamp() {
@@ -130,10 +135,28 @@ class InboxScreenshotTest {
     }
 
     @Test fun inboxZero() {
-        show { screen(ui(emptyList(), sorted = 14, kept = 3)) }
+        show { screen(ui(emptyList(), sorted = 14, kept = 3, left = 0)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-empty.png")
         compose.onNodeWithText("Inbox zero").assertIsDisplayed()
         compose.onNodeWithText("3 learned today.").assertIsDisplayed()
+    }
+
+    /** Offline after the saved deck ran out: no "214 left" over "Inbox zero" (checker 2026-10-28 #8). */
+    @Test fun emptyHereButMoreOnPagelUz() {
+        show { screen(ui(emptyList(), sorted = 14, kept = 3, left = 214)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-more-when-online.png")
+        compose.onNodeWithText("214 more when online").assertIsDisplayed()
+        compose.onNodeWithText("Inbox zero").assertDoesNotExist()
+        compose.onNodeWithText("214 left").assertDoesNotExist()
+    }
+
+    /** An unread save while pagel.uz's AI reads it: no big button, the reading line, the six choices in one row. */
+    @Test fun unreadSaveWhileTheAiReads() {
+        val unread = row("inbox/new.md", "https://x.com/a/status/9", "Unread save from last night", "", "all", "learn", "", pic = false, guessed = false)
+        show { screen(ui(listOf(unread, meme)).copy(reading = true)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-ai-reading.png")
+        compose.onNodeWithText("The AI is reading it now. Pick below, or wait a moment.").assertIsDisplayed()
+        oneWholeLine("Do now")
     }
 
     @Test fun ringAtTwentyOfTwenty() {
@@ -141,7 +164,7 @@ class InboxScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-ring-20.png")
         compose.onNodeWithContentDescription("20 of 20 sorted today").captureRoboImage("build/outputs/roborazzi/inbox-ring-20-closeup.png")
         // Five kept today: the big button offers a Note in Learn's place, as the web does.
-        compose.onNodeWithText("20/20 sorted today · 5 learned ✓").assertIsDisplayed()
+        compose.onNodeWithText("20/20 sorted today · 5 learned ✓").assertIsDisplayed()
     }
 
     @Test fun keepsFullTurnALearnIntoANote() {

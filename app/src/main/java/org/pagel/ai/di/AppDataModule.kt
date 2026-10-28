@@ -21,6 +21,9 @@ import org.pagel.ai.data.inbox.InboxPictures
 import org.pagel.ai.data.inbox.InboxRepository
 import org.pagel.ai.data.inbox.InboxSender
 import org.pagel.ai.data.db.PagelDatabase
+import org.pagel.ai.data.habits.HabitsRepository
+import org.pagel.ai.data.habits.ReminderPlanner
+import org.pagel.ai.reminders.HabitAlarms
 import org.pagel.ai.data.sync.SyncEngine
 import org.pagel.ai.data.today.OutboxSender
 import org.pagel.ai.data.today.OutboxWorker
@@ -61,7 +64,7 @@ object AppDataModule {
 
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): PagelDatabase =
-        // v1 → v2 → v3 → v4 are AutoMigrations (PagelDatabase); each step has a test (MigrationTest).
+        // v1 → v2 → v3 → v4 → v5 are AutoMigrations (PagelDatabase); each step has a test (MigrationTest).
         Room.databaseBuilder(ctx, PagelDatabase::class.java, PagelDatabase.NAME).build()
 
     @Provides
@@ -91,6 +94,15 @@ object AppDataModule {
     @Provides @Singleton
     fun provideTaskRepository(@ApplicationContext ctx: Context, dao: PagelDao): TaskRepository =
         TaskRepository(dao, OutboxWorker.scheduler(ctx))
+
+    /** The habits' reminder alarms (Phase 3). */
+    @Provides @Singleton
+    fun provideReminderPlanner(@ApplicationContext ctx: Context, dao: PagelDao, @AppScope scope: CoroutineScope, @IoDispatcher io: CoroutineDispatcher): ReminderPlanner =
+        HabitAlarms(ctx, dao, scope, io)
+
+    @Provides @Singleton
+    fun provideHabitsRepository(@ApplicationContext ctx: Context, dao: PagelDao, api: PagelApi, reminders: ReminderPlanner): HabitsRepository =
+        HabitsRepository(dao, api, OutboxWorker.scheduler(ctx), reminders)
 
     @Provides @Singleton
     fun provideAccountStore(store: EncryptedAccountStore): AccountStore = store

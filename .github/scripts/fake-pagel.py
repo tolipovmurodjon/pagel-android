@@ -3,7 +3,14 @@
 (dashboard src/app/api/v1), with fixed data. Every request is logged to fake-pagel.log, so the smoke test can prove
 the app paired, synced, listened live and sent its saved crash."""
 import json, struct, sys, time, zlib
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# pagel.uz counts its days in Tashkent (UTC+5, no summer time), as inbox-api.ts and views.ts do. The runner's own clock
+# is UTC: a run between 19:00 and 24:00 UTC once sent "yesterday" and the phone reset its ring (checker 2026-10-28 #3).
+TASHKENT = timezone(timedelta(hours=5))
+def today():
+    return datetime.now(TASHKENT).strftime("%Y-%m-%d")
 
 CODE, TOKEN = "482913", "ci-device-token"
 LOG = open(sys.argv[2] if len(sys.argv) > 2 else "fake-pagel.log", "a", buffering=1)
@@ -33,15 +40,24 @@ INBOX = [
 ]
 SORTS = []  # (file, action) in the order pagel.uz took them
 LATER = set()
+TRIAGED = set()  # saves the AI has read since the phone asked (POST {action: "triage"})
+
+# Habits (Phase 3): repeating tasks in /sync, due today; a tick (PATCH done:true) moves the date a day on and counts the
+# day; an Undo (PATCH due: the old date) takes the day out (dashboard task-store.ts, habits-api.ts).
+HABITS = [("t_h1", "Stretch for ten minutes", "07:30"), ("t_h2", "Read 10 pages", "21:30"), ("t_h3", "Drink water", None)]
+HABIT_DUE = {}
+HABIT_TICKS = []  # (day, id)
+def habit_due(hid, at):
+    return HABIT_DUE.get(hid, today() + (f" {at}" if at else ""))
 
 def inbox_body():
     sorted_files = {f for f, a in SORTS if a != "later"}
     items = [{"file": f"inbox/{i}.md", "saved": "2026-10-27", "source": src, "text": f"Instagram post by @{au} posted 2026-10-27\n\n{claim}. The caption goes on for a while about it, with more words than the card shows." if "instagram" in src else f"{claim}. The post says more about it.",
-              "claim": claim, "why": why, "project": proj, "kind": kind, "next": nxt, "note": note, "guessed": i != "ib8", "author": au, "posted": "2026-10-27" if au else "",
+              "claim": claim, "why": why, "project": proj, "kind": kind, "next": nxt, "note": note, "guessed": i != "ib8" or f"inbox/{i}.md" in TRIAGED, "author": au, "posted": "2026-10-27" if au else "",
               "later": "2026-10-28" if f"inbox/{i}.md" in LATER else None, "has_picture": pic}
              for i, src, claim, why, proj, kind, nxt, note, au, pic in INBOX if f"inbox/{i}.md" not in sorted_files]
     items.sort(key=lambda x: x["later"] is not None)
-    return {"day": time.strftime("%Y-%m-%d"), "goal": 20, "sorted": 12 + len(SORTS), "kept_today": 2 + sum(1 for _, a in SORTS if a == "keep"), "cap": 5, "min_words": 6,
+    return {"day": today(), "goal": 20, "sorted": 12 + len(SORTS), "kept_today": 2 + sum(1 for _, a in SORTS if a == "keep"), "cap": 5, "min_words": 6,
             "total": len(items), "items": items}
 
 def png(w=360, h=240):
@@ -57,7 +73,10 @@ def sync_body():
             "tasks": [{"id": i, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": k, "text": text, "status": "done" if i in DONE else "open",
                        "priority": pr, "star": True, "due": due, "updated_at": "2026-10-27T10:00:00Z", "version": 1,
                        "steps": [{"text": t, "done": d} for t, d in STEPS.get(i, [])], **EDITS.get(i, {})}
-                      for k, (i, p, text, pr, due) in enumerate(TODAY)],
+                      for k, (i, p, text, pr, due) in enumerate(TODAY)]
+                     + [{"id": hid, "project": "me", "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 50 + k, "text": text, "status": "open",
+                         "priority": 2, "star": False, "due": habit_due(hid, at), "every": "day", "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": []}
+                        for k, (hid, text, at) in enumerate(HABITS)],
             "removed": []}
 
 class H(BaseHTTPRequestHandler):
@@ -96,6 +115,10 @@ class H(BaseHTTPRequestHandler):
             if not self.authed():
                 return self.send(401, {"error": "Send Authorization: Bearer <token>."})
             b = json.loads(body or "{}")
+            if b.get("action") == "triage":
+                files = [f for f in b.get("files", []) if isinstance(f, str) and f.startswith("inbox/")]
+                TRIAGED.update(files)
+                return self.send(202, {"started": True, "files": len(files)})
             f, a = b.get("file", ""), b.get("action", "")
             if a not in ("keep", "act", "note", "later", "drop", "now") or not f.startswith("inbox/"):
                 return self.send(400, {"error": "action is one of keep, act, note, later, drop, now."})
@@ -117,9 +140,22 @@ class H(BaseHTTPRequestHandler):
         if not self.authed():
             return self.send(401, {"error": "Send Authorization: Bearer <token>."})
         tid = self.path.rsplit("/", 1)[-1]
-        if not self.path.startswith("/api/v1/tasks/") or tid not in {i for i, *_ in TODAY}:
+        habits = {h for h, *_ in HABITS}
+        if not self.path.startswith("/api/v1/tasks/") or tid not in {i for i, *_ in TODAY} | habits:
             return self.send(404, {"error": "No such task."})
         b = json.loads(body or "{}")
+        if tid in habits:
+            at = next(t for h, _, t in HABITS if h == tid)
+            day = today()
+            if b.get("done") is True:
+                HABIT_TICKS.append((day, tid))
+                nxt = (datetime.now(TASHKENT) + timedelta(days=1)).strftime("%Y-%m-%d")
+                HABIT_DUE[tid] = nxt + (f" {at}" if at else "")
+            if "due" in b:
+                HABIT_DUE[tid] = b["due"]
+                if b["due"] and b["due"][:10] <= day and (day, tid) in HABIT_TICKS:
+                    HABIT_TICKS.remove((day, tid))
+            return self.send(200, {"id": tid, "status": "open", "due": HABIT_DUE.get(tid), "applied": list(b.keys())})
         if "done" in b:
             (DONE.add if b["done"] is True else DONE.discard)(tid)
         if "steps" in b:
@@ -137,6 +173,8 @@ class H(BaseHTTPRequestHandler):
             return self.send(401, {"error": "Send Authorization: Bearer <token>."})
         if self.path == "/api/v1/today":
             return self.send(200, {"day": "2026-10-27", "shown_at_once": 3, "tasks": [{"id": i} for i, *_ in TODAY if i not in DONE]})
+        if self.path.startswith("/api/v1/habits"):
+            return self.send(200, {"day": today(), "done_today": [h for d, h in HABIT_TICKS if d == today()], "ticks": [{"day": d, "id": h} for d, h in HABIT_TICKS]})
         if self.path.startswith("/api/v1/inbox/picture"):
             if any(f"{i}.md" in self.path and pic for i, *_, pic in INBOX):
                 self.send_response(200)

@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -138,14 +139,19 @@ private fun ToastPill(t: ToastData, backdrop: Backdrop?, onGone: () -> Unit) {
             Text(t.message, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
             t.action?.let { label ->
                 val press = remember { MutableInteractionSource() }
-                Row(
-                    Modifier.pressScale(press).clickable(press, indication = null, role = Role.Button) { t.onAction?.invoke(); onGone() }
-                        .background(Glass.PrimarySoft, RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                // The pill is drawn 34 dp tall; its touch box is the full 48 dp (checker 2026-10-28 #9).
+                Box(
+                    Modifier.heightIn(min = TouchMin).pressScale(press).clickable(press, indication = null, role = Role.Button) { t.onAction?.invoke(); onGone() },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(TabIcons.Undo, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(label, style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk)
+                    Row(
+                        Modifier.background(Glass.PrimarySoft, RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(TabIcons.Undo, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(label, style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk)
+                    }
                 }
             }
         }

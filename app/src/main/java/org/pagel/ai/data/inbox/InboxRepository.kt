@@ -41,6 +41,8 @@ enum class Choice(val wire: String, val key: String) {
 
 private val wire = Json { ignoreUnknownKeys = true }
 internal fun tashkentDay(ms: Long): String = Instant.ofEpochMilli(ms).atZone(ZoneId.of("Asia/Tashkent")).toLocalDate().toString()
+/** Midnight in Tashkent at the start of the day [ms] falls in, as epoch ms. */
+internal fun tashkentDayStart(ms: Long): Long = Instant.ofEpochMilli(ms).atZone(ZoneId.of("Asia/Tashkent")).toLocalDate().atStartOfDay(ZoneId.of("Asia/Tashkent")).toInstant().toEpochMilli()
 
 /**
  * The Inbox (Phase 2): the deck and the day's counts live in Room, so sorting works with no network; each choice
@@ -60,21 +62,31 @@ class InboxRepository(
     /** One shuffle per app run, as the web gives each visit a new seed: the deck keeps its order while PAGEL is open. */
     private val seed = 1 + (Math.random() * 1e9).toLong()
 
-    suspend fun refresh(account: Account): Outcome<Unit> =
-        when (val r = api.inbox(account.serverUrl, account.token, DECK, seed)) {
+    suspend fun refresh(account: Account): Outcome<Unit> {
+        val started = clock()
+        return when (val r = api.inbox(account.serverUrl, account.token, DECK, seed)) {
             is Outcome.Failed -> r
             is Outcome.Ok -> {
                 val b = r.value
                 dao.refresh(b.items.map(::entity), InboxStateEntity(day = b.day.ifEmpty { tashkentDay(clock()) }, goal = b.goal, sorted = b.sorted, keptToday = b.keptToday,
-                    cap = b.cap, minWords = b.minWords, total = b.total, fetchedAt = clock()))
+                    cap = b.cap, minWords = b.minWords, total = b.total, fetchedAt = clock()), startedAt = started)
                 Outcome.Ok(Unit)
             }
         }
+    }
+
+    /**
+     * Asks pagel.uz's AI to read [files] (the next cards with no read yet), as the web does after 8 s on /learn. It runs
+     * the web's own triage on the server; its reads come with the next [refresh]. True when pagel.uz took the ask.
+     */
+    suspend fun askToRead(account: Account, files: List<String>): Boolean =
+        api.triage(account.serverUrl, account.token, files) is Outcome.Ok
 
     /** Boss's choice: Room first (the card leaves now), the outbox after. Returns the outbox row (Drop's Undo needs it). */
     suspend fun choose(file: String, choice: Choice, sentence: String? = null, project: String? = null, someday: Boolean? = null): Long {
         val body = wire.encodeToString(SortBody.serializer(), SortBody(choice.wire, file, sentence?.trim()?.takeIf(String::isNotEmpty), project, someday))
-        val id = dao.choose(file, choice.wire, body, tashkentDay(clock()), keep = choice == Choice.KEEP, at = clock())
+        val now = clock()
+        val id = dao.choose(file, choice.wire, body, tashkentDay(now), keep = choice == Choice.KEEP, at = now, dayStart = tashkentDayStart(now))
         scheduler.kick()
         return id
     }
@@ -109,7 +121,7 @@ class InboxSender(private val api: PagelApi, private val dao: InboxDao, private 
         if (body.action == Choice.DROP.wire && clock() - op.createdAt < UNDO_WINDOW_MS) return SortStep.HOLD
         dao.countAttempt(op.id)
         return when (val out = api.sort(account.serverUrl, account.token, body)) {
-            is Outcome.Ok -> { dao.sent(op.id, body.file, body.action, out.value.sorted, out.value.keptToday); SortStep.SENT }
+            is Outcome.Ok -> { dao.sent(op.id, body.file, body.action, out.value.sorted, out.value.keptToday, clock()); SortStep.SENT }
             is Outcome.Failed -> when (val e = out.error) {
                 is DataError.Refused -> { dao.refused(op.id, body.file, body.action, e.message); SortStep.SENT }
                 DataError.Unauthorized -> SortStep.SIGNED_OUT
@@ -119,30 +131,37 @@ class InboxSender(private val api: PagelApi, private val dao: InboxDao, private 
     }
 }
 
+/** A card's picture: shown, the post has none (asked once, never again), or not reachable now (asked again later). */
+sealed interface Picture {
+    data class Shown(val bitmap: Bitmap) : Picture
+    data object None : Picture
+    data object Unavailable : Picture
+}
+
 /**
  * The saves' own pictures, kept on disk so the next cards show theirs offline. A post with none is remembered as such
- * (an empty marker file) and never asked for again. Decoded off Main, scaled down to the phone's width.
+ * (an empty marker file) and never asked for again; one that could not be fetched (offline) is never remembered, so
+ * it is asked for again when the link is back (checker 2026-10-28 #4). Decoded off Main, scaled to the phone's width.
  */
 class InboxPictures(private val api: PagelApi, private val dir: File, private val io: CoroutineDispatcher) {
     private val memory = LruCache<String, Bitmap>(6)
 
     private fun key(file: String) = MessageDigest.getInstance("SHA-1").digest(file.toByteArray()).joinToString("") { "%02x".format(it) }.take(20)
 
-    /** The picture, from memory, disk, or pagel.uz; null when the post has none or it cannot be fetched now. */
-    suspend fun load(account: Account, file: String, maxWidth: Int = 1080): Bitmap? = withContext(io) {
+    suspend fun load(account: Account, file: String, maxWidth: Int = 1080): Picture = withContext(io) {
         val k = key(file)
-        memory.get(k)?.let { return@withContext it }
+        memory.get(k)?.let { return@withContext Picture.Shown(it) }
         dir.mkdirs()
         val img = File(dir, "$k.img")
         val none = File(dir, "$k.none")
-        if (none.exists()) return@withContext null
+        if (none.exists()) return@withContext Picture.None
         if (!img.exists()) {
             when (val r = api.picture(account.serverUrl, account.token, file)) {
-                is Outcome.Ok -> r.value?.let { img.writeBytes(it) } ?: run { none.createNewFile(); return@withContext null }
-                is Outcome.Failed -> return@withContext null
+                is Outcome.Ok -> r.value?.let { img.writeBytes(it) } ?: run { none.createNewFile(); return@withContext Picture.None }
+                is Outcome.Failed -> return@withContext Picture.Unavailable
             }
         }
-        decode(img, maxWidth)?.also { memory.put(k, it) }
+        decode(img, maxWidth)?.also { memory.put(k, it) }?.let { Picture.Shown(it) } ?: Picture.None
     }
 
     private fun decode(f: File, maxWidth: Int): Bitmap? = runCatching {

@@ -88,11 +88,13 @@ abstract class InboxDao {
      * move, and the choice waits in the outbox. Returns the outbox row, for Drop's Undo.
      */
     @Transaction
-    open suspend fun choose(file: String, action: String, body: String, today: String, keep: Boolean, at: Long): Long {
+    open suspend fun choose(file: String, action: String, body: String, today: String, keep: Boolean, at: Long, dayStart: Long): Long {
         if (action == LATER) putBack(file, today, lastPosition() + 1) else markSorted(file, action)
         stateOnce()?.let { s ->
-            val fresh = s.day != today
-            saveState(s.copy(day = today, sorted = (if (fresh) 0 else s.sorted) + 1, keptToday = (if (fresh) 0 else s.keptToday) + if (keep) 1 else 0))
+            // A new day starts the counts at 0 only when pagel.uz has not spoken since the day began: counts it sent
+            // today are today's, whatever its day field says (CI's fake once sent the UTC day and reset the ring to 1/20).
+            val fresh = s.day != today && s.fetchedAt < dayStart
+            saveState(s.copy(day = if (fresh) today else s.day, sorted = (if (fresh) 0 else s.sorted) + 1, keptToday = (if (fresh) 0 else s.keptToday) + if (keep) 1 else 0))
         }
         return addToOutbox(OutboxEntity(taskId = file, op = OutboxEntity.SORT, createdAt = at, body = body))
     }
@@ -111,7 +113,7 @@ abstract class InboxDao {
      * follow the server's, plus the choices still waiting behind this one.
      */
     @Transaction
-    open suspend fun sent(opId: Long, file: String, action: String, sorted: Int?, keptToday: Int?) {
+    open suspend fun sent(opId: Long, file: String, action: String, sorted: Int?, keptToday: Int?, at: Long) {
         removeFromOutbox(opId)
         if (action != LATER) delete(file)
         val s = stateOnce() ?: return
@@ -121,6 +123,7 @@ abstract class InboxDao {
             sorted = sorted?.let { it + waiting.size } ?: s.sorted,
             keptToday = keptToday?.let { it + waitingKeeps } ?: s.keptToday,
             total = if (action != LATER) (s.total - 1).coerceAtLeast(0) else s.total,
+            sentAt = at,
         ))
     }
 
@@ -143,7 +146,7 @@ abstract class InboxDao {
      * stay as they are, and the rest takes the server's order behind them. Counts: the server's plus what still waits.
      */
     @Transaction
-    open suspend fun refresh(items: List<InboxItemEntity>, state: InboxStateEntity) {
+    open suspend fun refresh(items: List<InboxItemEntity>, state: InboxStateEntity, startedAt: Long) {
         val waiting = waitingFiles().toSet()
         val top = topOnce()?.takeIf { it.file !in waiting }
         val keepFiles = waiting + listOfNotNull(top?.file)
@@ -155,7 +158,16 @@ abstract class InboxDao {
         var at = fresh.size + 1
         for (f in waiting) item(f)?.takeIf { it.sortedAs == null }?.let { putBack(it.file, it.later, at++) }
         val bodies = waitingBodies()
-        saveState(state.copy(sorted = state.sorted + bodies.size, keptToday = state.keptToday + bodies.count { it?.contains("\"action\":\"keep\"") == true }))
+        var sorted = state.sorted + bodies.size
+        var kept = state.keptToday + bodies.count { it?.contains("\"action\":\"keep\"") == true }
+        // A choice reached pagel.uz after this GET left: the GET's counts are from before it, so they may only raise
+        // the ring, never step it back (checker 2026-10-28 #3, the small race).
+        val cur = stateOnce()
+        if (cur != null && cur.sentAt > startedAt && cur.day == state.day) {
+            sorted = maxOf(sorted, cur.sorted)
+            kept = maxOf(kept, cur.keptToday)
+        }
+        saveState(state.copy(sorted = sorted, keptToday = kept, sentAt = cur?.sentAt ?: 0))
     }
 }
 

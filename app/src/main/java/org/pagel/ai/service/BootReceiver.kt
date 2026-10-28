@@ -34,7 +34,15 @@ import androidx.core.content.ContextCompat
  * Settings-only and belong to the setup checklist, not to code.
  */
 class BootReceiver : BroadcastReceiver() {
+    @dagger.hilt.EntryPoint
+    @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+    interface Parts {
+        fun reminders(): org.pagel.ai.data.habits.ReminderPlanner
+    }
+
     override fun onReceive(ctx: Context, intent: Intent) {
+        // Alarms do not survive a reboot or an update; a new exact-alarm grant makes them exact (Phase 3 reminders).
+        runCatching { dagger.hilt.android.EntryPointAccessors.fromApplication(ctx.applicationContext, Parts::class.java).reminders().replan() }
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_LOCKED_BOOT_COMPLETED,

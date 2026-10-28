@@ -57,7 +57,7 @@ class MigrationTest {
             assertEquals("done", op.op)
             assertNull(op.body)
             assertFalse(op.waitsForServer)
-            assertEquals(4, db.openHelper.readableDatabase.version)
+            assertEquals(5, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }
@@ -95,7 +95,48 @@ class MigrationTest {
             assertEquals("""{"set":{"priority":0}}""", op.body)
             assertEquals(0, db.inbox().deckSize())
             assertNull(db.inbox().stateOnce())
-            assertEquals(4, db.openHelper.readableDatabase.version)
+            assertEquals(5, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
+
+    /** v4 → v5 (Habits): a phone on 0.6.x keeps its Inbox day and deck; the habit tables start empty, sentAt at 0. */
+    @Test fun fourToFiveKeepsTheInboxAndAddsEmptyHabits() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/4.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(4, schema["version"]!!.jsonPrimitive.content.toInt())
+
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("""INSERT INTO tasks (id, project, phase, sort, text, title, status, priority, star, due, every, doneWhen, doneAt, updatedAt, serverVersion, syncStatus, lastModified, phaseSort, phaseNow)
+                VALUES ('t_h', 'me', 'Now', 1.0, 'Stretch', NULL, 'open', 2, 0, '2026-10-28 07:30', 'day', NULL, NULL, '2026-10-27T10:00:00Z', 1, 'synced', 5, 0, 1)""")
+            old.execSQL("""INSERT INTO inbox_items (file, position, saved, source, text, claim, why, project, kind, next, note, guessed, author, posted, later, hasPicture, sortedAs)
+                VALUES ('inbox/a.md', 0, '2026-10-27', '', 'post', 'A claim', '', 'me', 'drop', '', '', 1, '', '', NULL, 0, NULL)""")
+            old.execSQL("INSERT INTO inbox_state (id, day, goal, sorted, keptToday, cap, minWords, total, fetchedAt) VALUES ('inbox', '2026-10-28', 20, 7, 2, 5, 6, 214, 99)")
+            old.version = 4
+        }
+
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            assertEquals("day", db.dao().taskOnce("t_h")!!.every)
+            assertEquals(1, db.inbox().deckSize())
+            val s = db.inbox().stateOnce()!!
+            assertEquals(7, s.sorted)
+            assertEquals(214, s.total)
+            assertEquals(0L, s.sentAt)
+            assertEquals(listOf("t_h"), db.dao().habitsOnce().map { it.id })
+            assertEquals(emptyList<Any>(), db.dao().habitTicksOf("t_h"))
+            assertEquals(emptyList<Any>(), db.dao().remindersOnce())
+            assertEquals(5, db.openHelper.readableDatabase.version)
         } finally {
             db.close()
         }

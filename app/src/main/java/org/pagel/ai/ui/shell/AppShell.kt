@@ -97,6 +97,7 @@ import org.pagel.ai.ui.task.TaskPanelSheet
 import org.pagel.ai.ui.tasks.TasksScreen
 import org.pagel.ai.ui.today.TodayRoute as TodayScreenRoute
 import org.pagel.ai.ui.inbox.InboxRoute as InboxScreenRoute
+import org.pagel.ai.ui.habits.HabitsRoute as HabitsScreenRoute
 
 /** The glass bar: 64 dp, or 48 dp on a landscape phone, where 64 dp took 30 % of the height (checker 2026-10-28 #10). */
 private val BarTall = 64.dp
@@ -197,7 +198,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 entryProvider = entryProvider<NavKey> {
                     entry<TodayRoute> { TodayScreenRoute(padding, reselect) }
                     entry<InboxRoute> { InboxScreenRoute(padding, reselect) }
-                    entry<HabitsRoute> { Coming("Habits", "/habits", padding) { stack.add(WebRoute(it)) } }
+                    entry<HabitsRoute> { HabitsScreenRoute(padding, reselect) }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
                     entry<MoreRoute> { More(padding, onOpenProjects = { stack.add(ProjectListRoute) }, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect) }
                     entry<ProjectListRoute> { ProjectsRoute(padding, reselect, onOpenProject = { stack.add(ProjectPageRoute(it)) }) }
@@ -258,9 +259,13 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         // The toast line lives here, over the real list, so its glass bends what is under it (audit #8). While a sheet is
         // open the sheet shows it instead.
         if (toasts.sheets == 0) {
+            // The Inbox has no + and its main button (the AI's pick) sits low: there the toast comes in under the status
+            // bar, so "Dropped · Undo" never covers the next card's button (checker 2026-10-28 #2).
+            val inboxTop = onTop && Tab.entries[selected] == Tab.Inbox
             ToastHost(
                 toasts,
-                Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars)
+                if (inboxTop) Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(start = 12.dp, end = 12.dp, top = 8.dp)
+                else Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars)
                     .padding(start = 12.dp, end = 12.dp, bottom = if (onTop) fabBottom + 56.dp + 10.dp else 16.dp + 56.dp + 10.dp),
                 backdrop = backdrop,
             )

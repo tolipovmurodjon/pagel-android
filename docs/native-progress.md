@@ -41,6 +41,60 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v10 · PHASE 3 OF 10 = HABITS + REMINDERS, + THE PHASE 2 CHECKER'S FIXES (2026-10-28, builder agent)
+The web's `/habits` on the phone, behind the Habits tab (`ui/habits/`), offline-first, plus reminders with a Done button.
+- **Server** (dashboard `feat/gtd-core` **99b420a, DEPLOY NEEDED**): `GET /api/v1/habits?days=60` (`src/lib/habits-api.ts`:
+  open habits with part of day + streak + done today, and the ticks by task id from the events history, `habit_done` adds
+  the day, `habit_undone` takes it out, filtered by the event's own Tashkent day) and `POST /api/v1/inbox {action:"triage",
+  files}` (`apiTriage` in `inbox-api.ts`: the web's own `triage()` from learn.ts, which already runs one Claude read at a
+  time and lets a second caller join; at most one start a minute; 202 at once, the reads come with the next deck). A habit
+  tick by id was already there: `PATCH /api/v1/tasks/<id> {done:true}` moves the date and logs habit_done; Undo =
+  `{due: <old date>}` (logs habit_undone), as the web. vitest `habits-api.test.ts` 4/4 + 2 triage tests in
+  `inbox-api.test.ts` (13/13 in both files); `tsc --noEmit` clean. Until it is deployed, pagel.uz answers 404 for habits →
+  the phone still shows every habit (they come with /sync) and counts its own ticks; streaks from before the phone wait.
+- **Room v5** (AutoMigration 4→5, `MigrationTest.fourToFiveKeepsTheInboxAndAddsEmptyHabits`; `4.json` is now in git, it was
+  missing): `habit_ticks(day, taskId)`, `habit_reminders(taskId, enabled)`, `inbox_state.sentAt`.
+- **How a tick works** (`data/habits/HabitsRepository.kt`): Room first: the habit moves to its next date by the web's repeat
+  rule (`Repeat.nextDue`, a port of lib/repeat.ts with every repeat kind) and today is counted; then one outbox
+  `PATCH {"set":{"done":true},"was":{"due":<old>,"untick":<day>}}`. Undo inside the outbox = taken back (pagel.uz never sees
+  it); after = `PATCH {due: old}` with `retick` to roll back. A refusal puts the date and the day back (`applyWas`).
+  `replaceHabitTicks` never overwrites a habit with a change still waiting. Ticked already today → no second tick.
+- **Screen** (`HabitsScreen.kt`): "Every day, the same few things" · Habits · "N of M done today" + the day's bar; panes
+  🌅 Morning / ☀️ Afternoon / 🌙 Evening / 🔁 Anytime (before 12 / before 17 / later / no time, as views.ts), each row the
+  Today tick ring (ding, confetti, haptic), the words, time or "late" date, the repeat, 🔥 streak (`streakOf`, the web's
+  Duolingo rule), and a bell when it has a time; tap = the Phase-1 task panel. The ticked one keeps its row 1.25 s, then
+  moves to "Done today ✓"; "Coming up" lists later dates. The last one: the all-done card (🔥, "N habits ticked. Longest
+  streak: X in a row.") with ding + confetti once a day on this phone. Salah: the web's /habits has no salah link, so none.
+- **Reminders** (`reminders/`): the bell opens a sheet: "Remind me" switch + Apple time wheel (a new time = PATCH due).
+  `HabitAlarms` plans one AlarmManager alarm per habit at `ReminderMath.nextFire` (its time today if still ahead, else the
+  next day it repeats on, Tashkent): `setExactAndAllowWhileIdle` with SCHEDULE_EXACT_ALARM (Android 14+ denies it by
+  default; asked once, at the first reminder turned on, via Settings; USE_EXACT_ALARM not used: Play keeps it for alarm and
+  calendar apps), else `setWindow` 10 min and the sheet says so in red. POST_NOTIFICATIONS is asked at the same first use,
+  never at launch. `HabitAlarmReceiver` (not exported, explicit + FLAG_IMMUTABLE PendingIntents, goAsync, 9 s cap): FIRE
+  posts "<habit> · 07:30 · 🔥 3" with a **Done** action unless it is off or already ticked; DONE ticks through the same
+  outbox (offline works) and clears the notification. Plans again after a tick, a switch, a new time, boot, an app
+  update and an exact-alarm grant (`BootReceiver`).
+- **Phase 2 checker fixes** (`docs/qa/phase2-checker.md` top 10): #1 the picture gives up ~320 dp per font step and hides
+  under 96 dp, caption 1 line at ≥ 1.3× (test: the AI pick ends above the tab bar at 1.5×); #2 on the Inbox the toast comes
+  in under the status bar, never over the AI pick; #3 the fake's day is Tashkent's, `choose` resets the ring only when
+  pagel.uz has not spoken since midnight, `refresh` keeps `max` when a choice landed after its GET left (`InboxDayTest`),
+  the walkthrough checks the ring goes N → N+1; #4 pictures: Shown / None / Unavailable, an unavailable one is never cached
+  and is fetched again when the link is back, 10 pre-fetched, "With the picture" only when one shows; #5 the five other
+  choices are one row of icons with the word under it; #6 "Read all" whenever the caption is cut (text overflow); #7 the
+  counts line has the full width and no-break spaces; #8 empty deck with saves on pagel.uz = cloud-off "214 more when
+  online", no "left"; #9 Undo is a 48 dp target, a swiped card leaves with the finger's speed (critically damped spring with
+  its velocity); #10 the AI pick: sparkle + the hint alone in full white, "5/5 learned · one line", no "P1, this week", the
+  chosen segment is white + shadow. Also: the card behind shows the next save's site and claim (no blank slab).
+- **The AI read of unread saves** (the checker's main gap): when one of the next 5 cards has no pick, the Inbox asks
+  pagel.uz to read the next unread ones (at most once a minute; offline, again in 15 s), says "The AI is reading it now",
+  and refreshes the deck at +40 s and +80 s so the picks show. Walkthrough: ib8 (unread) asks after the link is back.
+- **Not in this phase**: per-habit reminder offsets (only at its time) and a snooze; the web's "Coming up" shows every
+  repeat's next day, the phone only open habits with a later date (same as the web's list); a habit's history calendar;
+  the Inbox's other gaps from v9 (filters, Shuffle, clear old, paste, recall, research progress); the checker's smaller
+  notes not in its top 10 (guide sheet bottom fade, swipe-up rubber band on a put-off card, the landscape bar on row 3, the
+  Add sheet's typed text cut on the left); the Action/Note colour #1C7E69 (a question for Boss, unchanged).
+- **CI**: (filled below)
+
 ## START HERE v9 · PHASE 2 OF 10 = INBOX SORTING (2026-10-28, builder agent)
 The web's `/learn` on the phone, behind the Inbox tab (`ui/inbox/`), offline-first:
 - **Server** (dashboard `feat/gtd-core` **ff7de79, NOT DEPLOYED**): `GET /api/v1/inbox?limit=&seed=` (the deck in the web's

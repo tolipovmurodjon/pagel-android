@@ -4,7 +4,10 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,6 +25,8 @@ import org.pagel.ai.data.db.ProjectEntity
 import org.pagel.ai.data.inbox.Choice
 import org.pagel.ai.data.inbox.InboxPictures
 import org.pagel.ai.data.inbox.InboxRepository
+import org.pagel.ai.data.inbox.Picture
+import org.pagel.ai.data.sync.LiveStatus
 import org.pagel.ai.data.session.Session
 import org.pagel.ai.ui.glass.ToastCenter
 import org.pagel.ai.ui.projects.shortName
@@ -76,12 +81,14 @@ data class InboxUi(
     val left: Int = 0,
     val streak: Int = 0,
     val projects: List<ProjectEntity> = emptyList(),
+    /** pagel.uz's AI is reading the next unread saves (asked from here); their picks come with the next deck. */
+    val reading: Boolean = false,
 ) {
     val full get() = kept >= cap
 }
 
 /** A card on its way out: drawn over the deck for its exit motion, after Room already let it go. */
-data class Leaving(val id: Long, val card: InboxCard, val choice: Choice, val fromX: Float = 0f, val fromY: Float = 0f)
+data class Leaving(val id: Long, val card: InboxCard, val choice: Choice, val thrown: Throw = Throw.None)
 
 /** An open choice form (Action, Note, Learn, Do now): the card it is for and the line Boss writes. */
 data class Form(val card: InboxCard, val choice: Choice, val line: String, val project: String, val someday: Boolean)
@@ -103,9 +110,13 @@ class InboxViewModel @Inject constructor(
     private val pictures: InboxPictures,
     private val accounts: AccountStore,
     private val toasts: ToastCenter,
-    session: Session,
+    private val session: Session,
 ) : ViewModel() {
     private val streak = MutableStateFlow(0)
+    private val reading = MutableStateFlow(false)
+    /** Pictures that could not be fetched (offline): asked for again when the live link is back. */
+    private val retryPictures = mutableSetOf<String>()
+    private var lastAsk = 0L
     private val _leaving = MutableStateFlow<Leaving?>(null)
     val leaving: StateFlow<Leaving?> = _leaving.asStateFlow()
     private val _form = MutableStateFlow<Form?>(null)
@@ -118,20 +129,41 @@ class InboxViewModel @Inject constructor(
     private var nextLeave = 1L
     private var refreshing = false
 
-    val ui: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), streak) { deck, state, leavingCount, projects, run ->
-        build(deck, state, leavingCount, projects, run)
+    val ui: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), combine(streak, reading) { a, b -> a to b }) { deck, state, leavingCount, projects, (run, aiReading) ->
+        build(deck, state, leavingCount, projects, run).copy(reading = aiReading)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     init {
         refresh()
-        // The pictures of the next three cards, ahead of time, so they show at once (and offline).
+        // The pictures of the next ten cards, ahead of time while online, so a subway ride still shows them. One that
+        // could not be fetched is asked for again when the live link is back (checker 2026-10-28 #4).
         viewModelScope.launch {
-            repo.deck.map { d -> d.take(3).filter(InboxItemEntity::hasPicture).map(InboxItemEntity::file) }.distinctUntilChanged().collect { files ->
+            val files = repo.deck.map { d -> d.take(PREFETCH).filter(InboxItemEntity::hasPicture).map(InboxItemEntity::file) }.distinctUntilChanged()
+            val online = session.live.map { it is LiveStatus.Live }.distinctUntilChanged()
+            combine(files, online) { f, on -> f to on }.collect { (list, on) ->
                 val account = (accounts.load() as? AccountState.Paired)?.account ?: return@collect
-                for (f in files) if (f !in _pictures.value) {
-                    // null = the post has none (or it could not be fetched now): the card drops the picture's place.
-                    val bmp = pictures.load(account, f)
-                    _pictures.update { it + (f to bmp) }
+                for (f in list) if (f !in _pictures.value || (on && f in retryPictures)) {
+                    // null in the map = no picture to show now: the card drops the picture's place.
+                    when (val p = pictures.load(account, f)) {
+                        is Picture.Shown -> { retryPictures -= f; _pictures.update { it + (f to p.bitmap) } }
+                        Picture.None -> { retryPictures -= f; _pictures.update { it + (f to null) } }
+                        Picture.Unavailable -> { retryPictures += f; _pictures.update { it + (f to null) } }
+                    }
+                }
+            }
+        }
+        // Back online with a short deck: the next cards come now, not at the next choice.
+        viewModelScope.launch {
+            session.live.map { it is LiveStatus.Live }.distinctUntilChanged().collect { on -> if (on && ui.value.cards.size < 2) refresh() }
+        }
+        // The AI's read of unread saves (the web's triage after 8 s on /learn): when one of the next 5 cards has no
+        // pick, ask pagel.uz's AI to read the next unread ones, at most once a minute; offline, try again in 15 s.
+        viewModelScope.launch {
+            repo.deck.map { d -> d.take(NEXT).any { !it.guessed } }.distinctUntilChanged().collectLatest { unread ->
+                if (!unread) { reading.value = false; return@collectLatest }
+                while (true) {
+                    askToRead()
+                    delay(15_000)
                 }
             }
         }
@@ -164,13 +196,29 @@ class InboxViewModel @Inject constructor(
         }
     }
 
+    private suspend fun askToRead() {
+        val now = System.currentTimeMillis()
+        if (now - lastAsk < ASK_GAP_MS) return
+        val account = (accounts.load() as? AccountState.Paired)?.account ?: return
+        val files = repo.deck.first().take(25).filter { !it.guessed }.map(InboxItemEntity::file)
+        if (files.isEmpty() || !repo.askToRead(account, files)) return
+        lastAsk = now
+        reading.value = true
+        // The read takes well under a minute on the server; the deck brings the picks.
+        viewModelScope.launch {
+            delay(40_000); refresh()
+            delay(40_000); refresh()
+            reading.value = false
+        }
+    }
+
     /** A choice that needs no words (Later, Drop) leaves now; the others open their form first. */
-    fun choose(card: InboxCard, choice: Choice, fromX: Float = 0f, fromY: Float = 0f) {
+    fun choose(card: InboxCard, choice: Choice, thrown: Throw = Throw.None) {
         val u = ui.value
         if (choice == Choice.KEEP && u.full) return
         if (choice == Choice.LATER && card.putOff) return
         when (choice) {
-            Choice.LATER, Choice.DROP -> leave(card, choice, fromX, fromY, null, null, null)
+            Choice.LATER, Choice.DROP -> leave(card, choice, thrown, null, null, null)
             else -> openForm(card, choice)
         }
     }
@@ -197,17 +245,17 @@ class InboxViewModel @Inject constructor(
         if (f.choice != Choice.NOW && words(f.line) < need) return
         _form.value = null
         when (f.choice) {
-            Choice.ACT -> leave(f.card, Choice.ACT, 0f, 0f, f.line, f.project, f.someday)
-            Choice.NOTE -> leave(f.card, Choice.NOTE, 0f, 0f, f.line, f.project, null)
-            Choice.KEEP -> leave(f.card, Choice.KEEP, 0f, 0f, f.line, null, null)
-            else -> leave(f.card, Choice.NOW, 0f, 0f, null, null, null)
+            Choice.ACT -> leave(f.card, Choice.ACT, Throw.None, f.line, f.project, f.someday)
+            Choice.NOTE -> leave(f.card, Choice.NOTE, Throw.None, f.line, f.project, null)
+            Choice.KEEP -> leave(f.card, Choice.KEEP, Throw.None, f.line, null, null)
+            else -> leave(f.card, Choice.NOW, Throw.None, null, null, null)
         }
     }
 
     fun leaveDone(id: Long) = _leaving.update { if (it?.id == id) null else it }
 
-    private fun leave(card: InboxCard, choice: Choice, fromX: Float, fromY: Float, line: String?, project: String?, someday: Boolean?) {
-        _leaving.value = Leaving(nextLeave++, card, choice, fromX, fromY)
+    private fun leave(card: InboxCard, choice: Choice, thrown: Throw, line: String?, project: String?, someday: Boolean?) {
+        _leaving.value = Leaving(nextLeave++, card, choice, thrown)
         if (choice != Choice.LATER) streak.update { it + 1 }
         val keptBefore = ui.value.kept
         viewModelScope.launch {
@@ -235,7 +283,8 @@ class InboxViewModel @Inject constructor(
 
     private fun build(deck: List<InboxItemEntity>, s: InboxStateEntity?, leavingCount: Int, projects: List<ProjectEntity>, run: Int): InboxUi {
         val today = org.pagel.ai.data.inbox.tashkentDay(System.currentTimeMillis())
-        val fresh = s != null && s.day == today
+        // Today's counts: the day pagel.uz names, or counts it sent today (never a ring reset by a stale day field).
+        val fresh = s != null && (s.day == today || org.pagel.ai.data.inbox.tashkentDay(s.fetchedAt) == today)
         val kept = if (fresh) s!!.keptToday else 0
         val cap = s?.cap ?: 5
         val byName = projects.associateBy(ProjectEntity::name)
@@ -254,6 +303,12 @@ class InboxViewModel @Inject constructor(
     }
 
     companion object {
+        /** Cards whose pictures are fetched ahead of time. */
+        private const val PREFETCH = 10
+        /** The cards Boss sees next: one with no AI pick among them asks pagel.uz's AI to read. */
+        private const val NEXT = 5
+        private const val ASK_GAP_MS = 60_000L
+
         /** The web's cheers for keeps (learn-client.tsx CHEERS): 5 is the habit, bigger days get bigger words. */
         val CHEERS = mapOf(
             5 to "5 learned. Today's habit is done 🎉",

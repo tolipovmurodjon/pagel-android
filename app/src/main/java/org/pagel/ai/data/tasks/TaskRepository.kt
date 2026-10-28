@@ -221,6 +221,9 @@ suspend fun PagelDao.applyWas(taskId: String, was: JsonObject, at: Long = System
         val titles = stepsOnce(taskId).associate { it.text to it.title }
         replaceSteps(taskId, steps.mapIndexed { i, s -> val text = s.str().orEmpty(); StepEntity(taskId, i, text, titles[text], i in ticked) })
     }
+    // A habit's tick taken back (a refused tick) or given back (a refused Undo of one): its day in the habit log follows.
+    (was["untick"] as? JsonPrimitive)?.contentOrNull?.let { deleteHabitTick(it, taskId) }
+    (was["retick"] as? JsonPrimitive)?.contentOrNull?.let { addHabitTick(org.pagel.ai.data.db.HabitTickEntity(it, taskId)) }
     when ((was["today"] as? JsonPrimitive)?.booleanOrNull) {
         true -> ensureOnToday(taskId)
         false -> removeFromToday(taskId)

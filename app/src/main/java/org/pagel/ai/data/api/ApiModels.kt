@@ -132,3 +132,19 @@ data class SortReply(
     val sorted: Int? = null,
     @SerialName("kept_today") val keptToday: Int? = null,
 )
+
+/** One day a habit was ticked, by task id (dashboard src/lib/habits-api.ts). */
+@Serializable
+data class HabitTickDto(val day: String, val id: String)
+
+/** `GET /api/v1/habits`: the phone needs the ticks; the habits themselves come with /sync. */
+@Serializable
+data class HabitsResponse(
+    val day: String = "",
+    @SerialName("done_today") val doneToday: List<String> = emptyList(),
+    val ticks: List<HabitTickDto> = emptyList(),
+)
+
+/** `POST /api/v1/inbox {action: "triage", files}` answers 202: started, or not (one start a minute); the reads arrive with the next deck. */
+@Serializable
+data class TriageReply(val started: Boolean = false, @SerialName("wait_s") val waitS: Int? = null)

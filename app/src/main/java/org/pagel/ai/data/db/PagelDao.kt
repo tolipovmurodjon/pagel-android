@@ -229,4 +229,50 @@ abstract class PagelDao {
         saveSyncState(state)
     }
 
+    // ── Habits (Phase 3) ──────────────────────────────────────────────────────────────────────────────────────────
+
+    /** Open habits: repeating tasks, as the web's habitsView reads them (views.ts). */
+    @Query("SELECT * FROM tasks WHERE every IS NOT NULL AND every != '' AND status = 'open'")
+    abstract fun habits(): Flow<List<TaskEntity>>
+
+    @Query("SELECT * FROM tasks WHERE every IS NOT NULL AND every != '' AND status = 'open'")
+    abstract suspend fun habitsOnce(): List<TaskEntity>
+
+    @Query("SELECT * FROM habit_ticks WHERE day >= :since")
+    abstract fun habitTicks(since: String): Flow<List<HabitTickEntity>>
+
+    @Query("SELECT * FROM habit_ticks WHERE taskId = :taskId")
+    abstract suspend fun habitTicksOf(taskId: String): List<HabitTickEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun addHabitTick(row: HabitTickEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun addHabitTicks(rows: List<HabitTickEntity>)
+
+    @Query("DELETE FROM habit_ticks WHERE day = :day AND taskId = :taskId")
+    abstract suspend fun deleteHabitTick(day: String, taskId: String)
+
+    @Query("DELETE FROM habit_ticks WHERE taskId NOT IN (SELECT taskId FROM outbox WHERE refused IS NULL)")
+    abstract suspend fun deleteSettledHabitTicks()
+
+    /**
+     * pagel.uz's ticks replace the phone's, except for a habit with a change still waiting in the outbox: its ticks
+     * stay the phone's until pagel.uz has the change (the same rule as [applySync]).
+     */
+    @Transaction
+    open suspend fun replaceHabitTicks(rows: List<HabitTickEntity>) {
+        val waiting = waitingOutbox().map { it.taskId }.toSet()
+        deleteSettledHabitTicks()
+        addHabitTicks(rows.filter { it.taskId !in waiting })
+    }
+
+    @Query("SELECT * FROM habit_reminders")
+    abstract fun reminders(): Flow<List<HabitReminderEntity>>
+
+    @Query("SELECT * FROM habit_reminders")
+    abstract suspend fun remindersOnce(): List<HabitReminderEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun setReminder(row: HabitReminderEntity)
 }
