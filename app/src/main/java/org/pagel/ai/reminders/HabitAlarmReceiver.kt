@@ -73,9 +73,41 @@ class HabitAlarmReceiver : BroadcastReceiver() {
         // Already ticked today (in the app, on the web, or by an earlier Done): no ring for a done habit (checker #3).
         if (t != null && on && t.status == "open" && !t.every.isNullOrBlank() && (due == null || due.take(10) <= today) && today !in days) {
             val streak = streakOf(t.every, days, today) ?: 0
-            post(ctx, id, t.title?.takeIf(String::isNotBlank) ?: headline(t.text), due?.drop(11)?.trim().orEmpty(), streak)
+            val title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
+            // A prayer (round D): only "Peshin vaqti kirdi · 12:11", its own picture, no streak (Boss: plain and respectful).
+            val prayer = org.pagel.ai.data.habits.Namoz.prayerOf(title)?.takeIf { org.pagel.ai.data.habits.isNamoz(t) }
+            val window = prayer?.let { p -> org.pagel.ai.data.habits.Namoz.windows(java.time.LocalDate.parse(today)).first { it.prayer == p } }
+            if (window != null) postPrayer(ctx, id, window) else post(ctx, id, title, due?.drop(11)?.trim().orEmpty(), streak)
         }
         habits.replan()
+    }
+
+    /** The prayer's notice: one plain line, its picture, Done; no streak, no joke, no red (Boss 2026-10-28). */
+    private fun postPrayer(ctx: Context, id: String, w: org.pagel.ai.data.habits.Namoz.Window) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Habits", NotificationManager.IMPORTANCE_HIGH).apply { description = "A habit's reminder at its time" })
+        val done = PendingIntent.getBroadcast(
+            ctx, 1,
+            Intent(ctx, HabitAlarmReceiver::class.java).setAction(DONE).setData(Uri.parse("pagel://habit-done/$id")).putExtra(EXTRA_ID, id),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val open = PendingIntent.getActivity(
+            ctx, 2,
+            Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val n = NotificationCompat.Builder(ctx, CHANNEL)
+            .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_pagel)
+            .setLargeIcon(org.pagel.ai.ui.glass.Emoji.largeIcon(ctx, w.prayer.emoji))
+            .setColor(0xFF1C7E69.toInt())
+            .setContentTitle(org.pagel.ai.data.habits.Namoz.notice(w))
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .addAction(0, "Done", done)
+            .build()
+        runCatching { nm.notify(id, NOTIF, n) }
     }
 
     private fun post(ctx: Context, id: String, habit: String, time: String, streak: Int) {
@@ -92,15 +124,17 @@ class HabitAlarmReceiver : BroadcastReceiver() {
             Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val emoji = org.pagel.ai.ui.glass.Emoji.keyFor(habit)
         val n = NotificationCompat.Builder(ctx, CHANNEL)
-            .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_bell)
+            .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_pagel)
+            .setLargeIcon(org.pagel.ai.ui.glass.Emoji.largeIcon(ctx, emoji))
             .setColor(0xFF1C7E69.toInt())
             // Collapsed, a long habit as the title was cut ("Stretch for ten min…", walk 40, also with BigTextStyle):
             // a short title, the habit in the text line (it wraps when expanded), the time in the header.
             .setContentTitle(if (streak > 1) "Time for it · 🔥 $streak" else "Time for it")
-            .setContentText(habit)
+            .setContentText("${org.pagel.ai.ui.glass.Emoji.glyph(emoji)} $habit")
             .apply { if (time.isNotEmpty()) setSubText(time) }
-            .setStyle(NotificationCompat.BigTextStyle().bigText(habit))
+            .setStyle(NotificationCompat.BigTextStyle().bigText("${org.pagel.ai.ui.glass.Emoji.glyph(emoji)} $habit"))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(open)
             .setAutoCancel(true)

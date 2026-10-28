@@ -253,10 +253,18 @@ class TaskAlarmReceiver : BroadcastReceiver() {
         val open = PendingIntent.getActivity(ctx, 2, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val group = "tasks-$day"
+        // Round D 0c: the human-made emoji as the large icon, and the title starts with it.
+        val notice = when (tag) {
+            "morning" -> org.pagel.ai.ui.glass.Emoji.Notice.MORNING_PLAN; "overdue" -> org.pagel.ai.ui.glass.Emoji.Notice.OVERDUE
+            "evening-nudge" -> org.pagel.ai.ui.glass.Emoji.Notice.CLOSE_THE_DAY; else -> null
+        }
+        val emoji = notice?.key ?: org.pagel.ai.ui.glass.Emoji.keyFor(text)
+        val glyph = notice?.glyph ?: org.pagel.ai.ui.glass.Emoji.glyph(emoji)
         val n = NotificationCompat.Builder(ctx, channel)
-            .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_bell)
+            .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_pagel)
+            .setLargeIcon(org.pagel.ai.ui.glass.Emoji.largeIcon(ctx, emoji))
             .setColor(0xFF1C7E69.toInt())
-            .setContentTitle(title)
+            .setContentTitle(if (title.startsWith(glyph)) title else "$glyph $title")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .apply { if (sub.isNotEmpty()) setSubText(sub) }
@@ -276,7 +284,7 @@ class TaskAlarmReceiver : BroadcastReceiver() {
         runCatching {
             nm.notify(tag, NOTIF, n)
             // The day's group summary: Android folds the day's reminders under it.
-            nm.notify(group, SUMMARY, NotificationCompat.Builder(ctx, channel).setSmallIcon(org.pagel.ai.R.drawable.ic_stat_bell)
+            nm.notify(group, SUMMARY, NotificationCompat.Builder(ctx, channel).setSmallIcon(org.pagel.ai.R.drawable.ic_stat_pagel)
                 .setColor(0xFF1C7E69.toInt()).setGroup(group).setGroupSummary(true).setSilent(true).setAutoCancel(true).build())
         }
     }

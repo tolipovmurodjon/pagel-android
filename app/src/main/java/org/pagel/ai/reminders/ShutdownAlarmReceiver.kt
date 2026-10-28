@@ -81,7 +81,8 @@ class ShutdownAlarmReceiver : BroadcastReceiver() {
             else -> "$stars stars still open. Five minutes, then sleep."
         }
         val n = NotificationCompat.Builder(ctx, CHANNEL)
-            .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_bell)
+            .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_pagel)
+            .setLargeIcon(org.pagel.ai.ui.glass.Emoji.largeIcon(ctx, org.pagel.ai.ui.glass.Emoji.Notice.CLOSE_THE_DAY.key))
             .setColor(0xFF1C7E69.toInt())
             .setContentTitle("Close the day")
             .setContentText(line)

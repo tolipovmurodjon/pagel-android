@@ -74,7 +74,13 @@ class HabitAlarms(
         for (r in dao.remindersOnce()) {
             val pi = fireIntent(ctx, r.taskId)
             val h = habits[r.taskId]
-            val at = if (r.enabled && h != null) ReminderMath.nextFire(h.due, h.every, now) else null
+            // A prayer rings at that day's own time (round D), never at the date's fixed one.
+            val prayer = h?.takeIf { org.pagel.ai.data.habits.isNamoz(it) }?.let { org.pagel.ai.data.habits.Namoz.prayerOf(it.title ?: it.text) }
+            val at = when {
+                !r.enabled || h == null -> null
+                prayer != null -> org.pagel.ai.data.habits.Namoz.nextStart(prayer, now)
+                else -> ReminderMath.nextFire(h.due, h.every, now)
+            }
             if (at == null) { am.cancel(pi); continue }
             val ms = at.toInstant().toEpochMilli()
             // Each alarm on its own: a revoked exact grant throws SecurityException, which used to drop every habit after
