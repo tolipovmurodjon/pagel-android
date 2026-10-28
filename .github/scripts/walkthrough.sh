@@ -133,30 +133,40 @@ log "   the dock's $CHECKED choices all end above the bar (top y=$BAR)"
 RING=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$XML" | grep -oE '[0-9]+' | head -1)
 [ -n "$RING" ] || { log "WALKTHROUGH: the Inbox ring says nothing"; exit 1; }
 # Boss's swipe map (2026-10-28): up shuffles, down drops, left learns, right makes an Action, a hold is Do now. Each
-# swipe is 150 dp from the claim's centre, kept inside the 320x640 screen (an 800-px swipe ended off screen once).
+# swipe is 220 dp from the claim's centre over 400 ms, kept inside the 320x640 screen. CI 40654453531: a 150-px swipe in
+# 200 ms reached the app (down y=204, up y=354) but its last moves came batched, so the card stopped short of the 110 dp
+# line; a lost swipe sorts nothing, so it is tried once more while the same card is still on top.
 DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
-D=$(( 150 * DPI / 160 ))
+D=$(( 220 * DPI / 160 ))
 SIZE=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1); W=${SIZE%x*}; H=${SIZE#*x}
 clamp() { local v=$1; [ "$v" -lt 8 ] && v=8; [ "$v" -gt $(( $2 - 8 )) ] && v=$(( $2 - 8 )); echo "$v"; }
-swipe_card() { # $1 claim, $2 direction
-  local P; P=$(centre "$1") || exit 1; set -- $P "$2"
+swipe_once() { # $1 claim, $2 direction
+  local P; P=$(centre "$1") || return 1; set -- $P "$2"
   local x2=$1 y2=$2
   case $3 in up) y2=$(( $2 - D ));; down) y2=$(( $2 + D ));; left) x2=$(( $1 - D ));; right) x2=$(( $1 + D ));; esac
-  $T adb shell input swipe "$1" "$2" "$(clamp $x2 $W)" "$(clamp $y2 $H)" 200
+  $T adb shell input swipe "$1" "$2" "$(clamp $x2 $W)" "$(clamp $y2 $H)" 400
 }
-swipe_card "10 AI tools lists are mostly ads" down; shot inbox-swiped-down-drop 1.5
+swipe_card() { # $1 claim, $2 direction, $3 what shows once it worked (text or content-desc)
+  swipe_once "$1" "$2" || exit 1
+  sleep 1.5
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -qE "(text|content-desc)=\"$3\"" && return 0
+  log "   the swipe $2 on \"$1\" was lost; once more"
+  swipe_once "$1" "$2" || log "   (it had gone after all)"
+}
+swipe_card "10 AI tools lists are mostly ads" down "$((RING + 1)) of 20 sorted today"; shot inbox-swiped-down-drop 1.5
 grep -q "content-desc=\"$((RING + 1)) of 20 sorted today\"" "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" \
   || { log "WALKTHROUGH: the ring did not go $RING -> $((RING + 1)) after one sort"; grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   the ring went $RING -> $((RING + 1))"
 # Later stays a button in the dock (up is the shuffle now).
 tap Later && shot inbox-later-button 1.5
-swipe_card "A meme about Mondays" down; shot inbox-swiped-down-ai-drop 1.5
-swipe_card "The IT Park grant round closes on 15 November" right; shot inbox-swiped-right-action-form 2
+swipe_card "A meme about Mondays" down "The IT Park grant round closes on 15 November"; shot inbox-swiped-down-ai-drop 1.5
+swipe_card "The IT Park grant round closes on 15 November" right "Add to plan"; shot inbox-swiped-right-action-form 2
 tap "Add to plan" && shot inbox-action-sent 1.5
 tap "AI pick: Note" && shot inbox-note-form 2
 tap "Save note" && shot inbox-note-sent 1.5
 # Up = shuffle: ib6 goes back into the deck (two or more cards on), ib7 is on top, and nothing is sent.
-swipe_card "Spaced repetition apps keep 90 % after a month" up; shot inbox-swiped-up-shuffle 1.5
+swipe_card "Spaced repetition apps keep 90 % after a month" up "Buy a second battery for the A05s"; shot inbox-swiped-up-shuffle 1.5
 XML="$OUT/$(printf '%02d' $N)-inbox-swiped-up-shuffle.xml"
 grep -q 'text="Buy a second battery for the A05s"' "$XML" || { log "WALKTHROUGH: after the shuffle ib7 is not on top"; exit 1; }
 grep -q 'text="Spaced repetition apps keep 90 % after a month"' "$XML" && { log "WALKTHROUGH: the shuffled card is still on top"; exit 1; }
