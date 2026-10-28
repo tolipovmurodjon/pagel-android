@@ -28,6 +28,7 @@ import java.security.SecureRandom
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import javax.crypto.Cipher
 
 /** Where the Compass stands on this phone. */
 enum class VaultState { READING, NO_LOCK, NEW, LOCKED, LOST, OPEN }
@@ -96,6 +97,7 @@ class CompassRepository(
     private val random = SecureRandom()
 
     fun today(): LocalDate = Instant.ofEpochMilli(clock()).atZone(TASHKENT).toLocalDate()
+    fun now(): Long = clock()
 
     val state: Flow<VaultState> = combine(dao.vault(), dao.itemCount(), key.key) { v, n, k ->
         when {
@@ -115,7 +117,7 @@ class CompassRepository(
         val goals = mutableListOf<Goal>()
         val notes = mutableListOf<Note>()
         for (row in items) {
-            val plain = CompassCrypto.open(k, row.id, row.blob)
+            val plain = CompassCrypto.open(k, CompassCrypto.aad(row.id, row.kind, row.parent, row.starts, row.ends), row.blob)
             if (plain == null) { bad++; continue }
             val text = plain.toString(Charsets.UTF_8)
             plain.fill(0)
@@ -141,27 +143,35 @@ class CompassRepository(
 
     // ── Unlock ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /** Before the first prompt: the Keystore guard is made, so the prompt's unlock window covers the first wrap. */
-    suspend fun prepare() = withContext(io) { keys.prepare() }
-
-    /** Right after a successful prompt on a new Compass: a fresh data key, wrapped by the Keystore, opened. */
-    suspend fun create() = withContext(io) {
-        val dek = CompassCrypto.newDataKey()
-        val wrapped = keys.wrap(dek)
-        dao.upsertVault(vaultNow().copy(wrapped = wrapped))
-        key.open(dek)
-    }
-
-    /** Right after a successful prompt: the data key back. A guard that is gone turns the Compass to LOST. */
-    suspend fun unlock() = withContext(io) {
+    /**
+     * The cipher the Compass's own unlock prompt authorises (one use, CryptoObject): DECRYPT for a locked Compass;
+     * ENCRYPT for a new one, or for a phone whose guard key is gone (made fresh). A guard that is gone turns a locked
+     * Compass to LOST and throws [KeyGone].
+     */
+    suspend fun cipherForUnlock(): Cipher = withContext(io) {
         val v = vaultNow()
-        val wrapped = v.wrapped ?: throw KeyGone()
+        val wrapped = v.wrapped
+        if (wrapped == null) return@withContext keys.cipherFor(null, fresh = dao.itemCount().first() > 0)
         try {
-            key.open(keys.unwrap(wrapped))
+            keys.cipherFor(wrapped)
         } catch (e: KeyGone) {
             dao.upsertVault(v.copy(wrapped = null))
             throw e
         }
+    }
+
+    /** Right after a successful prompt on a new Compass: a fresh data key, wrapped by the Keystore, opened. */
+    suspend fun create(cipher: Cipher) = withContext(io) {
+        val dek = CompassCrypto.newDataKey()
+        val wrapped = keys.wrap(cipher, dek)
+        dao.upsertVault(vaultNow().copy(wrapped = wrapped))
+        key.open(dek)
+    }
+
+    /** Right after a successful prompt: the data key back. */
+    suspend fun unlock(cipher: Cipher) = withContext(io) {
+        val wrapped = vaultNow().wrapped ?: throw KeyGone()
+        key.open(keys.unwrap(cipher, wrapped))
     }
 
     fun lock() = key.lock()
@@ -169,21 +179,20 @@ class CompassRepository(
     fun stay() = key.stay()
 
     /** A new phone: Boss's recovery passphrase opens the sealed copy from pagel.uz. False for a wrong passphrase. */
-    suspend fun recover(passphrase: CharArray): Boolean = withContext(io) {
+    suspend fun recover(passphrase: CharArray, cipher: Cipher): Boolean = withContext(io) {
         val v = vaultNow()
         val blob = v.serverRecovery ?: v.recovery ?: return@withContext false
         val dek = CompassCrypto.openWithPassphrase(blob, passphrase) ?: return@withContext false
-        keys.prepare()
-        dao.upsertVault(v.copy(wrapped = keys.wrap(dek), recovery = blob))
+        dao.upsertVault(v.copy(wrapped = keys.wrap(cipher, dek), recovery = blob))
         key.open(dek)
         true
     }
 
     /** A new Compass on a phone whose old key is gone: the old sealed items stay on pagel.uz, unread, and leave this phone. */
-    suspend fun startOver() = withContext(io) {
+    suspend fun startOver(cipher: Cipher) = withContext(io) {
         val old = dao.items().first()
         dao.upsertItems(old.map { it.copy(deleted = true, syncStatus = CompassItemEntity.SYNCED) })
-        create()
+        create(cipher)
     }
 
     /** Sets (or with null, takes away) the recovery passphrase. */
@@ -198,14 +207,18 @@ class CompassRepository(
 
     /**
      * Seals and saves one goal; returns its id. A new weekly lead action becomes a habit through the normal habits path
-     * (a weekly repeating task): the habit row carries only the action's own words, never the goal's.
+     * (a weekly repeating task) under a NEUTRAL title, "🧭 Compass step" (a number when there are several): the step's
+     * own words stay sealed in the goal and show only in the unlocked Compass (lead's decision 2026-10-29, Boss's wall
+     * "no AI ever will read them"; compass checker #2: the words used to reach pagel.uz, the MCP and the habit bell).
      */
     suspend fun saveGoal(goal: Goal, habitProject: String = "me"): String = withContext(io) {
         val k = key.key.value ?: throw NeedsUnlock()
         val id = goal.id.ifEmpty { newId("g") }
         var body = if (goal.body.createdAt == 0L) goal.body.copy(createdAt = clock()) else goal.body
         if (body.leadAction.isNotBlank() && body.habitId == null && goal.level == Level.SEASON) {
-            body = body.copy(habitId = adder.add(body.leadAction.trim(), habitProject, priority = 2, due = today().toString(), every = "week", onToday = false))
+            val taken = opened.first().goals.mapNotNull { it.body.habitTitle }.toSet()
+            val title = CompassRules.stepTitle(taken)
+            body = body.copy(habitTitle = title, habitId = adder.add(title, habitProject, priority = 2, due = today().toString(), every = "week", onToday = false))
         }
         write(k, id, goal.level.wire, goal.parent, json.encodeToString(GoalBody.serializer(), body), goal.starts, goal.ends)
         val v = vaultNow()
@@ -243,10 +256,11 @@ class CompassRepository(
     }
 
     suspend fun setBirthday(on: Boolean) = withContext(io) { dao.upsertVault(vaultNow().copy(birthdayOn = on)) }
+    suspend fun setReview(on: Boolean) = withContext(io) { dao.upsertVault(vaultNow().copy(reviewOn = on)) }
 
     private suspend fun write(k: ByteArray, id: String, kind: String, parent: String?, plain: String, starts: String?, ends: String?) {
         val bytes = plain.toByteArray(Charsets.UTF_8)
-        val blob = CompassCrypto.seal(k, id, bytes)
+        val blob = CompassCrypto.seal(k, CompassCrypto.aad(id, kind, parent, starts, ends), bytes)
         bytes.fill(0)
         val old = dao.item(id)
         val now = clock()
@@ -299,8 +313,8 @@ class CompassRepository(
                 CompassOutboxEntity.ITEM -> {
                     val row = dao.item(op.ref)
                     if (row == null) Outcome.Ok(Unit) else {
-                        val r = api.putItem(account.serverUrl, account.token, row.id, SealedItemBody(row.kind, row.parent, row.blob, row.starts, row.ends, row.deleted))
-                        if (r is Outcome.Ok) dao.markSynced(row.id, r.value, row.lastModified)
+                        val r = api.putItem(account.serverUrl, account.token, row.id, SealedItemBody(row.kind, row.parent, row.blob, row.starts, row.ends, row.deleted, row.serverVersion))
+                        if (r is Outcome.Ok) { dao.setServerVersion(row.id, r.value); dao.markSynced(row.id, r.value, row.lastModified) }
                         r
                     }
                 }
@@ -323,10 +337,9 @@ class CompassRepository(
     // ── Counts from the rest of PAGEL (plain numbers only) ──────────────────────────────────────────────────────────
 
     /** Each goal's linked projects, tasks done in them this week, and its lead-action habit's days. */
-    fun progress(): Flow<Map<String, GoalProgress>> {
-        val since = today().minusDays(120).toString()
+    fun progress(day: LocalDate = today()): Flow<Map<String, GoalProgress>> {
+        val since = day.minusDays(120).toString()
         return combine(opened, links, tasks.completed(), tasks.habits(), tasks.habitTicks(since)) { o, l, done, habits, ticks ->
-            val day = today()
             val season = CompassRules.seasonOf(day)
             val weekStart = CompassRules.weekStart(season, CompassRules.weekOf(season, day))
             val doneDays = done.map { it.project to tashkentDay(it.doneAt) }
@@ -335,7 +348,7 @@ class CompassRepository(
                 val n = doneDays.count { (p, d) -> p in projects && d != null && !d.isBefore(weekStart) && d.isBefore(weekStart.plusDays(7)) }
                 // A habit made on the phone takes pagel.uz's id once sent; find it again by its own words.
                 val hid = g.body.habitId?.let { h ->
-                    if (!h.startsWith(LOCAL_ID) || habits.any { it.id == h }) h else habits.firstOrNull { it.text == g.body.leadAction.trim() && it.every == "week" }?.id ?: h
+                    if (!h.startsWith(LOCAL_ID) || habits.any { it.id == h }) h else habits.firstOrNull { it.text == g.body.habitTitle && it.every == "week" }?.id ?: h
                 }
                 g.id to GoalProgress(projects, n, hid, ticks.filter { it.taskId == hid && it.n > 0 }.mapTo(HashSet()) { it.day })
             }
@@ -368,6 +381,7 @@ class CompassRepository(
         /** Not deployed yet (404, 405) or not this phone's to write (403): wait, keep everything. */
         private val WAIT_FOR_SERVER = setOf(403, 404, 405)
         private val NAMAZ = Regex("namo?z|namaz|bomdod|peshin|xufton|shom|asr\\b", RegexOption.IGNORE_CASE)
-        private const val NAMAZ_FROM = "2026-11-01"
+        /** Namaz tracking starts on his 19th birthday (Boss 2026-10-28). */
+        const val NAMAZ_FROM = "2026-11-01"
     }
 }

@@ -593,7 +593,7 @@ $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell
 tap_scroll Save && shot c-saved 2.5 || { log "WALKTHROUGH: no Save in the goal sheet"; exit 1; }
 grep -q 'Walkthrough zebra purpose line' "$OUT/$(printf '%02d' $N)-c-saved.xml" || { log "WALKTHROUGH: the purpose is not on the path after Save"; exit 1; }
 wait_log 'PUT /api/v1/compass/items/g_' 40 || { log "WALKTHROUGH: the sealed purpose never reached pagel.uz"; exit 1; }
-grep -F 'PUT /api/v1/compass/items/g_' "$FAKE_LOG" | head -1 | grep -qE '\{"kind":"purpose","parent":null,"blob":"[A-Za-z0-9+/=]{40,}","starts":null,"ends":null,"deleted":false\} auth=True' \
+grep -F 'PUT /api/v1/compass/items/g_' "$FAKE_LOG" | head -1 | grep -qE '\{"kind":"purpose","parent":null,"blob":"[A-Za-z0-9+/=]{40,}","starts":null,"ends":null,"deleted":false,"base":0\} auth=True' \
   || { log "WALKTHROUGH: the purpose did not reach pagel.uz as a sealed item"; grep compass "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 grep -qi 'zebra' "$FAKE_LOG" && { log "WALKTHROUGH: GOAL WORDS REACHED pagel.uz IN THE CLEAR"; grep -i zebra "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 # PAGEL's own log lines (its pid): no goal words.

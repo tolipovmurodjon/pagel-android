@@ -71,6 +71,8 @@ data class CompassVaultEntity(
     val line: String? = null,
     val birthdayOn: Boolean = false,
     val pulledAt: Long = 0,
+    /** The season-review reminder (the first day of week 13, 09:00); on, but it rings only for a season with goals. */
+    val reviewOn: Boolean = true,
 ) {
     companion object {
         const val ID = "vault"
@@ -85,6 +87,10 @@ interface CompassDao {
     @Query("SELECT * FROM compass_items WHERE id = :id")
     suspend fun item(id: String): CompassItemEntity?
 
+    /** The seasons Boss wrote goals for (only kinds and dates, never words): the review reminder rings only for those. */
+    @Query("SELECT DISTINCT starts FROM compass_items WHERE deleted = 0 AND kind = :kind AND starts IS NOT NULL")
+    suspend fun seasonStarts(kind: String): List<String>
+
     @Query("SELECT COUNT(*) FROM compass_items WHERE deleted = 0")
     fun itemCount(): Flow<Int>
 
@@ -96,6 +102,10 @@ interface CompassDao {
 
     @Query("UPDATE compass_items SET syncStatus = 'synced', serverVersion = :version WHERE id = :id AND lastModified = :at")
     suspend fun markSynced(id: String, version: Int, at: Long)
+
+    /** pagel.uz's version after a write, whatever was edited since (the next write sends it as its base). */
+    @Query("UPDATE compass_items SET serverVersion = :version WHERE id = :id")
+    suspend fun setServerVersion(id: String, version: Int)
 
     @Query("SELECT * FROM compass_links")
     fun links(): Flow<List<CompassLinkEntity>>

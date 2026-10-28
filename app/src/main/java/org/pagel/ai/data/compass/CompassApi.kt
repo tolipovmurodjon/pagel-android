@@ -14,9 +14,13 @@ import org.pagel.ai.data.Outcome
 import org.pagel.ai.data.api.PagelApi
 import java.io.IOException
 
-/** What pagel.uz keeps of one item: never a word, only the sealed blob (dashboard compass-api.ts). */
+/**
+ * What pagel.uz keeps of one item: never a word, only the sealed blob (dashboard compass-api.ts). [base] is the version
+ * this phone last saw: pagel.uz refuses (409) a write over a version it did not see, so no other device's copy is
+ * overwritten unseen (compass checker: integrity).
+ */
 @Serializable
-data class SealedItemBody(val kind: String, val parent: String?, val blob: String, val starts: String?, val ends: String?, val deleted: Boolean)
+data class SealedItemBody(val kind: String, val parent: String?, val blob: String, val starts: String?, val ends: String?, val deleted: Boolean, val base: Int)
 
 @Serializable
 data class PulledItem(val id: String, val kind: String, val parent: String? = null, val blob: String, val starts: String? = null, val ends: String? = null, val version: Int = 1, val deleted: Boolean = false)

@@ -30,11 +30,29 @@ object CrashLog {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun report(thread: Thread, e: Throwable, versionName: String, versionCode: Int, device: String, sdk: Int, now: Long): CrashReport {
-        val trace = StringWriter().also { e.printStackTrace(PrintWriter(it)) }.toString()
+        // A crash that passed through the Compass keeps its classes and lines, never a message: a message could hold a
+        // goal's words, and the report goes to pagel.uz (compass checker #10).
+        val sealed = touchesCompass(e)
+        val trace = if (sealed) quietTrace(e) else StringWriter().also { e.printStackTrace(PrintWriter(it)) }.toString()
         return CrashReport(
             at = now, versionName = versionName, versionCode = versionCode, thread = thread.name,
-            type = e.javaClass.name, message = (e.message ?: "").take(500), stack = trace.take(STACK_MAX), device = device, sdk = sdk,
+            type = e.javaClass.name, message = if (sealed) HIDDEN else (e.message ?: "").take(500), stack = trace.take(STACK_MAX), device = device, sdk = sdk,
         )
+    }
+
+    const val HIDDEN = "(hidden: a Compass crash)"
+
+    private fun chain(e: Throwable) = generateSequence(e) { t -> t.cause?.takeIf { it !== t } }.take(20)
+
+    /** Any frame of the throwable or its causes in a Compass package. */
+    fun touchesCompass(e: Throwable): Boolean = chain(e).any { t -> t.stackTrace.any { ".compass." in it.className } }
+
+    /** The stack as types and frames only ("Caused by: <type>", then its frames), no messages. */
+    private fun quietTrace(e: Throwable): String = buildString {
+        chain(e).forEachIndexed { i, t ->
+            append(if (i == 0) "" else "Caused by: ").append(t.javaClass.name).append('\n')
+            for (f in t.stackTrace) append("\tat ").append(f).append('\n')
+        }
     }
 
     fun write(dir: File, r: CrashReport): File {

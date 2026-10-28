@@ -36,9 +36,27 @@ class CompassCryptoTest {
     }
 
     @Test fun theRecoveryPassphraseOpensTheDataKeyAndAWrongOneDoesNot() {
-        val blob = CompassCrypto.sealWithPassphrase(key, "correct horse battery".toCharArray(), logN = 10)
+        val blob = CompassCrypto.sealWithPassphrase(key, "correct horse battery".toCharArray(), memoryLog2Kb = 10, passes = 1)
         assertArrayEquals(key, CompassCrypto.openWithPassphrase(blob, "correct horse battery".toCharArray()))
         assertNull(CompassCrypto.openWithPassphrase(blob, "wrong horse battery".toCharArray()))
-        assertTrue(CompassCrypto.unb64(blob)[0].toInt() == 1)
+        val raw = CompassCrypto.unb64(blob)
+        assertTrue(raw[0].toInt() == 1)
+        assertEquals("Argon2id", 2, raw[1].toInt())
+    }
+
+    @Test fun theDefaultRecoveryCostIsArgon2idWithSixtyFourMegabytes() {
+        val raw = CompassCrypto.unb64(CompassCrypto.sealWithPassphrase(key, "correct horse battery".toCharArray()))
+        assertEquals(2, raw[1].toInt())
+        assertEquals(16, raw[2].toInt())
+        assertEquals(3, raw[3].toInt())
+    }
+
+    @Test fun aBlobIsBoundToItsKindParentAndDates() {
+        val bound = CompassCrypto.aad("g_abc123", "season", "g_year01", "2026-11-01", "2027-01-30")
+        val blob = CompassCrypto.seal(key, bound, words)
+        assertArrayEquals(words, CompassCrypto.open(key, bound, blob))
+        assertNull(CompassCrypto.open(key, CompassCrypto.aad("g_abc123", "someday", "g_year01", "2026-11-01", "2027-01-30"), blob))
+        assertNull(CompassCrypto.open(key, CompassCrypto.aad("g_abc123", "season", "g_other1", "2026-11-01", "2027-01-30"), blob))
+        assertNull(CompassCrypto.open(key, CompassCrypto.aad("g_abc123", "season", "g_year01", "2027-01-31", "2027-05-01"), blob))
     }
 }
