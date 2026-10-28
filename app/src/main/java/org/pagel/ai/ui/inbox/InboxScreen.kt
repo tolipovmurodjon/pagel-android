@@ -1,8 +1,10 @@
 package org.pagel.ai.ui.inbox
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -13,10 +15,13 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -27,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,12 +54,15 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -66,6 +75,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -81,12 +93,18 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.pagel.ai.data.inbox.Choice
 import org.pagel.ai.ui.glass.EaseOutStrong
 import org.pagel.ai.ui.glass.Glass
@@ -146,9 +164,80 @@ data class Throw(val x: Float = 0f, val y: Float = 0f, val vx: Float = 0f, val v
     }
 }
 
+/**
+ * The four swipes (Boss 2026-10-28: "swipe up it should shuffle, drop swipe down, left learn, right action"). A hold
+ * is the fifth gesture (Do now), in [Deck].
+ */
+enum class Swipe {
+    SHUFFLE, DROP, LEARN, ACTION;
+
+    /** The choice a swipe makes; null = shuffle (back into the deck, nothing sent). Learn is a Note when today's keeps are full. */
+    fun choice(full: Boolean): Choice? = when (this) {
+        SHUFFLE -> null
+        DROP -> Choice.DROP
+        LEARN -> if (full) Choice.NOTE else Choice.KEEP
+        ACTION -> Choice.ACT
+    }
+
+    companion object {
+        /** px/s: a flick this fast decides even before the line. */
+        const val FLING = 1800f
+
+        /** The swipe a card dragged by ([dx], [dy]) px makes: vertical past [line], sideways past 30 % of [width]. */
+        fun at(dx: Float, dy: Float, width: Float, line: Float): Swipe? = when {
+            abs(dy) > abs(dx) && dy < -line -> SHUFFLE
+            abs(dy) > abs(dx) && dy > line -> DROP
+            dx > width * 0.3f -> ACTION
+            dx < -width * 0.3f -> LEARN
+            else -> null
+        }
+
+        /** The swipe a flick at ([vx], [vy]) px/s makes. */
+        fun flung(vx: Float, vy: Float): Swipe? = when {
+            abs(vy) > abs(vx) && vy < -FLING -> SHUFFLE
+            abs(vy) > abs(vx) && vy > FLING -> DROP
+            vx > FLING -> ACTION
+            vx < -FLING -> LEARN
+            else -> null
+        }
+    }
+}
+
+/** Shuffle's own colour (indigo, 6:1 on white): no choice owns it, so the stamp never reads as Later or Action. */
+val ShuffleColor = Color(0xFF3B5BDB)
+
+/** A swipe's stamp: its icon, word and colour (Learn and Note borrow their choice's). */
+fun Swipe.look(full: Boolean): Triple<ImageVector, String, Color> = when (this) {
+    Swipe.SHUFFLE -> Triple(TabIcons.Shuffle, "Shuffle", ShuffleColor)
+    else -> choice(full)!!.look.let { Triple(it.icon, it.label, it.color) }
+}
+
+/**
+ * The post's caption without the claim it starts with: LinkedIn's claim is the caption's first line, so the card said
+ * it twice (Boss 2026-10-28). Empty when nothing but the claim is left.
+ */
+fun captionWithoutClaim(claim: String, text: String): String {
+    val c = claim.lowercase().filter(Char::isLetterOrDigit)
+    if (c.length < 12) return text
+    var matched = 0
+    var i = 0
+    while (i < text.length && matched < c.length) {
+        val ch = text[i]
+        if (ch.isLetterOrDigit()) {
+            if (ch.lowercaseChar() != c[matched]) return text
+            matched++
+        }
+        i++
+    }
+    val rest = text.substring(i).trimStart { !it.isLetterOrDigit() && it != '@' && it != '#' }
+    return if (rest.count(Char::isLetterOrDigit) < 12) "" else rest
+}
+
 /** What the screen can ask of the Inbox. */
 data class InboxActions(
     val choose: (InboxCard, Choice, Throw) -> Unit = { _, _, _ -> },
+    /** Swipe up: back into the deck at a random later spot. False = it cannot (the last card), so it springs back. */
+    val shuffle: (InboxCard, Throw) -> Boolean = { _, _ -> false },
     val openForm: (InboxCard, Choice) -> Unit = { _, _ -> },
     val leaveDone: (Long) -> Unit = {},
     val help: () -> Unit = {},
@@ -170,7 +259,7 @@ fun InboxRoute(contentPadding: PaddingValues, reselect: Int, vm: InboxViewModel 
     }
     InboxScreen(
         ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer,
-        actions = InboxActions(choose = vm::choose, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }),
+        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }),
     )
     form?.let { f -> ChoiceFormSheet(f, ui, onEdit = vm::editForm, onSubmit = vm::submit, onDismiss = vm::closeForm, withPicture = pictures[f.card.file] != null) }
     if (guide) GuideSheet { guide = false }
@@ -178,9 +267,11 @@ fun InboxRoute(contentPadding: PaddingValues, reselect: Int, vm: InboxViewModel 
 }
 
 /**
- * The Inbox, one save at a time (the web's /learn on the phone): the post's picture large, the AI's pick as the big
- * button, the rest as chips. Swipe right takes the AI's pick, left drops, up puts off once. Every choice answers at
- * once with its own motion, sound and haptic; the save goes behind. The ring counts the day's 20.
+ * The Inbox, one save at a time (the web's /learn on the phone): the card in the middle, and a dock pinned above the
+ * tab bar with the AI's pick as the big button and the other choices beside it, so one thumb reaches all (Boss
+ * 2026-10-28: "move that nav, action etc part lower so easy to use on hand"). Swipe up shuffles, down drops, left
+ * learns, right makes an Action; hold for Do now. Every choice answers at once with its own motion, sound and haptic;
+ * the save goes behind. The ring counts the day's 20. A short screen (landscape) scrolls with the dock under the card.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -220,13 +311,26 @@ fun InboxScreen(
         if (!reduce) bursts += Burst(nextBurst++, ringAt - rootAt)
     }
 
+    val tall = LocalConfiguration.current.screenHeightDp >= 480
+    // The shell's bottom padding ends 8 dp above the glass bar's top; 4 more puts the dock 12 dp clear of it (0.8.1
+    // drew the choice buttons behind the bar, only their tops showing).
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot() }) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(contentPadding).padding(bottom = 12.dp)) {
+        Column(Modifier.fillMaxSize().then(if (tall) Modifier else Modifier.verticalScroll(scroll)).padding(contentPadding).padding(bottom = if (tall) DockGap else 12.dp)) {
             Header(ui, onHelp = actions.help, onRing = { ringAt = it })
+            // Tall: the middle takes what the header and the dock leave, and the card sits centred in it.
+            val middle = if (tall) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth()
             when {
-                ui.loading -> Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(4, Modifier.padding(vertical = 10.dp)) }
-                ui.cards.isEmpty() && leaving == null -> Empty(ui)
-                else -> Deck(ui, leaving, pictures, actions, reduce, peek)
+                ui.loading -> Box(middle, contentAlignment = Alignment.Center) {
+                    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(4, Modifier.padding(vertical = 10.dp)) }
+                }
+                ui.cards.isEmpty() && leaving == null -> Box(middle, contentAlignment = Alignment.Center) { Empty(ui) }
+                else -> {
+                    androidx.compose.foundation.layout.BoxWithConstraints(middle, contentAlignment = Alignment.Center) {
+                        val room = if (tall && constraints.hasBoundedHeight) maxHeight - 16.dp else 560.dp
+                        Deck(ui, leaving, pictures, actions, reduce, peek, room, Modifier.fillMaxSize())
+                    }
+                    ui.cards.firstOrNull()?.let { Dock(it, ui, actions) }
+                }
             }
         }
         for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
@@ -319,21 +423,126 @@ private fun Empty(ui: InboxUi) {
 
 // ── The deck ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalLayoutApi::class)
+/** Added to the shell's bottom padding (bar top − 8 dp), so the dock ends 12 dp above the tab bar. */
+val DockGap = 4.dp
+
+/** How long a still finger holds the card before Do now fires; the ring shows from [HOLD_SHOW_MS] (a tap never flashes it). */
+const val HOLD_MS = 500L
+private const val HOLD_SHOW_MS = 110L
+
+/**
+ * The cards and their gestures. The whole space between the header and the dock takes the swipe, not only the card
+ * (Boss 2026-10-28: "I have to put my finger at the top of the screen to swipe"): a thumb anywhere in it moves the top
+ * card, which follows with a slight tilt, stamps the swipe it will make (icon, word, colour), ticks once at the line,
+ * and either leaves (past the line or flung) or springs back with the finger's speed. Up shuffles, down drops, left
+ * learns, right makes an Action. A still finger on the card for [HOLD_MS] is Do now: a ring fills around it (a tick
+ * when it shows, Confirm when it fires); moving or lifting first does nothing. The next card is the top one the moment
+ * the swipe commits (the view model hides the leaving card at once); only the screen's first card rises in.
+ */
 @Composable
-private fun Deck(ui: InboxUi, leaving: Leaving?, pictures: Map<String, Bitmap?>, actions: InboxActions, reduce: Boolean, peek: Offset) {
+private fun Deck(ui: InboxUi, leaving: Leaving?, pictures: Map<String, Bitmap?>, actions: InboxActions, reduce: Boolean, peek: Offset, room: Dp, modifier: Modifier) {
     val top = ui.cards.firstOrNull()
-    // How far the top card is dragged (0..1): the card behind grows into its place as the top one leaves.
-    var drag by remember { mutableFloatStateOf(0f) }
-    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.TopCenter) {
+    val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    val line = with(LocalDensity.current) { 110.dp.toPx() }
+    var width by remember { mutableFloatStateOf(1000f) }
+    val offset = remember(top?.file) { Animatable(peek, Offset.VectorConverter) }
+    val enter = remember { Animatable(if (reduce || peek != Offset.Zero) 1f else 0f) }
+    var holdAt by remember { mutableStateOf<Offset?>(null) }
+    val holdP = remember { Animatable(0f) }
+    val places = remember { arrayOfNulls<LayoutCoordinates>(2) }
+    var releasedAt by remember { mutableLongStateOf(0L) }
+    val home = spring<Offset>(dampingRatio = 0.62f, stiffness = 380f)
+    val stamp by remember(offset) { derivedStateOf { Swipe.at(offset.value.x, offset.value.y, width, line) } }
+    fun progress() = min(1f, hypot(offset.value.x, offset.value.y) / (width * 0.3f))
+
+    val release by rememberUpdatedState { s: Swipe, at: Offset, v: Velocity ->
+        val card = ui.cards.firstOrNull()
+        val thrown = Throw(at.x, at.y, v.x, v.y)
+        if (card == null) false else when (val c = s.choice(ui.full)) {
+            null -> actions.shuffle(card, thrown)
+            Choice.DROP -> { actions.choose(card, c, thrown); true }
+            else -> { actions.openForm(card, c); false }
+        }
+    }
+    val hold by rememberUpdatedState { ui.cards.firstOrNull()?.let { actions.choose(it, Choice.NOW, Throw.None) } }
+
+    LaunchedEffect(Unit) { if (enter.value < 1f) enter.animateTo(1f, tween(320, easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1.2f))) }
+    // Release to the next card on screen, measured on the frame that draws it (the walkthrough prints these lines).
+    LaunchedEffect(top?.file) {
+        if (releasedAt == 0L) return@LaunchedEffect
+        withFrameNanos { }
+        android.util.Log.i("PagelInbox", "next card in ${SystemClock.uptimeMillis() - releasedAt} ms")
+        releasedAt = 0L
+    }
+
+    val gestures = if (top == null) Modifier else Modifier
+        .pointerInput(top.file) {
+            // The hold watches the same touches as the drag without taking them, on the card only.
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val area = places[0]
+                val card = places[1]?.takeIf { it.isAttached }
+                if (area != null && card != null && !area.localBoundingBoxOf(card).contains(down.position)) return@awaitEachGesture
+                val slop = viewConfiguration.touchSlop
+                val timer = scope.launch {
+                    delay(HOLD_SHOW_MS)
+                    holdAt = down.position
+                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                    holdP.snapTo(0f)
+                    holdP.animateTo(1f, tween((HOLD_MS - HOLD_SHOW_MS).toInt(), easing = LinearEasing))
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    holdAt = null
+                    holdP.snapTo(0f)
+                    hold()
+                }
+                while (timer.isActive) {
+                    val e = awaitPointerEvent()
+                    val c = e.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!c.pressed || (c.position - down.position).getDistance() > slop) break
+                }
+                if (timer.isActive) {
+                    timer.cancel()
+                    holdAt = null
+                    scope.launch { holdP.snapTo(0f) }
+                }
+            }
+        }
+        .pointerInput(top.file) {
+            val tracker = VelocityTracker()
+            var armed: Swipe? = null
+            detectDragGestures(
+                onDragStart = { tracker.resetTracking(); armed = null },
+                onDragCancel = { scope.launch { offset.animateTo(Offset.Zero, home) } },
+                onDragEnd = {
+                    val v = tracker.calculateVelocity()
+                    val o = offset.value
+                    val s = Swipe.at(o.x, o.y, width, line) ?: Swipe.flung(v.x, v.y)
+                    if (s != null) releasedAt = SystemClock.uptimeMillis()
+                    if (s == null || !release(s, o, v)) {
+                        releasedAt = 0L
+                        scope.launch { offset.animateTo(Offset.Zero, home, initialVelocity = Offset(v.x, v.y)) }
+                    }
+                },
+            ) { change, amount ->
+                change.consume()
+                tracker.addPosition(change.uptimeMillis, change.position)
+                val next = offset.value + amount
+                scope.launch { offset.snapTo(next) }
+                val s = Swipe.at(next.x, next.y, width, line)
+                if (s != armed) { if (s != null) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate); armed = s }
+            }
+        }
+
+    Box(modifier.onPlaced { places[0] = it }.then(gestures), contentAlignment = Alignment.Center) {
         if (top != null) {
-            Box {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 if (ui.cards.size > 1) {
-                    // The next card peeks out under the top one: a stack, so Boss sees there is more.
-                    // It shows where the next save is from and its claim, faded, so a moving top card never uncovers a blank slab.
+                    // The next card peeks out under the top one: a stack, so Boss sees there is more. It shows where the
+                    // next save is from and its claim, faded, and grows into place as the top card is dragged away.
                     val next = ui.cards[1]
                     Pane(Modifier.matchParentSize().graphicsLayer {
-                        val g = drag.coerceIn(0f, 1f)
+                        val g = progress()
                         scaleX = 0.94f + 0.06f * g; scaleY = 0.94f + 0.06f * g
                         translationY = (1f - g) * 14.dp.toPx(); alpha = 0.55f + 0.45f * g
                     }.clearAndSetSemantics {}) {
@@ -345,120 +554,80 @@ private fun Deck(ui: InboxUi, leaving: Leaving?, pictures: Map<String, Bitmap?>,
                     }
                 }
                 key(top.file) {
-                    SwipeCard(top, ui, peek, reduce, onDrag = { drag = it }, onRelease = { choice, at, v ->
-                        drag = 0f
-                        if (choice == Choice.LATER || choice == Choice.DROP) { actions.choose(top, choice, Throw(at.x, at.y, v.x, v.y)); true }
-                        else { actions.openForm(top, choice); false }
-                    }) { CardBody(top, pictures, actions) }
+                    Box(
+                        Modifier.onPlaced { places[1] = it }.onSizeChanged { width = it.width.toFloat() }.graphicsLayer {
+                            translationX = offset.value.x
+                            translationY = offset.value.y + (1f - enter.value) * 18.dp.toPx()
+                            rotationZ = offset.value.x / width * 9f
+                            // The card gives a little under a held finger (a press, not a lift).
+                            val s = (0.97f + 0.03f * enter.value) * (1f - 0.025f * holdP.value)
+                            scaleX = s; scaleY = s
+                            alpha = enter.value
+                        },
+                    ) {
+                        CardBody(top, pictures, actions, room)
+                        stamp?.let {
+                            Stamp(it, ui.full, Modifier.align(when (it) {
+                                Swipe.ACTION -> Alignment.TopStart
+                                Swipe.LEARN -> Alignment.TopEnd
+                                Swipe.SHUFFLE -> Alignment.BottomCenter
+                                Swipe.DROP -> Alignment.TopCenter
+                            }))
+                        }
+                    }
                 }
             }
         }
-        leaving?.let { l -> key(l.id) { LeavingCard(l, pictures, reduce) { actions.leaveDone(l.id) } } }
-    }
-    if (top != null) {
-        Spacer(Modifier.height(14.dp))
-        Choose(top, ui, actions)
+        leaving?.let { l -> key(l.id) { Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { LeavingCard(l, pictures, reduce, room) { actions.leaveDone(l.id) } } } }
+        holdAt?.let { at -> HoldRing(at) { holdP.value } }
     }
 }
 
-/**
- * The top card under the finger: it follows the drag with a slight tilt, shows the choice it will make as a stamp,
- * ticks once when it crosses the line, and either leaves (released past the line or flung) or springs back.
- * Right takes the AI's pick (Learn when it has none), left drops, up puts off once.
- */
+/** Do now's ring around a held finger: it fills in [HOLD_MS], with Do now's mark above the finger so the thumb never hides it. */
 @Composable
-private fun SwipeCard(card: InboxCard, ui: InboxUi, peek: Offset, reduce: Boolean, onDrag: (Float) -> Unit, onRelease: (Choice, Offset, androidx.compose.ui.unit.Velocity) -> Boolean, content: @Composable () -> Unit) {
-    val offset = remember { Animatable(peek, Offset.VectorConverter) }
-    val enter = remember { Animatable(if (reduce || peek != Offset.Zero) 1f else 0f) }
-    val scope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
-    var width by remember { mutableFloatStateOf(1000f) }
-    val upLine = with(LocalDensity.current) { 110.dp.toPx() }
-    val right = card.guess ?: if (ui.full) Choice.NOTE else Choice.KEEP
-
-    fun choiceAt(o: Offset): Choice? = when {
-        o.y < -upLine && abs(o.y) > abs(o.x) && !card.putOff -> Choice.LATER
-        o.x > width * 0.3f -> right
-        o.x < -width * 0.3f -> Choice.DROP
-        else -> null
+private fun BoxScope.HoldRing(at: Offset, progress: () -> Float) {
+    val color = Choice.NOW.look.color
+    Canvas(Modifier.matchParentSize().clearAndSetSemantics {}) {
+        val r = 34.dp.toPx()
+        val w = 4.dp.toPx()
+        drawCircle(color.copy(alpha = 0.12f), r, at)
+        drawCircle(Color.White.copy(alpha = 0.85f), r, at, style = Stroke(w))
+        drawArc(color, -90f, 360f * progress(), false, topLeft = at - Offset(r, r), size = Size(2 * r, 2 * r), style = Stroke(w, cap = StrokeCap.Round))
     }
-    LaunchedEffect(Unit) { if (enter.value < 1f) enter.animateTo(1f, tween(320, easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1.2f))) }
-    LaunchedEffect(peek) { onDrag(min(1f, hypot(peek.x, peek.y) / (width * 0.3f))) }
-    val stamp by remember { derivedStateOf { choiceAt(offset.value) } }
-
     Box(
-        Modifier
-            .onSizeChanged { width = it.width.toFloat() }
-            .pointerInput(card.file) {
-                val tracker = VelocityTracker()
-                var armed: Choice? = null
-                detectDragGestures(
-                    onDragStart = { tracker.resetTracking(); armed = null },
-                    onDragCancel = { scope.launch { offset.animateTo(Offset.Zero, spring(dampingRatio = 0.62f, stiffness = 380f)) }; onDrag(0f) },
-                    onDragEnd = {
-                        val v = tracker.calculateVelocity()
-                        val o = offset.value
-                        val flung = when {
-                            v.y < -1800f && abs(v.y) > abs(v.x) && !card.putOff -> Choice.LATER
-                            v.x > 1800f -> right
-                            v.x < -1800f -> Choice.DROP
-                            else -> null
-                        }
-                        val c = choiceAt(o) ?: flung
-                        if (c == null || !onRelease(c, o, v)) scope.launch { offset.animateTo(Offset.Zero, spring(dampingRatio = 0.62f, stiffness = 380f)) }
-                        if (c == null) onDrag(0f)
-                    },
-                ) { change, amount ->
-                    change.consume()
-                    tracker.addPosition(change.uptimeMillis, change.position)
-                    val next = offset.value + amount
-                    scope.launch { offset.snapTo(next) }
-                    onDrag(min(1f, hypot(next.x, next.y) / (width * 0.3f)))
-                    val c = choiceAt(next)
-                    if (c != armed) { if (c != null) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate); armed = c }
-                }
-            }
-            .graphicsLayer {
-                translationX = offset.value.x
-                translationY = offset.value.y + (1f - enter.value) * 18.dp.toPx()
-                rotationZ = offset.value.x / width * 9f
-                val s = 0.97f + 0.03f * enter.value
-                scaleX = s; scaleY = s
-                alpha = enter.value
-            },
-    ) {
-        content()
-        stamp?.let { Stamp(it, Modifier.align(if (it == Choice.DROP) Alignment.TopEnd else if (it == Choice.LATER) Alignment.BottomCenter else Alignment.TopStart)) }
-    }
+        Modifier.align(Alignment.TopStart).offset { IntOffset((at.x - 15.dp.toPx()).toInt(), (at.y - 74.dp.toPx()).toInt()) }
+            .size(30.dp).background(color, CircleShape).clearAndSetSemantics {},
+        contentAlignment = Alignment.Center,
+    ) { Icon(TabIcons.Zap, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp)) }
 }
 
-/** The choice a swipe will make, stamped on the card while it is dragged (a dating app's LIKE/NOPE, in PAGEL's words). */
+/** The swipe a drag will make, stamped on the card (a dating app's LIKE/NOPE, in PAGEL's words): icon, word, colour. */
 @Composable
-private fun Stamp(choice: Choice, modifier: Modifier) {
-    val look = choice.look
+private fun Stamp(swipe: Swipe, full: Boolean, modifier: Modifier) {
+    val (icon, label, color) = swipe.look(full)
     Row(
-        modifier.padding(18.dp).graphicsLayer { rotationZ = if (choice == Choice.DROP) 10f else if (choice == Choice.LATER) 0f else -10f }
-            .background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(12.dp)).border(2.5.dp, look.color, RoundedCornerShape(12.dp))
+        modifier.padding(18.dp).graphicsLayer { rotationZ = when (swipe) { Swipe.LEARN -> 10f; Swipe.ACTION -> -10f; else -> 0f } }
+            .background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(12.dp)).border(2.5.dp, color, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(look.icon, contentDescription = null, tint = look.color, modifier = Modifier.size(18.dp))
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
-        Text(look.label.uppercase(), style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp), color = look.color)
+        Text(label.uppercase(), style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp), color = color)
     }
 }
 
 /**
- * A card leaving with its choice's motion (globals.css "Inbox game feel"): Action flies up-right into the plan, Note
- * folds small like a sticky note, Learn turns over like a page, Do now zaps and pops, Later slides to the back, Drop
- * tips and falls. A swiped card keeps flying the way it was thrown. Not drawn at all with reduced motion.
+ * A card leaving with its choice's motion (globals.css "Inbox game feel") in 200 ms: Action flies up-right into the
+ * plan, Note folds small like a sticky note, Learn turns over like a page, Do now zaps and pops, Later slides to the
+ * back, Drop tips and falls. A swiped card keeps flying the way it was thrown. Not drawn at all with reduced motion.
  */
 @Composable
-private fun LeavingCard(l: Leaving, pictures: Map<String, Bitmap?>, reduce: Boolean, onEnd: () -> Unit) {
+private fun LeavingCard(l: Leaving, pictures: Map<String, Bitmap?>, reduce: Boolean, room: Dp, onEnd: () -> Unit) {
     if (reduce) { LaunchedEffect(l.id) { onEnd() }; return }
-    if (l.thrown.swiped) { ThrownCard(l, pictures, onEnd); return }
+    if (l.thrown.swiped) { ThrownCard(l, pictures, room, onEnd); return }
     val p = remember { Animatable(0f) }
-    LaunchedEffect(l.id) { p.animateTo(1f, tween(380, easing = CubicBezierEasing(0.2f, 0.6f, 0.35f, 1f))); onEnd() }
+    LaunchedEffect(l.id) { p.animateTo(1f, tween(200, easing = CubicBezierEasing(0.2f, 0.6f, 0.35f, 1f))); onEnd() }
     Box(
         Modifier.clearAndSetSemantics {}.graphicsLayer {
             val t = p.value
@@ -473,55 +642,55 @@ private fun LeavingCard(l: Leaving, pictures: Map<String, Bitmap?>, reduce: Bool
                 Choice.DROP -> { translationY = 0.7f * h * t; rotationZ = 10f * t; scaleX = 1f - 0.1f * t; scaleY = scaleX }
             }
         },
-    ) { CardBody(l.card, pictures, InboxActions()) }
+    ) { CardBody(l.card, pictures, InboxActions(), room) }
 }
 
 /**
  * A swiped card leaving: it starts where the finger let go and keeps the finger's speed and direction (apple-design
- * velocity handoff) on a critically damped spring, so a hard fling leaves fast and a slow push drifts off.
+ * velocity handoff) on a stiff critically damped spring: gone in ~200 ms (Boss 2026-10-28: "slow to show the next one").
  */
 @Composable
-private fun ThrownCard(l: Leaving, pictures: Map<String, Bitmap?>, onEnd: () -> Unit) {
+private fun ThrownCard(l: Leaving, pictures: Map<String, Bitmap?>, room: Dp, onEnd: () -> Unit) {
     val t = l.thrown
     val start = Offset(t.x, t.y)
     val pos = remember { Animatable(start, Offset.VectorConverter) }
-    val far = with(LocalDensity.current) { LocalConfiguration.current.screenWidthDp.dp.toPx() * 1.4f }
+    val far = with(LocalDensity.current) { LocalConfiguration.current.screenWidthDp.dp.toPx() * 1.2f }
     LaunchedEffect(l.id) {
         val speed = hypot(t.vx, t.vy)
         val len = hypot(t.x, t.y).coerceAtLeast(1f)
         val dir = if (speed > 300f) Offset(t.vx / speed, t.vy / speed) else Offset(t.x / len, t.y / len)
-        pos.animateTo(start + dir * far, spring(dampingRatio = 1f, stiffness = 260f), initialVelocity = Offset(t.vx, t.vy))
+        withTimeoutOrNull(220) { pos.animateTo(start + dir * far, spring(dampingRatio = 1f, stiffness = 1_500f), initialVelocity = Offset(t.vx, t.vy)) }
         onEnd()
     }
     Box(
         Modifier.clearAndSetSemantics {}.graphicsLayer {
-            val gone = ((pos.value - start).getDistance() / far).coerceIn(0f, 1f)
+            val gone = ((pos.value - start).getDistance() / (far * 0.6f)).coerceIn(0f, 1f)
             translationX = pos.value.x
             translationY = pos.value.y
             rotationZ = pos.value.x / size.width.coerceAtLeast(1f) * 9f
             alpha = 1f - gone
         },
-    ) { CardBody(l.card, pictures, InboxActions()) }
+    ) { CardBody(l.card, pictures, InboxActions(), room) }
 }
 
-/** One save: where it is from, the AI's one-line claim, why it matters, the picture large, the post, its link. */
+/**
+ * One save: where it is from, the AI's one-line claim, why it matters, the picture, the post, its link. The card is at
+ * most [room] tall (the space between the header and the dock); the picture takes what the words leave, up to 220 dp,
+ * and hides below 72 dp rather than show a sliver. The caption leaves out the claim it starts with (LinkedIn's does).
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: InboxActions) {
+private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: InboxActions, room: Dp) {
     val uri = LocalUriHandler.current
-    // The choice buttons stay above the tab bar without a scroll: the picture gives up height on short screens.
-    // The AI's pick and the row of choices stay above the tab bar without a scroll; the picture takes what is left.
-    // Measured on the 360x780 shots: the card without a picture, the pick and the row need ~660 dp with the bar. Larger
-    // text takes height too (checker 2026-10-28 #1: at 1.5x the pick fell off): ~320 dp per font step. Below 96 dp the
-    // picture hides; with one the caption keeps 2 lines, at 1.3x+ one.
-    val screenH = LocalConfiguration.current.screenHeightDp
     val scale = LocalDensity.current.fontScale
-    val budget = screenH - 660 - ((scale - 1f) * 320f).toInt()
-    val pictureH = if (budget < 96 || !card.hasPicture) 0.dp else budget.coerceAtMost(220).dp
-    val captionLines = when { scale >= 1.3f -> 1; screenH < 720 || pictureH > 0.dp -> 2; else -> 3 }
+    val caption = remember(card.file, card.claim, card.text) { captionWithoutClaim(card.claim, card.text) }
+    val showPicture = card.hasPicture && (card.file !in pictures || pictures[card.file] != null)
+    val captionLines = when { scale >= 1.3f || room < 380.dp -> 1; showPicture -> 2; else -> 3 }
+    // A short phone (the 320x640 test screen): the claim and the links first; the caption waits behind "Read all".
+    val tight = room < 300.dp
     var cut by remember(card.file) { mutableStateOf(false) }
-    Pane(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 12.dp)) {
+    Pane(Modifier.fillMaxWidth().heightIn(max = room)) {
+        Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 8.dp)) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SitePill(card.site, card.siteName)
                 card.author?.let { Text(it, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -533,34 +702,31 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text(card.claim, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, maxLines = 5, overflow = TextOverflow.Ellipsis)
+            Text(card.claim, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, maxLines = if (room < 380.dp) 3 else 5, overflow = TextOverflow.Ellipsis)
             card.why?.let {
                 Spacer(Modifier.height(4.dp))
-                Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), color = Glass.Primary)
+                Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), color = Glass.Primary, maxLines = if (tight) 1 else 3, overflow = TextOverflow.Ellipsis)
             }
-            if (card.hasPicture && pictureH > 0.dp) {
+            if (showPicture) {
                 val bmp = pictures[card.file]
-                if (card.file !in pictures) {
-                    Spacer(Modifier.height(12.dp))
-                    PictureSkeleton(pictureH)
-                } else if (bmp != null) {
-                    Spacer(Modifier.height(12.dp))
+                val slot = Modifier.weight(1f, fill = false).pictureSlot()
+                if (bmp == null) PictureSkeleton(slot)
+                else {
                     val img = remember(bmp) { bmp.asImageBitmap() }
-                    Image(img, contentDescription = "The post's picture", contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxWidth().height(pictureH).clip(RoundedCornerShape(16.dp)))
+                    Image(img, contentDescription = "The post's picture", contentScale = ContentScale.Crop, modifier = slot.clip(RoundedCornerShape(16.dp)))
                 }
             }
-            if (card.text.isNotBlank()) {
+            if (caption.isNotBlank() && !tight) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    card.text, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF3B4256), maxLines = captionLines, overflow = TextOverflow.Ellipsis,
+                    caption, style = MaterialTheme.typography.bodyMedium, color = Color(0xFF3B4256), maxLines = captionLines, overflow = TextOverflow.Ellipsis,
                     onTextLayout = { cut = it.hasVisualOverflow },
                     modifier = Modifier.drawBehind { drawLine(Glass.Ink.copy(alpha = 0.10f), Offset(0f, 0f), Offset(0f, size.height), 3.dp.toPx()) }.padding(start = 12.dp),
                 )
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 // Whenever the caption is cut, there is a way to read it all (checker #6: "..." with no link).
-                if (cut) LinkWord("Read all", null) { actions.readAll(card) }
+                if (cut || (tight && caption.isNotBlank())) LinkWord("Read all", null) { actions.readAll(card) }
                 Spacer(Modifier.weight(1f))
                 card.link?.let { l -> LinkWord("Open the post", TabIcons.ArrowUpRight) { runCatching { uri.openUri(l) } } }
             }
@@ -568,14 +734,28 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
     }
 }
 
+/**
+ * The picture's place: 12 dp under the words, as tall as the card has room for up to 220 dp, nothing below 72 dp (a
+ * strip of picture says nothing and pushes the words).
+ */
+private fun Modifier.pictureSlot(): Modifier = layout { m, c ->
+    val gap = 12.dp.roundToPx()
+    val h = minOf(c.maxHeight, 220.dp.roundToPx() + gap)
+    if (c.maxHeight != Constraints.Infinity && h < 72.dp.roundToPx() + gap) {
+        layout(0, 0) {}
+    } else {
+        val p = m.measure(Constraints.fixed(c.maxWidth, h - gap))
+        layout(p.width, h) { p.place(0, gap) }
+    }
+}
+
 @Composable
-private fun PictureSkeleton(height: androidx.compose.ui.unit.Dp) {
+private fun PictureSkeleton(modifier: Modifier) {
     val a by androidx.compose.animation.core.rememberInfiniteTransition(label = "pic").animateFloat(
         0.45f, 0.9f, androidx.compose.animation.core.infiniteRepeatable(tween(900), androidx.compose.animation.core.RepeatMode.Reverse), label = "breathe",
     )
-    Box(Modifier.fillMaxWidth().height(height).graphicsLayer { alpha = a }.background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(16.dp)).clearAndSetSemantics {})
+    Box(modifier.graphicsLayer { alpha = a }.background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(16.dp)).clearAndSetSemantics {})
 }
-
 /** A small text link with a 48 dp touch box (the web's .ib-link). */
 @Composable
 private fun LinkWord(text: String, icon: ImageVector?, onClick: () -> Unit) {
@@ -617,10 +797,13 @@ private fun SitePill(site: Site, name: String) {
 
 // ── The choices under the card ──────────────────────────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * The dock, pinned just above the tab bar (Boss 2026-10-28, the thumb zone): the AI's pick as the big button, the
+ * other choices in one row under it. One thumb reaches all of it without moving the hand.
+ */
 @Composable
-private fun Choose(card: InboxCard, ui: InboxUi, actions: InboxActions) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp)) {
         val guess = card.guess
         if (guess != null) GuessButton(card, guess, ui) { actions.choose(card, guess, Throw.None) }
         else AiReading(ui.reading)
@@ -646,13 +829,14 @@ private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, onClick: ()
     val shape = RoundedCornerShape(18.dp)
     // The hint alone, in full white (the .92 white measured 4.36:1 on Learn's light end); "AI's pick" is the sparkle.
     val sub = if (guess != card.pick) "${ui.cap}/${ui.cap} learned · one line" else look.hint
+    // One row tall (64 dp, Boss 2026-10-28: the pill read as a slab); it grows only when 1.3x+ text needs two lines.
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 60.dp).pressScale(press)
+        Modifier.fillMaxWidth().then(if (LocalDensity.current.fontScale <= 1.2f) Modifier.height(64.dp) else Modifier.heightIn(min = 64.dp)).pressScale(press)
             .background(Brush.linearGradient(listOf(look.color, lerp(look.color, Color.Black, 0.18f))), shape)
             .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.Transparent)), shape)
             .clickable(press, indication = null, role = Role.Button, onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = "AI pick: ${look.label}" }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(look.icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(22.dp))
@@ -665,8 +849,6 @@ private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, onClick: ()
             }
             Text(sub, style = MaterialTheme.typography.labelSmall, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        // Swipe right does the same: the arrow says so without words.
-        Icon(TabIcons.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(20.dp))
     }
 }
 

@@ -3,6 +3,17 @@ package org.pagel.ai.ui.upcoming
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import org.pagel.ai.data.upcoming.dailyLine
+import org.pagel.ai.data.upcoming.foldDaily
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -237,8 +249,20 @@ fun UpcomingScreen(
                 ui.view.days, ui.today, drag.hovered, atTop,
                 Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp).onGloballyPositioned { strip[0] = it },
             ) { i -> scope.launch { list.animateScrollToItem(if (i == 0) 0 else 1 + overdueFirst + i) } } // today = the top, Overdue included
+            // Under the pinned strip the scrolled list melts away (a 20 dp fade) instead of a hard cut row (Boss
+            // 2026-10-28: "05:30 Daily Me" peeked out clipped under the strip). Only once scrolled: at rest the title is whole.
+            val fade by animateFloatAsState(if (list.canScrollBackward) 1f else 0f, label = "fade")
             LazyColumn(
-                Modifier.fillMaxWidth().weight(1f), state = list,
+                Modifier.fillMaxWidth().weight(1f)
+                    .graphicsLayer { compositingStrategy = if (fade > 0f) CompositingStrategy.Offscreen else CompositingStrategy.Auto }
+                    .drawWithContent {
+                        drawContent()
+                        if (fade > 0f) drawRect(
+                            Brush.verticalGradient(0f to Color.Black.copy(alpha = 1f - fade), 1f to Color.Black, startY = 0f, endY = 20.dp.toPx()),
+                            size = Size(size.width, 20.dp.toPx()), blendMode = BlendMode.DstIn,
+                        )
+                    },
+                state = list,
                 contentPadding = PaddingValues(top = 4.dp, bottom = contentPadding.calculateBottomPadding() + 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -373,12 +397,46 @@ private fun OverduePane(ui: UpcomingUi, drag: Drag, handlers: DragHandlers, onMo
 private fun DayPane(d: UpcomingDay, i: Int, ui: UpcomingUi, drag: Drag, handlers: DragHandlers, onOpen: (String) -> Unit, onFinish: (String) -> Unit, modifier: Modifier) {
     val short = i <= 1 || LocalDensity.current.fontScale > 1.3f
     val title = when (i) { 0 -> "Today · "; 1 -> "Tomorrow · "; else -> "" } + d.day.format(if (short) DAY_SHORT else DAY_TITLE)
+    val (rows, folded) = remember(d.tasks, i) { foldDaily(d.tasks, i) }
+    var open by rememberSaveable(d.day.toString()) { mutableStateOf(false) }
     Pane(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Column(Modifier.padding(bottom = 6.dp)) {
             PaneTitle(title)
             if (d.tasks.isEmpty()) Text("Nothing planned", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, modifier = Modifier.padding(start = 18.dp, top = 2.dp, bottom = 8.dp))
-            else Rows(d.tasks, ui, drag, handlers, onOpen, onFinish, late = false)
+            else {
+                if (rows.isNotEmpty()) Rows(rows, ui, drag, handlers, onOpen, onFinish, late = false)
+                if (folded.isNotEmpty()) {
+                    if (rows.isNotEmpty()) HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
+                    FoldedHabits(folded.size, open) { open = !open }
+                    AnimatedVisibility(open, enter = expandVertically(spring(dampingRatio = 1f, stiffness = 500f)) + fadeIn(), exit = shrinkVertically(spring(dampingRatio = 1f, stiffness = 500f)) + fadeOut()) {
+                        Column {
+                            HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
+                            Rows(folded, ui, drag, handlers, onOpen, onFinish, late = false)
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+/** The daily habits of a later day, folded into one quiet line: the repeat mark, "5 daily habits", a chevron. Tap = open. */
+@Composable
+private fun FoldedHabits(n: Int, open: Boolean, onToggle: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    val turn by animateFloatAsState(if (open) 180f else 0f, spring(dampingRatio = 1f, stiffness = 500f), label = "fold")
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).pressScale(press)
+            .clickable(press, indication = null, role = Role.Button, onClickLabel = if (open) "Fold" else "Show") { onToggle() }
+            .semantics(mergeDescendants = true) { contentDescription = dailyLine(n) + if (open) ", shown" else ", folded" }
+            .padding(start = 6.dp, end = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            Icon(TabIcons.Habits, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(18.dp))
+        }
+        Text(dailyLine(n), style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, modifier = Modifier.weight(1f))
+        Icon(TabIcons.ChevronDown, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = turn })
     }
 }
 

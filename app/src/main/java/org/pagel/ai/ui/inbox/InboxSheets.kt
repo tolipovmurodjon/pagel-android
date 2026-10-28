@@ -1,5 +1,6 @@
 package org.pagel.ai.ui.inbox
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +37,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -195,7 +200,7 @@ private fun Segmented(options: List<String>, chosen: Int, onPick: (Int) -> Unit)
     }
 }
 
-/** "How sorting works": the web's guide, each choice with when to use it and an example, plus the three swipes. */
+/** "How sorting works": the five gestures as one picture, then each choice with when to use it and an example (the web's guide). */
 @Composable
 fun GuideSheet(onDismiss: () -> Unit) {
     GlassSheet(onDismiss) { GuideContent(); Spacer(Modifier.height(SheetBottom)) }
@@ -205,11 +210,7 @@ fun GuideSheet(onDismiss: () -> Unit) {
 fun GuideContent() {
     Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         Text("How sorting works", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
-        Row(Modifier.padding(start = 4.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Swipe(TabIcons.ChevronRight, "AI's pick")
-            Swipe(TabIcons.ChevronLeft, "Drop")
-            Swipe(TabIcons.ArrowUp, "Later")
-        }
+        SwipeMap(Modifier.fillMaxWidth().padding(bottom = 14.dp))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 4.dp)) {
                 listOf(Choice.ACT, Choice.NOTE, Choice.KEEP, Choice.NOW, Choice.LATER, Choice.DROP).forEachIndexed { i, c ->
@@ -234,12 +235,53 @@ fun GuideContent() {
     }
 }
 
+/**
+ * The card's five gestures as one small picture (Boss 2026-10-28): four arrows around a held finger, each with its
+ * icon, word and colour, as the stamps show them while dragging.
+ */
 @Composable
-private fun Swipe(icon: ImageVector, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(4.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Glass.Ink)
+fun SwipeMap(modifier: Modifier = Modifier) {
+    Column(modifier.semantics(mergeDescendants = true) {
+        contentDescription = "Swipe up to shuffle, down to drop, left to learn, right for an action; hold for Do now"
+    }, horizontalAlignment = Alignment.CenterHorizontally) {
+        Way(TabIcons.ArrowUp, Swipe.SHUFFLE)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Way(TabIcons.ArrowLeft, Swipe.LEARN, Modifier.weight(1f))
+            HoldMark(Modifier.padding(horizontal = 8.dp))
+            Way(TabIcons.ArrowRight, Swipe.ACTION, Modifier.weight(1f))
+        }
+        Way(TabIcons.ArrowDown, Swipe.DROP)
+    }
+}
+
+@Composable
+private fun Way(arrow: ImageVector, swipe: Swipe, modifier: Modifier = Modifier) {
+    val (icon, label, color) = swipe.look(false)
+    Column(modifier.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(arrow, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.height(3.dp))
+        Row(Modifier.background(color.copy(alpha = 0.10f), RoundedCornerShape(10.dp)).padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(5.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1)
+        }
+    }
+}
+
+/** A held finger: Do now's ring three-quarters full around a dot, "Hold" under it. */
+@Composable
+private fun HoldMark(modifier: Modifier = Modifier) {
+    val color = Choice.NOW.look.color
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(46.dp)) {
+                val w = 3.5.dp.toPx()
+                drawCircle(color.copy(alpha = 0.12f), size.minDimension / 2 - w / 2)
+                drawArc(color, -90f, 270f, false, topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w), style = Stroke(w, cap = StrokeCap.Round))
+            }
+            Icon(TabIcons.Zap, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+        }
+        Text("Hold · Do now", style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1)
     }
 }
 

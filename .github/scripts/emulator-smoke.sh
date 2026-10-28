@@ -108,6 +108,22 @@ sleep 5
 grep -q "POST /api/v1/app/crash .*PAGEL test crash" "$OUT/fake-pagel.log" || fail "the forced crash never reached /api/v1/app/crash"
 [ -z "$($T adb shell run-as "$PKG" ls files/crashes 2>/dev/null | tr -d '\r')" ] || fail "the crash file was not deleted after upload"
 echo "ok: the forced crash reached the crash endpoint and left the phone"
+
+# Boss 2026-10-28: "keeps asking to pair every time I update". The Home key above keeps the process (and the account in
+# memory); only a cold start reads the sealed file back. Up to app-v0.8.1 it could not be opened after its rename.
+echo "== a cold start keeps the pairing"
+$T adb shell am force-stop "$PKG"
+$T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+for i in $(seq 1 20); do
+  sleep 2
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  timeout 20 adb exec-out cat /sdcard/ui.xml > "$OUT/cold-start-ui.xml" < /dev/null
+  grep -q 'text="Ship the native app"' "$OUT/cold-start-ui.xml" && break
+done
+$T adb exec-out screencap -p > "$OUT/cold-start.png"
+grep -q 'text="Ship the native app"' "$OUT/cold-start-ui.xml" || fail "after a cold start the app asked to pair again (no Today)"
+grep -q "POST /api/v1/app/crash .*AccountUnreadable" "$OUT/fake-pagel.log" && fail "the saved account could not be opened (AccountUnreadable)"
+echo "ok: force-stop and relaunch: still paired, Today on screen"
 $T adb logcat -c
 bash .github/scripts/walkthrough.sh || fail "the critic walkthrough crashed (see walk/logcat-walk.txt)"
 kill $FAKE 2>/dev/null

@@ -41,6 +41,50 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v13 · BOSS'S PHONE NOTES: PAIRING KEPT, INBOX THUMB DOCK + SWIPE MAP, UPCOMING FOLD (2026-10-28, builder agent)
+No new phase. From Boss's A05s screenshots and the lead's notes, in this order:
+- **Pairing survives a cold start (urgent).** `data/account/Account.kt`: the account was sealed as `cache/pagel-account.new`
+  and renamed to `files/pagel-account`; EncryptedFile binds the FILE NAME as associated data, so it never opened again and
+  every cold start (update, the A05s killing PAGEL) showed the pair screen. Now sealed in `files/account-staging/pagel-account`
+  (same name) and renamed. `load()` rescues an old file (opens a copy named `pagel-account.new`, saves it again right); a file
+  nothing opens is written to the crash folder as `AccountUnreadable: <class>` (no contents) before it counts as signed out.
+  The cipher sits behind `FileSeal` (test double binds the name the same way). Tests `AccountStoreTest` (save → new store →
+  Paired; the v0.8.1 file rescued; unreadable reported). Smoke: `am force-stop` + relaunch → Today, not the pair screen.
+- **TLS 1.2 to pagel.uz (the "Offline" badge, the ~15 s pairing, the late sync).** Measured by the lead from Tashkent: the
+  TLS 1.3 handshake to Cloudflare 188.114.97.11 took 11-15 s, TLS 1.2 0.8 s (`curl --tls-max 1.2`), the server answers in
+  9 ms. The one pagel client (`data/api/PagelHttp.kt`, API + stream + pairing + pictures + outbox + crash upload) now
+  speaks TLS 1.2 only (+ cleartext for CI's 127.0.0.1 fake) and keeps connections warm 5 min. Test `PagelHttpTest`.
+- **Pair screen** (Boss: "the progress bar is trash"): six digit boxes (body font), Paste, the sixth digit sends; the
+  button stays mint and fills left → right with a passing light, "Connecting…" → after 4 s "Reaching pagel.uz…"; a yes
+  draws a check + Confirm haptic, then Today slides in (`AppShell` AnimatedContent, only pairing → paired slides); a wrong
+  code shakes the boxes + a red line; 30 s gives "Try again" with the code kept. No spinner. Shots `pair-connecting`,
+  `pair-slow`, `pair-done`, `pair-timed-out`.
+- **Toast under the +** (Boss: "that toast should be below the float"): `BottomActions` in `AppShell.kt`: the toast sits
+  just above the glass bar, the + springs up over it while it shows and back after. Shot `today-toast-under-add`.
+- **Inbox dock (thumb zone).** The card sits centred between the header and a dock pinned 12 dp above the glass bar (shell
+  padding + `DockGap` 4 dp): the AI's pick (one row, 64 dp) and the round choices. The card is at most the room between; the
+  picture takes what the words leave (≤ 220 dp, hidden < 72 dp); the caption leaves out the claim it starts with
+  (`captionWithoutClaim`: LinkedIn said it twice). Landscape (< 480 dp tall) scrolls as before. Roborazzi `inbox-dock-360x800`
+  (+ 1.5x) asserts every choice ends 12 dp above the bar; the walk asserts every choice's bounds end above the Today tab.
+- **Swipe anywhere, next card at once** (Boss: "I have to put my finger at the top of the screen to swipe", "slow to show
+  the next one"): the gestures live on the whole space between the header and the dock (a thumb under the card moves it;
+  the hold only on the card); the view model hides the swiped card on the same frame (`visibleDeck`, before Room) and
+  only the screen's first card rises in; a thrown card is gone in ≤ 220 ms (stiff spring with the finger's speed),
+  button exits 200 ms. The app logs `PagelInbox: next card in N ms` per swipe and the walk prints them.
+- **Newest first.** No seed: the phone asks `seed=0` and `newestFirst` orders by `posted || saved`, put-off last. Server:
+  dashboard `feat/gtd-core` **8556dfc — DEPLOY NEEDED** (`readLearn` sorts by the post's own date: 908 of 945 saves carry the
+  import day as `saved`, so the old order was file names). vitest inbox-api "with no seed the newest post leads".
+- **Swipe map** (`Swipe` in `InboxScreen.kt`): up = shuffle (back into the deck ≥ 2 cards on, nothing sent:
+  `InboxDao.shuffleBack`), down = Drop (5 s Undo), left = Learn (Note when keeps are full), right = Action (their sheets),
+  hold 500 ms = Do now (ring fills from 110 ms, tick at start, Confirm when it fires; moving or lifting cancels). Each swipe
+  stamps its icon + word + colour (shuffle indigo #3B5BDB); threshold tick, fling 1800 px/s, spring back with the finger's
+  speed. The guide opens with a 4-arrow + hold picture (`SwipeMap`). Later stays a dock button.
+- **Upcoming.** The list fades out (20 dp alpha mask) under the pinned strip once scrolled; daily habits (`every == "day"`)
+  show in full on Today and Tomorrow, later days fold them into "N daily habits" (tap opens, spring), `foldDaily`.
+- **Not done:** site filter chips (Instagram · X · LinkedIn · other) need a `from` filter on `GET /api/v1/inbox` (the web's
+  /learn has one) and a deck refresh on change; not in this round. Hold opens Do now's sheet (Open it · Done), as the
+  button does; it does not finish the card by itself.
+
 ## START HERE v12 · PHASE 4 FIX ROUND = THE CHECKER'S TOP 10 (2026-10-28, builder agent)
 No new phase (Phase 5 waits for Boss's phone test). The list: `docs/qa/phase4-checker.md` (8.5/10), in its order.
 - **#1 first, pushed alone (917e2b0, CI 40635928160): a habit can no longer be dragged.** Its due is the series: a drop

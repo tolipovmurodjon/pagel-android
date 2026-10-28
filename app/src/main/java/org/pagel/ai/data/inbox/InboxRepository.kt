@@ -40,6 +40,13 @@ enum class Choice(val wire: String, val key: String) {
 }
 
 private val wire = Json { ignoreUnknownKeys = true }
+
+/**
+ * The deck's order: the newest save first by the post's own date (908 of 945 saves carry the import day as `saved`),
+ * a note of Boss's own by its `saved` day; the ones put off once go last. Stable, so pagel.uz's tie order stands.
+ */
+fun newestFirst(items: List<InboxItemEntity>): List<InboxItemEntity> =
+    items.sortedWith(compareBy<InboxItemEntity> { it.later != null }.thenByDescending { it.posted.ifBlank { it.saved } })
 internal fun tashkentDay(ms: Long): String = Instant.ofEpochMilli(ms).atZone(ZoneId.of("Asia/Tashkent")).toLocalDate().toString()
 /** Midnight in Tashkent at the start of the day [ms] falls in, as epoch ms. */
 internal fun tashkentDayStart(ms: Long): Long = Instant.ofEpochMilli(ms).atZone(ZoneId.of("Asia/Tashkent")).toLocalDate().atStartOfDay(ZoneId.of("Asia/Tashkent")).toInstant().toEpochMilli()
@@ -59,16 +66,17 @@ class InboxRepository(
     val state: Flow<InboxStateEntity?> = dao.state()
     val leaving: Flow<Int> = dao.leavingCount()
 
-    /** One shuffle per app run, as the web gives each visit a new seed: the deck keeps its order while PAGEL is open. */
-    private val seed = 1 + (Math.random() * 1e9).toLong()
-
+    /**
+     * Pulls the next cards, newest first (Boss 2026-10-28: "latest one is main priority than old ones"): no seed, so
+     * pagel.uz deals its own order, and [newestFirst] keeps it even from an older pagel.uz that sorts by the import day.
+     */
     suspend fun refresh(account: Account): Outcome<Unit> {
         val started = clock()
-        return when (val r = api.inbox(account.serverUrl, account.token, DECK, seed)) {
+        return when (val r = api.inbox(account.serverUrl, account.token, DECK, seed = 0)) {
             is Outcome.Failed -> r
             is Outcome.Ok -> {
                 val b = r.value
-                dao.refresh(b.items.map(::entity), InboxStateEntity(day = b.day.ifEmpty { tashkentDay(clock()) }, goal = b.goal, sorted = b.sorted, keptToday = b.keptToday,
+                dao.refresh(newestFirst(b.items.map(::entity)), InboxStateEntity(day = b.day.ifEmpty { tashkentDay(clock()) }, goal = b.goal, sorted = b.sorted, keptToday = b.keptToday,
                     cap = b.cap, minWords = b.minWords, total = b.total, fetchedAt = clock()), startedAt = started)
                 Outcome.Ok(Unit)
             }
@@ -90,6 +98,12 @@ class InboxRepository(
         scheduler.kick()
         return id
     }
+
+    /**
+     * Swipe up: the card goes back into the deck at a random later spot (at least two cards on), and nothing is sent.
+     * False when there is no later spot (the last card). [spot] picks in 0 until n; tests pass their own.
+     */
+    suspend fun shuffle(file: String, spot: (Int) -> Int = { kotlin.random.Random.nextInt(it) }): Boolean = dao.shuffleBack(file, spot)
 
     /** Undo (Drop's 5 s): true if the choice had not left the phone and the card is back. */
     suspend fun undo(opId: Long, file: String, choice: Choice): Boolean = dao.undo(opId, file, choice == Choice.KEEP)

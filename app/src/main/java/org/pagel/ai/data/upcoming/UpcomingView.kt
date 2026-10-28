@@ -36,6 +36,17 @@ fun upcomingView(open: List<TaskEntity>, today: LocalDate, days: Int = 7): Upcom
 }
 
 /**
+ * A day's rows and its folded daily habits. Today and Tomorrow ([index] 0, 1) show everything; a later day folds its
+ * daily habits into one quiet line (Boss 2026-10-28: the same five habits on every day was a wall). A habit on chosen
+ * days (Gym tue,thu,sun; weigh-in on Mondays) stays a row: that day is what it says.
+ */
+fun foldDaily(tasks: List<TaskEntity>, index: Int): Pair<List<TaskEntity>, List<TaskEntity>> =
+    if (index <= 1) tasks to emptyList() else tasks.partition { it.every != "day" }
+
+/** "5 daily habits", the folded line's words. */
+fun dailyLine(n: Int): String = if (n == 1) "1 daily habit" else "$n daily habits"
+
+/**
  * Upcoming's count line: the tasks in it, each once ("5 tasks · 2 late"). A habit is not counted: it shows on every day
  * it falls on, so counting rows said "21 planned" for 4 tasks (checker P4 #4); the web shows no count at all.
  */

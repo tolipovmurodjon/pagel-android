@@ -54,6 +54,11 @@ object TabIcons {
     val Hourglass = icon("hourglass", "M5 22h14", "M5 2h14", "M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22", "M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2")
     val Moon = icon("moon", "M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401")
     val ArrowUp = icon("arrow-up", "m5 12 7-7 7 7", "M12 19V5")
+    // The Inbox's swipe map (2026-10-28): lucide arrow-down/left/right and shuffle, same source as above.
+    val ArrowDown = icon("arrow-down", "M12 5v14", "m19 12-7 7-7-7")
+    val ArrowLeft = icon("arrow-left", "m12 19-7-7 7-7", "M19 12H5")
+    val ArrowRight = icon("arrow-right", "M5 12h14", "m12 5 7 7-7 7")
+    val Shuffle = icon("shuffle", "m18 14 4 4-4 4", "m18 2 4 4-4 4", "M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-7.6a4 4 0 0 1 3.3-1.7H22", "M2 6h1.972a4 4 0 0 1 3.6 2.2", "M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45")
     val CloudOff = icon("cloud-off", "M10.94 5.274A7 7 0 0 1 15.71 10h1.79a4.5 4.5 0 0 1 4.222 6.057", "M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78", "m2 2 20 20")
     val ExternalLink = icon("external-link", "M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6")
     // Round 2 (checker 2026-10-27): steps → tasks, and the repeat presets' own icons; same source as above.

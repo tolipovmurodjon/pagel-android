@@ -5,6 +5,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import org.pagel.ai.data.db.TaskEntity
 import org.pagel.ai.data.upcoming.completedGroups
+import org.pagel.ai.data.upcoming.dailyLine
+import org.pagel.ai.data.upcoming.foldDaily
 import org.pagel.ai.data.upcoming.doneDayLabel
 import org.pagel.ai.data.upcoming.doneCount
 import org.pagel.ai.data.upcoming.doneDayOf
@@ -112,6 +114,18 @@ class UpcomingLogicTest {
         assertEquals("3 tasks · 1 late", plannedLine(v))
         assertEquals("1 task", plannedLine(upcomingView(listOf(task("thu", "2026-10-29"), task("gym", "2026-10-29", every = "day")), today)))
         assertEquals("0 tasks", plannedLine(upcomingView(emptyList(), today)))
+    }
+
+    /** Boss 2026-10-28: daily habits in full on Today and Tomorrow only; later days fold them; a chosen-days habit stays. */
+    @Test fun dailyHabitsFoldAfterTomorrow() {
+        val day = listOf(task("water", "2026-10-28", every = "day"), task("gym", "2026-10-29 18:00", every = "tue,thu,sun"), task("form", "2026-11-02"), task("walk", "2026-10-28", every = "day"))
+        assertEquals(day to emptyList<TaskEntity>(), foldDaily(day, 0))
+        assertEquals(day to emptyList<TaskEntity>(), foldDaily(day, 1))
+        val (rows, folded) = foldDaily(day, 2)
+        assertEquals(listOf("gym", "form"), rows.map { it.id })
+        assertEquals(listOf("water", "walk"), folded.map { it.id })
+        assertEquals("2 daily habits", dailyLine(2))
+        assertEquals("1 daily habit", dailyLine(1))
     }
 
     /** Checker P4 #9: pagel.uz's total wins; a tick or an untick here moves it by one; no total = what Room holds. */

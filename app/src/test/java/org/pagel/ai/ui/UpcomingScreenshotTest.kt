@@ -10,7 +10,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -113,6 +117,25 @@ class UpcomingScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-360-font-1.5.png")
         compose.onNodeWithText("Upcoming").assertIsDisplayed()
         compose.onNodeWithContentDescription("Wednesday 28 October, 1 task").assertIsDisplayed()
+    }
+
+    /** Boss 2026-10-28: the same daily habits on every day were a wall. Later days fold them into one line; tap opens. */
+    @Test fun dailyHabitsFoldOnLaterDays() {
+        val habits = listOf(
+            task("h1", "Go through five saves in your Inbox", "2026-10-28", every = "day"),
+            task("h2", "Log today's food and sugar, then shut down", "2026-10-28 20:45", every = "day"),
+            task("h3", "Start winding down, in bed by 22:00", "2026-10-28 21:30", every = "day"),
+            task("h4", "Do the five-minute floor routine", "2026-10-28 05:30", every = "day"),
+            task("h5", "Weigh yourself and measure your waist", "2026-11-02 06:00", every = "mon"),
+        )
+        show { UpcomingScreen(upcoming(open.drop(2) + habits), pad) }
+        // Today and Tomorrow show them in full; from Friday they fold into one line (Monday keeps its weigh-in row).
+        val list = compose.onNode(hasScrollAction())
+        list.performScrollToNode(hasContentDescription("4 daily habits, folded"))
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-habits-folded.png")
+        compose.onAllNodesWithContentDescription("4 daily habits, folded")[0].performClick()
+        compose.onNodeWithContentDescription("4 daily habits, shown").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-habits-open.png")
     }
 
     @Test fun upcomingWithNothingOverdue() {

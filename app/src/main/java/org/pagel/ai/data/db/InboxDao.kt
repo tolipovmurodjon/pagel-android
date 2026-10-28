@@ -46,6 +46,26 @@ abstract class InboxDao {
     @Query("SELECT COALESCE(MIN(position), 0) FROM inbox_items")
     abstract suspend fun firstPosition(): Int
 
+    @Query("SELECT file FROM inbox_items WHERE sortedAs IS NULL ORDER BY position")
+    abstract suspend fun deckFiles(): List<String>
+
+    @Query("UPDATE inbox_items SET position = :position WHERE file = :file")
+    abstract suspend fun place(file: String, position: Int)
+
+    /**
+     * Swipe up (shuffle): [file] goes back into the deck at a random spot at least two cards later, when the deck has
+     * them; the deck is numbered again in its new order. Nothing goes to the outbox. False when it was the only card.
+     */
+    @Transaction
+    open suspend fun shuffleBack(file: String, spot: (Int) -> Int): Boolean {
+        val order = deckFiles().toMutableList()
+        if (!order.remove(file) || order.isEmpty()) return false
+        val from = minOf(2, order.size)
+        order.add(from + spot(order.size - from + 1).coerceIn(0, order.size - from), file)
+        order.forEachIndexed { i, f -> place(f, i) }
+        return true
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsert(rows: List<InboxItemEntity>)
 

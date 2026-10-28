@@ -55,10 +55,7 @@ object AppDataModule {
     fun provideAppScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     @Provides @Singleton @PagelHttp
-    fun provideHttp(): OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    fun provideHttp(): OkHttpClient = org.pagel.ai.data.api.pagelHttp()
 
     @Provides @Singleton
     fun provideApi(@PagelHttp http: OkHttpClient, @IoDispatcher io: CoroutineDispatcher): PagelApi = PagelApi(http, io)

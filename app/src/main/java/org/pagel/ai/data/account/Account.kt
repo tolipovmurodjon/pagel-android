@@ -1,6 +1,7 @@
 package org.pagel.ai.data.account
 
 import android.content.Context
+import android.os.Build
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -14,6 +15,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import org.pagel.ai.BuildConfig
+import org.pagel.ai.crash.CrashLog
+import org.pagel.ai.crash.CrashRecorder
+import org.pagel.ai.crash.CrashReport
 import org.pagel.ai.di.IoDispatcher
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -45,15 +50,46 @@ class InMemoryAccountStore(initial: Account? = null) : AccountStore {
 }
 
 /**
- * The account in an [EncryptedFile] under a Keystore key, read and written on [io] only: the Keystore is slow on the
- * A05s and must never run on Main (RULES.md, main thread). A file the Keystore can no longer open (a restore, a
- * reset key) counts as signed out, so the app asks for a new pairing code instead of crashing.
+ * Seals and opens one file. The real one ([KeystoreFileSeal]) is androidx.security's [EncryptedFile], which binds the
+ * FILE NAME as the cipher's associated data: a sealed file opens only under the name it was written with.
+ */
+interface FileSeal {
+    fun write(target: File, bytes: ByteArray)
+    fun read(source: File): ByteArray
+}
+
+class KeystoreFileSeal(private val ctx: Context) : FileSeal {
+    override fun write(target: File, bytes: ByteArray) = encrypted(target).openFileOutput().use { it.write(bytes) }
+    override fun read(source: File): ByteArray = encrypted(source).openFileInput().use { it.readBytes() }
+
+    private fun encrypted(target: File): EncryptedFile = EncryptedFile.Builder(
+        ctx, target,
+        MasterKey.Builder(ctx).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+        EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB,
+    ).build()
+}
+
+/**
+ * The account in a sealed file under a Keystore key, read and written on [io] only: the Keystore is slow on the A05s
+ * and must never run on Main (RULES.md, main thread).
+ *
+ * Saved under its own name: it is sealed in `files/account-staging/pagel-account`, then renamed into place. Up to
+ * app-v0.8.1 it was sealed as `cache/pagel-account.new` and renamed, so the name bound into the cipher no longer
+ * matched and the file could never be opened again: every cold start (an update, the A05s closing PAGEL) asked for a
+ * new pairing code (Boss 2026-10-28: "keeps asking to pair every time I update"). [load] rescues such a file by
+ * opening a copy under its old name and saving it again the right way. A file that still cannot be opened is reported
+ * ([onUnreadable]: the error's class only, never its contents) before the phone counts as signed out.
  */
 @Singleton
-class EncryptedAccountStore @Inject constructor(
-    @ApplicationContext private val ctx: Context,
-    @IoDispatcher private val io: CoroutineDispatcher,
+class EncryptedAccountStore internal constructor(
+    private val ctx: Context,
+    private val io: CoroutineDispatcher,
+    private val seal: FileSeal,
+    private val onUnreadable: (Throwable) -> Unit,
 ) : AccountStore {
+    @Inject constructor(@ApplicationContext ctx: Context, @IoDispatcher io: CoroutineDispatcher) :
+        this(ctx, io, KeystoreFileSeal(ctx), { e -> reportUnreadable(ctx, e) })
+
     private val json = Json { ignoreUnknownKeys = true }
     private val lock = Mutex()
     private val flow = MutableStateFlow<AccountState?>(null)
@@ -62,24 +98,39 @@ class EncryptedAccountStore @Inject constructor(
 
     override suspend fun load(): AccountState = lock.withLock {
         flow.value?.let { return it }
-        val read = withContext(io) {
-            runCatching {
-                if (!file.exists()) null
-                else json.decodeFromString(Account.serializer(), encrypted(file).openFileInput().use { it.readBytes() }.decodeToString())
-            }.getOrNull()
-        }
+        val read = withContext(io) { if (file.exists()) readOrRescue() else null }
         val s = read?.let { AccountState.Paired(it) } ?: AccountState.SignedOut
         flow.value = s
         s
     }
 
-    override suspend fun save(account: Account) = lock.withLock {
-        withContext(io) {
-            val staging = File(ctx.cacheDir, "$FILE.new").apply { delete() }
-            encrypted(staging).openFileOutput().use { it.write(json.encodeToString(Account.serializer(), account).encodeToByteArray()) }
-            file.delete()
-            check(staging.renameTo(file)) { "could not save the account" }
+    private fun decode(f: File): Account = json.decodeFromString(Account.serializer(), seal.read(f).decodeToString())
+
+    private fun readOrRescue(): Account? {
+        val first = runCatching { decode(file) }
+        first.getOrNull()?.let { return it }
+        // Written by app-v0.8.1 or older: open a copy under the name it was sealed with, then save it right.
+        val rescue = File(File(ctx.cacheDir, "account-rescue").apply { mkdirs() }, LEGACY_NAME)
+        val rescued = runCatching {
+            file.copyTo(rescue, overwrite = true)
+            decode(rescue).also(::write)
         }
+        rescue.delete()
+        rescued.getOrNull()?.let { return it }
+        onUnreadable(rescued.exceptionOrNull() ?: first.exceptionOrNull() ?: IllegalStateException())
+        return null
+    }
+
+    private fun write(account: Account) {
+        val staging = File(File(ctx.filesDir, STAGING).apply { mkdirs() }, FILE).apply { delete() }
+        seal.write(staging, json.encodeToString(Account.serializer(), account).encodeToByteArray())
+        file.delete()
+        check(staging.renameTo(file)) { "could not save the account" }
+        File(ctx.cacheDir, LEGACY_NAME).delete()
+    }
+
+    override suspend fun save(account: Account) = lock.withLock {
+        withContext(io) { write(account) }
         flow.value = AccountState.Paired(account)
     }
 
@@ -88,13 +139,21 @@ class EncryptedAccountStore @Inject constructor(
         flow.value = AccountState.SignedOut
     }
 
-    private fun encrypted(target: File): EncryptedFile = EncryptedFile.Builder(
-        ctx, target,
-        MasterKey.Builder(ctx).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
-        EncryptedFile.FileEncryptionScheme.AES256_GCM_HKDF_4KB,
-    ).build()
-
-    private companion object {
+    internal companion object {
         const val FILE = "pagel-account"
+        const val STAGING = "account-staging"
+        /** The name app-v0.8.1 and older sealed the account under (in the cache folder) before renaming it. */
+        const val LEGACY_NAME = "$FILE.new"
+
+        /** A saved account the phone could not open: reported with the next crash upload, the error's class only. */
+        fun reportUnreadable(ctx: Context, e: Throwable) {
+            runCatching {
+                CrashLog.write(CrashRecorder.dir(ctx), CrashReport(
+                    at = System.currentTimeMillis(), versionName = BuildConfig.VERSION_NAME, versionCode = BuildConfig.VERSION_CODE,
+                    thread = "account", type = "AccountUnreadable: ${e.javaClass.name}", message = "", stack = "",
+                    device = "${Build.MANUFACTURER} ${Build.MODEL}", sdk = Build.VERSION.SDK_INT,
+                ))
+            }
+        }
     }
 }

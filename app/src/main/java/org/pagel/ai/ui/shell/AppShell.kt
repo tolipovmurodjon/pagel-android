@@ -53,7 +53,16 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import org.pagel.ai.ui.glass.ToastCenter
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -111,13 +120,27 @@ private val BarCompactWidth = 440.dp
 @Composable
 fun AppShell(onOpenPhone: () -> Unit, vm: ShellViewModel = hiltViewModel()) {
     val account by vm.account.collectAsStateWithLifecycle()
+    // 0 = reading the account, 1 = signed out, 2 = paired. Only pairing → Today slides (Boss 2026-10-28: the check, then
+    // Today slides in); a cold start straight into Today and a sign-out change at once.
+    val kind = when (account) { null -> 0; AccountState.SignedOut -> 1; is AccountState.Paired -> 2 }
     GlassTheme {
-        when (account) {
-            // Reading the account off Main takes a few ms; the page colour paints at once, no white flash.
-            null -> AuroraBackground(Modifier.fillMaxSize()) {}
-            AccountState.SignedOut -> PairRoute()
-            is AccountState.Paired -> androidx.compose.runtime.CompositionLocalProvider(LocalToasts provides vm.toasts) {
-                Tabs(onOpenPhone = onOpenPhone, onDisconnect = vm::disconnect)
+        androidx.compose.animation.AnimatedContent(
+            kind,
+            transitionSpec = {
+                if (initialState == 1 && targetState == 2) {
+                    (androidx.compose.animation.slideInHorizontally(spring(dampingRatio = 1f, stiffness = 380f)) { it / 3 } + androidx.compose.animation.fadeIn())
+                        .togetherWith(androidx.compose.animation.fadeOut())
+                } else androidx.compose.animation.EnterTransition.None.togetherWith(androidx.compose.animation.ExitTransition.None)
+            },
+            label = "account",
+        ) { k ->
+            when (k) {
+                // Reading the account off Main takes a few ms; the page colour paints at once, no white flash.
+                0 -> AuroraBackground(Modifier.fillMaxSize()) {}
+                1 -> PairRoute()
+                else -> androidx.compose.runtime.CompositionLocalProvider(LocalToasts provides vm.toasts) {
+                    Tabs(onOpenPhone = onOpenPhone, onDisconnect = vm::disconnect)
+                }
             }
         }
     }
@@ -262,26 +285,13 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             ) { reselect++ }
         }
         val inProject = top as? ProjectPageRoute
-        if ((onTop && selected == 0) || inProject != null) {
-            AddButton(
-                backdrop,
-                Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.navigationBars).padding(end = 20.dp, bottom = if (onTop) fabBottom else 16.dp),
-            ) { adding = inProject?.name ?: "" }
-        }
-        // The toast line lives here, over the real list, so its glass bends what is under it (audit #8). While a sheet is
-        // open the sheet shows it instead.
-        if (toasts.sheets == 0) {
-            // The Inbox has no + and its main button (the AI's pick) sits low: there the toast comes in under the status
-            // bar, so "Dropped · Undo" never covers the next card's button (checker 2026-10-28 #2).
-            val inboxTop = onTop && Tab.entries[selected] == Tab.Inbox
-            ToastHost(
-                toasts,
-                if (inboxTop) Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(start = 12.dp, end = 12.dp, top = 8.dp)
-                else Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(start = 12.dp, end = 12.dp, bottom = if (onTop) fabBottom + 56.dp + 10.dp else 16.dp + 56.dp + 10.dp),
-                backdrop = backdrop,
-            )
-        }
+        // The Inbox has no + and its dock sits low: there the toast comes in under the status bar, so "Dropped · Undo"
+        // never covers the next card's buttons (checker 2026-10-28 #2).
+        BottomActions(
+            toasts, backdrop, bottom = if (onTop) fabBottom else 16.dp,
+            showFab = (onTop && selected == 0) || inProject != null,
+            toastOnTop = onTop && Tab.entries[selected] == Tab.Inbox,
+        ) { adding = inProject?.name ?: "" }
     }
     }
     adding?.let { target -> AddTaskSheet(onClose = { adding = null }, project = target.ifEmpty { null }) }
@@ -349,6 +359,39 @@ private fun TitleCapsule(title: String, visible: Boolean, backdrop: Backdrop, mo
                 .padding(horizontal = 22.dp),
             contentAlignment = Alignment.Center,
         ) { Text(title, style = MaterialTheme.typography.titleMedium, color = Glass.Ink) }
+    }
+}
+
+/**
+ * The + and the toast line at the bottom, as Material's snackbar does (Boss 2026-10-28: "that toast should be below
+ * the float"): the toast sits just above the glass bar and the + springs up over it while it shows, then back. The
+ * toast lives here, over the real list, so its glass bends what is under it (audit #8); while a sheet is open the sheet
+ * shows it instead.
+ */
+@Composable
+internal fun BoxScope.BottomActions(toasts: ToastCenter, backdrop: Backdrop, bottom: Dp, showFab: Boolean, toastOnTop: Boolean, onAdd: () -> Unit) {
+    val density = LocalDensity.current
+    var toastH by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val under = toasts.sheets == 0 && !toastOnTop && toastH > 0
+    val lift by androidx.compose.animation.core.animateDpAsState(
+        if (under) with(density) { toastH.toDp() } + 10.dp else 0.dp, spring(dampingRatio = 0.8f, stiffness = 420f), label = "fab",
+    )
+    if (showFab) {
+        AddButton(
+            backdrop,
+            Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.navigationBars).padding(end = 20.dp, bottom = bottom)
+                .offset { IntOffset(0, -lift.roundToPx()) },
+            onAdd,
+        )
+    }
+    if (toasts.sheets == 0) {
+        ToastHost(
+            toasts,
+            if (toastOnTop) Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(start = 12.dp, end = 12.dp, top = 8.dp)
+            else Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(start = 12.dp, end = 12.dp, bottom = bottom)
+                .onSizeChanged { toastH = it.height },
+            backdrop = backdrop,
+        )
     }
 }
 

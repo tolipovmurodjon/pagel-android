@@ -71,11 +71,13 @@ class Session @Inject constructor(
         accounts.clear()
     }
 
-    suspend fun pair(serverUrl: String, code: String): Outcome<Account> {
+    /** [accepted] runs once pagel.uz took the code, before the account is saved (the pair screen draws its check). */
+    suspend fun pair(serverUrl: String, code: String, accepted: suspend () -> Unit = {}): Outcome<Account> {
         val name = "${Build.MANUFACTURER} ${Build.MODEL}".trim().ifEmpty { "Phone" }
         return when (val r = api.pair(serverUrl, code.filter(Char::isDigit), name)) {
             is Outcome.Failed -> r
             is Outcome.Ok -> {
+                accepted()
                 val a = Account(serverUrl.trimEnd('/'), r.value.id, r.value.name, r.value.token)
                 accounts.save(a)
                 startSync(a)

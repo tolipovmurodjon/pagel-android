@@ -116,29 +116,59 @@ centre() {
   set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
   echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
 }
-RING=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox.xml" | grep -oE '[0-9]+' | head -1)
+# The dock sits fully above the glass bar (0.8.1 drew the round choices behind it): every choice ends above the bar's
+# top, read as the top of the "Today" tab.
+XML="$OUT/$(printf '%02d' $N)-inbox.xml"
+y_of() { tr '>' '\n' < "$XML" | grep -E "(text|content-desc)=\"$1\"" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | sed -n "$2p"; }
+BAR=$(y_of Today 2)
+[ -n "$BAR" ] || { log "WALKTHROUGH: no Today tab on the Inbox screen"; exit 1; }
+CHECKED=0
+for c in Action Note Learn "Do now" Later Drop "AI pick: [A-Za-z ]+"; do
+  B=$(y_of "$c" 4); [ -n "$B" ] || continue
+  CHECKED=$((CHECKED + 1))
+  [ "$B" -le "$BAR" ] || { log "WALKTHROUGH: \"$c\" ends at y=$B, under the tab bar's top y=$BAR"; exit 1; }
+done
+[ "$CHECKED" -ge 6 ] || { log "WALKTHROUGH: only $CHECKED choices on screen, wanted the pick + 5"; exit 1; }
+log "   the dock's $CHECKED choices all end above the bar (top y=$BAR)"
+RING=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$XML" | grep -oE '[0-9]+' | head -1)
 [ -n "$RING" ] || { log "WALKTHROUGH: the Inbox ring says nothing"; exit 1; }
-P=$(centre "10 AI tools lists are mostly ads") || exit 1; set -- $P
-$T adb shell input swipe "$1" "$2" $(( $1 - 700 )) "$2" 250; shot inbox-swiped-left-drop 1.5
-grep -q "content-desc=\"$((RING + 1)) of 20 sorted today\"" "$OUT/$(printf '%02d' $N)-inbox-swiped-left-drop.xml" \
-  || { log "WALKTHROUGH: the ring did not go $RING -> $((RING + 1)) after one sort"; grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-swiped-left-drop.xml" | tee -a "$OUT/steps.txt"; exit 1; }
+# Boss's swipe map (2026-10-28): up shuffles, down drops, left learns, right makes an Action, a hold is Do now. Each
+# swipe is 150 dp from the claim's centre, kept inside the 320x640 screen (an 800-px swipe ended off screen once).
+DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
+D=$(( 150 * DPI / 160 ))
+SIZE=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1); W=${SIZE%x*}; H=${SIZE#*x}
+clamp() { local v=$1; [ "$v" -lt 8 ] && v=8; [ "$v" -gt $(( $2 - 8 )) ] && v=$(( $2 - 8 )); echo "$v"; }
+swipe_card() { # $1 claim, $2 direction
+  local P; P=$(centre "$1") || exit 1; set -- $P "$2"
+  local x2=$1 y2=$2
+  case $3 in up) y2=$(( $2 - D ));; down) y2=$(( $2 + D ));; left) x2=$(( $1 - D ));; right) x2=$(( $1 + D ));; esac
+  $T adb shell input swipe "$1" "$2" "$(clamp $x2 $W)" "$(clamp $y2 $H)" 200
+}
+swipe_card "10 AI tools lists are mostly ads" down; shot inbox-swiped-down-drop 1.5
+grep -q "content-desc=\"$((RING + 1)) of 20 sorted today\"" "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" \
+  || { log "WALKTHROUGH: the ring did not go $RING -> $((RING + 1)) after one sort"; grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   the ring went $RING -> $((RING + 1))"
-P=$(centre "Quizzes beat rereading: recall builds memory") || exit 1; set -- $P
-# Inside the 320x640 screen (an 800-px swipe ended at y < 0 and was lost once, CI 40635928160); one retry if the
-# card is still there (a lost swipe sorts nothing, so it cannot sort twice).
-UP=$(( $2 - 400 )); [ "$UP" -lt 12 ] && UP=12
-$T adb shell input swipe "$1" "$2" "$1" "$UP" 200; sleep 1.5
-if P=$(centre "Quizzes beat rereading: recall builds memory"); then
-  log "   the swipe up was lost; once more"; set -- $P; UP=$(( $2 - 400 )); [ "$UP" -lt 12 ] && UP=12
-  $T adb shell input swipe "$1" "$2" "$1" "$UP" 200
-fi
-shot inbox-swiped-up-later 1.5
-P=$(centre "A meme about Mondays") || exit 1; set -- $P
-$T adb shell input swipe "$1" "$2" $(( $1 + 700 )) "$2" 250; shot inbox-swiped-right-ai-drop 1.5
-tap "AI pick: Action" && shot inbox-action-form 2
+# Later stays a button in the dock (up is the shuffle now).
+tap Later && shot inbox-later-button 1.5
+swipe_card "A meme about Mondays" down; shot inbox-swiped-down-ai-drop 1.5
+swipe_card "The IT Park grant round closes on 15 November" right; shot inbox-swiped-right-action-form 2
 tap "Add to plan" && shot inbox-action-sent 1.5
 tap "AI pick: Note" && shot inbox-note-form 2
 tap "Save note" && shot inbox-note-sent 1.5
+# Up = shuffle: ib6 goes back into the deck (two or more cards on), ib7 is on top, and nothing is sent.
+swipe_card "Spaced repetition apps keep 90 % after a month" up; shot inbox-swiped-up-shuffle 1.5
+XML="$OUT/$(printf '%02d' $N)-inbox-swiped-up-shuffle.xml"
+grep -q 'text="Buy a second battery for the A05s"' "$XML" || { log "WALKTHROUGH: after the shuffle ib7 is not on top"; exit 1; }
+grep -q 'text="Spaced repetition apps keep 90 % after a month"' "$XML" && { log "WALKTHROUGH: the shuffled card is still on top"; exit 1; }
+# Hold = Do now: a still finger for ~0.9 s fills the ring and opens Do now's sheet; Back closes it, nothing is sent.
+P=$(centre "Buy a second battery for the A05s") || exit 1; set -- $P
+$T adb shell input swipe "$1" "$2" "$1" "$2" 900; shot inbox-held-do-now 1.5
+grep -qE '(text|content-desc)="Done"' "$OUT/$(printf '%02d' $N)-inbox-held-do-now.xml" || { log "WALKTHROUGH: holding the card did not open Do now"; exit 1; }
+$T adb shell input keyevent 4; shot inbox-do-now-closed 1.5
+# Release → next card on screen, as the app measured it on the frame that drew it (Boss: "slow to show the next one").
+MS=$($T adb logcat -d -s PagelInbox:I | grep -oE 'next card in [0-9]+ ms' | grep -oE '[0-9]+' | tr '
+' ' ')
+log "   release -> next card on screen (ms, emulator with a software GPU): ${MS:-none logged}"
 sleep 3
 [ "$(grep -c "POST /api/v1/inbox" "$FAKE_LOG")" = "$BEFORE" ] || { log "WALKTHROUGH: a sort reached the fake pagel.uz while offline"; exit 1; }
 log "   5 sorted offline, none sent yet"

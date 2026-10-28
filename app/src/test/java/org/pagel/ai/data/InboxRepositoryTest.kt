@@ -23,6 +23,8 @@ import org.pagel.ai.data.db.PagelDatabase
 import org.pagel.ai.data.inbox.Choice
 import org.pagel.ai.data.inbox.InboxRepository
 import org.pagel.ai.data.inbox.InboxSender
+import org.pagel.ai.data.inbox.newestFirst
+import org.pagel.ai.data.db.InboxItemEntity
 import org.pagel.ai.data.today.OutboxSender
 import org.pagel.ai.data.today.SendResult
 import org.robolectric.annotation.Config
@@ -161,6 +163,54 @@ class InboxRepositoryTest {
         assertEquals(3, db.inbox().stateOnce()!!.sorted)
         val refused = db.dao().refusedOutbox().first().single()
         assertEquals("Write it in your words: 6+ words.", refused.refused)
+    }
+
+    /** Swipe up (Boss 2026-10-28): the card goes back into the deck at least two cards later; nothing is sent or counted. */
+    @Test fun aShuffleKeepsTheCardInTheDeckAndSendsNothing() = runBlocking {
+        val r = repo()
+        r.refresh(account)
+        // The earliest spot it may take: two cards on.
+        assertTrue(r.shuffle("inbox/a.md") { 0 })
+        assertEquals(listOf("b", "c", "a", "d", "e", "f"), deck())
+        // The latest: the back.
+        assertTrue(r.shuffle("inbox/b.md") { it - 1 })
+        assertEquals(listOf("c", "a", "d", "e", "f", "b"), deck())
+        assertEquals(3, db.inbox().stateOnce()!!.sorted)
+        assertEquals(0, kicks)
+        assertTrue(db.dao().waitingOutbox().isEmpty())
+        now += 6_000
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertTrue("a shuffle never reaches pagel.uz", sorts.isEmpty())
+    }
+
+    @Test fun theLastCardCannotBeShuffled() = runBlocking {
+        deckFiles = listOf("a")
+        val r = repo()
+        r.refresh(account)
+        assertFalse(r.shuffle("inbox/a.md"))
+        assertEquals(listOf("a"), deck())
+    }
+
+    /** Newest first by the post's own date (908 saves share the import day as `saved`); put-off saves last. */
+    @Test fun theDeckIsNewestFirst() {
+        fun row(f: String, saved: String, posted: String, later: String? = null) = InboxItemEntity(
+            file = f, position = 0, saved = saved, source = "", text = "", claim = f, why = "", project = "me", kind = "drop", next = "", note = "",
+            guessed = true, author = "", posted = posted, later = later, hasPicture = false,
+        )
+        val order = newestFirst(listOf(
+            row("april", "2026-10-26", "2026-04-29"),
+            row("put-off", "2026-10-26", "2026-10-27", later = "2026-10-28"),
+            row("october", "2026-10-26", "2026-10-25"),
+            row("my-note", "2026-10-27", ""),
+            row("tie-1", "2026-10-26", "2026-09-01"),
+            row("tie-2", "2026-10-26", "2026-09-01"),
+        )).map { it.file }
+        assertEquals(listOf("my-note", "october", "tie-1", "tie-2", "april", "put-off"), order)
+    }
+
+    @Test fun theDeckIsAskedForWithNoSeed() = runBlocking {
+        repo().refresh(account)
+        assertEquals("/api/v1/inbox?limit=${InboxRepository.DECK}&seed=0", server.takeRequest().path)
     }
 
     @Test fun aRefreshKeepsTheTopCardAndTheChoicesOnTheirWay() = runBlocking {

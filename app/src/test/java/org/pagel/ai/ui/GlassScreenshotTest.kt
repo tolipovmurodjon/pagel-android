@@ -17,6 +17,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -35,6 +37,7 @@ import org.pagel.ai.ui.glass.GlassTheme
 import org.pagel.ai.ui.glass.LiquidBottomTab
 import org.pagel.ai.ui.glass.LiquidBottomTabs
 import org.pagel.ai.ui.pair.PairScreen
+import org.pagel.ai.ui.shell.BottomActions
 import org.pagel.ai.ui.pair.PairUiState
 import org.pagel.ai.ui.projects.ProjectsScreen
 import org.pagel.ai.ui.projects.ProjectsUiState
@@ -85,6 +88,40 @@ class GlassScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/glass-bar.png")
     }
 
+    /**
+     * Boss 2026-10-28 ("that toast should be below the float"): the toast sits just above the glass bar and the + springs
+     * up above it while it shows (Material's snackbar), at Boss's A05s size.
+     */
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi")
+    @Test fun toastSitsUnderTheAddButton() {
+        val toasts = org.pagel.ai.ui.glass.ToastCenter()
+        compose.setContent {
+            GlassTheme {
+                val backdrop = rememberLayerBackdrop()
+                Box(Modifier.fillMaxSize()) {
+                    AuroraBackground(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
+                        Text("Ovqatni rasmga olib kaloriyasini o'lchash", Modifier.align(Alignment.TopCenter).padding(top = 120.dp), fontSize = 20.sp)
+                    }
+                    LiquidBottomTabs({ 0 }, {}, backdrop, Tab.entries.size, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+                        Tab.entries.forEach { t ->
+                            LiquidBottomTab({}) { Icon(t.icon, null, Modifier.size(22.dp)); Text(t.label, fontSize = 11.sp) }
+                        }
+                    }
+                    // The shell's numbers: the bar is 64 dp with 8 dp under it, the + and the toast 14 dp above it.
+                    BottomActions(toasts, backdrop, bottom = 8.dp + 64.dp + 14.dp, showFab = true, toastOnTop = false) {}
+                }
+            }
+        }
+        toasts.show("Done", action = "Undo", millis = 60_000) {}
+        compose.mainClock.advanceTimeBy(1_000)
+        val toast = compose.onNodeWithText("Done", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val fab = compose.onNodeWithContentDescription("Add a task").fetchSemanticsNode().boundsInRoot
+        val bar = compose.onNodeWithText("Today").fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue("the + (bottom ${fab.bottom}) must sit above the toast (top ${toast.top})", fab.bottom <= toast.top)
+        org.junit.Assert.assertTrue("the toast (bottom ${toast.bottom}) must sit above the bar (top ${bar.top})", toast.bottom <= bar.top)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-toast-under-add.png")
+    }
+
     @Test fun pairing() {
         compose.setContent { GlassTheme { PairScreen(PairUiState(code = "48"), {}, {}, {}) } }
         compose.onNodeWithText("Connect").assertIsNotEnabled()
@@ -96,6 +133,28 @@ class GlassScreenshotTest {
         compose.onNodeWithText("Connect").assertIsEnabled()
         compose.onNodeWithText("Wrong code. 4 tries left.", substring = true).assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/pair-error.png")
+    }
+
+    /** Boss 2026-10-28: no spinner. Asking: the button fills and says so; slow: "Reaching pagel.uz…"; yes: a check. */
+    @Test fun pairingWhileItAsksAndWhenItIsDone() {
+        var step by androidx.compose.runtime.mutableStateOf(org.pagel.ai.ui.pair.PairStep.CONNECTING)
+        compose.setContent { GlassTheme { PairScreen(PairUiState(code = "482913", step = step), {}, {}, {}) } }
+        compose.onNodeWithText("Connecting…").assertIsDisplayed()
+        compose.onNodeWithText("4").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/pair-connecting.png")
+        step = org.pagel.ai.ui.pair.PairStep.SLOW
+        compose.onNodeWithText("Reaching pagel.uz…").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/pair-slow.png")
+        step = org.pagel.ai.ui.pair.PairStep.DONE
+        compose.mainClock.advanceTimeBy(800)
+        compose.onNodeWithText("Connected").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/pair-done.png")
+    }
+
+    @Test fun pairingTimedOutSaysTryAgain() {
+        compose.setContent { GlassTheme { PairScreen(PairUiState(code = "482913", timedOut = true, error = "pagel.uz did not answer in 30 s."), {}, {}, {}) } }
+        compose.onNodeWithText("Try again").assertIsEnabled()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/pair-timed-out.png")
     }
 
     @Test fun projects() {

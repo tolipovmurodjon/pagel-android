@@ -16,9 +16,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -44,8 +48,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Phase 2 (the Inbox) at Boss's sizes: a card with its picture at 360 dp and at 1.5× font, a card mid-swipe with its
- * stamp, Inbox zero, the day's 20/20 ring, and the Action and Learn forms.
+ * Phase 2 (the Inbox) at Boss's sizes: a card with its picture at 360 dp and at 1.5× font, each swipe's stamp, the dock
+ * above the bar on Boss's A05s (360x800, 1x and 1.5x), Inbox zero, the day's 20/20 ring, the forms and the guide.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -125,17 +129,113 @@ class InboxScreenshotTest {
         org.junit.Assert.assertTrue("the AI's pick ends at ${pick.bottom} px of ${root.bottom}: under the 96 dp the tab bar takes", pick.bottom <= root.bottom - 96 * 3f)
     }
 
-    @Test fun cardMidSwipeShowsItsStamp() {
-        // Dragged right past the line: the AI's pick (Learn) is stamped and the card behind grows into place.
+    // Boss's map (2026-10-28): right = Action, left = Learn, down = Drop, up = Shuffle; each stamps its icon, word, colour.
+    @Test fun cardMidSwipeRightIsAnAction() {
         show { screen(ui(listOf(ig, meme)), peek = Offset(420f, 40f)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-mid-swipe.png")
+        compose.onNodeWithText("ACTION").assertIsDisplayed()
+    }
+
+    @Test fun cardMidSwipeLeftIsLearn() {
+        show { screen(ui(listOf(grant, meme)), peek = Offset(-420f, 10f)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-mid-swipe-learn.png")
         compose.onNodeWithText("LEARN").assertIsDisplayed()
     }
 
-    @Test fun cardMidSwipeLeftIsADrop() {
-        show { screen(ui(listOf(grant, meme)), peek = Offset(-420f, 10f)) }
+    @Test fun cardMidSwipeDownIsADrop() {
+        show { screen(ui(listOf(grant, meme)), peek = Offset(10f, 420f)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-mid-swipe-drop.png")
         compose.onNodeWithText("DROP").assertIsDisplayed()
+    }
+
+    @Test fun cardMidSwipeUpShuffles() {
+        show { screen(ui(listOf(grant, meme)), peek = Offset(-10f, -420f)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-mid-swipe-shuffle.png")
+        compose.onNodeWithText("SHUFFLE").assertIsDisplayed()
+    }
+
+    /** Learn with today's keeps full is a Note: the stamp says so. */
+    @Test fun cardMidSwipeLeftWithKeepsFullIsANote() {
+        show { screen(ui(listOf(grant, meme), kept = 5), peek = Offset(-420f, 10f)) }
+        compose.onNodeWithText("NOTE").assertIsDisplayed()
+    }
+
+    /**
+     * Boss's A05s (360x800 dp, three-button navigation: 48 dp + the bar's 80 dp = 128 dp of shell padding). The dock sits
+     * fully above the glass bar, 12 dp clear of its top (0.8.1 drew the round choices behind it), the card centred above.
+     */
+    private val a05s = PaddingValues(top = 24.dp, bottom = 128.dp)
+
+    private fun dockClearsTheBar(names: List<String>) {
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val px = root.width / 360f
+        val barTop = root.bottom - (128 - 8) * px
+        for (n in names) {
+            val b = compose.onNodeWithText(n, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            org.junit.Assert.assertTrue("\"$n\" ends at ${b.bottom} px, the bar starts at $barTop px", b.bottom <= barTop - 12 * px + 1f)
+        }
+        val pick = compose.onNodeWithContentDescription("AI pick: Learn").fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue("the AI's pick ends at ${pick.bottom} px, the bar starts at $barTop px", pick.bottom <= barTop - 12 * px + 1f)
+    }
+
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi")
+    @Test fun dockAboveTheBarOnTheA05s() {
+        show { InboxScreen(ui(listOf(ig, meme)), leaving = null, pictures = mapOf(ig.file to picture), contentPadding = a05s) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-360x800.png")
+        dockClearsTheBar(listOf("Action", "Note", "Do now", "Later", "Drop"))
+        // The pick is one row tall (64 dp), not a slab.
+        val pick = compose.onNodeWithContentDescription("AI pick: Learn").fetchSemanticsNode().boundsInRoot
+        val px = compose.onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
+        assertEquals(64f, pick.height / px, 1f)
+        // The caption leaves out the claim it starts with.
+        compose.onNodeWithText("Long caption: why it works, three examples from real classes, and a link to the full study in the comments.", substring = true).assertIsDisplayed()
+    }
+
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi")
+    @Test fun dockAboveTheBarOnTheA05sAtLargeFont() {
+        show(1.5f) { InboxScreen(ui(listOf(ig, meme)), leaving = null, pictures = mapOf(ig.file to picture), contentPadding = a05s) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-360x800-font-1.5.png")
+        dockClearsTheBar(listOf("Action", "Note", "Do now", "Later", "Drop"))
+    }
+
+    /** LinkedIn's caption is its claim again: the card says it once (Boss 2026-10-28). */
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi")
+    @Test fun aCaptionThatRepeatsTheClaimIsLeftOut() {
+        val claim = "Most founders are using 5% of Claude's potential. The other 95% will separate the winners from everyone else"
+        val li = InboxItemEntity(file = "inbox/li.md", position = 0, saved = "2026-10-26", source = "https://www.linkedin.com/posts/gf", text = "$claim 🚀...",
+            claim = claim, why = "", project = "all", kind = "learn", next = "", note = "", guessed = true, author = "Guillermo Flor", posted = "2026-04-29", later = null, hasPicture = false)
+        show { InboxScreen(ui(listOf(li, meme)), leaving = null, pictures = emptyMap(), contentPadding = a05s) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-linkedin-no-repeat.png")
+        assertEquals(1, compose.onAllNodesWithText(claim, substring = true).fetchSemanticsNodes().size)
+    }
+
+    /**
+     * Boss 2026-10-28 ("when I swipe it is slow to show the next one"): a swipe that starts low on the screen, below the
+     * card, moves it; the next card is the top one on the first frame after the choice, with no rise-in.
+     */
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi")
+    @Test fun aLowSwipeDropsAndTheNextCardIsOnTopTheNextFrame() {
+        var u by androidx.compose.runtime.mutableStateOf(ui(listOf(meme, grant, ig)))
+        var chosen: Choice? = null
+        show {
+            InboxScreen(u, leaving = null, pictures = emptyMap(), contentPadding = a05s,
+                actions = org.pagel.ai.ui.inbox.InboxActions(choose = { _, c, _ -> chosen = c; u = u.copy(cards = u.cards.drop(1)) }))
+        }
+        val card = compose.onNodeWithText("A meme about Mondays").fetchSemanticsNode().boundsInRoot
+        val dock = compose.onNodeWithContentDescription("AI pick: Drop").fetchSemanticsNode().boundsInRoot
+        compose.mainClock.autoAdvance = false
+        compose.onRoot().performTouchInput {
+            // In the gap between the card's text and the dock, where a thumb rests.
+            val start = Offset(centerX, (card.bottom + dock.top) / 2f)
+            down(start)
+            repeat(10) { moveBy(Offset(0f, 60f), delayMillis = 16) }
+            up()
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.mainClock.advanceTimeByFrame()
+        assertEquals(Choice.DROP, chosen)
+        compose.onNodeWithText("The IT Park grant round closes on 15 November").assertIsDisplayed()
+        compose.mainClock.autoAdvance = true
     }
 
     @Test fun inboxZero() {
@@ -194,5 +294,7 @@ class InboxScreenshotTest {
     @Test fun guide() {
         show { Column(Modifier.padding(top = 16.dp)) { GuideContent() } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-guide.png")
+        // The five gestures as one picture, said in one line for TalkBack.
+        compose.onNodeWithContentDescription("Swipe up to shuffle, down to drop, left to learn, right for an action; hold for Do now").assertIsDisplayed()
     }
 }

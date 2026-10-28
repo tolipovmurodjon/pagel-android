@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.pagel.ai.data.account.AccountState
 import org.pagel.ai.data.account.AccountStore
 import org.pagel.ai.data.db.InboxItemEntity
@@ -101,11 +102,21 @@ data class InboxUi(
     val full get() = kept >= cap
 }
 
-/** A card on its way out: drawn over the deck for its exit motion, after Room already let it go. */
-data class Leaving(val id: Long, val card: InboxCard, val choice: Choice, val thrown: Throw = Throw.None)
+/**
+ * A card on its way out: drawn over the deck for its exit motion, after Room already let it go. [shuffled]: swiped up
+ * back into the deck (it leaves with Later's slide and feel, and nothing is sent).
+ */
+data class Leaving(val id: Long, val card: InboxCard, val choice: Choice, val thrown: Throw = Throw.None, val shuffled: Boolean = false)
 
 /** An open choice form (Action, Note, Learn, Do now): the card it is for and the line Boss writes. */
 data class Form(val card: InboxCard, val choice: Choice, val line: String, val project: String, val someday: Boolean)
+
+/**
+ * The deck as the screen shows it: the cards hidden by hand ([gone]: swiped, Room not yet caught up) leave the top
+ * at once. Only the leading ones: a shuffled card further down stays where Room put it.
+ */
+fun visibleDeck(deck: List<InboxItemEntity>, gone: Set<String>): List<InboxItemEntity> =
+    if (gone.isEmpty()) deck else deck.dropWhile { it.file in gone }
 
 private val POST_HEAD = Regex("^(Instagram|X|LinkedIn) .*?posted [^\\n]*\\n+")
 
@@ -128,6 +139,8 @@ class InboxViewModel @Inject constructor(
 ) : ViewModel() {
     private val streak = MutableStateFlow(0)
     private val reading = MutableStateFlow(false)
+    /** Cards swiped or sorted that Room has not let go yet: hidden at once, so the next card is on top on the same frame. */
+    private val gone = MutableStateFlow<Set<String>>(emptySet())
     private val visible = MutableStateFlow(false)
     /** Pictures that could not be fetched (offline): asked for again when the live link is back. */
     private val retryPictures = mutableSetOf<String>()
@@ -144,8 +157,8 @@ class InboxViewModel @Inject constructor(
     private var nextLeave = 1L
     private var refreshing = false
 
-    val ui: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), combine(streak, reading) { a, b -> a to b }) { deck, state, leavingCount, projects, (run, aiReading) ->
-        build(deck, state, leavingCount, projects, run).copy(reading = aiReading)
+    val ui: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), combine(streak, reading, gone) { a, b, c -> Triple(a, b, c) }) { deck, state, leavingCount, projects, (run, aiReading, hidden) ->
+        build(visibleDeck(deck, hidden), state, leavingCount, projects, run).copy(reading = aiReading)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     init {
@@ -249,6 +262,21 @@ class InboxViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Swipe up (Boss 2026-10-28: "swipe up it should shuffle"): the card goes back into the deck at a random later spot,
+     * nothing is sent and nothing is counted. False when it is the last card (it springs back).
+     */
+    fun shuffle(card: InboxCard, thrown: Throw): Boolean {
+        if (ui.value.cards.size < 2) return false
+        _leaving.value = Leaving(nextLeave++, card, Choice.LATER, thrown, shuffled = true)
+        hide(card.file)
+        viewModelScope.launch {
+            repo.shuffle(card.file)
+            settle(card.file)
+        }
+        return true
+    }
+
     fun openForm(card: InboxCard, choice: Choice) {
         val home = if (ui.value.projects.any { it.name == card.project }) card.project else "me"
         val who = card.author?.let { if (card.site == Site.LINKEDIN || it.startsWith("@")) it else "@$it" }
@@ -282,10 +310,12 @@ class InboxViewModel @Inject constructor(
 
     private fun leave(card: InboxCard, choice: Choice, thrown: Throw, line: String?, project: String?, someday: Boolean?) {
         _leaving.value = Leaving(nextLeave++, card, choice, thrown)
+        hide(card.file)
         if (choice != Choice.LATER) streak.update { it + 1 }
         val keptBefore = ui.value.kept
         viewModelScope.launch {
             val op = repo.choose(card.file, choice, line, project, someday)
+            settle(card.file)
             when (choice) {
                 Choice.DROP -> toasts.show("Dropped", action = "Undo", millis = 5_000) { undo(op, card) }
                 Choice.ACT -> toasts.show("Added to ${ui.value.projects.firstOrNull { it.name == project }?.let { shortName(it.name, it.title) } ?: project}")
@@ -301,6 +331,14 @@ class InboxViewModel @Inject constructor(
             }
             if (ui.value.cards.size < InboxRepository.LOW) refresh()
         }
+    }
+
+    private fun hide(file: String) = gone.update { it + file }
+
+    /** Room has let the card go (it is no longer on top), or 3 s passed: it stops being hidden by hand. */
+    private suspend fun settle(file: String) {
+        withTimeoutOrNull(3_000) { repo.deck.first { d -> d.firstOrNull()?.file != file } }
+        gone.update { it - file }
     }
 
     private fun undo(op: Long, card: InboxCard) {
