@@ -20,6 +20,8 @@ shot() {
   for i in 1 2 3; do $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1 && break; sleep 2; done
   timeout 20 adb exec-out cat /sdcard/ui.xml > "$OUT/$name.xml" < /dev/null
   log "$name"
+  grep -q "isn't responding" "$OUT/$name.xml" && { log "WALKTHROUGH: ANR dialog on step $name"; exit 1; }
+  return 0
 }
 
 # Tap the centre of the first node whose text or content-desc equals $1. Returns 1 if it is not on screen.
@@ -47,6 +49,8 @@ front() {
 }
 
 log "== critic walkthrough"
+# The launch numbers the smoke measured just before (launch-numbers.py: TotalTime, render ms, skipped frames, glass steps).
+[ -f smoke-out/launch-numbers.txt ] && { log "-- launch numbers"; cat smoke-out/launch-numbers.txt | tee -a "$OUT/steps.txt"; }
 $T adb shell dumpsys gfxinfo "$PKG" reset > /dev/null
 $T adb shell screenrecord --time-limit 179 /sdcard/walk.mp4 &
 REC=$!
@@ -354,4 +358,6 @@ grep -E "Total frames rendered|Janky frames|50th percentile|90th percentile|99th
 $T adb logcat -d > "$OUT/logcat-walk.txt"
 grep -E "Davey!|Skipped [0-9]+ frames" "$OUT/logcat-walk.txt" | tail -15 | tee -a "$OUT/steps.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-walk.txt" && { log "WALKTHROUGH: CRASH (see logcat-walk.txt)"; exit 1; }
+# CI 40656925148: "PAGEL isn't responding" sat over step 01 and every later step judged the dialog.
+grep -q "ANR in $PKG" "$OUT/logcat-walk.txt" && { log "WALKTHROUGH: ANR (see logcat-walk.txt)"; grep -A3 "ANR in $PKG" "$OUT/logcat-walk.txt" | tee -a "$OUT/steps.txt"; exit 1; }
 log "WALKTHROUGH DONE: $N steps"

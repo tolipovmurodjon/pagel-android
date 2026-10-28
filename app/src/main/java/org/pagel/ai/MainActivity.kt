@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import org.pagel.ai.data.session.Session
 import org.pagel.ai.service.AnchorService
 import org.pagel.ai.ui.gateway.GatewayDebugScreen
+import org.pagel.ai.ui.glass.GlassStage
 import org.pagel.ai.ui.home.HomeScreen
 import org.pagel.ai.ui.hud.BootScreen
 import org.pagel.ai.ui.shell.AppShell
@@ -54,6 +55,9 @@ class MainActivity : ComponentActivity() {
         ensureNotifPermission()
         ContextCompat.startForegroundService(this, Intent(this, AnchorService::class.java))
         handle(intent)
+        // Debug builds only: CI's launch probe compares glass in the first frame ("old") with no glass ("flat").
+        if (BuildConfig.DEBUG) GlassStage.probe = intent?.getStringExtra(EXTRA_GLASS_PROBE).orEmpty()
+        GlassStage.coldStart()
         setContent {
             PagelTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -116,6 +120,7 @@ class MainActivity : ComponentActivity() {
  * updates) opens on top from More → Phone, and Back returns to the tabs, which stay loaded.
  */
 private const val EXTRA_TEST_CRASH = "pagel.test_crash"
+private const val EXTRA_GLASS_PROBE = "pagel.glass"
 
 @Composable
 private fun PagelRoot() {

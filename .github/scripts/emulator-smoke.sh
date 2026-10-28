@@ -30,6 +30,7 @@ PID=$($T adb shell pidof "$PKG" | tr -d '\r')
 [ -n "$PID" ] || fail "PAGEL is not running 30 s after launch"
 grep -q "Process: $PKG, PID" "$OUT/logcat-launch.txt" && fail "crash in logcat (see logcat-launch.txt)"
 grep -q "ANR in $PKG" "$OUT/logcat-launch.txt" && fail "ANR in logcat"
+python3 .github/scripts/launch-numbers.py "first launch (pair)" "$OUT/am-start.txt" "$OUT/logcat-launch.txt" | tee "$OUT/launch-numbers.txt"
 echo "ok: running as pid $PID after 30 s, no crash, no ANR"
 
 echo "== forced test crash"
@@ -61,6 +62,7 @@ $T adb exec-out screencap -p > "$OUT/after-relaunch.png"
 $T adb logcat -d > "$OUT/logcat-relaunch.txt"
 [ -n "$($T adb shell pidof "$PKG" | tr -d '\r')" ] || fail "PAGEL did not come back after the crash"
 grep -q "Process: $PKG, PID" "$OUT/logcat-relaunch.txt" && fail "crash after relaunch"
+grep -q "ANR in $PKG" "$OUT/logcat-relaunch.txt" && fail "ANR after relaunch"
 echo "== pair with a code against the fake pagel.uz"
 python3 .github/scripts/fake-pagel.py 8799 "$OUT/fake-pagel.log" &
 FAKE=$!
@@ -111,9 +113,23 @@ echo "ok: the forced crash reached the crash endpoint and left the phone"
 
 # Boss 2026-10-28: "keeps asking to pair every time I update". The Home key above keeps the process (and the account in
 # memory); only a cold start reads the sealed file back. Up to app-v0.8.1 it could not be opened after its rename.
+# CI 40656925148: the cold Today's first frame spent 7,055 ms building glass shaders on the software GPU and the app
+# missed a FocusEvent for 5 s (ANR). The same cold start three ways, nothing touched for 12 s each: "old" = all glass in
+# the first frame (as up to a713747), "flat" = never any glass (the floor), then the shipped steps (GlassStage).
+echo "== launch probe: cold Today, glass all at once vs none"
+for arm in old flat; do
+  $T adb shell am force-stop "$PKG"
+  $T adb logcat -c
+  $T adb shell am start -W -n "$PKG/.MainActivity" --es pagel.glass "$arm" > "$OUT/am-start-$arm.txt"
+  sleep 12
+  $T adb logcat -d > "$OUT/logcat-cold-$arm.txt"
+  python3 .github/scripts/launch-numbers.py "cold Today ($arm)" "$OUT/am-start-$arm.txt" "$OUT/logcat-cold-$arm.txt" | tee -a "$OUT/launch-numbers.txt"
+done
+
 echo "== a cold start keeps the pairing"
 $T adb shell am force-stop "$PKG"
-$T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+$T adb logcat -c
+$T adb shell am start -W -n "$PKG/.MainActivity" | tee "$OUT/am-start-cold.txt"
 for i in $(seq 1 20); do
   sleep 2
   $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
@@ -124,6 +140,20 @@ $T adb exec-out screencap -p > "$OUT/cold-start.png"
 grep -q 'text="Ship the native app"' "$OUT/cold-start-ui.xml" || fail "after a cold start the app asked to pair again (no Today)"
 grep -q "POST /api/v1/app/crash .*AccountUnreadable" "$OUT/fake-pagel.log" && fail "the saved account could not be opened (AccountUnreadable)"
 echo "ok: force-stop and relaunch: still paired, Today on screen"
+# Let the glass steps finish (and their frames drain) before the numbers, then judge this launch by them.
+sleep 6
+$T adb logcat -d > "$OUT/logcat-cold.txt"
+python3 .github/scripts/launch-numbers.py "cold Today (steps)" "$OUT/am-start-cold.txt" "$OUT/logcat-cold.txt" | tee -a "$OUT/launch-numbers.txt"
+grep -q "ANR in $PKG" "$OUT/logcat-cold.txt" && fail "ANR after a cold start (see logcat-cold.txt)"
+COLD=$(tail -1 "$OUT/launch-numbers.txt")
+TOTAL=$(echo "$COLD" | grep -oE 'TotalTime=[0-9-]+' | cut -d= -f2)
+SKIP=$(echo "$COLD" | grep -oE 'skipped=[0-9]+' | cut -d= -f2)
+ISSUE=$(echo "$COLD" | grep -oE 'max-issue=[0-9]+' | cut -d= -f2)
+# The ANR line is 5 s of a main thread that cannot take input; any one frame's render work over 4 s puts that in reach.
+[ "${ISSUE:-0}" -lt 4000 ] || fail "a cold Today frame spent ${ISSUE} ms on the render thread (limit 4000)"
+[ "${TOTAL:-99999}" -lt 4000 ] || echo "WARN: cold Today TotalTime ${TOTAL} ms (target < 4000)"
+[ "${SKIP:-0}" -le 100 ] || echo "WARN: cold Today skipped ${SKIP} frames at launch (target <= 100)"
+echo "ok: cold Today TotalTime=${TOTAL} ms, max render frame ${ISSUE} ms, skipped ${SKIP} frames"
 $T adb logcat -c
 bash .github/scripts/walkthrough.sh || fail "the critic walkthrough crashed (see walk/logcat-walk.txt)"
 kill $FAKE 2>/dev/null
