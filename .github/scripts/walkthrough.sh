@@ -194,13 +194,24 @@ swipe_once() { # $1 claim, $2 direction
   case $3 in up) y2=$(( $2 - D ));; down) y2=$(( $2 + D ));; left) x2=$(( $1 - D ));; right) x2=$(( $1 + D ));; esac
   $T adb shell input swipe "$1" "$2" "$(clamp $x2 $W)" "$(clamp $y2 $H)" 400
 }
+# Whether the screen shows $1 now (a text or content-desc equal to it).
+onscreen() {
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -qE "(text|content-desc)=\"$1\""
+}
+# Swipe a card and wait up to 8 s for what shows once it worked. Root cause of the "ring 12 -> 13" and "swipe right was
+# lost" flakes (CI 40748995035, 40760037893): a fixed 1.5 s look came before the software-GPU emulator drew the result,
+# and the blind second swipe then sorted a SECOND card (ring 12 -> 14) or swiped the open action form away. Now a second
+# swipe happens only when the result never showed AND the same card is still on screen.
 swipe_card() { # $1 claim, $2 direction, $3 what shows once it worked (text or content-desc)
   swipe_once "$1" "$2" || exit 1
-  sleep 1.5
-  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
-  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -qE "(text|content-desc)=\"$3\"" && return 0
-  log "   the swipe $2 on \"$1\" was lost; once more"
-  swipe_once "$1" "$2" || log "   (it had gone after all)"
+  for i in $(seq 1 16); do sleep 0.5; onscreen "$3" && return 0; done
+  if onscreen "$1"; then
+    log "   the swipe $2 on \"$1\" was lost (the card is still there after 8 s); once more"
+    swipe_once "$1" "$2" || return 0
+    for i in $(seq 1 16); do sleep 0.5; onscreen "$3" && return 0; done
+  fi
+  log "   (no \"$3\" after the swipe $2 on \"$1\")"
 }
 swipe_card "10 AI tools lists are mostly ads" down "$((RING + 1)) of 20 sorted today"; shot inbox-swiped-down-drop 1.5
 grep -q "content-desc=\"$((RING + 1)) of 20 sorted today\"" "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" \
