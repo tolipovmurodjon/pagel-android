@@ -64,7 +64,9 @@ Brief order B, H, C, G, F, D, E, I, J, A. Done: B, H, C, G, D, E, J, A's chip. N
   connect 20 s / read 45 s / write 20 s; "Offline" only after 2 failed calls in a row (`statusAfter`, a single miss reads
   "Syncing"; the outbox is nudged on every return to Live); Today's glass chip "↑ 2 waiting" while the outbox holds anything,
   tap = send now (`OutboxWorker.nudge`); a network coming back (Session's default-network callback) restarts a sync loop
-  that waits out its backoff and nudges the outbox at once. Not done: the failure class (DNS/connect/TLS/timeout/HTTP)
+  that waits out its backoff and nudges the outbox at once — only after a real loss (the callback also fires at
+  registration; a nudge during a cold start replaced a running outbox job while Main waited on the first glass frame:
+  "ANR … No response to onStopJob", CI 40709590171), and a Syncing counts as down only after a Live. Not done: the failure class (DNS/connect/TLS/timeout/HTTP)
   in the diagnostics report, and a red "Not sent: <why>" chip (refused writes still show as the shell's red toast).
 - **B · a habit's time is not an Undo.** The phone path was the **reminder wheel**: `HabitsViewModel.setTime` keeps the
   habit's own (missed) day and puts the wheel's time on it, so "Wind down" went out as `PATCH {due:"2026-10-27 04:55"}`;

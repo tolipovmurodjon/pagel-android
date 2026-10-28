@@ -93,9 +93,15 @@ class Session @Inject constructor(
 
     init {
         // A network came back (Wi-Fi after 4G, out of a tunnel): sync and the outbox try now, not after their backoff.
+        // Only after a loss: the callback also fires once at registration, and a nudge at a cold start replaced a running
+        // outbox job while Main waited on the first glass frame ("No response to onStopJob" = ANR, CI 40709590171).
         runCatching {
             ctx.getSystemService(android.net.ConnectivityManager::class.java)?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                @Volatile var lost = false
+                override fun onLost(network: android.net.Network) { lost = true }
                 override fun onAvailable(network: android.net.Network) {
+                    if (!lost) return
+                    lost = false
                     sync.networkBack()
                     scope.launch(io) { runCatching { org.pagel.ai.data.today.OutboxWorker.nudge(ctx) } }
                 }
@@ -104,9 +110,12 @@ class Session @Inject constructor(
         // Back online (the live link was down and is up again): what waits in the outbox goes now, in order.
         scope.launch {
             var wasDown = false
+            var wasLive = false
             sync.status.collect { s ->
-                // A single failed call now reads "Syncing", not "Offline" (statusAfter): any pass that was not Live counts.
-                if (s is LiveStatus.Offline || s is LiveStatus.Syncing) wasDown = true
+                // A single failed call now reads "Syncing", not "Offline" (statusAfter): a Syncing after Live counts as down
+                // too. The first Syncing of a start does not (no nudge at a cold start, see above).
+                if (s is LiveStatus.Offline || (s is LiveStatus.Syncing && wasLive)) wasDown = true
+                if (s is LiveStatus.Live) wasLive = true
                 if (s is LiveStatus.Live && wasDown) {
                     wasDown = false
                     withContext(io) { runCatching { org.pagel.ai.data.today.OutboxWorker.nudge(ctx) } }
