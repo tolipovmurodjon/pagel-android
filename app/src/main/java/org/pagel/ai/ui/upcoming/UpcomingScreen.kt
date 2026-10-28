@@ -90,6 +90,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.pagel.ai.data.db.TaskEntity
+import org.pagel.ai.data.upcoming.CalView
+import com.kyant.backdrop.backdrops.layerBackdrop
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import java.time.LocalDate
 import org.pagel.ai.data.upcoming.UpcomingDay
 import org.pagel.ai.data.upcoming.plannedLine
 import org.pagel.ai.data.upcoming.stripDayAt
@@ -109,7 +114,6 @@ import org.pagel.ai.ui.today.DueTone
 import org.pagel.ai.ui.today.TickRing
 import org.pagel.ai.ui.today.dueLabel
 import org.pagel.ai.ui.today.headline
-import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -123,7 +127,7 @@ private val LETTER = DateTimeFormatter.ofPattern("EEE", Locale.UK)
 @Composable
 fun UpcomingRoute(contentPadding: PaddingValues, reselect: Int, vm: UpcomingViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    UpcomingScreen(ui, contentPadding, reselect, onMove = vm::reschedule, onMoveAll = vm::moveAllToToday, onFinish = vm::finish)
+    UpcomingScreen(ui, contentPadding, reselect, onMove = vm::reschedule, onMoveAll = vm::moveAllToToday, onFinish = vm::finish, onMoveTo = vm::moveTo)
 }
 
 /** A row being dragged to another day: where the finger holds it, where it started, the strip day under the finger. */
@@ -162,8 +166,37 @@ fun UpcomingScreen(
     onMove: (String, LocalDate) -> Unit = { _, _ -> },
     onMoveAll: (List<String>) -> Unit = {},
     onFinish: (String) -> Unit = {},
+    /** A calendar block dropped on a new time or day: its id and the new due. */
+    onMoveTo: (String, String) -> Unit = { _, _ -> },
+    /** Tests open a view; the app opens the one Boss chose last (CalendarPrefs). */
+    initialView: CalView? = null,
 ) {
     val haptics = LocalHapticFeedback.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val density = LocalDensity.current
+    // The view Boss chose last is remembered (round C: "the choice is remembered").
+    var view by rememberSaveable { mutableStateOf(initialView ?: CalView.SCHEDULE) }
+    LaunchedEffect(Unit) { if (initialView == null) kotlinx.coroutines.withContext(Dispatchers.IO) { CalendarPrefs.view(ctx) }?.let { view = it } }
+    val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = STRIP_BACK) { STRIP_PAGES }
+    val page = pager.currentPage - STRIP_BACK
+    val stripStart = org.pagel.ai.data.upcoming.pageStart(ui.today, page)
+    val stripDays = remember(stripStart) { (0 until 7).map { stripStart.plusDays(it.toLong()) } }
+    var focusText by rememberSaveable { mutableStateOf("") }
+    val focus = focusText.takeIf(String::isNotEmpty)?.let(LocalDate::parse) ?: ui.today
+    var monthText by rememberSaveable { mutableStateOf("") }
+    val month = monthText.takeIf(String::isNotEmpty)?.let(java.time.YearMonth::parse) ?: java.time.YearMonth.from(focus)
+    // A tick per week paged (Apple's detents), none on the first frame; the focus follows the strip's week.
+    var firstPage by remember { mutableStateOf(true) }
+    LaunchedEffect(pager.settledPage) {
+        if (firstPage) { firstPage = false; return@LaunchedEffect }
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        val start = org.pagel.ai.data.upcoming.pageStart(ui.today, pager.settledPage - STRIP_BACK)
+        if (focus < start || focus > start.plusDays(6)) focusText = start.toString()
+    }
+    val local = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+    var headH by remember { mutableIntStateOf(0) }
+    val topPad = contentPadding.calculateTopPadding()
+    val headDp = with(density) { headH.toDp() } + topPad + Space.sm
     val scope = rememberCoroutineScope()
     val openTask = LocalTaskOpener.current
     val list = rememberLazyListState()
@@ -172,23 +205,19 @@ fun UpcomingScreen(
     // The strip's place on screen, read when a drag needs it (one node, outside the list).
     val strip = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val slop = with(LocalDensity.current) { 28.dp.toPx() }
-    val days by rememberUpdatedState(ui.view.days)
+    // Page 0 is Upcoming as before (Overdue + today and the next 6); another week is its 7 days, no Overdue.
+    val shownView = if (page == 0) ui.view else remember(ui.tasks, stripStart) {
+        org.pagel.ai.data.upcoming.upcomingView(ui.tasks, ui.today, from = stripStart).copy(overdue = emptyList())
+    }
+    val days by rememberUpdatedState(shownView.days)
     val moveTo by rememberUpdatedState(onMove)
-    val overdueFirst = if (ui.view.overdue.isNotEmpty()) 1 else 0
+    val overdueFirst = if (shownView.overdue.isNotEmpty()) 1 else 0
 
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
     // One tick for each day the finger crosses (Apple's picker detents), none when it leaves the strip.
     LaunchedEffect(drag.hovered) { if (drag.hovered != null) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
     val over = drag.hovered != null
     LaunchedEffect(over) { drag.lift.animateTo(if (over) 1f else 0f, spring(dampingRatio = 1f, stiffness = 600f)) }
-    // "You are here": the day at the top of the list gets a thin ink ring on the strip (today is marked already).
-    val atTop by remember {
-        derivedStateOf {
-            val k = list.layoutInfo.visibleItemsInfo.firstOrNull { (it.key as? String)?.startsWith("day-") == true }?.key as? String
-            days.indexOfFirst { "day-${it.day}" == k }.takeIf { it > 0 }
-        }
-    }
-
     fun dayUnder(finger: Offset): Int? {
         val c = strip[0]?.takeIf { it.isAttached } ?: return null
         val at = c.positionInRoot()
@@ -242,50 +271,94 @@ fun UpcomingScreen(
         )
     }
 
+    fun tapDay(d: LocalDate) {
+        focusText = d.toString()
+        if (view == CalView.SCHEDULE) {
+            val i = days.indexOfFirst { it.day == d }
+            if (i >= 0) scope.launch { list.animateScrollToItem(if (i == 0 && page == 0) 0 else 1 + overdueFirst + i) }
+        }
+    }
+
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot(); drag.screenWidth = it.size.width.toFloat() }) {
-        Column(Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding())) {
-            // Only the strip is pinned (it is the drop target); the title scrolls with the list, so landscape and 1.5x
-            // keep room for the days (checker P4 #3: title + strip took ~180 dp).
-            WeekStrip(
-                ui.view.days, ui.today, drag.hovered, atTop,
-                Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp).onGloballyPositioned { strip[0] = it },
-            ) { i -> scope.launch { list.animateScrollToItem(if (i == 0) 0 else 1 + overdueFirst + i) } } // today = the top, Overdue included
-            // Under the pinned strip the scrolled list melts away (a 20 dp fade) instead of a hard cut row (Boss
-            // 2026-10-28: "05:30 Daily Me" peeked out clipped under the strip). Only once scrolled: at rest the title is whole.
-            val fade by animateFloatAsState(if (list.canScrollBackward) 1f else 0f, label = "fade")
-            LazyColumn(
-                Modifier.fillMaxWidth().weight(1f)
-                    .graphicsLayer { compositingStrategy = if (fade > 0f) CompositingStrategy.Offscreen else CompositingStrategy.Auto }
-                    .drawWithContent {
-                        drawContent()
-                        if (fade > 0f) drawRect(
-                            Brush.verticalGradient(0f to Color.Black.copy(alpha = 1f - fade), 1f to Color.Black, startY = 0f, endY = 20.dp.toPx()),
-                            size = Size(size.width, 20.dp.toPx()), blendMode = BlendMode.DstIn,
-                        )
-                    },
-                state = list,
-                contentPadding = PaddingValues(top = 4.dp, bottom = contentPadding.calculateBottomPadding() + 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                item(key = "head", contentType = "head") { Header(ui) }
-                when {
-                    ui.loading -> item(key = "loading", contentType = "note") {
-                        Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
+        // The screen's own layer: the glass top bends and blurs what scrolls under it (round C: "not liquid glass").
+        Box(Modifier.fillMaxSize().layerBackdrop(local)) {
+            org.pagel.ai.ui.glass.AuroraBackground(Modifier.fillMaxSize()) {
+                when (view) {
+                    CalView.SCHEDULE -> LazyColumn(
+                        Modifier.fillMaxSize(),
+                        state = list,
+                        contentPadding = PaddingValues(top = headDp + Space.sm, bottom = contentPadding.calculateBottomPadding() + Space.sm),
+                        verticalArrangement = Arrangement.spacedBy(Space.paneGap),
+                    ) {
+                        item(key = "head", contentType = "head") { Header(shownView, page) }
+                        when {
+                            ui.loading -> item(key = "loading", contentType = "note") {
+                                Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
+                            }
+                            else -> {
+                                // Overdue stays on top of the list view only (round C).
+                                if (shownView.overdue.isNotEmpty()) item(key = "overdue", contentType = "overdue") {
+                                    OverduePane(ui, drag, handlers, onMoveAll = { onMoveAll(shownView.overdue.map(TaskEntity::id)) }, onOpen = openTask, onFinish = onFinish,
+                                        modifier = Modifier.animateItem())
+                                }
+                                for (d in shownView.days) item(key = "day-${d.day}", contentType = "day") {
+                                    val rel = java.time.temporal.ChronoUnit.DAYS.between(ui.today, d.day).toInt()
+                                    DayPane(d, rel, ui, drag, handlers, onOpen = openTask, onFinish = onFinish, modifier = Modifier.animateItem())
+                                }
+                            }
+                        }
+                    }
+                    CalView.MONTH -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        Spacer(Modifier.height(headDp + Space.sm))
+                        MonthGrid(month, ui, focus) { d -> haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); focusText = d.toString() }
+                        Spacer(Modifier.height(Space.paneGap))
+                        DayList(focus, ui, openTask)
+                        Spacer(Modifier.height(contentPadding.calculateBottomPadding() + Space.sm))
                     }
                     else -> {
-                        if (ui.view.overdue.isNotEmpty()) item(key = "overdue", contentType = "overdue") {
-                            OverduePane(ui, drag, handlers, onMoveAll = { onMoveAll(ui.view.overdue.map(TaskEntity::id)) }, onOpen = openTask, onFinish = onFinish,
-                                modifier = Modifier.animateItem())
-                        }
-                        for ((i, d) in ui.view.days.withIndex()) item(key = "day-${d.day}", contentType = "day") {
-                            DayPane(d, i, ui, drag, handlers, onOpen = openTask, onFinish = onFinish, modifier = Modifier.animateItem())
+                        val shown = when (view) { CalView.DAY -> listOf(focus); CalView.THREE -> (0 until 3).map { focus.plusDays(it.toLong()) }; else -> stripDays }
+                        Timeline(shown, ui, rememberScrollState(), top = headDp + Space.sm, bottom = contentPadding.calculateBottomPadding() + Space.sm,
+                            onOpen = openTask, onMove = onMoveTo)
+                    }
+                }
+            }
+        }
+        // The pinned glass top: the view switch, then the week strip (or the month's title), the drop target of a drag.
+        GlassTop(local, Modifier.padding(start = Space.gutter, end = Space.gutter, top = topPad + Space.sm).onSizeChanged { headH = it.height }) {
+            Column(Modifier.padding(Space.xs)) {
+                ViewSwitch(view, Modifier.padding(horizontal = Space.xs)) { v ->
+                    view = v
+                    scope.launch(Dispatchers.IO) { CalendarPrefs.setView(ctx, v) }
+                }
+                if (view == CalView.MONTH) MonthBar(month) { monthText = it.toString() }
+                else {
+                    Row(Modifier.fillMaxWidth().padding(start = Space.md), verticalAlignment = Alignment.CenterVertically) {
+                        Text(rangeText(stripStart), style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, modifier = Modifier.weight(1f))
+                        TodayPill(shown = page != 0 || focus != ui.today) {
+                            focusText = ""
+                            scope.launch { pager.animateScrollToPage(STRIP_BACK); if (view == CalView.SCHEDULE) list.animateScrollToItem(0) }
                         }
                     }
+                    WeekPager(pager, ui, focus, drag.hovered, Modifier.padding(bottom = Space.xs).onGloballyPositioned { strip[0] = it }) { d -> tapDay(d) }
                 }
             }
         }
         if (drag.shown) Ghost(drag, rootAt)
     }
+}
+
+private val RANGE_DAY = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
+
+/** "28 Oct – 3 Nov": the strip's week. */
+private fun rangeText(start: LocalDate): String = "${start.format(RANGE_DAY)} – ${start.plusDays(6).format(RANGE_DAY)}"
+
+/** The view Boss chose last, kept on the phone (read and written off Main). */
+internal object CalendarPrefs {
+    private const val PREFS = "pagel-calendar"
+    fun view(ctx: android.content.Context): CalView? =
+        ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getString("view", null)?.let { n -> CalView.entries.firstOrNull { it.name == n } }
+    fun setView(ctx: android.content.Context, v: CalView) =
+        ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit().putString("view", v.name).apply()
 }
 
 /** What a row needs to start, move and end a drag; the screen owns the state. */
@@ -298,61 +371,11 @@ private class DragHandlers(
 private fun titleOf(t: TaskEntity) = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
 
 @Composable
-private fun Header(ui: UpcomingUi) {
-    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp)) {
-        Text("Next 7 days", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+private fun Header(view: org.pagel.ai.data.upcoming.UpcomingView, page: Int) {
+    Column(Modifier.padding(start = Space.textEdge, end = Space.textEdge, top = Space.xs)) {
+        Text(if (page == 0) "Next 7 days" else "Week of ${view.days.first().day.format(RANGE_DAY)}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Upcoming", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
-        Text(plannedLine(ui.view), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
-    }
-}
-
-/**
- * The week strip: the weekday, the date in a circle, a dot when the day has tasks. Today is bright mint with an ink
- * number; the day under a dragged row fills ink and grows, so the drop target is never in doubt.
- */
-@Composable
-private fun WeekStrip(days: List<UpcomingDay>, today: LocalDate, hovered: Int?, shown: Int?, modifier: Modifier, onTap: (Int) -> Unit) {
-    Pane(modifier.fillMaxWidth(), radius = 22.dp) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)) {
-            for ((i, d) in days.withIndex()) key(d.day) {
-                val isToday = d.day == today
-                val over = hovered == i
-                // No bounce: hovering has no momentum (apple §4; checker P4 #10 had .6).
-                val grow by animateFloatAsState(if (over) 1.16f else 1f, spring(dampingRatio = 1f, stiffness = 700f), label = "cell")
-                val press = remember { MutableInteractionSource() }
-                Column(
-                    Modifier.weight(1f).heightIn(min = 48.dp).pressScale(press)
-                        .clickable(press, indication = null, role = Role.Button, onClickLabel = "Show") { onTap(i) }
-                        .semantics(mergeDescendants = true) {
-                            contentDescription = d.day.format(SPOKEN) + when (d.tasks.size) { 0 -> ""; 1 -> ", 1 task"; else -> ", ${d.tasks.size} tasks" }
-                            selected = isToday
-                        },
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(d.day.format(LETTER), style = MaterialTheme.typography.labelSmall, color = if (isToday) Glass.PrimaryInk else Glass.Muted, maxLines = 1)
-                    Spacer(Modifier.height(4.dp))
-                    Box(
-                        Modifier.size(34.dp).graphicsLayer { scaleX = grow; scaleY = grow }
-                            .then(
-                                when {
-                                    over -> Modifier.background(Glass.Ink, CircleShape)
-                                    isToday -> Modifier.background(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), CircleShape)
-                                    shown == i -> Modifier.border(1.25.dp, Glass.Ink, CircleShape)
-                                    else -> Modifier
-                                },
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            d.day.dayOfMonth.toString(), style = MaterialTheme.typography.titleMedium, maxLines = 1,
-                            color = if (over) Color.White else Glass.Ink,
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Box(Modifier.size(5.dp).background(if (d.tasks.isNotEmpty()) Glass.Primary else Color.Transparent, CircleShape))
-                }
-            }
-        }
+        Text(plannedLine(view), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
     }
 }
 

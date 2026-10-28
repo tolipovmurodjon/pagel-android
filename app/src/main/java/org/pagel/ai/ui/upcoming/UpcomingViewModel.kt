@@ -44,6 +44,8 @@ data class UpcomingUi(
     val projects: Map<String, ProjectEntity> = emptyMap(),
     /** Tasks whose ring is filling (done from here): they keep their row for the finish moment. */
     val finishing: Set<String> = emptySet(),
+    /** Every open dated task (the calendar's views reach past the next 7 days). */
+    val tasks: List<TaskEntity> = emptyList(),
 )
 
 private val SHORT_DAY = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
@@ -66,6 +68,7 @@ class UpcomingViewModel @Inject constructor(
             view = upcomingView(tasks + folding.values.filter { it.id !in ids }, today),
             projects = projects.associateBy(ProjectEntity::name),
             finishing = folding.keys,
+            tasks = tasks + folding.values.filter { it.id !in ids },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), UpcomingUi())
 
@@ -74,6 +77,15 @@ class UpcomingViewModel @Inject constructor(
         viewModelScope.launch {
             val m = repo.reschedule(id, day) ?: return@launch
             toasts.show("Moved to ${dayWord(day)}", action = "Undo") { viewModelScope.launch { repo.undoMoves(listOf(m)) } }
+        }
+    }
+
+    /** A calendar block dropped on a new time or day: Room first, the PATCH waits in the outbox; Undo puts it back. */
+    fun moveTo(id: String, due: String) {
+        viewModelScope.launch {
+            val m = repo.moveTo(id, due) ?: return@launch
+            val day = LocalDate.parse(due.take(10))
+            toasts.show("Moved to ${dayWord(day)} ${due.drop(11).replace('-', '–')}".trim(), action = "Undo") { viewModelScope.launch { repo.undoMoves(listOf(m)) } }
         }
     }
 

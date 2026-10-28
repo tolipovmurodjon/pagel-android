@@ -46,6 +46,17 @@ class UpcomingRepository(
         return Moved(id, t.due, op)
     }
 
+    /**
+     * A calendar block dropped on another time or day (round C): the new due as [droppedDue] made it. A habit is never
+     * moved here (its due is its series, as [reschedule] says).
+     */
+    suspend fun moveTo(id: String, due: String): Moved? {
+        val t = dao.taskOnce(id) ?: return null
+        if (!t.every.isNullOrBlank() || due == t.due) return null
+        val op = tasks.due(id, due) ?: return null
+        return Moved(id, t.due, op)
+    }
+
     /** Overdue → today, each keeping its time, in the order shown (oldest first). */
     suspend fun moveAllToToday(ids: List<String>): List<Moved> {
         val today = today()

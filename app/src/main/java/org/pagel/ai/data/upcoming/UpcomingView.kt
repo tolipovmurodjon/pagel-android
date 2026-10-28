@@ -20,12 +20,12 @@ data class UpcomingView(val overdue: List<TaskEntity>, val days: List<UpcomingDa
 private val byUrgency = compareBy<TaskEntity>({ it.priority }, { it.due.orEmpty() })
 
 /** views.ts `upcoming` + the overdue filter of upcoming/page.tsx, over Room's open dated tasks. */
-fun upcomingView(open: List<TaskEntity>, today: LocalDate, days: Int = 7): UpcomingView {
+fun upcomingView(open: List<TaskEntity>, today: LocalDate, days: Int = 7, from: LocalDate = today): UpcomingView {
     val dated = open.filter { it.status == "open" && (it.due?.length ?: 0) >= 10 }
     val t = today.toString()
     val overdue = dated.filter { it.due!!.take(10) < t }.sortedBy { it.due }
     val list = (0 until days).map { i ->
-        val day = today.plusDays(i.toLong())
+        val day = from.plusDays(i.toLong())
         val d = day.toString()
         UpcomingDay(day, dated.filter { task ->
             val every = task.every?.takeIf(String::isNotBlank)

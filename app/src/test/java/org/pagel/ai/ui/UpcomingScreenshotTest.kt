@@ -18,6 +18,8 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -79,7 +81,7 @@ class UpcomingScreenshotTest {
         task("u6", "Gym", "2026-10-29 18:00", every = "tue,thu,sun"),
     )
 
-    private fun upcoming(tasks: List<TaskEntity> = open) = UpcomingUi(loading = false, today = today, view = upcomingView(tasks, today), projects = projects)
+    private fun upcoming(tasks: List<TaskEntity> = open) = UpcomingUi(loading = false, today = today, view = upcomingView(tasks, today), projects = projects, tasks = tasks)
 
     private val utc = { s: String -> OffsetDateTime.parse(s).toInstant().toString() }
     private val done = listOf(
@@ -224,5 +226,57 @@ class UpcomingScreenshotTest {
         show(1.5f) { Column(Modifier.padding(top = 16.dp)) { ReminderContent(habit, on = true, exact = false, onToggle = {}, onTime = {}, notify = false) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-reminder-notifications-off.png")
         compose.onNodeWithContentDescription("Notifications off · Turn on").assertIsDisplayed()
+    }
+
+    // ── Round C: the calendar's views (Boss: "week calendar view like Google's, many view formats, colouring") ──
+
+    private fun calendar(view: org.pagel.ai.data.upcoming.CalView, scale: Float, name: String) {
+        show(scale) { UpcomingScreen(upcoming(), pad, initialView = view) }
+        compose.mainClock.advanceTimeBy(500)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/calendar-$name.png")
+        compose.onNodeWithContentDescription("View: ${view.label}").assertIsDisplayed()
+    }
+
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarList360() = calendar(org.pagel.ai.data.upcoming.CalView.SCHEDULE, 1f, "list-360x800")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarDay360() = calendar(org.pagel.ai.data.upcoming.CalView.DAY, 1f, "day-360x800")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarThree360() = calendar(org.pagel.ai.data.upcoming.CalView.THREE, 1f, "3days-360x800")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarWeek360() = calendar(org.pagel.ai.data.upcoming.CalView.WEEK, 1f, "week-360x800")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarMonth360() = calendar(org.pagel.ai.data.upcoming.CalView.MONTH, 1f, "month-360x800")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarList360Font15() = calendar(org.pagel.ai.data.upcoming.CalView.SCHEDULE, 1.5f, "list-360x800-font-1.5")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarDay360Font15() = calendar(org.pagel.ai.data.upcoming.CalView.DAY, 1.5f, "day-360x800-font-1.5")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarThree360Font15() = calendar(org.pagel.ai.data.upcoming.CalView.THREE, 1.5f, "3days-360x800-font-1.5")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarWeek360Font15() = calendar(org.pagel.ai.data.upcoming.CalView.WEEK, 1.5f, "week-360x800-font-1.5")
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarMonth360Font15() = calendar(org.pagel.ai.data.upcoming.CalView.MONTH, 1.5f, "month-360x800-font-1.5")
+
+    /** The week strip pages by a swipe: the next week's days are on it, and "Back to today" brings this one back. */
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun theStripPagesByWeekAndTodayComesBack() {
+        show { UpcomingScreen(upcoming(), pad) }
+        compose.onNodeWithContentDescription("Thursday 29 October, 2 tasks").performTouchInput { swipeLeft(startX = right - 4f, endX = left - 600f) }
+        compose.mainClock.advanceTimeBy(1_500)
+        compose.onNodeWithContentDescription("Wednesday 4 November", substring = true).assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/calendar-next-week-360x800.png")
+        compose.onNodeWithContentDescription("Back to today").performClick()
+        compose.mainClock.advanceTimeBy(1_500)
+        compose.onNodeWithContentDescription("Thursday 29 October, 2 tasks").assertIsDisplayed()
+    }
+
+    /** A block long-pressed and dragged an hour down moves its time an hour later (Room first; the VM sends it). */
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun aBlockDraggedAnHourDownMovesItsTime() {
+        var moved: Pair<String, String>? = null
+        show { UpcomingScreen(upcoming(), pad, initialView = org.pagel.ai.data.upcoming.CalView.DAY, onMoveTo = { id, due -> moved = id to due }) }
+        compose.mainClock.advanceTimeBy(500)
+        val block = compose.onNodeWithContentDescription("Record the fractions lesson, 15:00")
+        block.performScrollTo()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/calendar-day-before-drag.png")
+        val hour = 60f * compose.onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
+        block.performTouchInput {
+            val from = center
+            down(from)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 200)
+            for (k in 1..10) { moveTo(from + androidx.compose.ui.geometry.Offset(0f, hour * k / 10f)); advanceEventTime(16) }
+            up()
+        }
+        compose.waitForIdle()
+        assertEquals("u3" to "2026-10-28 16:00", moved)
     }
 }

@@ -356,6 +356,20 @@ for id in t_u2 t_u1; do
 done
 log "   pagel.uz got both overdue tasks moved to $TODAY"
 grep -q 'text="Overdue"' "$OUT/$(printf '%02d' $N)-upcoming-moved-all.xml" && { log "WALKTHROUGH: Overdue still shows after Move all to today"; exit 1; }
+log "-- Round C calendar: swipe the strip to next week, Today comes back, a day tapped, Day / Week / Month / List"
+P=$(centre_desc "$TOMORROW_SPOKEN") || exit 1; set -- $P
+$T adb shell input swipe 900 "$2" 100 "$2" 250; shot calendar-next-week 1.5
+NEXTWEEK_SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date -d '+7 days' '+%A %-d %B')
+grep -qF "content-desc=\"$NEXTWEEK_SPOKEN" "$OUT/$(printf '%02d' $N)-calendar-next-week.xml" || { log "WALKTHROUGH: the strip did not page to next week ($NEXTWEEK_SPOKEN)"; exit 1; }
+tap "Back to today" && shot calendar-back-to-today 1.5
+grep -qF "content-desc=\"$TODAY_SPOKEN" "$OUT/$(printf '%02d' $N)-calendar-back-to-today.xml" || { log "WALKTHROUGH: Today did not bring this week back"; exit 1; }
+P=$(centre_desc "$TOMORROW_SPOKEN") || exit 1; set -- $P
+$T adb shell input tap "$1" "$2"; sleep 1
+for v in Day Week Month; do
+  tap "View: $v" && shot "calendar-$(echo $v | tr 'A-Z' 'a-z')" 2 || { log "WALKTHROUGH: no \"View: $v\""; exit 1; }
+done
+grep -q 'content-desc="Previous month"' "$OUT/$(printf '%02d' $N)-calendar-month.xml" || { log "WALKTHROUGH: the Month view has no month bar"; exit 1; }
+tap "View: List" && shot calendar-list 1.5
 log "-- Upcoming in landscape and at 1.5x on the 320 dp screen (checker P4 #3: only the strip is pinned now)"
 $T adb shell settings put system accelerometer_rotation 0
 $T adb shell settings put system user_rotation 1; sleep 3; front upcoming-landscape; shot upcoming-landscape 1
