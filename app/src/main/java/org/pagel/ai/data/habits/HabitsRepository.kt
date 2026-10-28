@@ -32,7 +32,7 @@ data class Ticked(val op: Long, val was: String?)
  * Habits (Phase 3, the web's /habits): repeating tasks from /sync, plus the days each was ticked. A tick answers in
  * one frame: Room moves the habit to its next date by the web's repeat rule and counts today, then the tick waits in
  * the outbox as `PATCH {done: true}` (pagel.uz moves the date the same way and logs habit_done). Undo before it left
- * takes it back; after, it sends the old date back (`PATCH {due}`, which pagel.uz logs as habit_undone), as the web.
+ * takes it back; after, it sends the old date back (`PATCH {due, undo: true}`, logged as habit_undone), as the web.
  * Conflict rule: a habit with a change waiting keeps the phone's date and ticks; once sent, the server's copy wins.
  */
 class HabitsRepository(
@@ -97,7 +97,9 @@ class HabitsRepository(
         dao.upsertTasks(listOf(t.copy(due = ticked.was, syncStatus = SyncStatus.PENDING, lastModified = now)))
         dao.deleteHabitTick(today, id)
         val body = buildJsonObject {
-            putJsonObject("set") { put("due", ticked.was) }
+            // undo: true = pagel.uz takes that day's tick out (habit_undone). A plain due change on a habit (a new time
+            // from the reminder wheel) keeps the tick (2026-10-28: "Wind down" set to 04:55 erased Tuesday's tick).
+            putJsonObject("set") { put("due", ticked.was); put("undo", true) }
             putJsonObject("was") { put("due", t.due); put("retick", today) }
         }
         dao.addToOutbox(OutboxEntity(taskId = id, op = OutboxEntity.PATCH, createdAt = now, body = body.toString()))

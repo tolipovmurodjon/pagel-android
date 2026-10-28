@@ -1,5 +1,17 @@
 package org.pagel.ai.ui.task
 
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.key
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.graphics.graphicsLayer
+import org.pagel.ai.ui.today.Ding
+import org.pagel.ai.ui.today.Burst
+import org.pagel.ai.ui.today.ConfettiBurst
 import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.animation.AnimatedVisibility
@@ -103,7 +115,8 @@ data class PanelActions(
     val onStar: (Boolean) -> Unit = {},
     val onSteps: (List<String>, List<Int>) -> Unit = { _, _ -> },
     val onMakeTasks: () -> Unit = {},
-    val onComplete: () -> Unit = {},
+    /** The ring tapped: its centre in the root, so the confetti starts from it. */
+    val onComplete: (Offset) -> Unit = {},
     /** Null when saved; otherwise why the reason was refused. */
     val onNotDoing: (String, String) -> String? = { _, _ -> null },
     val onDelete: () -> Unit = {},
@@ -126,20 +139,37 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
     val vm: TaskPanelViewModel = hiltViewModel(key = "panel-$taskId")
     LaunchedEffect(taskId) { vm.bind(taskId) }
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val ctx = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val bursts = remember { mutableStateListOf<Burst>() }
+    var nextBurst by remember { mutableLongStateOf(0L) }
+    var rootAt by remember { mutableStateOf(Offset.Zero) }
     // Room answers in a few ms: the sheet opens with the task already in it, never with a placeholder that then grows.
     if (ui.loading) return
     GlassSheet(onClose, full = true) {
-        when {
-            ui.project.isEmpty() -> Text("This task is gone from pagel.uz.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(24.dp))
-            else -> TaskPanelContent(
-                ui, vm.dayToday(),
-                PanelActions(
-                    onTitle = vm::title, onDoneWhen = vm::doneWhen, onText = vm::text, onDue = vm::due, onEvery = vm::every,
-                    onPriority = vm::priority, onStar = vm::star, onSteps = vm::steps, onMakeTasks = vm::makeStepsTasks,
-                    onComplete = { vm.complete(); onClose() }, onNotDoing = vm::notDoing, onDelete = { vm.delete(); onClose() }, onReopen = vm::reopen,
-                    onOpenProject = { onOpenProject(ui.project) }, onClose = onClose,
-                ),
-            )
+        Box(Modifier.fillMaxWidth().onGloballyPositioned { rootAt = it.positionInRoot() }) {
+            when {
+                ui.project.isEmpty() -> Text("This task is gone from pagel.uz.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(24.dp))
+                else -> TaskPanelContent(
+                    ui, vm.dayToday(),
+                    PanelActions(
+                        onTitle = vm::title, onDoneWhen = vm::doneWhen, onText = vm::text, onDue = vm::due, onEvery = vm::every,
+                        onPriority = vm::priority, onStar = vm::star, onSteps = vm::steps, onMakeTasks = vm::makeStepsTasks,
+                        // The same finish as Today: Confirm haptic, ding, confetti from the ring, the toast; the panel stays.
+                        onComplete = { centre ->
+                            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                            val app = ctx.applicationContext
+                            scope.launch(Dispatchers.Default) { Ding.play(app) }
+                            bursts += Burst(nextBurst++, centre - rootAt)
+                            vm.complete()
+                        },
+                        onNotDoing = vm::notDoing, onDelete = { vm.delete(); onClose() }, onReopen = vm::reopen,
+                        onOpenProject = { onOpenProject(ui.project) }, onClose = onClose,
+                    ),
+                )
+            }
+            for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.matchParentSize()) }
         }
     }
 }
@@ -151,8 +181,10 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
  */
 @Composable
 fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: Boolean = false, picker0: String = "") {
-    // A finished task's fields are its record, not a form (Completed → tap): read only, with Reopen.
-    if (!ui.open) { DoneContent(ui, today, a); return }
+    // A finished task's fields are its record, not a form (Completed → tap): read only, with Reopen. Ticked here, the
+    // panel stays open on that record and its ring draws the tick in.
+    val openedOpen = remember(ui.id) { ui.open }
+    if (!ui.open) { DoneContent(ui, today, a, drawIn = openedOpen); return }
     var stopping by rememberSaveable(ui.id) { mutableStateOf(stopFirst) }
     var picker by rememberSaveable(ui.id) { mutableStateOf(picker0) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
@@ -168,8 +200,11 @@ fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: 
         Steps(ui, a)
         Spacer(Modifier.height(12.dp))
         Props(ui, today, a, onPick = { picker = it })
-        Spacer(Modifier.height(12.dp))
-        Note(ui, a)
+        // The note only when it says more than the title (Boss 2026-10-28: the pane repeated the title word for word).
+        if (ui.text.trim() != ui.title.trim()) {
+            Spacer(Modifier.height(12.dp))
+            Note(ui, a)
+        }
     }
     if (picker == "date") DateSheet(ui.due, today, onPick = a.onDue, onDismiss = { picker = "" })
     if (picker == "repeat") RepeatSheet(ui.every, onChange = a.onEvery, onDismiss = { picker = "" })
@@ -200,13 +235,14 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
             Text(ui.projectLabel, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             if (!big) Icon(TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
         } }
-        GlassIconButton(if (copied) TabIcons.Check else TabIcons.Copy, if (copied) "Copied" else "Copy as a Claude Code prompt", on = copied, size = 36.dp) {
+        // Each icon says its word on a long press (a tooltip), so the row stays icons only.
+        GlassIconButton(if (copied) TabIcons.Check else TabIcons.Copy, if (copied) "Copied" else "Copy as a Claude Code prompt", on = copied, size = 36.dp, label = "Copy as a prompt") {
             ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("PAGEL task", runPrompt(ui.project, ui.text, ui.priority)))
             copied = true
         }
-        if (canStop) GlassIconButton(TabIcons.Ban, "Won't do, with the reason", on = stopping, size = 36.dp, onClick = onStop)
-        GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Risk, size = 36.dp, onClick = a.onDelete)
-        GlassIconButton(TabIcons.Close, "Close", size = 36.dp, onClick = a.onClose)
+        if (canStop) GlassIconButton(TabIcons.Ban, "Won't do, with the reason", on = stopping, size = 36.dp, label = "Won't do", onClick = onStop)
+        GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Risk, size = 36.dp, label = "Delete", rim = Glass.Risk, onClick = a.onDelete)
+        GlassIconButton(TabIcons.Close, "Close", size = 36.dp, label = "Close", onClick = a.onClose)
     }
 }
 
@@ -286,7 +322,7 @@ private fun StopForm(onCancel: () -> Unit, onSave: (String, String) -> String?) 
 private fun TitleBlock(ui: PanelUi, a: PanelActions) {
     val haptics = LocalHapticFeedback.current
     Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp), verticalAlignment = Alignment.Top) {
-        Ring(ui.priority, done = !ui.open, title = ui.title) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); a.onComplete() }
+        Ring(ui.priority, done = !ui.open, title = ui.title, onTick = a.onComplete)
         Column(Modifier.weight(1f).padding(top = 10.dp)) {
             InlineField(ui.title, "Name the next action", "Title", MaterialTheme.typography.headlineSmall, Modifier.fillMaxWidth(), onSave = a.onTitle)
             Spacer(Modifier.height(6.dp))
@@ -296,18 +332,31 @@ private fun TitleBlock(ui: PanelUi, a: PanelActions) {
     }
 }
 
-/** The panel's ring: 24 dp drawn in the priority's colour, 48 dp to touch; a tap finishes the task. */
+/**
+ * The panel's ring: 24 dp drawn in the priority's colour, 48 dp to touch; a tap finishes the task. [drawIn] = the ring
+ * was just ticked: it pops and the tick draws itself (Today's finish), instead of appearing already drawn.
+ */
 @Composable
-private fun Ring(priority: Int, done: Boolean, title: String, onTick: () -> Unit) {
+private fun Ring(priority: Int, done: Boolean, title: String, drawIn: Boolean = false, onTick: (Offset) -> Unit) {
     val flag = PriorityColors.getOrNull(priority)?.takeIf { priority < 3 }
     val press = remember { MutableInteractionSource() }
+    var centre by remember { mutableStateOf(Offset.Zero) }
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    val draw = remember { androidx.compose.animation.core.Animatable(if (done && !drawIn) 1f else 0f) }
+    LaunchedEffect(done) {
+        if (!done) { draw.snapTo(0f); return@LaunchedEffect }
+        launch { pop.animateTo(1.28f, tween(170)); pop.animateTo(1f, spring(dampingRatio = 0.45f, stiffness = 500f)) }
+        draw.animateTo(1f, tween(300))
+    }
     Box(
-        Modifier.size(48.dp).pressScale(press)
-            .clickable(press, indication = null, enabled = !done, role = Role.Checkbox, onClick = onTick)
-            .semantics { contentDescription = "Complete: $title" },
+        Modifier.size(48.dp)
+            .onGloballyPositioned { centre = it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f) }
+            .pressScale(press)
+            .clickable(press, indication = null, enabled = !done, role = Role.Checkbox) { onTick(centre) }
+            .semantics { contentDescription = if (done) "Done: $title" else "Complete: $title" },
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(24.dp)) {
+        Canvas(Modifier.size(24.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }) {
             val r = size.minDimension / 2
             val line = 1.6.dp.toPx()
             val c = flag ?: Color(0xFF9AA2BB)
@@ -316,8 +365,12 @@ private fun Ring(priority: Int, done: Boolean, title: String, onTick: () -> Unit
             else { drawCircle(c.copy(alpha = 0.08f), r); drawCircle(c, r - line / 2, style = Stroke(line)) }
             val u = size.minDimension / 20f
             if (done) {
-                drawLine(Glass.Ink, Offset(5.5f * u, 10.5f * u), Offset(8.5f * u, 13.5f * u), 2.2f * u, StrokeCap.Round)
-                drawLine(Glass.Ink, Offset(8.5f * u, 13.5f * u), Offset(14.5f * u, 6.5f * u), 2.2f * u, StrokeCap.Round)
+                // The tick drawn up to [draw] of its length (Today's TickRing).
+                val p0 = Offset(5.5f * u, 10.5f * u); val p1 = Offset(8.5f * u, 13.5f * u); val p2 = Offset(14.5f * u, 6.5f * u)
+                val first = (p1 - p0).getDistance(); val total = first + (p2 - p1).getDistance()
+                val d = draw.value * total
+                if (d > 0f) drawLine(Glass.Ink, p0, if (d <= first) p0 + (p1 - p0) * (d / first) else p1, 2.2f * u, StrokeCap.Round)
+                if (d > first) drawLine(Glass.Ink, p1, p1 + (p2 - p1) * ((d - first) / (total - first)), 2.2f * u, StrokeCap.Round)
             }
         }
     }
@@ -407,27 +460,42 @@ private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (Strin
             // One row family, one selection mark (checker 2026-10-28 #8): Priority opens its own sheet, as Date and Repeat do.
             PropRow(TabIcons.Flag, "Priority", "P${ui.priority + 1}", set = true, valueColor = PriorityColors.getOrNull(ui.priority)) { onPick("priority") }
             Line()
-            Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 16.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(TabIcons.Star, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
-                Spacer(Modifier.width(12.dp))
-                Text("Today", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f))
-                // A date decides by itself (Boss 2026-10-27: "why a Today toggle when I already set the date?"); the switch
-                // is only for a task with no date, as on the web.
-                val day = ui.due?.take(10)
-                when {
-                    // Short: the date or the repeat decides (checker: "Shows on its date" was a sentence).
-                    ui.every != null -> Why("By repeat")
-                    day != null && day <= today.toString() -> Why("By date")
-                    day != null -> Why("From " + DatePick.dueText(day, today).let { if (it == "Tomorrow") "tomorrow" else it })
-                    else -> GlassSwitch(ui.star, if (ui.star) "On today" else "Not today") { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); a.onStar(!ui.star) }
-                }
-            }
+            PinRow(ui, today) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); a.onStar(!ui.star) }
         }
     }
 }
 
+/**
+ * "⭐ Pin to Today" (Boss 2026-10-28: "what is that Today part"): a switch with one helper line under it. A date or a
+ * repeat already decides where the task shows, so then the line says that and there is no switch; at 3 pinned the
+ * switch is off and the line says why (the web's cap).
+ */
 @Composable
-private fun Why(text: String) = Text(text, style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+private fun PinRow(ui: PanelUi, today: LocalDate, onToggle: () -> Unit) {
+    val day = ui.due?.take(10)
+    val decided = when {
+        ui.every != null -> "Shows on Habits by its repeat"
+        day != null && day <= today.toString() -> "On Today already, by its date"
+        day != null -> "Shows on Today from " + DatePick.dueText(day, today).let { if (it == "Tomorrow") "tomorrow" else it }
+        else -> null
+    }
+    val full = !ui.star && ui.pinned >= MAX_PINNED
+    Row(Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (ui.star) TabIcons.StarFilled else TabIcons.Star, contentDescription = null, tint = if (ui.star) Color(0xFFC2410C) else Glass.Primary, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text("Pin to Today", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                decided ?: if (full) "$MAX_PINNED already pinned · unpin one first" else "Shows on Today even without a date · max $MAX_PINNED",
+                style = MaterialTheme.typography.labelSmall, color = if (full) Glass.Risk else Glass.Muted,
+            )
+        }
+        if (decided == null) {
+            Spacer(Modifier.width(8.dp))
+            GlassSwitch(ui.star, enabled = !full, onToggle = onToggle)
+        }
+    }
+}
 
 @Composable
 private fun Line() = HorizontalDivider(Modifier.padding(start = 47.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
@@ -454,20 +522,18 @@ private fun PropRow(icon: ImageVector, label: String, value: String, set: Boolea
     }
 }
 
-/** An Apple-style switch in mint: the knob slides in 160 ms; the state is said in words beside it. */
+/** An Apple-style switch in mint: the knob springs across; off and greyed when [enabled] is false (3 pinned). */
 @Composable
-private fun GlassSwitch(on: Boolean, label: String, onToggle: () -> Unit) {
+private fun GlassSwitch(on: Boolean, enabled: Boolean = true, onToggle: () -> Unit) {
     val press = remember { MutableInteractionSource() }
-    val knob by animateDpAsState(if (on) 20.dp else 2.dp, tween(160), label = "knob")
-    Row(
-        Modifier.heightIn(min = TouchMin).pressScale(press).clickable(press, indication = null, role = Role.Switch, onClick = onToggle)
-            .semantics(mergeDescendants = true) { contentDescription = "Today"; stateDescription = label },
-        verticalAlignment = Alignment.CenterVertically,
+    val knob by animateDpAsState(if (on) 20.dp else 2.dp, spring(dampingRatio = 1f, stiffness = 500f), label = "knob")
+    Box(
+        Modifier.heightIn(min = TouchMin).pressScale(press).clickable(press, indication = null, enabled = enabled, role = Role.Switch, onClick = onToggle)
+            .semantics(mergeDescendants = true) { contentDescription = "Pin to Today"; stateDescription = if (on) "Pinned" else "Not pinned" },
+        contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = if (on) Glass.PrimaryInk else Glass.Muted)
-        Spacer(Modifier.width(8.dp))
-        Box(Modifier.size(width = 46.dp, height = 28.dp).background(if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.16f), RoundedCornerShape(14.dp))) {
-            Box(Modifier.offset(x = knob, y = 2.dp).size(24.dp).background(Color.White, CircleShape))
+        Box(Modifier.size(width = 46.dp, height = 28.dp).background(if (on) Glass.Primary else Glass.Ink.copy(alpha = if (enabled) 0.16f else 0.08f), RoundedCornerShape(14.dp))) {
+            Box(Modifier.offset(x = knob, y = 2.dp).size(24.dp).background(Color.White.copy(alpha = if (enabled) 1f else 0.7f), CircleShape))
         }
     }
 }
@@ -489,7 +555,7 @@ private fun Note(ui: PanelUi, a: PanelActions) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DoneContent(ui: PanelUi, today: LocalDate, a: PanelActions) {
+private fun DoneContent(ui: PanelUi, today: LocalDate, a: PanelActions, drawIn: Boolean = false) {
     val day = ui.doneAt?.let { org.pagel.ai.data.upcoming.doneDayOf(it) }
     val time = ui.doneAt?.let { org.pagel.ai.data.upcoming.doneTimeOf(it) }.orEmpty()
     // "Yesterday 07:00": the check icon already says done (checker P4 #8: "Done yesterday 07:00" wrapped at 320 dp).
@@ -497,9 +563,10 @@ private fun DoneContent(ui: PanelUi, today: LocalDate, a: PanelActions) {
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
         Header(ui, stopping = false, a, onStop = {}, canStop = false)
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp), verticalAlignment = Alignment.Top) {
-            Ring(ui.priority, done = true, title = ui.title) {}
+            Ring(ui.priority, done = true, title = ui.title, drawIn = drawIn) {}
             Column(Modifier.weight(1f).padding(top = 10.dp)) {
-                Text(ui.title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink)
+                // Struck through, as a finished row on Today and Completed (Boss 2026-10-28: "not marking strike").
+                Text(ui.title, style = MaterialTheme.typography.headlineSmall.copy(textDecoration = TextDecoration.LineThrough), color = Glass.Muted)
                 if (ui.doneWhen.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text("Done when ${ui.doneWhen}", style = MaterialTheme.typography.bodyMedium, color = Glass.PrimaryInk)

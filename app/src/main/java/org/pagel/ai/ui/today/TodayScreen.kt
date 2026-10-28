@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -96,7 +99,7 @@ fun TodayRoute(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val pills by rituals.pills.collectAsStateWithLifecycle()
-    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links)
+    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onDayCleared = vm::dayCleared)
 }
 
 /** Today, native (NATIVE-PLAN Phase 2): the web's 3 at a time, a ring tick with ding, confetti and fold, undo. */
@@ -111,6 +114,7 @@ fun TodayScreen(
     /** The rituals' entry points (Phase 5): Empty your head · Close the day · the weekly review when due. */
     pills: org.pagel.ai.ui.rituals.RitualPills? = null,
     links: org.pagel.ai.ui.rituals.RitualLinks = org.pagel.ai.ui.rituals.RitualLinks(),
+    onDayCleared: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -121,6 +125,10 @@ fun TodayScreen(
     val bursts = remember { mutableStateListOf<Burst>() }
     var nextBurst by remember { mutableLongStateOf(0L) }
     var overlayAt by remember { mutableStateOf(Offset.Zero) }
+    var overlayWidth by remember { mutableStateOf(0f) }
+    // The next task, said once after a tick ("Next: Call the bank · 10 min?"), gone after 8 s.
+    var nudge by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(nudge) { if (nudge != null) { delay(8_000); nudge = null } }
     val list = rememberLazyListState()
     // Rows seen so far: a row that appears later is the next task being dealt, and slides in.
     val seen = remember { mutableSetOf<String>() }
@@ -131,15 +139,28 @@ fun TodayScreen(
     fun finish(row: TodayRow, ringCentre: Offset) {
         // Respond first (rules/respond-first-save-after): feel, sound and picture now, the save goes behind.
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-        scope.launch(Dispatchers.Default) { Ding.play() }
-        if (!reduce) bursts += Burst(nextBurst++, ringCentre - overlayAt)
+        val app = ctx.applicationContext
+        val cleared = ui.open == 1 && !row.done
+        scope.launch(Dispatchers.Default) { if (cleared) Ding.chord(app) else Ding.play(app) }
+        bursts += Burst(nextBurst++, ringCentre - overlayAt)
+        if (cleared) {
+            // The whole day done: confetti across the screen, the chord, the "Day cleared" card (a game's level end).
+            for (i in 0 until 5) bursts += Burst(nextBurst++, Offset(overlayWidth * (0.1f + 0.2f * i), 140f + (i % 2) * 90f))
+            onDayCleared()
+        }
+        val inRow = Combo.app.tick(System.currentTimeMillis())
+        nudge = if (cleared) null else nudgeText(ui.rows.firstOrNull { !it.done && it.id != row.id }?.title)
         onTick(row.id)
-        toasts.show("Done", action = "Undo") { onUndo(row.id) }
+        toasts.show(if (cleared) "Day cleared ✨" else comboText(inRow), action = "Undo") { Combo.app.undo(); onUndo(row.id) }
     }
 
-    Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot() }) {
+    Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot(); overlayWidth = it.size.width.toFloat() }) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             item(key = "head", contentType = "head") { Header(ui, today, onSweep = if (pills != null) links.sweep else null) }
+            // The day's progress grows with each tick (a game's level bar), with the next task's nudge under it.
+            if (!ui.loading && ui.progress.total > 0) item(key = "progress", contentType = "progress") {
+                DayProgressBar(ui.progress, nudge, Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
+            }
             // One row, only when it has something to say: Close the day in the evening, the review while due (checker P5 #4).
             if (pills != null && pills.any) item(key = "rituals", contentType = "pills") {
                 org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.animateItem().padding(start = 16.dp, end = 16.dp, bottom = 4.dp))
@@ -148,8 +169,9 @@ fun TodayScreen(
                 ui.loading -> item(key = "loading", contentType = "note") {
                     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
                 }
-                ui.allDone -> item(key = "done", contentType = "note") {
-                    Note("All done for today ✓", "Pick the next ones on pagel.uz; they show here in a second.")
+                // Also after a sync took the finished rows off Today: tasks were done today and none is open.
+                ui.allDone || (ui.rows.isEmpty() && ui.open == 0 && ui.doneToday > 0) -> item(key = "done", contentType = "note") {
+                    DayClearedCard(ui.doneToday, ui.clearedStreak)
                 }
                 ui.rows.isEmpty() -> item(key = "empty", contentType = "note") {
                     Note("Nothing picked yet", "Star up to 3 tasks on pagel.uz and they show here.")
@@ -190,6 +212,46 @@ private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = 
     }
     // Empty your head: a 48 dp sparkle beside the title, any time of day (Phase 5).
     if (onSweep != null) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.Sparkles, "Empty your head", Modifier.padding(end = 12.dp), tint = Glass.Primary, onClick = onSweep)
+    }
+}
+
+/** "2 of 5 ✓" and a mint bar that grows with each tick (spring), with the next task's nudge under it while it shows. */
+@Composable
+internal fun DayProgressBar(p: DayProgress, nudge: String?, modifier: Modifier = Modifier) {
+    val grown by androidx.compose.animation.core.animateFloatAsState(p.fraction, spring(dampingRatio = 0.8f, stiffness = 300f), label = "progress")
+    Column(modifier.fillMaxWidth()) {
+        Row(Modifier.semantics(mergeDescendants = true) { contentDescription = "${p.done} of ${p.total} done today" }, verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f).height(8.dp).background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(4.dp))) {
+                Box(Modifier.fillMaxWidth(grown.coerceIn(0f, 1f)).height(8.dp).background(Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)), RoundedCornerShape(4.dp)))
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(p.text, style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
+        }
+        androidx.compose.animation.AnimatedVisibility(nudge != null) {
+            Text(nudge.orEmpty(), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        }
+    }
+}
+
+/** The whole day done: a big glass card, "Day cleared ✨", how many, and the streak of cleared days. */
+@Composable
+internal fun DayClearedCard(done: Int, streak: Int) {
+    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("✨", style = MaterialTheme.typography.headlineLarge)
+            Text("Day cleared", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
+            Spacer(Modifier.height(4.dp))
+            Text(if (done == 1) "1 task done today" else "$done tasks done today", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+            if (streak >= 1) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    if (streak == 1) "🔥 First cleared day" else "🔥 $streak days cleared in a row", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk,
+                    modifier = Modifier.background(Glass.PrimarySoft, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 7.dp),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Text("Pick the next ones on pagel.uz; they show here in a second.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, textAlign = TextAlign.Center)
+        }
     }
 }
 

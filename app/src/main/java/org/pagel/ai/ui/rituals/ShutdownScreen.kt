@@ -117,7 +117,7 @@ fun ShutdownRoute(contentPadding: PaddingValues, onToday: () -> Unit = {}, vm: S
 /**
  * Close the day, native (Phase 5, the web's /shutdown): today's open stars one at a time (Keep · Later · Drop),
  * then up to 3 more picked for tomorrow, then the day is closed: the changes go to pagel.uz with the shutdown event.
- * The evening reminder (21:30 unless Boss sets a time) brings him here.
+ * The evening reminder (20:45, his day close, unless Boss sets a time) brings him here.
  */
 @Composable
 fun ShutdownScreen(

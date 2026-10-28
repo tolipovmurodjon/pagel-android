@@ -31,21 +31,25 @@ import kotlin.random.Random
 /**
  * The finish sound of the web (dashboard src/app/today/celebrate.ts): C6 then G6 a fifth apart, each a sine with a soft
  * overtone, an 8 ms rise and a fade to silence by 0.55 s. Made once as PCM, no sound file; played on a worker thread.
+ * It goes through the MEDIA stream (Duolingo, Things): Boss's A05s is usually on silent, and the old sonification
+ * stream is muted then, so he never heard a tick (2026-10-28). "Follow silent mode" in More keeps it quiet on silent.
  */
 object Ding {
     private const val RATE = 44_100
     private var track: AudioTrack? = null
+    private var chordTrack: AudioTrack? = null
 
-    private fun samples(): ShortArray {
-        val out = FloatArray((RATE * 0.7).toInt())
-        for ((freq, at) in listOf(1046.5 to 0.0, 1568.0 to 0.085)) {
-            for ((mult, vol) in listOf(1.0 to 0.16, 2.0 to 0.035)) {
+    /** [notes] = (Hz, start s): each a sine with a soft overtone, 8 ms rise, fading to silence [fade] s later. */
+    private fun samples(notes: List<Pair<Double, Double>>, fade: Double = 0.55, vol0: Double = 0.16): ShortArray {
+        val out = FloatArray((RATE * (notes.maxOf { it.second } + fade + 0.15)).toInt())
+        for ((freq, at) in notes) {
+            for ((mult, vol) in listOf(1.0 to vol0, 2.0 to vol0 * 0.22)) {
                 val start = (at * RATE).toInt()
-                val end = minOf(out.size, ((at + 0.6) * RATE).toInt())
+                val end = minOf(out.size, ((at + fade + 0.05) * RATE).toInt())
                 for (i in start until end) {
                     val t = (i - start).toDouble() / RATE
-                    // Linear rise over 8 ms, then exponential fall from vol to 0.0001 at 0.55 s (Web Audio's ramps).
-                    val env = if (t < 0.008) vol * t / 0.008 else vol * exp(ln(0.0001 / vol) * ((t - 0.008) / (0.55 - 0.008)).coerceAtMost(1.0))
+                    // Linear rise over 8 ms, then exponential fall from vol to 0.0001 at [fade] (Web Audio's ramps).
+                    val env = if (t < 0.008) vol * t / 0.008 else vol * exp(ln(0.0001 / vol) * ((t - 0.008) / (fade - 0.008)).coerceAtMost(1.0))
                     out[i] += (env * sin(2 * PI * freq * mult * t)).toFloat()
                 }
             }
@@ -53,28 +57,60 @@ object Ding {
         return ShortArray(out.size) { (out[it].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort() }
     }
 
-    /** Call off Main. A missing audio device never breaks the tick: the ring still fills. */
-    @Synchronized
-    fun play() {
-        runCatching {
-            val t = track ?: run {
-                val pcm = samples()
-                AudioTrack.Builder()
-                    .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-                    .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-                    .setTransferMode(AudioTrack.MODE_STATIC)
-                    .setBufferSizeInBytes(pcm.size * 2)
-                    .build()
-                    .also { it.write(pcm, 0, pcm.size); track = it }
-            }
-            if (t.playState == AudioTrack.PLAYSTATE_PLAYING) t.stop()
-            t.reloadStaticData()
-            t.play()
-        }
+    private fun build(pcm: ShortArray): AudioTrack =
+        AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .setBufferSizeInBytes(pcm.size * 2)
+            .build()
+            .also { it.write(pcm, 0, pcm.size); it.setVolume(SOFT) }
+
+    private fun start(t: AudioTrack) {
+        if (t.playState == AudioTrack.PLAYSTATE_PLAYING) t.stop()
+        t.reloadStaticData()
+        t.play()
     }
+
+    /** The tick's ding. Call off Main. A missing audio device never breaks the tick: the ring still fills. */
+    @Synchronized
+    fun play(ctx: Context) {
+        if (!FinishSound.allowed(ctx)) return
+        runCatching { start(track ?: build(samples(listOf(1046.5 to 0.0, 1568.0 to 0.085))).also { track = it }) }
+    }
+
+    /** The day cleared: C5 E5 G5 C6 rising, then held (the big moment). Call off Main. */
+    @Synchronized
+    fun chord(ctx: Context) {
+        if (!FinishSound.allowed(ctx)) return
+        runCatching { start(chordTrack ?: build(samples(listOf(523.25 to 0.0, 659.25 to 0.09, 783.99 to 0.18, 1046.5 to 0.27), fade = 1.1, vol0 = 0.11)).also { chordTrack = it }) }
+    }
+
+    /** The media stream is loud at the volume Boss sets for videos: the ding plays at 70 % of it. */
+    private const val SOFT = 0.7f
 }
 
-/** Android's "remove animations" switch: confetti and folds are skipped, the tick still shows (as the web's reduced motion). */
+/** The Sounds row in More: "Always" (default) or "Follow silent mode" (no sound while the phone is on silent or vibrate). */
+object FinishSound {
+    const val ALWAYS = "always"
+    const val FOLLOW = "follow"
+    private const val PREFS = "pagel-finish"
+    private const val KEY = "sounds"
+
+    /** Read off Main (SharedPreferences opens a file the first time). */
+    fun mode(ctx: Context): String = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, ALWAYS) ?: ALWAYS
+
+    fun setMode(ctx: Context, mode: String) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, mode).apply()
+
+    fun allowed(ctx: Context): Boolean = mode(ctx) == ALWAYS ||
+        ctx.getSystemService(android.media.AudioManager::class.java)?.ringerMode == android.media.AudioManager.RINGER_MODE_NORMAL
+}
+
+/**
+ * Android's "remove animations" switch (animator duration scale 0, Samsung's "Remove animations"): the folds and slides
+ * are skipped. A scale of 0.5 is not "off". The confetti is not skipped: it is the reward, 1.1 s, and moves no layout
+ * (Boss 2026-10-28: "no confetti").
+ */
 fun reducedMotion(ctx: Context): Boolean =
     Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
 
@@ -103,6 +139,8 @@ fun ConfettiBurst(burst: Burst, onEnd: () -> Unit, modifier: Modifier = Modifier
     }
     var elapsedMs by remember(burst.id) { mutableLongStateOf(0L) }
     LaunchedEffect(burst.id) {
+        // The walk reads this line as proof a tick threw confetti (a 1.1 s burst is gone before a UI dump).
+        android.util.Log.i("PagelFinish", "confetti ${burst.id}")
         val start = withFrameNanos { it }
         var steps = 0
         while (elapsedMs < LIFE_MS) {

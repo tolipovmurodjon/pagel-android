@@ -36,7 +36,7 @@ object Rituals {
     const val MAX_WORDS = 20
 
     /** The evening reminder's time when Boss has not set one. */
-    const val EVENING = "21:30"
+    const val EVENING = "20:45"
 
     /** The rituals belong to the evening they close: until 05:00 Tashkent it is still last night (review.ts ritualDay). */
     fun ritualDay(ms: Long): String = Instant.ofEpochMilli(ms - 5 * 3_600_000L).atZone(TASHKENT).toLocalDate().toString()

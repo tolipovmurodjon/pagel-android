@@ -49,6 +49,8 @@ class TaskRepository(
     fun steps(id: String): Flow<List<org.pagel.ai.data.db.StepEntity>> = dao.steps(id)
     /** How many of this task's edits wait for pagel.uz to learn the new fields. */
     fun held(id: String): Flow<Int> = dao.heldCount(id)
+    /** Open tasks pinned to Today by a star (the panel's "Pin to Today" stops at 3). */
+    fun pinned(): Flow<Int> = dao.starredOpenCount()
     fun openTasks(project: String): Flow<List<TaskEntity>> = dao.openTasks(project)
 
     fun projectTasks(project: String): Flow<List<TaskEntity>> = dao.projectTasks(project)

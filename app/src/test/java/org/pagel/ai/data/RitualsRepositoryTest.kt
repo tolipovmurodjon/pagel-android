@@ -383,9 +383,9 @@ class RitualsRepositoryTest {
         assertTrue(s.fetchedAt > 0)
     }
 
-    @Test fun theEveningReminderIsOnAt2130UntilBossChangesIt() = runBlocking {
+    @Test fun theEveningReminderIsOnAt2045UntilBossChangesIt() = runBlocking {
         assertTrue(repo.state.first().eveningOn)
-        assertEquals("21:30", repo.state.first().eveningAt)
+        assertEquals("20:45", repo.state.first().eveningAt)
         repo.setEvening(true, "22:15")
         assertEquals("22:15", repo.state.first().eveningAt)
         repo.setEvening(false)

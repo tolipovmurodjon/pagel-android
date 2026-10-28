@@ -455,6 +455,7 @@ private fun TaskRow(t: TaskEntity, ui: UpcomingUi, held: Boolean, handlers: Drag
     val title = titleOf(t)
     val done = t.id in ui.finishing
     val haptics = LocalHapticFeedback.current
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val coords = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val dim by animateFloatAsState(if (held) 0.35f else 1f, label = "held")
@@ -480,7 +481,7 @@ private fun TaskRow(t: TaskEntity, ui: UpcomingUi, held: Boolean, handlers: Drag
     ) {
         if (t.every.isNullOrBlank()) TickRing(t.priority, done, title) { _ ->
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-            scope.launch(Dispatchers.Default) { Ding.play() }
+            val app = ctx.applicationContext; scope.launch(Dispatchers.Default) { Ding.play(app) }
             onFinish(t.id)
         } else Box(Modifier.size(48.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
             Icon(TabIcons.Habits, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(18.dp))

@@ -100,7 +100,6 @@ import org.pagel.ai.ui.today.TickRing
 import org.pagel.ai.ui.today.dueLabel
 import org.pagel.ai.ui.today.DueTone
 import org.pagel.ai.ui.today.headline
-import org.pagel.ai.ui.today.reducedMotion
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -180,7 +179,6 @@ fun HabitsScreen(
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
     val openTask = LocalTaskOpener.current
-    val reduce = remember { reducedMotion(ctx) }
     val bursts = remember { mutableStateListOf<Burst>() }
     var nextBurst by remember { mutableLongStateOf(0L) }
     var rootAt by remember { mutableStateOf(Offset.Zero) }
@@ -191,14 +189,14 @@ fun HabitsScreen(
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
     LaunchedEffect(celebrate) {
         if (celebrate == 0) return@LaunchedEffect
-        scope.launch(Dispatchers.Default) { Ding.play() }
-        if (!reduce) bursts += Burst(nextBurst++, allDoneAt - rootAt)
+        scope.launch(Dispatchers.Default) { Ding.play(ctx.applicationContext) }
+        bursts += Burst(nextBurst++, allDoneAt - rootAt)
     }
 
     fun tick(id: String, centre: Offset) {
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-        scope.launch(Dispatchers.Default) { Ding.play() }
-        if (!reduce) bursts += Burst(nextBurst++, centre - rootAt)
+        scope.launch(Dispatchers.Default) { Ding.play(ctx.applicationContext) }
+        bursts += Burst(nextBurst++, centre - rootAt)
         onTick(id)
     }
 

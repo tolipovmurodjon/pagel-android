@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.runtime.derivedStateOf
@@ -497,6 +498,46 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 MoreRow(TabIcons.LogOut, "Disconnect", Glass.Risk, onDisconnect)
             }
         }
+        Spacer(Modifier.height(12.dp))
+        Pane(Modifier.fillMaxWidth()) { SoundsRow() }
+    }
+}
+
+/**
+ * Sounds: "Always" (default: the ding plays through the media stream even on silent, as Duolingo and Things do) or
+ * "Silent mode" (follows the ringer: no ding on silent or vibrate). A tap switches; the haptic and confetti stay.
+ */
+@Composable
+private fun SoundsRow() {
+    val ctx = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var mode by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) { mode = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { org.pagel.ai.ui.today.FinishSound.mode(ctx) } }
+    val always = mode != org.pagel.ai.ui.today.FinishSound.FOLLOW
+    val word = if (always) "Always" else "Silent mode"
+    val press = remember { MutableInteractionSource() }
+    androidx.compose.foundation.layout.Row(
+        Modifier.fillMaxWidth().pressScale(press)
+            .clickable(press, indication = null, role = Role.Button, onClickLabel = "Change") {
+                val next = if (always) org.pagel.ai.ui.today.FinishSound.FOLLOW else org.pagel.ai.ui.today.FinishSound.ALWAYS
+                mode = next
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    org.pagel.ai.ui.today.FinishSound.setMode(ctx, next)
+                    // A sample of what a tick sounds like now.
+                    org.pagel.ai.ui.today.Ding.play(ctx)
+                }
+            }
+            .semantics(mergeDescendants = true) { contentDescription = "Sounds: $word" }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(34.dp).background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFFEB8909).copy(alpha = 0.85f), Color(0xFFEB8909))), androidx.compose.foundation.shape.RoundedCornerShape(10.dp)),
+            contentAlignment = Alignment.Center,
+        ) { Icon(TabIcons.Volume, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp)) }
+        Spacer(Modifier.size(14.dp))
+        Text("Sounds", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.weight(1f))
+        if (mode != null) Text(word, style = MaterialTheme.typography.bodyMedium, color = Glass.PrimaryInk, maxLines = 1)
     }
 }
 

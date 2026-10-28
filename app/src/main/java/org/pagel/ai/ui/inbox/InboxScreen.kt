@@ -307,8 +307,8 @@ fun InboxScreen(
     LaunchedEffect(cheer) {
         if (cheer == 0) return@LaunchedEffect
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-        scope.launch(Dispatchers.Default) { Ding.play() }
-        if (!reduce) bursts += Burst(nextBurst++, ringAt - rootAt)
+        scope.launch(Dispatchers.Default) { Ding.play(ctx.applicationContext) }
+        bursts += Burst(nextBurst++, ringAt - rootAt)
     }
 
     val tall = LocalConfiguration.current.screenHeightDp >= 480

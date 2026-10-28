@@ -3,6 +3,7 @@ package org.pagel.ai.ui.glass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -101,22 +102,41 @@ fun GlassChip(
 
 /**
  * A round glass icon button: a [size] disc drawn in a touch box of at least 48 dp, named for TalkBack. [plain] drops
- * the glass disc for quiet repeated controls (a step's remove) so a list does not fill with circles.
+ * the glass disc for quiet repeated controls (a step's remove) so a list does not fill with circles. [label] = a short
+ * word shown on a long press (a tooltip, 1.5 s); [rim] = the disc's outline colour (Delete: red, outlined).
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun GlassIconButton(icon: ImageVector, description: String, modifier: Modifier = Modifier, tint: Color = Glass.Ink.copy(alpha = 0.78f), on: Boolean = false, size: Dp = 40.dp, plain: Boolean = false, onClick: () -> Unit) {
+fun GlassIconButton(
+    icon: ImageVector, description: String, modifier: Modifier = Modifier, tint: Color = Glass.Ink.copy(alpha = 0.78f), on: Boolean = false,
+    size: Dp = 40.dp, plain: Boolean = false, label: String? = null, rim: Color? = null, onClick: () -> Unit,
+) {
     val press = remember { MutableInteractionSource() }
+    var tip by remember { mutableStateOf(false) }
+    LaunchedEffect(tip) { if (tip) { kotlinx.coroutines.delay(1_500); tip = false } }
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Box(
         modifier
             .size(maxOf(size + 4.dp, TouchMin))
             .pressScale(press)
-            .clickable(press, indication = null, role = Role.Button, onClick = onClick)
+            .then(
+                if (label == null) Modifier.clickable(press, indication = null, role = Role.Button, onClick = onClick)
+                else Modifier.combinedClickable(press, indication = null, role = Role.Button, onLongClickLabel = label, onLongClick = {
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress); tip = true
+                }, onClick = onClick),
+            )
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        val disc = if (plain) Modifier else Modifier.background(Color.White.copy(alpha = 0.72f), CircleShape).border(1.dp, if (on) SolidColor(Glass.Primary) else ChipRim, CircleShape)
+        val edge = when { on -> SolidColor(Glass.Primary); rim != null -> SolidColor(rim); else -> ChipRim }
+        val disc = if (plain) Modifier else Modifier.background(Color.White.copy(alpha = 0.72f), CircleShape).border(if (rim != null) 1.5.dp else 1.dp, edge, CircleShape)
         Box(Modifier.size(size).then(disc), contentAlignment = Alignment.Center) {
             Icon(icon, contentDescription = null, tint = if (on) Glass.Primary else tint, modifier = Modifier.size(if (plain) 16.dp else 19.dp))
+        }
+        if (tip && label != null) androidx.compose.ui.window.Popup(alignment = Alignment.TopCenter, offset = androidx.compose.ui.unit.IntOffset(0, -96)) {
+            Text(label, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1,
+                modifier = Modifier.background(Color.White.copy(alpha = 0.96f), RoundedCornerShape(10.dp)).border(1.dp, ChipRim, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp))
         }
     }
 }

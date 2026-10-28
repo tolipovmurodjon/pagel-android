@@ -46,7 +46,12 @@ data class PanelUi(
     val steps: List<PanelStep> = emptyList(),
     /** Some edit waits for pagel.uz to learn the new fields (an older server): a cloud-off mark says so. */
     val held: Boolean = false,
+    /** Open tasks pinned to Today by a star, this one included: at 3 the pin switch is off and says why. */
+    val pinned: Int = 0,
 )
+
+/** The web's rule: at most 3 tasks pinned to Today by hand (a date puts more there by itself). */
+const val MAX_PINNED = 3
 
 /** The task panel (NATIVE-PLAN Phase 1): reads Room only; every edit answers at once and saves behind. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -61,7 +66,7 @@ class TaskPanelViewModel @Inject constructor(
 
     val ui: StateFlow<PanelUi> = id.flatMapLatest { taskId ->
         if (taskId == null) flowOf(PanelUi())
-        else combine(tasks.task(taskId), tasks.steps(taskId), tasks.held(taskId), session.projects()) { t, steps, held, projects ->
+        else combine(tasks.task(taskId), tasks.steps(taskId), tasks.held(taskId), session.projects(), tasks.pinned()) { t, steps, held, projects, pinned ->
             if (t == null) PanelUi(loading = false, id = taskId)
             else {
                 val p = projects.firstOrNull { it.name == t.project }
@@ -69,7 +74,7 @@ class TaskPanelViewModel @Inject constructor(
                     loading = false, id = t.id, project = t.project, projectLabel = shortName(t.project, p?.title ?: t.project), projectColor = p?.color,
                     title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text), text = t.text, doneWhen = t.doneWhen.orEmpty(),
                     due = t.due, every = t.every, priority = t.priority, star = t.star, open = t.status == "open", doneAt = t.doneAt,
-                    steps = steps.map { PanelStep(it.text, it.done) }, held = held > 0,
+                    steps = steps.map { PanelStep(it.text, it.done) }, held = held > 0, pinned = pinned,
                 )
             }
         }
@@ -123,9 +128,18 @@ class TaskPanelViewModel @Inject constructor(
         return null
     }
 
+    /**
+     * The ring in the panel: the same finish as Today (2026-10-28, Boss: "no sound, no toast, not marking strike"). The
+     * panel used to close in the same frame, which cleared this ViewModel and cancelled the tick before Room heard of it;
+     * now the panel stays open on the done state (strike-through, Reopen) and the toast carries Undo.
+     */
     fun complete() = go { taskId ->
         today.tick(taskId, done = true)
-        toasts.show("Done", action = "Undo") { viewModelScope.launch { today.tick(taskId, done = false) } }
+        val inRow = org.pagel.ai.ui.today.Combo.app.tick(System.currentTimeMillis())
+        toasts.show(org.pagel.ai.ui.today.comboText(inRow), action = "Undo") {
+            org.pagel.ai.ui.today.Combo.app.undo()
+            viewModelScope.launch { today.tick(taskId, done = false) }
+        }
     }
 
     /** A done task opened again from its panel (pagel.uz's undone), with Undo. */

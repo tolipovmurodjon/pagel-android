@@ -43,7 +43,7 @@ LATER = set()
 TRIAGED = set()  # saves the AI has read since the phone asked (POST {action: "triage"})
 
 # Habits (Phase 3): repeating tasks in /sync, due today; a tick (PATCH done:true) moves the date a day on and counts the
-# day; an Undo (PATCH due: the old date) takes the day out (dashboard task-store.ts, habits-api.ts).
+# day; an Undo (PATCH {due: the old date, undo: true}) takes the day out (dashboard task-store.ts, habits-api.ts).
 HABITS = [("t_h1", "Stretch for ten minutes", "07:30"), ("t_h2", "Read 10 pages", "21:30"), ("t_h3", "Drink water", None)]
 HABIT_DUE = {}
 HABIT_TICKS = []  # (day, id)
@@ -190,7 +190,8 @@ class H(BaseHTTPRequestHandler):
                 HABIT_DUE[tid] = nxt + (f" {at}" if at else "")
             if "due" in b:
                 HABIT_DUE[tid] = b["due"]
-                if b["due"] and b["due"][:10] <= day and (day, tid) in HABIT_TICKS:
+                # Only an Undo (undo: true) takes the day's tick out; a new time keeps it (task-store.ts, 2026-10-28).
+                if b.get("undo") is True and (day, tid) in HABIT_TICKS:
                     HABIT_TICKS.remove((day, tid))
             return self.send(200, {"id": tid, "status": "open", "due": HABIT_DUE.get(tid), "applied": list(b.keys())})
         if tid in DONE_AT and "done" in b:

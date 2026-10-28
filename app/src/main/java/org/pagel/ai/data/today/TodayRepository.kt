@@ -38,6 +38,13 @@ class TodayRepository(
     val today: Flow<List<TaskEntity>> = dao.todayTasks()
     val refused: Flow<List<OutboxEntity>> = dao.refusedOutbox()
 
+    /** Tasks finished today in Tashkent (on Today or anywhere else), for Today's progress bar. */
+    fun doneToday(): Flow<Int> {
+        val start = java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.of("Asia/Tashkent")).toLocalDate()
+            .atStartOfDay(java.time.ZoneId.of("Asia/Tashkent")).toInstant()
+        return dao.doneCountSince(start.toString())
+    }
+
     suspend fun tick(id: String, done: Boolean) {
         val now = clock()
         dao.setStatusLocal(id, if (done) "done" else "open", if (done) java.time.Instant.ofEpochMilli(now).toString() else null, now)

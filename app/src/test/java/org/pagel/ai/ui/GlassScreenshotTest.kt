@@ -209,7 +209,7 @@ class GlassScreenshotTest {
 
     @Test fun todayAllDone() {
         showToday(TodayUiState(loading = false, allDone = true, status = "Live"))
-        compose.onNodeWithText("All done for today ✓").assertIsDisplayed()
+        compose.onNodeWithText("Day cleared").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-all-done.png")
     }
 

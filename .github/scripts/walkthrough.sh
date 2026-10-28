@@ -73,6 +73,11 @@ log "-- tick the first task: ring fills, confetti, the row folds, the 4th task i
 tap "Done: Ship the native app" && shot ticked 0.3
 shot after-fold 2.5
 grep -q 'text="Measure the drone' "$OUT/$(printf '%02d' $N)-after-fold.xml" || { log "WALKTHROUGH: after the tick the 4th task was not dealt"; exit 1; }
+# Round B (H): every tick throws confetti from the ring (the app logs each burst as it starts: a 1.1 s burst is gone
+# before a UI dump) and Today's progress bar counts it.
+$T adb logcat -d -s PagelFinish:I | grep -q "confetti" || { log "WALKTHROUGH: the tick threw no confetti (no PagelFinish line)"; exit 1; }
+grep -qE 'content-desc="[1-9][0-9]* of [0-9]+ done today"' "$OUT/$(printf '%02d' $N)-after-fold.xml" || { log "WALKTHROUGH: Today has no progress bar counting the tick"; exit 1; }
+log "   confetti thrown, progress: $(grep -oE '[0-9]+ of [0-9]+ done today' "$OUT/$(printf '%02d' $N)-after-fold.xml" | head -1)"
 for i in $(seq 1 30); do grep -q "PATCH /api/v1/tasks/t_ci1 {\"done\":true} auth=True" "$FAKE_LOG" && break; sleep 1; done
 grep -q "PATCH /api/v1/tasks/t_ci1" "$FAKE_LOG" || { log "WALKTHROUGH: the tick never reached pagel.uz (no PATCH in the fake log)"; exit 1; }
 log "   tick reached pagel.uz after ~${i} s"
@@ -103,6 +108,19 @@ for want in '{"steps":["Find the account number","Call at 10"],"ticked":[0]}' '{
   grep -qF "PATCH /api/v1/tasks/t_ci2 $want auth=True" "$FAKE_LOG" || { log "WALKTHROUGH: pagel.uz never got $want"; grep "PATCH" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
   log "   pagel.uz got $want"
 done
+log "-- the panel's ring (Boss 2026-10-28: \"no sound, no toast, not marking strike\"): the panel stays open on the done task with Reopen and a Done · Undo toast; pagel.uz gets done, then Reopen opens it again"
+$T adb logcat -c
+tap "Complete: Call the bank about the report" && shot panel-ticked 0.6
+X="$OUT/$(printf '%02d' $N)-panel-ticked.xml"
+grep -q 'content-desc="Reopen"' "$X" || { log "WALKTHROUGH: after its ring the panel did not stay open on the done task (no Reopen)"; exit 1; }
+grep -q 'text="Undo"' "$X" || { log "WALKTHROUGH: no Undo toast after the panel's ring"; exit 1; }
+$T adb logcat -d -s PagelFinish:I | grep -q "confetti" || { log "WALKTHROUGH: the panel's ring threw no confetti"; exit 1; }
+for i in $(seq 1 30); do grep -qF 'PATCH /api/v1/tasks/t_ci2 {"done":true} auth=True' "$FAKE_LOG" && break; sleep 1; done
+grep -qF 'PATCH /api/v1/tasks/t_ci2 {"done":true} auth=True' "$FAKE_LOG" || { log "WALKTHROUGH: the panel's tick never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   the panel's tick reached pagel.uz after ~${i} s"
+tap Reopen && shot panel-reopened 1.5
+for i in $(seq 1 30); do grep -qF 'PATCH /api/v1/tasks/t_ci2 {"done":false} auth=True' "$FAKE_LOG" && break; sleep 1; done
+grep -qF 'PATCH /api/v1/tasks/t_ci2 {"done":false} auth=True' "$FAKE_LOG" || { log "WALKTHROUGH: Reopen never reached pagel.uz"; exit 1; }
 $T adb shell input keyevent 4; shot panel-closed 1.5
 
 log "-- the Inbox (Phase 2): sort 5 saves with no network, come back online, pagel.uz gets all 5 in the order made"

@@ -84,7 +84,7 @@ class HabitAlarms(
         }
     }
 
-    /** Every evening at Boss's time (21:30 unless he set one): "Close the day". Off = no alarm at all. */
+    /** Every evening at Boss's time (20:45, his day close, unless he set one): "Close the day". Off = no alarm at all. */
     private suspend fun planEvening(am: AlarmManager, rituals: org.pagel.ai.data.db.RitualsDao, now: ZonedDateTime) {
         val s = rituals.stateOnce() ?: org.pagel.ai.data.db.RitualStateEntity()
         val pi = ShutdownAlarmReceiver.fireIntent(ctx)

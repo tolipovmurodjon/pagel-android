@@ -63,6 +63,14 @@ abstract class PagelDao {
     @Query("SELECT t.* FROM today_order o JOIN tasks t ON t.id = o.taskId ORDER BY o.position")
     abstract fun todayTasks(): Flow<List<TaskEntity>>
 
+    /** Tasks (not habits) finished since [since] (an ISO instant, the start of Tashkent's day): Today's "2 of 5 ✓". */
+    @Query("SELECT COUNT(*) FROM tasks WHERE status = 'done' AND (every IS NULL OR every = '') AND doneAt >= :since")
+    abstract fun doneCountSince(since: String): Flow<Int>
+
+    /** Open tasks pinned to Today by their star (not habits): the panel's "Pin to Today" stops at 3, as the web. */
+    @Query("SELECT COUNT(*) FROM tasks WHERE star = 1 AND status = 'open' AND (every IS NULL OR every = '')")
+    abstract fun starredOpenCount(): Flow<Int>
+
     @Query("DELETE FROM today_order")
     abstract suspend fun clearTodayOrder()
 

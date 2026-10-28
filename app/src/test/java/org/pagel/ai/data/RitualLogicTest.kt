@@ -106,6 +106,7 @@ class RitualLogicTest {
         // A phone on UTC: 17:00 UTC is 22:00 Tashkent, past 21:30, so tomorrow.
         val utc = ZonedDateTime.parse("2026-10-28T17:00:00Z")
         assertEquals(ZonedDateTime.parse("2026-10-29T21:30:00+05:00[Asia/Tashkent]").toInstant(), Rituals.nextEvening("21:30", utc).toInstant())
-        assertEquals(ZonedDateTime.parse("2026-10-28T21:30:00+05:00[Asia/Tashkent]"), Rituals.nextEvening("bad", before))
+        // A bad time falls back to 20:45 (Boss's day close), already past at 21:00: tomorrow.
+        assertEquals(ZonedDateTime.parse("2026-10-29T20:45:00+05:00[Asia/Tashkent]"), Rituals.nextEvening("bad", before))
     }
 }

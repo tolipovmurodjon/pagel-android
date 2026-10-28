@@ -220,7 +220,8 @@ data class RitualStateEntity(
     val stuck: String = "[]",
     val fetchedAt: Long = 0,
     val eveningOn: Boolean = true,
-    val eveningAt: String = "21:30",
+    /** Boss's own day close (brain card me/body-tracking); a phone that saved a time keeps it. */
+    val eveningAt: String = "20:45",
 ) {
     companion object {
         const val ID = "rituals"

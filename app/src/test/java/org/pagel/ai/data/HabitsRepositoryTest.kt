@@ -198,7 +198,15 @@ class HabitsRepositoryTest {
         assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_h")!!.due)
         assertTrue(db.dao().habitTicksOf("t_h").isEmpty())
         sender().sendAll(account)
-        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30"}""", """t_h {"due":"2026-10-28 07:30"}"""), patches)
+        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30"}""", """t_h {"due":"2026-10-28 07:30","undo":true}"""), patches)
+    }
+
+    // 2026-10-28: the reminder wheel set "Wind down" to 04:55 and pagel.uz took it for an Undo (that day's tick erased).
+    @Test fun aNewTimeOnAHabitIsAPlainDueChangeNeverAnUndo() = runBlocking {
+        seed()
+        org.pagel.ai.data.tasks.TaskRepository(db.dao(), { kicks++ }, clock = { now }).due("t_w", "2026-10-28 04:55")
+        sender().sendAll(account)
+        assertEquals(listOf("""t_w {"due":"2026-10-28 04:55"}"""), patches)
     }
 
     @Test fun aRefusedTickRollsBackTheDateAndTheDay() = runBlocking {

@@ -28,7 +28,7 @@ import org.pagel.ai.data.rituals.RitualsRepository
 import org.pagel.ai.ui.shell.OpenRequests
 
 /**
- * The evening "Close the day" reminder (Phase 5). FIRE (the alarm at Boss's time, 21:30 unless he set one): asks
+ * The evening "Close the day" reminder (Phase 5). FIRE (the alarm at Boss's time, 20:45 unless he set one): asks
  * pagel.uz first whether the day was closed on the web (5 s at most), and if it is still open posts "Close the day"
  * with a button that opens the ritual; then plans tomorrow's. Not exported: only PAGEL's own explicit, immutable
  * PendingIntent reaches it. Finishes in under 10 s (goAsync + a 9 s cap).
