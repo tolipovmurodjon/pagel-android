@@ -86,9 +86,6 @@ fun Pane(modifier: Modifier = Modifier, radius: Dp = 24.dp, content: @Composable
     val surface = if (page == null) {
         Modifier.shadow(18.dp, shape, ambientColor = Glass.Ink.copy(alpha = 0.10f), spotColor = Glass.Ink.copy(alpha = 0.16f))
             .clip(shape).background(Color.White.copy(alpha = 0.78f)).background(Glass.PaneTint)
-    } else if (!GlassStage.allows(GlassStage.PANES)) {
-        // A cold start's first frame: the same surface without the backdrop effects (GlassStage).
-        Modifier.clip(shape).drawBehind { paneSurface() }
     } else {
         Modifier.drawBackdrop(
             backdrop = page,
@@ -98,20 +95,18 @@ fun Pane(modifier: Modifier = Modifier, radius: Dp = 24.dp, content: @Composable
             effects = { vibrancy(); lens(10f.dp.toPx(), 18f.dp.toPx()) },
             highlight = { Highlight.Default },
             shadow = { Shadow(alpha = 0.45f) },
-            onDrawSurface = { paneSurface() },
+            onDrawSurface = {
+                // Clear glass, not a white card (checker 2026-10-27): ~30 % white lets the clouds through; the rim and the
+                // shadow carry the edge. Muted text stays ≥ 4.5:1 on the darkest cloud (checked with cr.py on CI shots).
+                drawRect(Color.White.copy(alpha = 0.32f))
+                drawRect(Brush.radialGradient(listOf(Glass.Aurora1.copy(alpha = 0.30f), Color.Transparent), center = Offset.Zero, radius = size.minDimension * 0.9f))
+                // A second, softer light from the bottom-right: over the page's white middle a tall pane's foot read as
+                // plain white card (checker 2026-10-28, today.png, project-folds-open.png). Light mint only, text stays ink.
+                drawRect(Brush.radialGradient(listOf(Glass.Aurora2.copy(alpha = 0.34f), Color.Transparent), center = Offset(size.width, size.height), radius = size.minDimension * 1.1f))
+            },
         )
     }
     Box(modifier.then(surface).border(1.25.dp, PaneRim, shape), content = content)
-}
-
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.paneSurface() {
-    // Clear glass, not a white card (checker 2026-10-27): ~30 % white lets the clouds through; the rim and the
-    // shadow carry the edge. Muted text stays ≥ 4.5:1 on the darkest cloud (checked with cr.py on CI shots).
-    drawRect(Color.White.copy(alpha = 0.32f))
-    drawRect(Brush.radialGradient(listOf(Glass.Aurora1.copy(alpha = 0.30f), Color.Transparent), center = Offset.Zero, radius = size.minDimension * 0.9f))
-    // A second, softer light from the bottom-right: over the page's white middle a tall pane's foot read as
-    // plain white card (checker 2026-10-28, today.png, project-folds-open.png). Light mint only, text stays ink.
-    drawRect(Brush.radialGradient(listOf(Glass.Aurora2.copy(alpha = 0.34f), Color.Transparent), center = Offset(size.width, size.height), radius = size.minDimension * 1.1f))
 }
 
 /**

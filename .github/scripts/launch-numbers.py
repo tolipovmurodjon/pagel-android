@@ -8,8 +8,7 @@ first-issue the first frame's render-thread time issuing draw commands (Davey Is
             where a shader is built the first time it is used. CI 40656925148: 7,055 ms on the cold Today = the ANR.
 max-issue   the longest such time in any frame of the app in this logcat.
 skipped     the largest "Skipped N frames" of the app's main thread (N x 16.7 ms it could not draw or take input).
-glass       the GlassStage steps and when they came on.
-anr         whether "ANR in org.pagel.ai" appears.
+anr         whether "ANR in org.pagel.ai" appears for this launch's process.
 """
 import re
 import sys
@@ -23,7 +22,6 @@ log = open(log_path, errors="ignore").read().splitlines()
 pids = re.findall(r"Start proc (\d+):org\.pagel\.ai/", "\n".join(log))
 pid = pids[-1] if pids else None
 first_issue, max_issue, skipped = -1, 0, 0
-steps = []
 for line in log:
     parts = line.split()
     if len(parts) < 4 or parts[2] != pid:
@@ -38,11 +36,14 @@ for line in log:
     m = re.search(r"Skipped (\d+) frames", line)
     if m:
         skipped = max(skipped, int(m.group(1)))
-    m = re.search(r"PagelGlass: (glass step .*)", line)
-    if m:
-        steps.append(m.group(1).replace("glass step ", "").replace(" at ", "@"))
-anr = any("ANR in org.pagel.ai" in l for l in log)
+# An ANR of this launch's process. A force-stopped earlier process can be reported after `logcat -c` (CI 40666139501:
+# "No response to onStartJob" for the pid stopped 2 s before), so the "PID:" line under it must be this one.
+anr = False
+for i, l in enumerate(log):
+    if "ANR in org.pagel.ai" in l:
+        m = re.search(r"PID: (\d+)", " ".join(log[i + 1:i + 3]))
+        anr = anr or not m or pid is None or m.group(1) == pid
 # A Davey line is written only for frames over 700 ms: no line means the first frame was faster than that.
 fi = f"{first_issue}" if first_issue >= 0 else "<700"
 print(f"{label:<22} TotalTime={total} first-issue={fi} max-issue={max_issue} skipped={skipped} "
-      f"glass=[{', '.join(steps)}] anr={'YES' if anr else 'no'}")
+      f"anr={'YES' if anr else 'no'}")

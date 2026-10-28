@@ -8,9 +8,7 @@ package org.pagel.ai.ui.glass
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -79,7 +77,6 @@ fun LiquidBottomTabs(
     val containerColor = Color.White.copy(alpha = 0.28f)
 
     val tabsBackdrop = rememberLayerBackdrop()
-    val combined = rememberCombinedBackdrop(backdrop, tabsBackdrop)
 
     BoxWithConstraints(
         modifier,
@@ -169,8 +166,7 @@ fun LiquidBottomTabs(
                 .graphicsLayer {
                     translationX = panelOffset
                 }
-                // A cold start's first frames draw the bar's own colour only (GlassStage: CI 40656925148 launch ANR).
-                .then(if (!GlassStage.allows(GlassStage.BAR)) Modifier.background(Color.White.copy(alpha = 0.72f), FlatCapsule) else Modifier.drawBackdrop(
+                .drawBackdrop(
                     backdrop = backdrop,
                     shape = { Capsule() },
                     effects = {
@@ -189,7 +185,7 @@ fun LiquidBottomTabs(
                         scaleY = scale
                     },
                     onDrawSurface = { drawRect(containerColor) }
-                ))
+                )
                 .then(interactiveHighlight.modifier)
                 .height(barHeight)
                 .fillMaxWidth()
@@ -211,7 +207,7 @@ fun LiquidBottomTabs(
                     .graphicsLayer {
                         translationX = panelOffset
                     }
-                    .then(if (!GlassStage.allows(GlassStage.FULL)) Modifier else Modifier.drawBackdrop(
+                    .drawBackdrop(
                         backdrop = backdrop,
                         shape = { Capsule() },
                         effects = {
@@ -228,7 +224,7 @@ fun LiquidBottomTabs(
                             Highlight.Default.copy(alpha = progress)
                         },
                         onDrawSurface = { drawRect(containerColor) }
-                    ))
+                    )
                     .then(interactiveHighlight.modifier)
                     .height(barHeight - 8.dp)
                     .fillMaxWidth()
@@ -249,8 +245,8 @@ fun LiquidBottomTabs(
                 }
                 .then(interactiveHighlight.gestureModifier)
                 .then(dampedDragAnimation.modifier)
-                .then(if (!GlassStage.allows(GlassStage.FULL)) Modifier.background(Glass.Primary.copy(0.12f), FlatCapsule) else Modifier.drawBackdrop(
-                    backdrop = combined,
+                .drawBackdrop(
+                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                     shape = { Capsule() },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
@@ -287,12 +283,9 @@ fun LiquidBottomTabs(
                         drawRect(Glass.Primary.copy(0.12f), alpha = 1f - progress)
                         drawRect(Color.Black.copy(alpha = 0.03f * progress))
                     }
-                ))
+                )
                 .height(barHeight - 8.dp)
                 .fillMaxWidth(1f / tabsCount)
         )
     }
 }
-
-/** The bar's shape while its glass is still off (GlassStage). */
-private val FlatCapsule = RoundedCornerShape(percent = 50)

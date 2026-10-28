@@ -122,10 +122,8 @@ private fun ToastPill(t: ToastData, backdrop: Backdrop?, onGone: () -> Unit) {
     val scope = rememberCoroutineScope()
     val shape = RoundedCornerShape(22.dp)
     val rim = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.55f)))
-    // Before the glass is on (GlassStage) the toast is a Pane, which is flat then too.
-    val glass = backdrop != null && GlassStage.allows(GlassStage.FULL)
-    val surface = if (glass) Modifier.drawBackdrop(
-        backdrop = backdrop!!,
+    val surface = if (backdrop != null) Modifier.drawBackdrop(
+        backdrop = backdrop,
         shape = { RoundedRectangle(22f.dp) },
         effects = { vibrancy(); blur(8f.dp.toPx()); lens(14f.dp.toPx(), 14f.dp.toPx()) },
         shadow = { com.kyant.backdrop.shadow.Shadow(alpha = 0.55f) },
@@ -169,6 +167,6 @@ private fun ToastPill(t: ToastData, backdrop: Backdrop?, onGone: () -> Unit) {
             }
             .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
-        if (glass) Box(surface) { body() } else Pane(Modifier.fillMaxWidth(), radius = 22.dp) { body() }
+        if (backdrop != null) Box(surface) { body() } else Pane(Modifier.fillMaxWidth(), radius = 22.dp) { body() }
     }
 }

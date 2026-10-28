@@ -25,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -91,7 +90,6 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import org.pagel.ai.data.account.AccountState
 import org.pagel.ai.ui.glass.AuroraBackground
 import org.pagel.ai.ui.glass.Glass
-import org.pagel.ai.ui.glass.GlassStage
 import org.pagel.ai.ui.glass.GlassTheme
 import org.pagel.ai.ui.glass.LiquidBottomTab
 import org.pagel.ai.ui.glass.LiquidBottomTabs
@@ -126,7 +124,6 @@ fun AppShell(onOpenPhone: () -> Unit, vm: ShellViewModel = hiltViewModel()) {
     // Today slides in); a cold start straight into Today and a sign-out change at once.
     val kind = when (account) { null -> 0; AccountState.SignedOut -> 1; is AccountState.Paired -> 2 }
     GlassTheme {
-        GlassStage.Advance(ready = kind != 0)
         androidx.compose.animation.AnimatedContent(
             kind,
             transitionSpec = {
@@ -212,13 +209,12 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             Box(
                 Modifier.fillMaxSize()
                     .nestedScroll(scrollWatch)
-                    // No full-screen offscreen layer in a cold start's first frame (GlassStage).
-                    .then(if (!GlassStage.allows(GlassStage.PANES)) Modifier else Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                     .drawWithCache {
                         val start = (size.height - fadeTop.toPx()).coerceAtLeast(0f)
                         val mask = Brush.verticalGradient(0f to Color.Black, (start / size.height) to Color.Black, 1f to Color.Black.copy(alpha = 0.35f))
                         onDrawWithContent { drawContent(); if (onTop) drawRect(mask, blendMode = BlendMode.DstIn) }
-                    }),
+                    },
             ) {
             key(selected) { NavDisplay(
                 backStack = stack,
@@ -351,14 +347,14 @@ private fun TitleCapsule(title: String, visible: Boolean, backdrop: Backdrop, mo
             Modifier
                 .height(40.dp)
                 .pressScale(press)
-                .then(if (!GlassStage.allows(GlassStage.FULL)) Modifier.background(Color.White.copy(alpha = 0.86f), CircleShape) else Modifier.drawBackdrop(
+                .drawBackdrop(
                     backdrop = backdrop,
                     shape = { Capsule() },
                     effects = { vibrancy(); blur(8f.dp.toPx()); lens(16f.dp.toPx(), 16f.dp.toPx()) },
                     highlight = { com.kyant.backdrop.highlight.Highlight.Default },
                     shadow = { com.kyant.backdrop.shadow.Shadow(alpha = 0.7f) },
                     onDrawSurface = { drawRect(Color.White.copy(alpha = 0.34f)) },
-                ))
+                )
                 .clickable(press, indication = null, role = Role.Button, onClickLabel = "Back to top") { onTap() }
                 .padding(horizontal = 22.dp),
             contentAlignment = Alignment.Center,
@@ -410,12 +406,12 @@ private fun AddButton(backdrop: Backdrop, modifier: Modifier, onClick: () -> Uni
         modifier
             .size(56.dp)
             .pressScale(press)
-            .then(if (!GlassStage.allows(GlassStage.FULL)) Modifier.background(Glass.Primary, CircleShape) else Modifier.drawBackdrop(
+            .drawBackdrop(
                 backdrop = backdrop,
                 shape = { Capsule() },
                 effects = { vibrancy(); blur(8f.dp.toPx()); lens(16f.dp.toPx(), 16f.dp.toPx()) },
                 onDrawSurface = { drawRect(Glass.Primary.copy(alpha = 0.82f)) },
-            ))
+            )
             .clickable(press, indication = null, role = Role.Button) { onClick() }
             .semantics { contentDescription = "Add a task" },
         contentAlignment = Alignment.Center,
