@@ -106,6 +106,10 @@ class InboxScreenshotTest {
         compose.onNodeWithContentDescription("The post's picture").assertIsDisplayed()
         compose.onNodeWithContentDescription("7 of 20 sorted today").assertIsDisplayed()
         oneWholeLine("Inbox")
+        // The row of choices ends above the 96 dp the tab bar takes (checker 2026-10-28 #5).
+        val drop = compose.onNodeWithText("Drop", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue("the choices end at ${drop.bottom} px of ${root.bottom}: under the tab bar", drop.bottom <= root.bottom - 96 * 3f)
     }
 
     @Test fun cardWithPictureAt360LargeFont() {

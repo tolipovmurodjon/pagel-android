@@ -16,6 +16,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -273,6 +274,7 @@ private fun PartPane(part: Part, items: List<HabitItem>, ui: HabitsUi, today: Lo
 private fun titleOf(t: TaskEntity) = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
 
 /** One habit: the tick ring, its words, its time · repeat · 🔥 streak, and the bell when it has a time. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun HabitRow(h: HabitItem, done: Boolean, reminder: Boolean, today: LocalDate, onTick: (String, Offset) -> Unit, onOpen: (String) -> Unit, onBell: (String) -> Unit) {
     val t = h.task
@@ -286,15 +288,17 @@ private fun HabitRow(h: HabitItem, done: Boolean, reminder: Boolean, today: Loca
                 .padding(top = 12.dp, bottom = 10.dp),
         ) {
             Text(title, style = MaterialTheme.typography.bodyLarge, color = if (done) Glass.Muted else Glass.Ink, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+            // The meta wraps instead of cutting (at 1.5x a late date pushed the repeat out of the row).
+            FlowRow(Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 val small = MaterialTheme.typography.labelSmall
                 val late = dueLabel(t.due, today)?.takeIf { it.tone == DueTone.LATE }
-                when {
-                    late != null -> { Icon(TabIcons.Calendar, contentDescription = null, tint = Glass.Risk, modifier = Modifier.size(13.dp)); Spacer(Modifier.width(4.dp)); Text(late.text, style = small, color = Glass.Risk) ; Spacer(Modifier.width(10.dp)) }
-                    time != null -> { Icon(TabIcons.Clock, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(13.dp)); Spacer(Modifier.width(4.dp)); Text(time, style = small, color = Glass.Muted); Spacer(Modifier.width(10.dp)) }
+                if (late != null || time != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (late != null) TabIcons.Calendar else TabIcons.Clock, contentDescription = null, tint = if (late != null) Glass.Risk else Glass.Muted, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(late?.text ?: time.orEmpty(), style = small, color = if (late != null) Glass.Risk else Glass.Muted)
                 }
-                t.every?.let { Text(Repeat.label(it), style = small, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false)) }
-                if (h.streak > 0) { Spacer(Modifier.width(10.dp)); Streak(h.streak) }
+                t.every?.let { Text(Repeat.label(it), style = small, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                if (h.streak > 0) Streak(h.streak)
             }
         }
         if (time != null) GlassIconButton(if (reminder) TabIcons.BellRing else TabIcons.Bell, "Reminder: $title", plain = true, on = reminder) { onBell(t.id) }

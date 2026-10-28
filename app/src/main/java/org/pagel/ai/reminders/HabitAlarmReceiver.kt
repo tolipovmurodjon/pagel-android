@@ -53,6 +53,7 @@ class HabitAlarmReceiver : BroadcastReceiver() {
                             parts.habits().tick(id)
                             ctx.getSystemService(NotificationManager::class.java)?.cancel(id, NOTIF)
                         }
+                        else -> {}
                     }
                 }
             } finally {

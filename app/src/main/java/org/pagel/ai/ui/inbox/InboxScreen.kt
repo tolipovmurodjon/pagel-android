@@ -507,13 +507,15 @@ private fun ThrownCard(l: Leaving, pictures: Map<String, Bitmap?>, onEnd: () -> 
 private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: InboxActions) {
     val uri = LocalUriHandler.current
     // The choice buttons stay above the tab bar without a scroll: the picture gives up height on short screens.
-    // Larger text takes height too (checker 2026-10-28 #1: at 1.5x the AI's pick fell off a 780 dp screen): each step
-    // of font scale takes ~320 dp from the picture, which hides below 96 dp; the caption keeps one line at 1.3x+.
+    // The AI's pick and the row of choices stay above the tab bar without a scroll; the picture takes what is left.
+    // Measured on the 360x780 shots: the card without a picture, the pick and the row need ~660 dp with the bar. Larger
+    // text takes height too (checker 2026-10-28 #1: at 1.5x the pick fell off): ~320 dp per font step. Below 96 dp the
+    // picture hides; with one the caption keeps 2 lines, at 1.3x+ one.
     val screenH = LocalConfiguration.current.screenHeightDp
     val scale = LocalDensity.current.fontScale
-    val budget = screenH - 540 - ((scale - 1f) * 320f).toInt()
-    val pictureH = if (budget < 96) 0.dp else budget.coerceAtMost(220).dp
-    val captionLines = when { scale >= 1.3f -> 1; screenH < 720 -> 2; else -> 3 }
+    val budget = screenH - 660 - ((scale - 1f) * 320f).toInt()
+    val pictureH = if (budget < 96 || !card.hasPicture) 0.dp else budget.coerceAtMost(220).dp
+    val captionLines = when { scale >= 1.3f -> 1; screenH < 720 || pictureH > 0.dp -> 2; else -> 3 }
     var cut by remember(card.file) { mutableStateOf(false) }
     Pane(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 12.dp)) {
