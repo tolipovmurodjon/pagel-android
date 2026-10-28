@@ -242,6 +242,8 @@ tap Habits && shot habits 2.5
 for want in "Stretch for ten minutes" "Read 10 pages" "Drink water"; do
   grep -q "text=\"$want\"" "$OUT/$(printf '%02d' $N)-habits.xml" || { log "WALKTHROUGH: Habits has no \"$want\""; exit 1; }
 done
+# Round B: four parts now (Log food is Afternoon), so Anytime's Drink water sits under the glass bar: scroll it up first.
+$T adb shell input swipe 160 460 160 260 400; sleep 1
 tap "Done: Drink water" && shot habit-ticked 0.4
 shot habit-done-today 2.5
 grep -q 'text="Done today ✓"' "$OUT/$(printf '%02d' $N)-habit-done-today.xml" || { log "WALKTHROUGH: the ticked habit did not move to Done today"; exit 1; }
@@ -256,6 +258,8 @@ grep -q 'text="2/3"' "$OUT/$(printf '%02d' $((N - 1)))-habit-3x-2.xml" || log " 
 for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] && break; sleep 1; done
 [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] || { log "WALKTHROUGH: the 3x habit's taps did not all reach pagel.uz"; grep "t_h4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   3 taps reached pagel.uz after ~${i} s"
+# Back to the top, where Stretch's bell is.
+$T adb shell input swipe 160 200 160 600 400; sleep 1
 # Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
 ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")

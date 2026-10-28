@@ -136,4 +136,27 @@ class FinishScreenshotTest {
         org.junit.Assert.assertEquals(org.pagel.ai.data.sync.LiveStatus.Syncing, org.pagel.ai.data.sync.statusAfter(1, e, 1_000))
         assertTrue(org.pagel.ai.data.sync.statusAfter(2, e, 2_000) is org.pagel.ai.data.sync.LiveStatus.Offline)
     }
+
+    /** Spacing audit #3 + #4: the waiting chip and the nudge never move Today's first task. */
+    @Test fun todaysFirstTaskDoesNotMoveForTheChipOrTheNudge() {
+        val state = androidx.compose.runtime.mutableStateOf(TodayUiState(loading = false, rows = rows, open = 3, doneToday = 1, status = "Live"))
+        show { TodayScreen(state.value, pad, today = day) }
+        fun top() = compose.onNodeWithText("Ship the native app").fetchSemanticsNode().boundsInRoot.top
+        val before = top()
+        state.value = state.value.copy(outbox = 2)
+        compose.waitForIdle()
+        org.junit.Assert.assertEquals(before, top(), 0.5f)
+        compose.onNodeWithContentDescription("2 waiting to send · Send now").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-chip-in-header-360x800.png")
+    }
+
+    @Test fun theNudgeLineIsAlwaysLaidOut() {
+        val nudge = androidx.compose.runtime.mutableStateOf<String?>(null)
+        show { Column(Modifier.padding(top = 24.dp)) { DayProgressBar(DayProgress(1, 2), nudge.value, Modifier.padding(horizontal = 20.dp)); androidx.compose.material3.Text("under") } }
+        fun top() = compose.onNodeWithText("under").fetchSemanticsNode().boundsInRoot.top
+        val without = top()
+        nudge.value = "Next: Call the bank · 10 min?"
+        compose.waitForIdle()
+        org.junit.Assert.assertEquals(without, top(), 0.5f)
+    }
 }

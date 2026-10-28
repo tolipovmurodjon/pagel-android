@@ -125,11 +125,6 @@ fun PairScreen(ui: PairUiState, onCode: (String) -> Unit, onServer: (String) -> 
                     Text("On pagel.uz open More → Phones and tap Connect phone. Type the 6 digits here.", style = MaterialTheme.typography.bodyMedium, color = Glass.Ink)
                     Spacer(Modifier.height(16.dp))
                     CodeBoxes(ui, focus, onCode, onConnect)
-                    // What went wrong and what to do, with a mark as well as the colour (never colour alone).
-                    AnimatedVisibility(ui.error != null, enter = fadeIn(tween(150)), exit = fadeOut(tween(120))) {
-                        Text("⚠  " + (ui.error ?: ""), color = Glass.Risk, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
-                            modifier = Modifier.padding(top = 10.dp).semantics { liveRegion = LiveRegionMode.Polite })
-                    }
                     Spacer(Modifier.height(16.dp))
                     ConnectButton(ui, onConnect)
                 }
@@ -195,11 +190,17 @@ private fun CodeBoxes(ui: PairUiState, focus: FocusRequester, onCode: (String) -
                 }
             },
         )
-        if (!ui.busy && ui.code.length < 6) {
+        // slot: Paste and the error share one reserved line (54 dp): the block above and Connect below never move when
+        // the 6th digit hides Paste or an error comes (spacing audit #5). What went wrong has a mark as well as the colour.
+        Box(Modifier.fillMaxWidth().heightIn(min = 54.dp), contentAlignment = Alignment.CenterEnd) {
+            if (ui.error != null) Text("⚠  " + ui.error, color = Glass.Risk, style = MaterialTheme.typography.bodyMedium, maxLines = 2,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp).semantics { liveRegion = LiveRegionMode.Polite })
+            else {
+            val pasteOn = !ui.busy && ui.code.length < 6
             val press = remember { MutableInteractionSource() }
             Row(
-                Modifier.align(Alignment.End).padding(top = 6.dp).heightIn(min = 48.dp).pressScale(press)
-                    .clickable(press, indication = null, role = Role.Button) {
+                Modifier.padding(top = 6.dp).heightIn(min = 48.dp).graphicsLayer { alpha = if (pasteOn) 1f else 0f }.pressScale(press)
+                    .clickable(press, indication = null, enabled = pasteOn, role = Role.Button) {
                         scope.launch {
                             val text = runCatching { clipboard.getClipEntry()?.clipData?.getItemAt(0)?.text?.toString() }.getOrNull().orEmpty()
                             val digits = text.filter(Char::isDigit).take(6)
@@ -212,6 +213,7 @@ private fun CodeBoxes(ui: PairUiState, focus: FocusRequester, onCode: (String) -
                 Icon(TabIcons.Copy, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Paste", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk)
+            }
             }
         }
     }

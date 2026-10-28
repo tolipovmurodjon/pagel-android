@@ -233,7 +233,9 @@ private fun MonthGrid(month: YearMonth, today: LocalDate, chosenDay: LocalDate?,
         }
         Spacer(Modifier.height(4.dp))
         // Only the weeks this month needs: five most months, six for a long one (the sheet stays short, checker #2).
-        DatePick.cells(month).chunked(7).filter { w -> w.any { it.month == month.month } }.forEach { week ->
+        // slot: always six weeks (as iOS), so paging from a 5-week month to a 6-week one never moves the arrows
+        // under the thumb (spacing audit #6); the other months' days are muted.
+        DatePick.cells(month).chunked(7).forEach { week ->
             Row(Modifier.fillMaxWidth()) {
                 for (d in week) DayCell(d, inMonth = d.month == month.month, today = today, chosen = d == chosenDay, modifier = Modifier.weight(1f)) { onPick(d) }
             }

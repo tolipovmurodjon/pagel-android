@@ -159,10 +159,8 @@ fun TodayScreen(
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot(); overlayWidth = it.size.width.toFloat() }) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            item(key = "head", contentType = "head") { Header(ui, today, onSweep = if (pills != null) links.sweep else null) }
-            // Round B (A): what waits to reach pagel.uz is never invisible; a tap sends it now.
-            if (ui.outbox > 0) item(key = "outbox", contentType = "outbox") {
-                WaitingChip(ui.outbox, Modifier.padding(start = 16.dp, bottom = 8.dp)) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
+            item(key = "head", contentType = "head") {
+                Header(ui, today, onSweep = if (pills != null) links.sweep else null) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
             }
             // The day's progress grows with each tick (a game's level bar), with the next task's nudge under it.
             if (!ui.loading && ui.progress.total > 0) item(key = "progress", contentType = "progress") {
@@ -206,7 +204,7 @@ fun TodayScreen(
 }
 
 @Composable
-private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = null) {
+private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = null, onSendNow: () -> Unit = {}) {
     Row(verticalAlignment = Alignment.CenterVertically) {
     Column(Modifier.weight(1f).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
         Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
@@ -217,6 +215,9 @@ private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = 
         }
         Text(if (ui.status.isEmpty()) count else "$count · ${ui.status}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
     }
+    // Round B (A): what waits to reach pagel.uz is never invisible; a tap sends it now. In the header's row (taller than
+    // the chip), never a list item: the list never moves when it comes or goes (spacing audit #3).
+    if (ui.outbox > 0) WaitingChip(ui.outbox, Modifier.padding(end = 4.dp), onClick = onSendNow)
     // Empty your head: a 48 dp sparkle beside the title, any time of day (Phase 5).
     if (onSweep != null) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.Sparkles, "Empty your head", Modifier.padding(end = 12.dp), tint = Glass.Primary, onClick = onSweep)
     }
@@ -255,9 +256,13 @@ internal fun DayProgressBar(p: DayProgress, nudge: String?, modifier: Modifier =
             Spacer(Modifier.width(10.dp))
             Text(p.text, style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
         }
-        androidx.compose.animation.AnimatedVisibility(nudge != null) {
-            Text(nudge.orEmpty(), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-        }
+        // slot: the nudge's line is always laid out (empty and clear when there is none), so the tasks under it never
+        // drop 22 dp after a tick and rise 8 s later (spacing audit #4).
+        val shown by androidx.compose.animation.core.animateFloatAsState(if (nudge != null) 1f else 0f, label = "nudge")
+        var last by remember { mutableStateOf("") }
+        if (nudge != null) last = nudge
+        Text(last, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, minLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp).graphicsLayer { alpha = shown })
     }
 }
 

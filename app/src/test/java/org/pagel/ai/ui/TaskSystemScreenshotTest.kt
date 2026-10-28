@@ -216,8 +216,8 @@ class TaskSystemScreenshotTest {
     @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun timeWheelSavesNothingUntilAsked() {
         val picks = mutableListOf<String?>()
         show { DateContent("2026-10-29", day) { d, _ -> picks += d } }
-        // October 2026 needs five weeks: no sixth row (2-8 November) under it.
-        compose.onAllNodesWithContentDescription("2 November 2026").assertCountEquals(0)
+        // Always six weeks (spacing audit #6): October 2026 shows 2-8 November muted in its sixth row.
+        compose.onAllNodesWithContentDescription("2 November 2026").assertCountEquals(1)
         compose.onNodeWithContentDescription("1 November 2026").assertIsDisplayed()
         compose.onNodeWithContentDescription("Add time").performClick()
         compose.onNodeWithContentDescription("Time wheel 09:00").assertIsDisplayed()

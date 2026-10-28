@@ -810,9 +810,11 @@ private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
         Spacer(Modifier.height(8.dp))
         // One row of icons, each with its word under it (checker #5: as chips, three of six sat under the tab bar).
         Row(Modifier.fillMaxWidth()) {
-            for (c in ORDER) if (c != guess) {
+            // slot: all six, always in the same places; the AI's pick is marked where it stands (spacing audit #2: the
+            // icons moved from card to card when the pick was taken out of the row).
+            for (c in ORDER) {
                 val off = (c == Choice.KEEP && ui.full) || (c == Choice.LATER && card.putOff)
-                ChoiceIcon(c, enabled = !off, modifier = Modifier.weight(1f)) { actions.choose(card, c, Throw.None) }
+                ChoiceIcon(c, enabled = !off, picked = c == guess, modifier = Modifier.weight(1f)) { actions.choose(card, c, Throw.None) }
             }
         }
     }
@@ -859,7 +861,7 @@ private fun lerp(a: Color, b: Color, t: Float) = Color(a.red + (b.red - a.red) *
  * to fit at large font, never cut); the whole column is one target of at least 48 dp.
  */
 @Composable
-private fun ChoiceIcon(choice: Choice, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun ChoiceIcon(choice: Choice, enabled: Boolean, modifier: Modifier, picked: Boolean = false, onClick: () -> Unit) {
     val look = choice.look
     val press = remember { MutableInteractionSource() }
     val scale = LocalDensity.current.fontScale
@@ -870,8 +872,8 @@ private fun ChoiceIcon(choice: Choice, enabled: Boolean, modifier: Modifier, onC
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(42.dp).background(Color.White.copy(alpha = 0.72f), CircleShape)
-                .border(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.45f))), CircleShape),
+            Modifier.size(42.dp).background(if (picked) look.color.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f), CircleShape)
+                .border(if (picked) 2.dp else 1.dp, if (picked) androidx.compose.ui.graphics.SolidColor(look.color) else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.45f))), CircleShape),
             contentAlignment = Alignment.Center,
         ) { Icon(look.icon, contentDescription = null, tint = look.color, modifier = Modifier.size(20.dp)) }
         Spacer(Modifier.height(3.dp))
@@ -896,7 +898,8 @@ private fun AiReading(reading: Boolean) {
         t.animateFloat(0.45f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(900), androidx.compose.animation.core.RepeatMode.Reverse), label = "breath")
     } else null
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+        // slot: the same 64 dp as the AI's pick (audit #2: 48 vs 64 moved the deck 16 dp).
+        Modifier.fillMaxWidth().then(if (LocalDensity.current.fontScale <= 1.2f) Modifier.height(64.dp) else Modifier.heightIn(min = 64.dp))
             .background(Color.White.copy(alpha = 0.78f), CircleShape)
             .border(1.25.dp, Brush.linearGradient(listOf(Color.White, Glass.Aurora1, Color.White)), CircleShape)
             .semantics(mergeDescendants = true) {}

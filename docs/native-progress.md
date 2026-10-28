@@ -48,6 +48,18 @@ Brief order B, H, C, G, F, D, E, I, J, A. Done: B, H, C, G, D, E, J, A's chip. N
   (an empty 48 dp slot on star 1) with `Space.headerToCard` (12 dp) above the card. Proof: `closeTheDayCardDoesNotMoveBetweenStars`
   (the card's title has the same top on star 1 and 2; > 20 px between counter and card), shots `shutdown-star-1/2-360x800`.
   Checked the same pattern: the review's and the sweep's Back sit in the bottom button rows (the card above never moves).
+- **Spacing audit (docs/qa/spacing-audit.md, 5/10): the six P0s are fixed** (each `// slot:` in code): #1 Review: Back
+  always drawn (off on step 1), Next/Finish one half each, the step body ≥ 340 dp (`reviewNextDoesNotMoveBetweenSteps`);
+  #2 Inbox dock: all six choices always in their places, the AI's pick ringed in its colour, the reading pill 64 dp like
+  the pick; #3 the "↑ N waiting" chip lives in Today's header row, never a list item; #4 the nudge line is always laid
+  out (alpha) (`todaysFirstTaskDoesNotMoveForTheChipOrTheNudge`, `theNudgeLineIsAlwaysLaidOut`); #5 Pair: Paste and
+  the error share one 54 dp slot (`pairBlockDoesNotMoveWithPasteOrError`); #6 the month always has six weeks.
+  **Next push (P1-P3, not done):** the date sheet's calendar/wheel slot height and chip order (#7), the FAB clearance
+  +68 dp (#8), the task panel's Held/To tasks/Pin slots (#9), the star title minLines 2 + the evening hint (#10), the Add
+  sheet's word counter slot (#11), the sweep/review word counters (#12), headline tracking −0.5 sp (#13), More's 16 dp
+  gutter + header (#14), one paneInset (#15), panel header insets (#16), toast 16 dp (#17), SheetTitle min 48 (#18),
+  Today's item gap 12 (#19), Habits streak baseline (#20), Upcoming pane titles 48 (#21), progress text width (#22),
+  the Space tokens everywhere + the off-scale dp grep gate, and assertStableBounds for the Inbox dock and the Date sheet.
 - **A (already done in v13-v14):** TLS 1.2 + warm pool 5 min (PagelHttp), pairing kept over cold starts. **This round:**
   connect 20 s / read 45 s / write 20 s; "Offline" only after 2 failed calls in a row (`statusAfter`, a single miss reads
   "Syncing"; the outbox is nudged on every return to Live); Today's glass chip "↑ 2 waiting" while the outbox holds anything,

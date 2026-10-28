@@ -232,4 +232,17 @@ class GlassScreenshotTest {
         compose.onNodeWithContentDescription("Add task").assertIsEnabled()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/add-task.png")
     }
+
+    /** Spacing audit #5: Paste and the error share one slot, so the block never moves (5 digits, 6 digits, a wrong code). */
+    @Test fun pairBlockDoesNotMoveWithPasteOrError() {
+        val ui = androidx.compose.runtime.mutableStateOf(PairUiState(code = "48291"))
+        compose.setContent { GlassTheme { PairScreen(ui.value, {}, {}, {}) } }
+        val tops = listOf(PairUiState(code = "48291"), PairUiState(code = "482913"), PairUiState(code = "482913", error = "Wrong code. 4 tries left.")).map { s ->
+            ui.value = s
+            compose.waitForIdle()
+            compose.onNodeWithText("Connect this phone to pagel.uz.").fetchSemanticsNode().boundsInRoot.top
+        }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/pair-error-stable.png")
+        org.junit.Assert.assertEquals("the pair block moved: $tops", 1, tops.distinct().size)
+    }
 }

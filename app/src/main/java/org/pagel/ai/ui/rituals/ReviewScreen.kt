@@ -100,13 +100,17 @@ fun ReviewScreen(
                                 .togetherWith(slideOutHorizontally(spring(dampingRatio = 1f, stiffness = 600f)) { if (forward) -it / 3 else it / 3 } + fadeOut())
                         },
                         label = "review-step",
-                    ) { step -> Step(step, ui, onStep, onDrop, onInbox, onSweep) }
+                    ) { step ->
+                        // slot: one steady height for every step, so the nav row under it never moves (spacing audit #1).
+                        Box(Modifier.fillMaxWidth().heightIn(min = 340.dp)) { Step(step, ui, onStep, onDrop, onInbox, onSweep) }
+                    }
                 }
                 item(key = "nav", contentType = "buttons") {
                     ButtonRow {
-                        if (ui.step > 0) QuietButton("Back", TabIcons.ChevronLeft, Modifier.weight(1f)) { onGo(ui.step - 1) }
+                        // slot: Back is always drawn (off on step 1), so Next keeps its half on every step (audit #1).
+                        QuietButton("Back", TabIcons.ChevronLeft, Modifier.weight(1f), enabled = ui.step > 0) { onGo(ui.step - 1) }
                         if (ui.step < ReviewUi.STEPS - 1) MintButton("Next", TabIcons.ChevronRight, Modifier.weight(1f)) { onGo(ui.step + 1) }
-                        else MintButton("Finish review", TabIcons.Check, Modifier.weight(1.4f), enabled = ui.steps.values.none { org.pagel.ai.data.rituals.Rituals.words(it) > org.pagel.ai.data.rituals.Rituals.MAX_WORDS }, onClick = onFinish)
+                        else MintButton("Finish review", TabIcons.Check, Modifier.weight(1f), enabled = ui.steps.values.none { org.pagel.ai.data.rituals.Rituals.words(it) > org.pagel.ai.data.rituals.Rituals.MAX_WORDS }, onClick = onFinish)
                     }
                 }
                 if (ui.step == ReviewUi.STEPS - 1) item(key = "five", contentType = "text") {

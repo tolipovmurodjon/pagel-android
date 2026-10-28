@@ -258,4 +258,20 @@ class RitualsScreenshotTest {
         compose.onNodeWithContentDescription("Empty your head").assertIsDisplayed()
         compose.onNodeWithContentDescription("Close the day").assertDoesNotExist()
     }
+
+    // ── Layout rule (RULES.md "Layout"): a pair of states, the thumb's target in the same place ──
+
+    /** Spacing audit #1: Next stays where it is from step 1 to step 3 (Back is always drawn, the step body is steady). */
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun reviewNextDoesNotMoveBetweenSteps() {
+        val step = androidx.compose.runtime.mutableIntStateOf(0)
+        show { ReviewScreen(review(step.intValue), pad) }
+        val tops = (0..2).map { i ->
+            step.intValue = i
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.onNodeWithContentDescription("Next").fetchSemanticsNode().boundsInRoot.let { it.top to it.left }
+        }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/review-next-step-3-360x800.png")
+        assertEquals("Next moved: $tops", 1, tops.distinct().size)
+    }
 }
