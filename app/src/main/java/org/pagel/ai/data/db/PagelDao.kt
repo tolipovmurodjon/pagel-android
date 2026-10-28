@@ -123,7 +123,12 @@ abstract class PagelDao {
         upsertTasks(listOf(local.copy(id = new)))
         dropOrderIfServerHasIt(old, new)
         renameInToday(old, new)
+        renameInSweeps(old, new)
     }
+
+    /** A dump's added tasks keep their ids once pagel.uz names them, so its Undo finds them (Phase 5). Ids are unique. */
+    @Query("UPDATE sweeps SET addedIds = REPLACE(addedIds, :old, :new) WHERE addedIds LIKE '%' || :old || '%'")
+    abstract suspend fun renameInSweeps(old: String, new: String)
 
     /** pagel.uz refused a task the phone added: it leaves the phone (task, Today, its waiting ticks); [keep] says why. */
     @Transaction

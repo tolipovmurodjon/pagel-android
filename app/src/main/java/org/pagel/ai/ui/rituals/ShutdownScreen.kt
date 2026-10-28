@@ -1,0 +1,282 @@
+package org.pagel.ai.ui.rituals
+
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.pagel.ai.data.rituals.Move
+import org.pagel.ai.data.rituals.Rituals
+import org.pagel.ai.ui.glass.Glass
+import org.pagel.ai.ui.glass.GlassSheet
+import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.ProjectTile
+import org.pagel.ai.ui.glass.SheetBottom
+import org.pagel.ai.ui.glass.SkeletonRows
+import org.pagel.ai.ui.glass.TabIcons
+import org.pagel.ai.ui.glass.TimeWheel
+import org.pagel.ai.ui.glass.TouchMin
+import org.pagel.ai.ui.glass.pressScale
+import org.pagel.ai.ui.habits.Switch
+import org.pagel.ai.ui.projects.shortName
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private val FLAGS = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE0))
+private val HEAD_DATE = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
+
+@Composable
+fun ShutdownRoute(contentPadding: PaddingValues, vm: ShutdownViewModel = hiltViewModel()) {
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val ctx = LocalContext.current
+    var timeSheet by remember { mutableStateOf(false) }
+    // Notifications are asked for at first use (the reminder switched on), never at launch, never in a loop.
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    fun evening(on: Boolean) {
+        vm.setEvening(on)
+        if (on && android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) ask.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    ShutdownScreen(
+        ui, contentPadding, onChoose = vm::choose, onBack = vm::back, onPick = vm::togglePick, onClose = vm::close,
+        onEvening = ::evening, onTime = { timeSheet = true },
+    )
+    if (timeSheet) {
+        GlassSheet({ timeSheet = false }) {
+            Text("Evening reminder", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { TimeWheel(ui.eveningAt, onChange = vm::setEveningAt, modifier = Modifier.padding(vertical = 8.dp)) }
+            Hint("\"Close the day\" at ${ui.eveningAt}, unless it is closed already.", modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp))
+            Spacer(Modifier.size(SheetBottom))
+        }
+    }
+}
+
+/**
+ * Close the day, native (Phase 5, the web's /shutdown): today's open stars one at a time (Tomorrow · Later · Drop),
+ * then up to 3 more picked for tomorrow, then the day is closed: the changes go to pagel.uz with the shutdown event.
+ * The evening reminder (21:30 unless Boss sets a time) brings him here.
+ */
+@Composable
+fun ShutdownScreen(
+    ui: ShutdownUi,
+    contentPadding: PaddingValues,
+    onChoose: (String, Move) -> Unit = { _, _ -> },
+    onBack: () -> Unit = {},
+    onPick: (String) -> Unit = {},
+    onClose: () -> Unit = {},
+    onEvening: (Boolean) -> Unit = {},
+    onTime: () -> Unit = {},
+    today: LocalDate = LocalDate.now(Rituals.TASHKENT),
+) {
+    val list = rememberLazyListState()
+    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item(key = "head", contentType = "head") {
+            RitualHead(today.format(HEAD_DATE), "Close the day", if (ui.shutTonight && !ui.done) "Closed tonight ✓ · you can close it again" else "Five minutes. Then nothing needs you tonight.")
+        }
+        when {
+            ui.loading -> item(key = "loading", contentType = "pane") { Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3) } }
+            ui.done -> item(key = "done", contentType = "pane") {
+                RitualPane("Day closed ✓") {
+                    Text("Tomorrow is written down: ${ui.tomorrow} ${if (ui.tomorrow == 1) "star" else "stars"}. Nothing else needs you tonight.",
+                        style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+                }
+            }
+            ui.deciding -> item(key = "cards", contentType = "cards") {
+                AnimatedContent(
+                    targetState = ui.step,
+                    transitionSpec = {
+                        val forward = targetState > initialState
+                        (slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 500f)) { if (forward) it / 3 else -it / 3 } + fadeIn())
+                            .togetherWith(slideOutHorizontally(spring(dampingRatio = 1f, stiffness = 600f)) { if (forward) -it / 3 else it / 3 } + fadeOut())
+                    },
+                    label = "star",
+                ) { step ->
+                    val t = ui.stars.getOrNull(step)
+                    if (t != null) StarCard(t, step, ui.stars.size, onBack = onBack) { onChoose(t.id, it) }
+                }
+            }
+            else -> {
+                item(key = "picks", contentType = "pane") {
+                    RitualPane("Anything else for tomorrow?") {
+                        Hint(if (ui.stars.isEmpty()) "No open stars: everything starred is done ✓. Pick up to ${Rituals.PICK_CAP}." else "Pick up to ${Rituals.PICK_CAP}. Today shows them 3 at a time.")
+                        Spacer(Modifier.size(6.dp))
+                        if (ui.candidates.isEmpty()) Hint("Nothing waiting in your projects' NOW phases.")
+                        ui.candidates.forEachIndexed { i, t ->
+                            if (i > 0) HorizontalDivider(thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
+                            PickRow(t, on = t.id in ui.picks, full = ui.picks.size >= Rituals.PICK_CAP) { onPick(t.id) }
+                        }
+                    }
+                }
+                item(key = "close", contentType = "buttons") {
+                    Column {
+                        Hint("${ui.tomorrow} ${if (ui.tomorrow == 1) "star" else "stars"} for tomorrow", modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
+                        ButtonRow {
+                            if (ui.stars.isNotEmpty()) QuietButton("Back", TabIcons.ChevronLeft, Modifier.weight(1f), onClick = onBack)
+                            MintButton("Close the day", TabIcons.Moon, Modifier.weight(if (ui.stars.isNotEmpty()) 1.4f else 1f), description = "Finish: close the day", onClick = onClose)
+                        }
+                    }
+                }
+            }
+        }
+        item(key = "evening", contentType = "pane") { EveningRow(ui.eveningOn, ui.eveningAt, onEvening, onTime) }
+    }
+}
+
+/** One open star, big, with its three choices; "n of N" and Back above it. */
+@Composable
+private fun StarCard(t: RitualTask, step: Int, total: Int, onBack: () -> Unit, onChoose: (Move) -> Unit) {
+    Column {
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("${step + 1} of $total", style = Glass.NumberText, color = Glass.Muted, modifier = Modifier.semantics { contentDescription = "Star ${step + 1} of $total" })
+            Spacer(Modifier.width(8.dp))
+            Text("Today's open stars", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
+            if (step > 0) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.ChevronLeft, "Back one star", plain = true, onClick = onBack)
+        }
+        Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Column(Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ProjectTile(t.project, t.projectColor, t.projectTitle, size = 22.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(shortName(t.project, t.projectTitle), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
+                    FLAGS.getOrNull(t.priority)?.let { Icon(TabIcons.FlagFilled, contentDescription = "P${t.priority}", tint = it, modifier = Modifier.size(16.dp)) }
+                }
+                Text(t.title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(top = 12.dp, bottom = 18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MoveButton(Move.KEEP, TabIcons.Sun, Modifier.weight(1f), t.title, onChoose)
+                    MoveButton(Move.LATER, TabIcons.Hourglass, Modifier.weight(1f), t.title, onChoose)
+                    MoveButton(Move.DROP, TabIcons.Trash, Modifier.weight(1f), t.title, onChoose)
+                }
+            }
+        }
+    }
+}
+
+/** A choice: an icon over its word, 64 dp tall. Tomorrow is the bright one (keeping is the usual answer). */
+@Composable
+private fun MoveButton(move: Move, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, title: String, onChoose: (Move) -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    val haptics = LocalHapticFeedback.current
+    val shape = RoundedCornerShape(16.dp)
+    val surface = when (move) {
+        Move.KEEP -> Modifier.background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Glass.Aurora2, Glass.Aurora1)), shape)
+        else -> Modifier.background(Color.White.copy(alpha = 0.72f), shape)
+    }
+    Column(
+        modifier.heightIn(min = 64.dp).pressScale(press).then(surface)
+            .clickable(press, indication = null, role = Role.Button) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onChoose(move) }
+            .semantics(mergeDescendants = true) { contentDescription = "${move.label}: $title" }
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = if (move == Move.DROP) Glass.Risk else Glass.Ink, modifier = Modifier.size(20.dp))
+        Text(move.label, style = MaterialTheme.typography.labelLarge, color = if (move == Move.DROP) Glass.Risk else Glass.Ink, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+/** A candidate for tomorrow: its tile and words, and a star that fills when picked (faded once 3 are picked). */
+@Composable
+private fun PickRow(t: RitualTask, on: Boolean, full: Boolean, onToggle: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    val haptics = LocalHapticFeedback.current
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).pressScale(press)
+            .clickable(press, indication = null, role = Role.Checkbox, enabled = on || !full) { haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn); onToggle() }
+            .semantics(mergeDescendants = true) { toggleableState = ToggleableState(on); contentDescription = "Pick: ${t.title}" },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ProjectTile(t.project, t.projectColor, t.projectTitle, size = 22.dp)
+        Spacer(Modifier.width(10.dp))
+        Text(t.title, style = MaterialTheme.typography.bodyLarge, color = if (!on && full) Glass.Muted else Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
+        Box(Modifier.size(TouchMin), contentAlignment = Alignment.Center) {
+            Icon(if (on) TabIcons.StarFilled else TabIcons.Star, contentDescription = null, tint = if (on) Color(0xFFEB8909) else Glass.Ink.copy(alpha = if (full) 0.25f else 0.55f), modifier = Modifier.size(22.dp))
+        }
+    }
+}
+
+/** The evening reminder: one switch and its time (a tap opens Apple's wheel). Only on this phone. */
+@Composable
+private fun EveningRow(on: Boolean, at: String, onToggle: (Boolean) -> Unit, onTime: () -> Unit) {
+    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        val press = remember { MutableInteractionSource() }
+        val haptics = LocalHapticFeedback.current
+        Row(Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 16.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (on) TabIcons.BellRing else TabIcons.Bell, contentDescription = null, tint = if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.72f), modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Evening reminder", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink)
+                Hint(if (on) "Every evening, unless the day is closed" else "Off")
+            }
+            val timePress = remember { MutableInteractionSource() }
+            Box(
+                Modifier.heightIn(min = TouchMin).pressScale(timePress)
+                    .clickable(timePress, indication = null, role = Role.Button, onClickLabel = "Change the time") { onTime() }
+                    .semantics(mergeDescendants = true) { contentDescription = "Reminder time $at" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(at, style = Glass.NumberText.copy(fontSize = MaterialTheme.typography.labelLarge.fontSize), color = Glass.PrimaryInk,
+                    modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = 12.dp, vertical = 6.dp))
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier.heightIn(min = TouchMin).pressScale(press)
+                    .clickable(press, indication = null, role = Role.Switch) { haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn); onToggle(!on) }
+                    .semantics { toggleableState = ToggleableState(on); stateDescription = if (on) "On" else "Off"; contentDescription = "Evening reminder" },
+                contentAlignment = Alignment.Center,
+            ) { Switch(on) }
+        }
+    }
+}

@@ -315,3 +315,99 @@ $T adb logcat -d > "$OUT/logcat-walk.txt"
 grep -E "Davey!|Skipped [0-9]+ frames" "$OUT/logcat-walk.txt" | tail -15 | tee -a "$OUT/steps.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-walk.txt" && { log "WALKTHROUGH: CRASH (see logcat-walk.txt)"; exit 1; }
 log "WALKTHROUGH DONE: $N steps"
+
+# ── Phase 5 · Rituals ─────────────────────────────────────────────────────────────────────────────────────────────
+log "== Phase 5: Empty your head (3 lines -> 3 tasks on pagel.uz), the evening reminder opens Close the day, keep/later/drop + a pick -> the shutdown, the weekly review"
+# Tap $1; if it is not on screen, scroll the list up a little and try again (twice).
+tap_scroll() {
+  for k in 1 2 3; do
+    tap "$1" && return 0
+    $T adb shell input swipe 160 460 160 200 300; sleep 1
+  done
+  return 1
+}
+# Waits up to $2 s (default 30) for a fixed string in the fake pagel.uz's log.
+wait_log() {
+  for i in $(seq 1 "${2:-30}"); do grep -qiF "$1" "$FAKE_LOG" && return 0; sleep 1; done
+  return 1
+}
+$T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+front p5-start
+tap Today; shot p5-today 2.5
+for want in 'content-desc="Empty your head"' 'content-desc="Close the day"' 'content-desc="Weekly review is due"'; do
+  grep -qF "$want" "$OUT/$(printf '%02d' $N)-p5-today.xml" || { log "WALKTHROUGH: Today has no ritual pill $want"; exit 1; }
+done
+
+log "-- Empty your head: dump 3 lines, the AI's rows come back, Add 3"
+tap "Empty your head" && shot p5-sweep 2
+tap "What is on your mind" || exit 1
+$T adb shell "input text 'call%smom%sabout%ssunday'"; $T adb shell input keyevent 66
+$T adb shell "input text 'fix%sthe%slogin%sbug'"; $T adb shell input keyevent 66
+$T adb shell "input text 'learn%sthe%sguitar'"
+shot p5-sweep-typed 1.5
+# The keyboard covers the button: Back hides it, only while it is up (else Back would leave the screen).
+$T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
+tap_scroll "Turn into steps" || { log "WALKTHROUGH: no Turn into steps"; exit 1; }
+wait_log 'POST /api/v1/sweep {"id":"sw_' || { log "WALKTHROUGH: the dump never reached pagel.uz's AI"; exit 1; }
+grep -F 'POST /api/v1/sweep {"id":"sw_' "$FAKE_LOG" | grep -qiF '"dump":"call mom about sunday\nfix the login bug\nlearn the guitar"}' \
+  || { log "WALKTHROUGH: the dump reached pagel.uz changed"; grep "/api/v1/sweep" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+shot p5-sweep-rows 2.5
+grep -qi 'Call mom about sunday' "$OUT/$(printf '%02d' $N)-p5-sweep-rows.xml" || { log "WALKTHROUGH: the AI's rows are not on screen"; exit 1; }
+tap_scroll "Add 3" || { log "WALKTHROUGH: no Add 3"; exit 1; }
+shot p5-sweep-added 1.5
+for want in '{"project":"humopedia","text":"Call mom about sunday","priority":1}' '{"project":"me","text":"Fix the login bug","priority":1}' '{"project":"ababil","text":"Learn the guitar","priority":3}'; do
+  wait_log "POST /api/v1/tasks $want" || { log "WALKTHROUGH: pagel.uz never got the task $want"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+done
+log "   3 lines -> 3 tasks on pagel.uz"
+grep -q 'Your head is on paper' "$OUT/$(printf '%02d' $N)-p5-sweep-added.xml" || { log "WALKTHROUGH: no done card after Add 3"; exit 1; }
+tap "Pick today's 3" && shot p5-back-today 2
+
+log "-- the evening reminder rings (root adb sends the alarm's own intent): its notification opens Close the day"
+$T adb shell am broadcast -n "$PKG/.reminders.ShutdownAlarmReceiver" -a org.pagel.ai.EVENING_FIRE -d pagel://evening > /dev/null
+sleep 4
+$T adb shell cmd statusbar expand-notifications
+shot p5-evening-notification 2
+grep -q 'Five minutes, then sleep' "$OUT/$(printf '%02d' $N)-p5-evening-notification.xml" || { log "WALKTHROUGH: no Close the day notification"; exit 1; }
+if ! tap "Close the day"; then
+  log "   (not tappable in the shade; opening it the way its intent does)"
+  $T adb shell cmd statusbar collapse
+  $T adb shell am start -n "$PKG/.MainActivity" --es pagel.open shutdown > /dev/null
+fi
+front p5-shutdown
+shot p5-shutdown 2.5
+grep -q 'content-desc="Star 1 of' "$OUT/$(printf '%02d' $N)-p5-shutdown.xml" || { log "WALKTHROUGH: the notification did not open Close the day on its first star"; exit 1; }
+
+log "-- Close the day: Tomorrow, Tomorrow, Later, Drop; pick one more; close"
+tap "Tomorrow: Call the bank about the report" && shot p5-star-1 1.2 || exit 1
+tap 'Tomorrow: Measure the drone[^"]*' && shot p5-star-2 1.2 || exit 1
+tap "Later: Record the fractions lesson" && shot p5-star-3 1.2 || exit 1
+tap "Drop: Weigh in" && shot p5-picks 1.5 || exit 1
+tap_scroll "Pick: Pay the internet bill" && shot p5-picked 1.2 || exit 1
+tap_scroll "Finish: close the day" && shot p5-closed 1.5 || exit 1
+for want in 'PATCH /api/v1/tasks/t_ci3 {"star":false} auth=True' 'PATCH /api/v1/tasks/t_u2 {"star":true} auth=True' 'PATCH /api/v1/tasks/t_ci5 {"remove":true} auth=True'; do
+  wait_log "$want" 40 || { log "WALKTHROUGH: pagel.uz never got $want"; grep PATCH "$FAKE_LOG" | tail -8 | tee -a "$OUT/steps.txt"; exit 1; }
+done
+wait_log 'POST /api/v1/rituals {"action":"shutdown"' || { log "WALKTHROUGH: the shutdown event never reached pagel.uz"; exit 1; }
+grep -F 'POST /api/v1/rituals {"action":"shutdown"' "$FAKE_LOG" | grep -qE '"kept":2,"pushed":1,"dropped":1,"picked":1}' \
+  || { log "WALKTHROUGH: the shutdown counts are wrong"; grep rituals "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got later/drop/pick and the shutdown event (kept 2, pushed 1, dropped 1, picked 1)"
+$T adb shell dumpsys alarm > "$OUT/alarm-dump-evening.txt"
+EVENING=$(grep -c "org.pagel.ai.EVENING_FIRE" "$OUT/alarm-dump-evening.txt")
+log "   evening alarms on AlarmManager: $EVENING"
+grep -B2 -A6 "org.pagel.ai.EVENING_FIRE" "$OUT/alarm-dump-evening.txt" | head -12 >> "$OUT/steps.txt"
+[ "$EVENING" -ge 1 ] || { log "WALKTHROUGH: no evening alarm is set"; exit 1; }
+$T adb shell input keyevent 4; front p5-today-closed; shot p5-today-closed 2
+grep -q 'content-desc="Close the day: closed tonight"' "$OUT/$(printf '%02d' $N)-p5-today-closed.xml" || { log "WALKTHROUGH: Today does not show the day as closed"; exit 1; }
+
+log "-- the weekly review: 4 steps, Finish -> the review event"
+tap "Weekly review is due" && shot p5-review 2.5 || exit 1
+grep -q 'content-desc="Step 1: Inbox"' "$OUT/$(printf '%02d' $N)-p5-review.xml" || { log "WALKTHROUGH: the review has no steps"; exit 1; }
+tap_scroll Next && tap_scroll Next && shot p5-review-next-steps 1.5 || exit 1
+grep -q 'Labs' "$OUT/$(printf '%02d' $N)-p5-review-next-steps.xml" || { log "WALKTHROUGH: the stuck project Labs is not asked for a next step"; exit 1; }
+tap_scroll Next && shot p5-review-someday 1.5 || exit 1
+tap_scroll "Finish review" && shot p5-review-done 1.5 || exit 1
+wait_log 'POST /api/v1/rituals {"action":"review"' || { log "WALKTHROUGH: the review event never reached pagel.uz"; exit 1; }
+log "   pagel.uz got the weekly review"
+$T adb logcat -d > "$OUT/logcat-p5.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-p5.txt" && { log "WALKTHROUGH: CRASH in Phase 5 (see logcat-p5.txt)"; exit 1; }
+log "PHASE 5 WALK DONE: $N steps"

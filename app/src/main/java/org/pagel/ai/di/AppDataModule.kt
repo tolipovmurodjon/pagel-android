@@ -21,6 +21,9 @@ import org.pagel.ai.data.inbox.InboxPictures
 import org.pagel.ai.data.inbox.InboxRepository
 import org.pagel.ai.data.inbox.InboxSender
 import org.pagel.ai.data.db.PagelDatabase
+import org.pagel.ai.data.db.RitualsDao
+import org.pagel.ai.data.rituals.RitualSender
+import org.pagel.ai.data.rituals.RitualsRepository
 import org.pagel.ai.data.habits.HabitsRepository
 import org.pagel.ai.data.habits.ReminderPlanner
 import org.pagel.ai.reminders.HabitAlarms
@@ -75,7 +78,17 @@ object AppDataModule {
     fun provideSyncEngine(api: PagelApi, dao: PagelDao): SyncEngine = SyncEngine(api, dao)
 
     @Provides @Singleton
-    fun provideOutboxSender(api: PagelApi, dao: PagelDao, inbox: InboxDao): OutboxSender = OutboxSender(api, dao, inbox = InboxSender(api, inbox))
+    fun provideOutboxSender(api: PagelApi, dao: PagelDao, inbox: InboxDao, rituals: RitualsDao): OutboxSender =
+        OutboxSender(api, dao, inbox = InboxSender(api, inbox), rituals = RitualSender(api, rituals))
+
+    @Provides
+    fun provideRitualsDao(db: PagelDatabase): RitualsDao = db.rituals()
+
+    /** The rituals (Phase 5): Empty your head, Close the day, the weekly review, the evening reminder. */
+    @Provides @Singleton
+    fun provideRitualsRepository(
+        @ApplicationContext ctx: Context, dao: PagelDao, rituals: RitualsDao, api: PagelApi, today: TodayRepository, tasks: TaskRepository, reminders: ReminderPlanner,
+    ): RitualsRepository = RitualsRepository(dao, rituals, api, today, tasks, OutboxWorker.scheduler(ctx), reminders)
 
     @Provides
     fun provideInboxDao(db: PagelDatabase): InboxDao = db.inbox()
@@ -98,8 +111,8 @@ object AppDataModule {
 
     /** The habits' reminder alarms (Phase 3). */
     @Provides @Singleton
-    fun provideReminderPlanner(@ApplicationContext ctx: Context, dao: PagelDao, @AppScope scope: CoroutineScope, @IoDispatcher io: CoroutineDispatcher): ReminderPlanner =
-        HabitAlarms(ctx, dao, scope, io)
+    fun provideReminderPlanner(@ApplicationContext ctx: Context, dao: PagelDao, db: PagelDatabase, @AppScope scope: CoroutineScope, @IoDispatcher io: CoroutineDispatcher): ReminderPlanner =
+        HabitAlarms(ctx, dao, scope, io, rituals = db.rituals())
 
     @Provides @Singleton
     fun provideHabitsRepository(@ApplicationContext ctx: Context, dao: PagelDao, api: PagelApi, reminders: ReminderPlanner): HabitsRepository =
