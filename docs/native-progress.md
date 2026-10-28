@@ -41,6 +41,40 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE · Phase 6a Compass (2026-10-29, builder agent, branch `feat/compass`, server `feat/compass-server`)
+- **What it is:** More → Compass. Boss's goals, sealed on the phone (Boss: "my goals are sacred, no AI ever will read
+  them… build the frame and I put them in"). The app ships an EMPTY frame; no goal was read, imported or written by AI.
+- **Lock:** a fresh 256-bit data key per phone, wrapped by an Android Keystore key that opens only within 60 s of
+  BiometricPrompt (fingerprint or the screen-lock PIN); every goal / note / report is AES-256-GCM sealed with its own
+  nonce and its id as AAD before Room (`compass.db`, its own file: ciphertext only, no word columns) and before the
+  outbox (`CompassWorker`). FLAG_SECURE on every Compass window (screen + sheets, counted per window); the key is
+  wiped 60 s after leaving the Compass or the app. No screen lock → "Set a screen lock first". Lost key → said plainly;
+  optional recovery passphrase (scrypt 2^15 wraps the data key; off by default, one line explains it).
+- **Server:** `feat/compass-server` **6cbb4cb — DEPLOY NEEDED**: `GET /api/v1/compass`, `PUT /api/v1/compass/items/<id>`
+  `{kind, parent, blob, starts, ends, deleted}` (any other key → 400, a blob must be the sealed envelope),
+  `/links/<project>` `{goal: id}`, `/recovery`; paired phone only (the machine token = 403). vitest 7/7. Until it is
+  deployed the phone keeps every sealed change waiting (404/405 = wait, never dropped).
+- **Frame:** Path = the vertical path (Why I live with a star on top → 10 years → Year 19 (1 Nov → 31 Oct) → the
+  season's 3 slots → Someday, no limit), empty states that invite writing. Season = four 13-week seasons made by the
+  app (12 + a review week), max 3 goals, a change after week 1 asks one line why (sealed), "my part" scored (70 % =
+  full mint "Win", never a percentage), the outcome never scored and closed as "a different door", week dots, never
+  miss twice, "Reset, not restart", key results he ticks, the weekly 2 questions. Year = "Year 18 → 19": tasks done,
+  habit days, best run, namaz days from 1 Nov, his own words, then "Write Year 19's goals".
+- **Hooks:** a season goal's weekly step becomes a weekly habit through the normal path (its own words only); project
+  page "Link to a goal" (titles opened only in a secured sheet; pagel.uz gets the id); Today's quiet line (off by
+  default, its own Keystore key, on this phone only); What's new line.
+- **Tests:** CompassRulesTest (31 Oct / 1 Nov, age from 2007-11-01, seasons, cap, chain, 70 %, reset),
+  CompassCryptoTest, **CompassPrivacyTest = the proof** (marked words through the real repository, a real Room file
+  and the outbox against MockWebServer: in no request body, no Timber/Log line, no file; every blob opens with the key),
+  CompassSchemaTest (v1 from its exported schema, no word columns), CompassScreenshotTest (empty, path empty, locked,
+  locked 1.5×, cascade + 1.5×, season + reset + week, age report, goal sheet + 1.5×, tabs equal-top assert);
+  walkthrough: PIN 1111 → More → Compass → Start (PIN) → write → fake pagel.uz has ciphertext only → Projects →
+  Humopedia → Link to a goal → `PUT /links/humopedia {"goal":"g_…"}`.
+- **Not done (and why):** the 1 Nov 08:00 birthday notification (the switch is stored, no alarm/UI yet: it needs a
+  receiver in the shared manifest, next round); the season-review reminder; changing a lead action after it became a
+  habit does not rename the habit (rename it in Habits); the keyboard's "incognito" flag (Compose BasicTextField has
+  no IME_FLAG_NO_PERSONALIZED_LEARNING switch); a second device syncing back (the phone is the only writer, by design).
+
 ## START HERE v17.1 · ROUND C FIX ROUND = THE CHECKER'S 7/10 LIST (docs/qa/roundC-checker.md) (2026-10-29, builder agent)
 - **Data:** server **ef3f671 (DEPLOY NEEDED; it contains ad76178)**: the web's Close the day keeps a due's time
   ("15:00" stays), never pulls a later due back, and caps kept stars at 3 too (over the cap = pushed). Phone: kept
