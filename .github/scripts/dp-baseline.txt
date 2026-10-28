@@ -3,7 +3,9 @@ add/AddTaskViewModel.kt 0
 add/QuickAdd.kt 0
 gateway/GatewayDebugScreen.kt 7
 gateway/GatewayViewModel.kt 0
-habits/HabitsScreen.kt 24
+habits/HabitDetail.kt 0
+habits/HabitReminder.kt 1
+habits/HabitsScreen.kt 4
 habits/HabitsViewModel.kt 0
 home/HomeScreen.kt 0
 hud/BootScreen.kt 3

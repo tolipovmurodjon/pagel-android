@@ -178,7 +178,23 @@ tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test agai
   Room only (v8 `habit_prefs`/`habit_freezes`); pagel.uz has no fields for them yet. Namoz's "learn" link waits for Phase 6.
 - **Server (DEPLOY NEEDED, see report):** `feat/roundD-server` e39b7b6: `tasks.habit_group`, POST /api/v1/tasks takes `group` (one lower-case
   word), /sync + task reads send `group`; vitest. Until deployed, the phone still finds the prayers by their names.
->>>>>>> 16a2963 (docs(progress): START HERE v18 - reference next to the build, notifications, what was not done and why)
+## START HERE v17.1 · ROUND C FIX ROUND = THE CHECKER'S 7/10 LIST (docs/qa/roundC-checker.md) (2026-10-29, builder agent)
+- **Data:** server **ef3f671 (DEPLOY NEEDED; it contains ad76178)**: the web's Close the day keeps a due's time
+  ("15:00" stays), never pulls a later due back, and caps kept stars at 3 too (over the cap = pushed). Phone: kept
+  stars over 3 go to Later; the Tomorrow peek reads the ritual day + 1 (a close after midnight still peeks).
+- **Checker list:** #4 no permission ask at launch (MainActivity; first use only). #1 month days ≥ 28 dp, one line.
+  #2 view switch: 44 dp parts with a gap. #3 the tone switch fills the width (Segmented `fill`), FixRow 2 lines.
+  #5 hours as "05", GUTTER 36 dp, timed daily habits fold into All day in 3 days / Week, titles clip by the block's
+  height (11 sp in narrow lanes). #6 day heads on the timeline's columns inside the glass (DayHeads; the grid now ends
+  at the glass's inner edge), Day's header = its day, 3 days = its range. #7 copy: 32 lines per task tone, 10 per
+  daily nudge, counts that read right for 1 ("left: 1"), no topic lines in the pools; `NotifyCopy.keywordLine` matches
+  a task's own words (pay → "money moves only"). #9 a dropped block stays put until Room moves it, and snaps to the
+  15-min grid / column while dragging. #10 an hour label under the glass top is not drawn.
+- **Also:** What's new keeps its quotes (escaped), adds the two Boss notes (empty Today after Close the day; the mint
+  status bar), untried rings ≥ 3:1. A repeating timed task rings too (unless its own habit bell does). The spacing gate
+  counts 2 and 6 dp now (baseline 250).
+- **Not done:** the group summary still mixes Tasks + Rituals in one day group (checker data note); keyword lines are
+  English only.
 
 ## START HERE v17 · ROUND C = A REAL CALENDAR + REAL NOTIFICATIONS, + THE SPACING LEFTOVERS AND ROUND B'S CHECKER (2026-10-28, builder agent)
 - **First push (ce87619 + 705445c):** spacing audit #7-#22 (each `// slot:` in code), `Space` roles (textEdge, paneInset,
