@@ -69,6 +69,18 @@ object Namoz {
     /** A namoz habit counts only from [START]: earlier days are neither done nor missed. */
     fun counts(day: String): Boolean = day >= START
 
+    /** When [prayer]'s time next comes after [now], on or after [START] (the reminder's alarm). */
+    fun nextStart(prayer: Prayer, now: java.time.ZonedDateTime): java.time.ZonedDateTime {
+        var day = maxOf(now.withZoneSameInstant(ZONE).toLocalDate(), LocalDate.parse(START))
+        repeat(3) {
+            val w = windows(day).first { it.prayer == prayer }
+            val at = java.time.ZonedDateTime.of(day, w.from, ZONE)
+            if (at.isAfter(now)) return at
+            day = day.plusDays(1)
+        }
+        return java.time.ZonedDateTime.of(day, windows(day).first { it.prayer == prayer }.from, ZONE)
+    }
+
     /** The whole of the reminder: "Peshin vaqti kirdi · 12:10". Plain and respectful, nothing more (Boss). */
     fun notice(w: Window) = "${w.prayer.uz} vaqti kirdi · ${w.from.hhmm()}"
 }

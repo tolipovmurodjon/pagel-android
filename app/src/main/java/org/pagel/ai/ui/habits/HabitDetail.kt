@@ -106,7 +106,7 @@ fun statsOf(habits: List<TaskEntity>, ticks: List<HabitTickEntity>, freezes: Lis
 @Composable
 internal fun StatCards(s: HabitStats) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-        StatCard("fire", "Current streak", "${s.streak}", "Best ${s.best}")
+        StatCard("fire", "Streak", "${s.streak}", "Best ${s.best}")
         StatCard("check", "Finished", "${s.finished}", "This week ${s.thisWeek}")
         StatCard("target", "Completion", "${s.rate}%", "${s.rateDone} of ${s.rateOf} · 30 days")
     }
@@ -267,14 +267,17 @@ private fun Section(text: String) {
 @Composable
 private fun Chip(text: String, on: Boolean = false, onClick: (() -> Unit)? = null) {
     val press = remember { MutableInteractionSource() }
-    Text(
-        text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = if (on) Glass.PrimaryInk else Glass.Ink, maxLines = 1,
-        modifier = Modifier.heightIn(min = if (onClick != null) Space.touch else 32.dp).clip(CircleShape)
+    // A Box centres the word in the 48 dp target (a Text with heightIn sat on its top edge).
+    Box(
+        Modifier.heightIn(min = if (onClick != null) Space.touch else 32.dp).clip(CircleShape)
             .background(if (on) Glass.PrimarySoft else Color.White.copy(alpha = 0.7f))
             .border(1.dp, if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.08f), CircleShape)
             .then(if (onClick != null) Modifier.pressScale(press).clickable(press, indication = null, role = Role.RadioButton, onClick = onClick).semantics { selected = on } else Modifier)
-            .padding(horizontal = Space.md, vertical = Space.sm),
-    )
+            .padding(horizontal = Space.md, vertical = Space.xs),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = if (on) Glass.PrimaryInk else Glass.Ink, maxLines = 1)
+    }
 }
 
 /** The last 6 weeks as rows: the dates, a bar of done days, and "4 / 7". */
@@ -394,7 +397,7 @@ private fun Badge(a: Achievement, modifier: Modifier) {
             EmojiTile(a.emoji, 52.dp, quiet = !a.earned)
             Spacer(Modifier.height(Space.sm))
             Text(a.title, style = MaterialTheme.typography.titleSmall, color = if (a.earned) Glass.Ink else Glass.Muted, maxLines = 1)
-            Text(a.line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(a.line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, minLines = 2, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }
 }

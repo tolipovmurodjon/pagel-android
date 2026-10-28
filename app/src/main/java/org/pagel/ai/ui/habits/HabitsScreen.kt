@@ -349,8 +349,10 @@ private fun WeekStrip(board: HabitBoard, onSelect: (LocalDate?) -> Unit) {
     ) {
         Column(Modifier.fillMaxWidth().padding(vertical = Space.md)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm)) {
+                // At 1.5x font "MON" wrapped to two lines: one letter then (Apple's narrow weekday).
+                val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
                 for (d in board.week) Text(
-                    d.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.UK).uppercase(), style = MaterialTheme.typography.labelSmall,
+                    d.date.dayOfWeek.getDisplayName(if (big) TextStyle.NARROW else TextStyle.SHORT, Locale.UK).uppercase(), style = MaterialTheme.typography.labelSmall, maxLines = 1,
                     color = if (d.date == board.selected) Glass.Ink else Glass.Muted, textAlign = TextAlign.Center, modifier = Modifier.weight(1f),
                 )
             }
@@ -456,6 +458,8 @@ private fun DayDot(n: Int, m: Mark, isToday: Boolean, isSelected: Boolean, circl
 @Composable
 private fun PartPills(part: Part, board: HabitBoard, onSelect: (Part) -> Unit) {
     val haptics = LocalHapticFeedback.current
+    // At 1.5x font the word needs the whole pill: the emoji steps aside ("Afternoon" was cut to "Afte…").
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
     Row(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
         for ((p, emoji) in listOf(Part.MORNING to "sunrise", Part.AFTERNOON to "sun", Part.EVENING to "moon")) {
             val on = p == part
@@ -467,12 +471,14 @@ private fun PartPills(part: Part, board: HabitBoard, onSelect: (Part) -> Unit) {
                     .border(if (on) 1.5.dp else 1.dp, if (on) Glass.Primary else Color.White.copy(alpha = 0.8f), CircleShape)
                     .clickable(press, indication = null, role = Role.Tab) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelect(p) }
                     .semantics(mergeDescendants = true) { contentDescription = p.label; selected = on; if (left > 0) stateDescription = "$left left" }
-                    .padding(horizontal = Space.sm),
+                    .padding(horizontal = Space.xs),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
             ) {
-                Image(painterResource(Emoji.res(emoji)), null, Modifier.size(20.dp))
-                Spacer(Modifier.width(Space.xs))
-                Text(p.label, style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium),
+                if (!big) {
+                    Image(painterResource(Emoji.res(emoji)), null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(Space.xs))
+                }
+                Text(p.label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium),
                     color = if (on) Glass.Ink else Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -618,9 +624,11 @@ internal fun HabitCardRow(
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun MetaLine(c: HabitCard, done: Boolean, timer: HabitTimer?, now: Long) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // Wraps instead of squeezing the chip at 1.5x font.
+    androidx.compose.foundation.layout.FlowRow(itemVerticalAlignment = Alignment.CenterVertically, verticalArrangement = Arrangement.spacedBy(Space.xs)) {
         if (done) {
             Icon(TabIcons.Check, null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
             Spacer(Modifier.width(Space.xs))

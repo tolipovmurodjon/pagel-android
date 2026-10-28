@@ -36,6 +36,17 @@ class NamozTest {
         assertEquals("Peshin vaqti kirdi · ${w[1].label().take(5)}", Namoz.notice(w[1]))
     }
 
+    @Test fun aPrayerReminderRingsAtThatDaysTimeNeverBeforeTheFirst() {
+        val z = java.time.ZoneId.of("Asia/Tashkent")
+        // Asked on 28 October: the first Peshin is 1 November.
+        val first = Namoz.nextStart(Namoz.Prayer.PESHIN, java.time.ZonedDateTime.of(2026, 10, 28, 9, 0, 0, 0, z))
+        assertEquals(LocalDate.of(2026, 11, 1), first.toLocalDate())
+        assertTrue(abs(min(first.toLocalTime()) - min(LocalTime.of(12, 11))) <= 1)
+        // After that day's Peshin: the next day's.
+        val next = Namoz.nextStart(Namoz.Prayer.PESHIN, java.time.ZonedDateTime.of(2026, 11, 2, 13, 0, 0, 0, z))
+        assertEquals(LocalDate.of(2026, 11, 3), next.toLocalDate())
+    }
+
     @Test fun onlyFromTheFirstOfNovember() {
         assertFalse(Namoz.counts("2026-10-31"))
         assertTrue(Namoz.counts("2026-11-01"))
