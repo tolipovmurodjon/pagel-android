@@ -351,7 +351,9 @@ private fun HabitRow(
             // An empty meta adds no 4 dp under the title (spacing audit #20).
             // The week's dots live on this meta line, under the title, so a title keeps the row's width (checker #4:
             // "Read 10 / pages" wrapped at 1x with the dots and the bell at the row's end).
-            if (time != null || h.times > 1 || h.streak > 0 || h.week.isNotEmpty()) FlowRow(Modifier.padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+            // The dots sit at the meta line's END, so the row's centre (where a thumb ticks) is never the week's button.
+            if (time != null || h.times > 1 || h.streak > 0 || h.week.isNotEmpty()) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(Modifier.weight(1f).padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                 val small = MaterialTheme.typography.labelSmall
                 if (time != null) Row(
                     Modifier.background(Glass.Ink.copy(alpha = 0.05f), CircleShape).padding(horizontal = 7.dp, vertical = 2.dp),
@@ -363,7 +365,8 @@ private fun HabitRow(
                 }
                 if (h.times > 1) Text("${if (done) h.times else h.taps}/${h.times}", style = Glass.NumberText, color = Glass.PrimaryInk)
                 if (h.streak > 0) Streak(h.streak)
-                WeekDots(h.week) { onWeek(t.id) }
+            }
+            WeekDots(h.week) { onWeek(t.id) }
             }
         }
         if (time != null) GlassIconButton(if (reminder) TabIcons.BellRing else TabIcons.Bell, "Reminder: $title", plain = true, on = reminder) { onBell(t.id) }
