@@ -2,6 +2,8 @@ package org.pagel.ai.data
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
@@ -54,6 +56,9 @@ class RitualsRepositoryTest {
     private val calls = CopyOnWriteArrayList<String>()
     @Volatile private var online = true
     @Volatile private var sweepReply: MockResponse = rowsReply()
+    /** Like pagel.uz (ritual-api.ts): rows made from the dump's lines, kept by id, so a repeat id gets the old rows. */
+    @Volatile private var echoSweeps = false
+    private val sweepCache = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val ids = AtomicInteger(0)
     /** 2026-10-28 21:40 in Tashkent. */
     private var now = Instant.parse("2026-10-28T16:40:00Z").toEpochMilli()
@@ -71,6 +76,15 @@ class RitualsRepositoryTest {
                 val body = request.body.readUtf8()
                 calls += "${request.method} $path $body"
                 return when {
+                    request.method == "POST" && path == "/api/v1/sweep" && echoSweeps -> {
+                        val b = kotlinx.serialization.json.Json.parseToJsonElement(body).let { it as kotlinx.serialization.json.JsonObject }
+                        val id = b["id"].toString().trim('"')
+                        val dump = (b["dump"] as kotlinx.serialization.json.JsonPrimitive).content
+                        val rows = sweepCache.getOrPut(id) {
+                            dump.lines().filter(String::isNotBlank).joinToString(",", "[", "]") { """{"kind":"action","text":"${it.trim()}","project":"me"}""" }
+                        }
+                        MockResponse().setBody("""{"rows":$rows}""")
+                    }
                     request.method == "POST" && path == "/api/v1/sweep" -> sweepReply
                     request.method == "POST" && path == "/api/v1/tasks" -> MockResponse().setResponseCode(201).setBody("""{"id":"t_srv${ids.incrementAndGet()}"}""")
                     request.method == "PATCH" && path.startsWith("/api/v1/tasks/") -> MockResponse().setBody("""{"id":"x","status":"open","applied":["star","remove","restore","done","due"]}""")
@@ -106,10 +120,10 @@ class RitualsRepositoryTest {
     private suspend fun sweep(id: String) = db.rituals().sweepOnce(id)!!
 
     @Test fun aDumpWrittenOfflineIsKeptAndSplitWhenOnline() = runBlocking {
-        val id = repo.saveDraft(null, "call mom\nfix the login\nlearn guitar")
+        var id = repo.saveDraft(null, "call mom\nfix the login\nlearn guitar")
         assertEquals(SweepEntity.DRAFT, sweep(id).state)
         online = false
-        repo.split(id)
+        id = repo.split(id)!!
         assertEquals(SendResult.TRY_LATER, sender.sendAll(account))
         assertEquals(SweepEntity.WAITING, sweep(id).state)
         assertEquals("call mom\nfix the login\nlearn guitar", sweep(id).dump)
@@ -123,8 +137,8 @@ class RitualsRepositoryTest {
 
     @Test fun aBusyAiWaitsWithoutHoldingATickMadeAfterIt() = runBlocking {
         db.dao().upsertTasks(listOf(task("t_1")))
-        val id = repo.saveDraft(null, "call mom")
-        repo.split(id)
+        var id = repo.saveDraft(null, "call mom")
+        id = repo.split(id)!!
         today.tick("t_1", done = true)
         sweepReply = MockResponse().setResponseCode(503).setBody("""{"error":"The AI is reading another dump.","busy":true}""")
         assertEquals(SendResult.TRY_LATER, sender.sendAll(account))
@@ -135,8 +149,8 @@ class RitualsRepositoryTest {
 
     @Test fun aRefusedDumpSaysWhyAndIsNotSentAgainByItself() = runBlocking {
         sweepReply = MockResponse().setResponseCode(429).setBody("""{"error":"Today's 20 AI reads are used. It reads again tomorrow."}""")
-        val id = repo.saveDraft(null, "call mom")
-        repo.split(id)
+        var id = repo.saveDraft(null, "call mom")
+        id = repo.split(id)!!
         assertEquals(SendResult.ALL_SENT, sender.sendAll(account))
         assertEquals(SweepEntity.FAILED, sweep(id).state)
         assertEquals("Today's 20 AI reads are used. It reads again tomorrow.", sweep(id).message)
@@ -146,8 +160,8 @@ class RitualsRepositoryTest {
     }
 
     private suspend fun readySweep(): String {
-        val id = repo.saveDraft(null, "call mom\nfix the login\nlearn guitar")
-        repo.split(id)
+        var id = repo.saveDraft(null, "call mom\nfix the login\nlearn guitar")
+        id = repo.split(id)!!
         sender.sendAll(account)
         calls.clear()
         return id
@@ -232,11 +246,79 @@ class RitualsRepositoryTest {
         assertTrue(calls[ritual].matches(Regex("""POST /api/v1/rituals \{"action":"shutdown","id":"sd_[0-9a-f]{16}","day":"2026-10-28","kept":1,"pushed":1,"dropped":1,"picked":1}""")))
     }
 
-    @Test fun closeTheDayPicksAtMostThree() = runBlocking {
+    @Test fun closeTheDayStarsEveryPickWithNoCap() = runBlocking {
         val stars = dayOfStars()
         db.dao().upsertTasks(listOf(task("c2", "me"), task("c3", "ababil"), task("c4", "labs")))
         repo.closeDay(stars, emptyMap(), listOf("c1", "c2", "c3", "c4"))
-        assertEquals(listOf(true, true, true, false), listOf("c1", "c2", "c3", "c4").map { db.dao().taskOnce(it)!!.star })
+        assertEquals(listOf(true, true, true, true), listOf("c1", "c2", "c3", "c4").map { db.dao().taskOnce(it)!!.star })
+    }
+
+    /** Checker P5 #1: Edit text → a new dump → its own rows, never the old dump's (pagel.uz keeps rows by id for 24 h). */
+    @Test fun anEditedDumpGetsItsOwnRowsNotTheOldOnes() = runBlocking {
+        echoSweeps = true
+        val first = repo.saveDraft(null, "call mom")
+        val sent = repo.split(first)!!
+        sender.sendAll(account)
+        assertEquals(listOf("call mom"), sweep(sent).rowList().map { it.text })
+        repo.backToText(sent)
+        val edited = repo.saveDraft(sent, "call mom\npay rent")
+        val again = repo.split(edited)!!
+        assertTrue(again != sent)
+        assertNull(db.rituals().sweepOnce(sent))
+        sender.sendAll(account)
+        assertEquals(listOf("call mom", "pay rent"), sweep(again).rowList().map { it.text })
+        assertEquals(1, db.rituals().openSweep().first().let { if (it == null) 0 else 1 })
+    }
+
+    /** Checker P5 #2: two taps at once on "Add 3" make 3 tasks, not 6. */
+    @Test fun addTwiceAtOnceAddsEachRowOnce() = runBlocking {
+        val id = readySweep()
+        val both = listOf(async(Dispatchers.Default) { repo.add(id) }, async(Dispatchers.Default) { repo.add(id) }).awaitAll()
+        assertEquals(1, both.count { it != null })
+        assertEquals(3, db.dao().waitingOutbox().count { it.op == OutboxEntity.ADD })
+        sender.sendAll(account)
+        assertEquals(3, calls.count { it.startsWith("POST /api/v1/tasks") })
+        assertNull(repo.add(id))
+    }
+
+    /** Checker P5 #2: a double "Close" makes one set of changes and one shutdown event. */
+    @Test fun closeTheDayTwiceAtOnceClosesOnce() = runBlocking {
+        val stars = dayOfStars()
+        val moves = mapOf("s2" to Move.LATER, "s3" to Move.DROP)
+        val both = listOf(
+            async(Dispatchers.Default) { repo.closeDay(stars, moves, listOf("c1"), "sd_token") },
+            async(Dispatchers.Default) { repo.closeDay(stars, moves, listOf("c1"), "sd_token") },
+        ).awaitAll()
+        assertEquals(both[0], both[1])
+        val ops = db.dao().waitingOutbox()
+        assertEquals(1, ops.count { it.op == OutboxEntity.RITUAL })
+        assertEquals(3, ops.count { it.op == OutboxEntity.PATCH })
+        now += 6_000
+        sender.sendAll(account)
+        assertEquals(1, calls.count { it.startsWith("POST /api/v1/rituals") })
+    }
+
+    /** Checker P5 #2: a double "Finish review" adds each next step once. */
+    @Test fun finishReviewTwiceAtOnceAddsOnce() = runBlocking {
+        val both = listOf(
+            async(Dispatchers.Default) { repo.finishReview(mapOf("ababil" to "Write the test plan"), emptyList(), "rv_token") },
+            async(Dispatchers.Default) { repo.finishReview(mapOf("ababil" to "Write the test plan"), emptyList(), "rv_token") },
+        ).awaitAll()
+        assertEquals(both[0], both[1])
+        sender.sendAll(account)
+        assertEquals(1, calls.count { it.startsWith("POST /api/v1/tasks") })
+        assertEquals(1, calls.count { it.startsWith("POST /api/v1/rituals") })
+    }
+
+    /** Checker P5 #10: a pagel.uz without the rituals (404) makes them wait, never refuses them. */
+    @Test fun anOlderPagelUzWithoutTheCallsMakesThemWait() = runBlocking {
+        sweepReply = MockResponse().setResponseCode(404).setBody("""{"error":"Unknown path."}""")
+        val id = repo.saveDraft(null, "call mom")
+        val sent = repo.split(id)!!
+        assertEquals(SendResult.TRY_LATER, sender.sendAll(account))
+        assertEquals(SweepEntity.WAITING, sweep(sent).state)
+        assertNull(sweep(sent).message)
+        assertEquals(listOf(OutboxEntity.SWEEP), db.dao().waitingOutbox().map { it.op })
     }
 
     @Test fun undoOfCloseTheDayBeforeSendingPutsEverythingBack() = runBlocking {

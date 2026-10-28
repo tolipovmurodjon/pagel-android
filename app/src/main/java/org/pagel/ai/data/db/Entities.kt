@@ -200,6 +200,8 @@ data class SweepEntity(
         const val WAITING = "waiting"
         const val READING = "reading"
         const val READY = "ready"
+        /** "Add N" is running: claimed once (compare-and-set), so a second tap adds nothing. */
+        const val ADDING = "adding"
         const val FAILED = "failed"
         const val ADDED = "added"
     }

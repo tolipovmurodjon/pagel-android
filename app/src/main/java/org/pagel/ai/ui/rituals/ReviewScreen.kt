@@ -48,7 +48,7 @@ import org.pagel.ai.ui.glass.SkeletonRows
 import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.projects.shortName
 
-private val STEP_NAMES = listOf("Inbox", "Head", "Next steps", "Someday")
+private val STEP_NAMES = listOf("Inbox", "Head", "Steps", "Someday")
 
 @Composable
 fun ReviewRoute(contentPadding: PaddingValues, onInbox: () -> Unit, onSweep: () -> Unit, onToday: () -> Unit, vm: ReviewViewModel = hiltViewModel()) {
@@ -96,7 +96,7 @@ fun ReviewScreen(
                         targetState = ui.step,
                         transitionSpec = {
                             val forward = targetState > initialState
-                            (slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 500f)) { if (forward) it / 3 else -it / 3 } + fadeIn())
+                            (slideInHorizontally(spring(dampingRatio = 1f, stiffness = 500f)) { if (forward) it / 3 else -it / 3 } + fadeIn())
                                 .togetherWith(slideOutHorizontally(spring(dampingRatio = 1f, stiffness = 600f)) { if (forward) -it / 3 else it / 3 } + fadeOut())
                         },
                         label = "review-step",
@@ -106,7 +106,7 @@ fun ReviewScreen(
                     ButtonRow {
                         if (ui.step > 0) QuietButton("Back", TabIcons.ChevronLeft, Modifier.weight(1f)) { onGo(ui.step - 1) }
                         if (ui.step < ReviewUi.STEPS - 1) MintButton("Next", TabIcons.ChevronRight, Modifier.weight(1f)) { onGo(ui.step + 1) }
-                        else MintButton("Finish review", TabIcons.Check, Modifier.weight(1.4f), onClick = onFinish)
+                        else MintButton("Finish review", TabIcons.Check, Modifier.weight(1.4f), enabled = ui.steps.values.none { org.pagel.ai.data.rituals.Rituals.words(it) > org.pagel.ai.data.rituals.Rituals.MAX_WORDS }, onClick = onFinish)
                     }
                 }
                 if (ui.step == ReviewUi.STEPS - 1) item(key = "five", contentType = "text") {
@@ -126,14 +126,14 @@ private fun Step(step: Int, ui: ReviewUi, onStep: (String, String) -> Unit, onDr
                 Text(if (ui.inbox == 1) "1 save waiting." else "${ui.inbox} saves waiting.", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink)
                 Hint("Clear them, then come back.")
                 Spacer(Modifier.size(12.dp))
-                MintButton("Open the Inbox", TabIcons.Inbox, Modifier.fillMaxWidth(), onClick = onInbox)
+                QuietButton("Open the Inbox", TabIcons.Inbox, Modifier.fillMaxWidth(), onClick = onInbox)
             }
         }
         1 -> RitualPane("2. Empty your head") {
             Text("Anything new since last week?", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink)
             Hint("A mind sweep takes 5-10 minutes.")
             Spacer(Modifier.size(12.dp))
-            MintButton("Empty your head", TabIcons.Sparkles, Modifier.fillMaxWidth(), onClick = onSweep)
+            QuietButton("Empty your head", TabIcons.Sparkles, Modifier.fillMaxWidth(), onClick = onSweep)
         }
         2 -> RitualPane("3. Every project needs one next step") {
             if (ui.stuck.isEmpty()) Text("All projects have a next step ✓", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink)
@@ -144,7 +144,11 @@ private fun Step(step: Int, ui: ReviewUi, onStep: (String, String) -> Unit, onDr
                     Spacer(Modifier.width(8.dp))
                     Text(shortName(s.project, s.title), style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
                 }
-                StepField(ui.steps[s.project].orEmpty(), "Next step for ${shortName(s.project, s.title)}") { onStep(s.project, it) }
+                val step = ui.steps[s.project].orEmpty()
+                StepField(step, "Next step for ${shortName(s.project, s.title)}") { onStep(s.project, it) }
+                // pagel.uz takes 20 words; the sweep checks it, so does this (checker P5 #10).
+                val n = org.pagel.ai.data.rituals.Rituals.words(step)
+                if (n > org.pagel.ai.data.rituals.Rituals.MAX_WORDS) Hint("$n words: pagel.uz takes ${org.pagel.ai.data.rituals.Rituals.MAX_WORDS}. Cut it down.", Glass.Risk, Modifier.padding(top = 4.dp))
             }
         }
         else -> RitualPane("4. Someday: still want these?") {

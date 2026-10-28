@@ -19,8 +19,8 @@ abstract class RitualsDao {
     abstract suspend fun waitingAdd(taskId: String): Long?
 
     /** A task the phone added, under the id pagel.uz gave it (adoptServerId keeps its project and words). */
-    @Query("SELECT id FROM tasks WHERE project = :project AND text = :text AND status = 'open' AND id NOT LIKE '${LOCAL_ID}%' ORDER BY lastModified DESC LIMIT 1")
-    abstract suspend fun adoptedId(project: String, text: String): String?
+    @Query("SELECT id FROM tasks WHERE project = :project AND text = :text AND status = 'open' AND id NOT LIKE '${LOCAL_ID}%' AND lastModified >= :since ORDER BY lastModified DESC LIMIT 1")
+    abstract suspend fun adoptedId(project: String, text: String, since: Long): String?
 
     /** The dump on screen: the newest one not yet added (a draft, waiting, reading, ready or failed). */
     @Query("SELECT * FROM sweeps WHERE state != '${SweepEntity.ADDED}' ORDER BY createdAt DESC LIMIT 1")
@@ -48,6 +48,21 @@ abstract class RitualsDao {
 
     @Query("DELETE FROM sweeps WHERE id = :id")
     abstract suspend fun deleteSweep(id: String)
+
+    /** "Add N" claims the dump once: 1 = this caller adds, 0 = another already is (or it is not ready). */
+    @Query("UPDATE sweeps SET state = '${SweepEntity.ADDING}', updatedAt = :at WHERE id = :id AND (state = '${SweepEntity.READY}' OR (state = '${SweepEntity.ADDING}' AND updatedAt < :stale))")
+    abstract suspend fun claimAdd(id: String, at: Long, stale: Long): Int
+
+    @Query("UPDATE sweeps SET addedIds = :ids WHERE id = :id")
+    abstract suspend fun setAddedIds(id: String, ids: String)
+
+    /** A split under a fresh id: the old row and any read of it still waiting go, the new one and its read come. */
+    @Transaction
+    open suspend fun replaceSweep(old: String, row: SweepEntity, op: OutboxEntity) {
+        deleteSweep(old)
+        upsertSweep(row)
+        addOp(op)
+    }
 
     /** A dump and its outbox row as one write, so the sender never finds one without the other. */
     @Transaction

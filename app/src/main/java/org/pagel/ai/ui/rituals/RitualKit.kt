@@ -159,7 +159,7 @@ internal fun StepDots(names: List<String>, current: Int, onGo: (Int) -> Unit) {
                 androidx.compose.foundation.text.BasicText(
                     name, style = MaterialTheme.typography.labelSmall.copy(color = if (i == current) Glass.Ink else Glass.Muted, textAlign = TextAlign.Center),
                     maxLines = 1, softWrap = false, modifier = Modifier.padding(top = 4.dp),
-                    autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = MaterialTheme.typography.labelSmall.fontSize, stepSize = 0.5.sp),
+                    autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = MaterialTheme.typography.labelSmall.fontSize, stepSize = 0.5.sp),
                 )
             }
         }

@@ -139,9 +139,10 @@ fun TodayScreen(
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot() }) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            item(key = "head", contentType = "head") { Header(ui, today) }
-            if (pills != null) item(key = "rituals", contentType = "pills") {
-                org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp))
+            item(key = "head", contentType = "head") { Header(ui, today, onSweep = if (pills != null) links.sweep else null) }
+            // One row, only when it has something to say: Close the day in the evening, the review while due (checker P5 #4).
+            if (pills != null && pills.any) item(key = "rituals", contentType = "pills") {
+                org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.animateItem().padding(start = 16.dp, end = 16.dp, bottom = 4.dp))
             }
             when {
                 ui.loading -> item(key = "loading", contentType = "note") {
@@ -176,8 +177,9 @@ fun TodayScreen(
 }
 
 @Composable
-private fun Header(ui: TodayUiState, today: LocalDate) {
-    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
+private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.weight(1f).padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 12.dp)) {
         Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Today", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         val count = when {
@@ -185,6 +187,9 @@ private fun Header(ui: TodayUiState, today: LocalDate) {
             else -> "${ui.open} today"
         }
         Text(if (ui.status.isEmpty()) count else "$count · ${ui.status}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+    }
+    // Empty your head: a 48 dp sparkle beside the title, any time of day (Phase 5).
+    if (onSweep != null) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.Sparkles, "Empty your head", Modifier.padding(end = 12.dp), tint = Glass.Primary, onClick = onSweep)
     }
 }
 

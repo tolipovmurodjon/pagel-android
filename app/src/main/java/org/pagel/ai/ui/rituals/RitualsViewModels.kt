@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -54,18 +55,30 @@ private suspend fun refreshFrom(accounts: AccountStore, repo: RitualsRepository)
 
 // ── Today's entry points ─────────────────────────────────────────────────────────────────────────────────────────
 
-/** Today's ritual pills: closed tonight (✓), the weekly review due (the web's nudge, only once pagel.uz has been asked). */
-data class RitualPills(val shutTonight: Boolean = false, val reviewDue: Boolean = false)
+/**
+ * Today's ritual pills: Close the day only in the evening (18:00-05:00 Tashkent, as the web shows it in the all-clear
+ * card at night; at 09:20 it had no purpose, checker P5 #4), closed tonight (✓), the weekly review only while due.
+ */
+data class RitualPills(val evening: Boolean = false, val shutTonight: Boolean = false, val reviewDue: Boolean = false) {
+    val any: Boolean get() = evening || reviewDue
+}
 
 @HiltViewModel
 class RitualPillsViewModel @Inject constructor(private val repo: RitualsRepository, accounts: AccountStore) : ViewModel() {
-    val pills: StateFlow<RitualPills> = repo.state.map { s ->
+    /** A minute's tick: 18:00 brings the evening pill and 05:00 takes "Day closed" away without anything else changing. */
+    private val minutes = flow { while (true) { emit(Unit); delay(60_000) } }
+
+    val pills: StateFlow<RitualPills> = combine(repo.state, minutes) { s, _ ->
         val day = repo.ritualDay()
-        RitualPills(shutTonight = s.shutDay == day, reviewDue = (s.fetchedAt > 0 || s.lastReview != null) && Rituals.reviewDue(s.lastReview, day))
+        RitualPills(
+            evening = Rituals.evening(repo.now()), shutTonight = s.shutDay == day,
+            reviewDue = (s.fetchedAt > 0 || s.lastReview != null) && Rituals.reviewDue(s.lastReview, day),
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RitualPills())
 
     init {
-        viewModelScope.launch { refreshFrom(accounts, repo) }
+        // After Today's first frames, never beside the cold sync's first pull (checker P5 B: the slow-frame gate).
+        viewModelScope.launch { delay(1_500); refreshFrom(accounts, repo) }
     }
 }
 
@@ -112,11 +125,23 @@ class SweepViewModel @Inject constructor(private val repo: RitualsRepository, pr
 
     fun type(text: String) { drafts.trySend(text) }
 
+    /** One split per tap: a second tap while it is being queued would make a second dump (checker P5 #2). */
+    private var splitting = false
+
     fun split(text: String) {
-        viewModelScope.launch { repo.split(save(text)) }
+        if (splitting) return
+        splitting = true
+        viewModelScope.launch {
+            try { repo.split(save(text)); draftId = null } finally { splitting = false }
+        }
     }
 
-    fun retry() { ui.value.id?.let { id -> viewModelScope.launch { repo.split(id) } } }
+    fun retry() {
+        val id = ui.value.id ?: return
+        if (splitting) return
+        splitting = true
+        viewModelScope.launch { try { repo.split(id) } finally { splitting = false } }
+    }
 
     fun back() { ui.value.id?.let { id -> viewModelScope.launch { repo.backToText(id) } } }
 
@@ -129,16 +154,32 @@ class SweepViewModel @Inject constructor(private val repo: RitualsRepository, pr
     fun setKind(i: Int, kind: Kind) = edit { if (i in it.indices) it[i] = it[i].copy(kind = kind.wire) }
     fun setText(i: Int, text: String) = edit { if (i in it.indices) it[i] = it[i].copy(text = text) }
     fun setProject(i: Int, project: String) = edit { if (i in it.indices) it[i] = it[i].copy(project = project) }
-    fun remove(i: Int) = edit { if (i in it.indices) it.removeAt(i) }
+    /** A removed row comes back with Undo (checker P5 C: it went with no way back). */
+    fun remove(i: Int) {
+        val id = ui.value.id ?: return
+        val before = ui.value.rows
+        if (i !in before.indices) return
+        edit { it.removeAt(i) }
+        toasts.show("Removed", action = "Undo") { viewModelScope.launch { repo.setRows(id, before) } }
+    }
+
+    /** One "Add N" at a time here; the repository's claim stops any other (checker P5 #2). */
+    private var adding = false
 
     fun add() {
         val id = ui.value.id ?: return
+        if (adding) return
+        adding = true
         viewModelScope.launch {
-            val done = repo.add(id) ?: return@launch
-            added.value = done
-            draftId = null
-            val n = done.actions + done.someday
-            toasts.show(if (n == 1) "1 added" else "$n added", action = "Undo") { undoAdd(done) }
+            try {
+                val done = repo.add(id) ?: return@launch
+                added.value = done
+                draftId = null
+                val n = done.actions + done.someday
+                toasts.show(if (n == 1) "1 added" else "$n added", action = "Undo") { undoAdd(done) }
+            } finally {
+                adding = false
+            }
         }
     }
 
@@ -187,6 +228,9 @@ class ShutdownViewModel @Inject constructor(
     private val snapshot = MutableStateFlow<Pair<List<TaskEntity>, List<TaskEntity>>?>(null)
     private val local = MutableStateFlow(ShutdownUi())
     private var closed: Closed? = null
+    /** This opened ritual's one token: the repository closes it once, however many taps reach it (checker P5 #2). */
+    private val token = "sd_" + java.util.UUID.randomUUID().toString()
+    private var closing = false
 
     val ui: StateFlow<ShutdownUi> = combine(snapshot, session.projects(), local, repo.state) { snap, projects, l, s ->
         val byName = projects.associateBy(ProjectEntity::name)
@@ -218,11 +262,17 @@ class ShutdownViewModel @Inject constructor(
     fun close() {
         val snap = snapshot.value ?: return
         val l = local.value
+        if (closing || l.done) return
+        closing = true
         viewModelScope.launch {
-            val c = repo.closeDay(snap.first, l.moves, l.picks)
-            closed = c
-            local.update { it.copy(done = true) }
-            toasts.show("Day closed", action = "Undo") { undo() }
+            try {
+                val c = repo.closeDay(snap.first, l.moves, l.picks, token)
+                closed = c
+                local.update { it.copy(done = true) }
+                toasts.show("Day closed", action = "Undo") { undo() }
+            } finally {
+                closing = false
+            }
         }
     }
 
@@ -236,7 +286,12 @@ class ShutdownViewModel @Inject constructor(
     }
 
     fun setEvening(on: Boolean) { viewModelScope.launch { repo.setEvening(on) } }
-    fun setEveningAt(at: String) { viewModelScope.launch { repo.setEvening(true, at) } }
+    /** The wheel ticks many times a turn: the time is saved (and the alarm planned) once it settles (checker P5 #8). */
+    private var settle: kotlinx.coroutines.Job? = null
+    fun setEveningAt(at: String) {
+        settle?.cancel()
+        settle = viewModelScope.launch { delay(600); repo.setEvening(true, at) }
+    }
 }
 
 // ── The weekly review ────────────────────────────────────────────────────────────────────────────────────────────
@@ -268,6 +323,8 @@ class ReviewViewModel @Inject constructor(
 ) : ViewModel() {
     private val local = MutableStateFlow(ReviewUi())
     private var closed: Closed? = null
+    private val token = "rv_" + java.util.UUID.randomUUID().toString()
+    private var finishing = false
     /** Someday is taken once when the review opens, so a dropped row stays to be undone. */
     private val somedaySnap = MutableStateFlow<List<TaskEntity>?>(null)
 
@@ -296,11 +353,17 @@ class ReviewViewModel @Inject constructor(
 
     fun finish() {
         val l = local.value
+        if (finishing || l.done || l.steps.values.any { Rituals.words(it) > Rituals.MAX_WORDS }) return
+        finishing = true
         viewModelScope.launch {
-            val c = repo.finishReview(l.steps, l.drops.toList())
-            closed = c
-            local.update { it.copy(done = true) }
-            toasts.show("Review done", action = "Undo") { undo() }
+            try {
+                val c = repo.finishReview(l.steps, l.drops.toList(), token)
+                closed = c
+                local.update { it.copy(done = true) }
+                toasts.show("Review done", action = "Undo") { undo() }
+            } finally {
+                finishing = false
+            }
         }
     }
 

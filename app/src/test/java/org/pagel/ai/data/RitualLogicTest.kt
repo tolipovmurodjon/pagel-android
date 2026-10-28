@@ -55,14 +55,23 @@ class RitualLogicTest {
         assertEquals(listOf("h2", "a2", "h1", "m1", "a1"), Rituals.candidates(open).map { it.id })
     }
 
-    @Test fun atMostThreePicksAndUnpickAlwaysWorks() {
+    /** No cap, as the web (Boss 2026-10-27: "Pick not working… keep my current ones"; checker P5 #3). */
+    @Test fun picksAreNotCappedAndUnpickAlwaysWorks() {
         var picks = emptyList<String>()
         for (id in listOf("a", "b", "c", "d")) picks = Rituals.togglePick(picks, id)
-        assertEquals(listOf("a", "b", "c"), picks)
+        assertEquals(listOf("a", "b", "c", "d"), picks)
         picks = Rituals.togglePick(picks, "b")
-        assertEquals(listOf("a", "c"), picks)
-        picks = Rituals.togglePick(picks, "d")
         assertEquals(listOf("a", "c", "d"), picks)
+    }
+
+    @Test fun closeTheDayIsAnEveningPillFromSixUntilFiveInTashkent() {
+        assertFalse(Rituals.evening(ms("2026-10-28T09:20:00+05:00")))
+        assertFalse(Rituals.evening(ms("2026-10-28T17:59:00+05:00")))
+        assertTrue(Rituals.evening(ms("2026-10-28T18:00:00+05:00")))
+        assertTrue(Rituals.evening(ms("2026-10-29T04:59:00+05:00")))
+        assertFalse(Rituals.evening(ms("2026-10-29T05:00:00+05:00")))
+        // 01:30 closes the 28th: the ritual's head says Wednesday, not Thursday (checker P5 #10).
+        assertEquals(java.time.LocalDate.parse("2026-10-28"), Rituals.ritualDate(ms("2026-10-29T01:30:00+05:00")))
     }
 
     @Test fun tomorrowHoldsTheKeptStarsPlusThePicks() {

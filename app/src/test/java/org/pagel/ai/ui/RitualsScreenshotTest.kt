@@ -153,13 +153,31 @@ class RitualsScreenshotTest {
         compose.onNodeWithText("Anything else for tomorrow?").assertIsDisplayed()
     }
 
-    @Test fun aFourthPickCannotBeMade() {
+    /** No cap (checker P5 #3): a 4th pick answers like the others. */
+    @Test fun aFourthPickCanBeMade() {
         var picked: String? = null
         show { ShutdownScreen(picks(listOf("c1", "c2", "c3")), pad, onPick = { picked = it }, today = day) }
         compose.onNodeWithContentDescription("Pick: Measure the hover time").performClick()
-        assertNull(picked)
-        compose.onNodeWithContentDescription("Pick: Send the grant form").performClick()
-        assertEquals("c1", picked)
+        assertEquals("c4", picked)
+    }
+
+    @Test fun theEveningRowSaysWhenNotificationsAreOff() {
+        show { ShutdownScreen(picks(listOf("c1")).copy(done = true), pad, notify = false, today = day) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/shutdown-done-notifications-off.png")
+        compose.onNodeWithContentDescription("Notifications off · Turn on").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Go to Today").assertIsDisplayed()
+    }
+
+    @Test @Config(qualifiers = "w780dp-h360dp-xxhdpi") fun closeTheDayInLandscape() {
+        show { ShutdownScreen(ShutdownUi(loading = false, stars = stars, candidates = candidates), pad, today = day) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/shutdown-star-landscape.png")
+        compose.onNodeWithContentDescription("Keep: Ship the native app").assertIsDisplayed()
+    }
+
+    @Test @Config(qualifiers = "w780dp-h360dp-xxhdpi") fun sweepRowsInLandscape() {
+        show { SweepScreen(ready(), pad) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/sweep-rows-landscape.png")
+        compose.onNodeWithText("Call mom about Sunday lunch").assertIsDisplayed()
     }
 
     @Test fun closedTonight() {
@@ -204,7 +222,7 @@ class RitualsScreenshotTest {
     )
 
     @Test fun todaysRitualPillsAt360() {
-        show { TodayScreen(TodayUiState(loading = false, rows = todayRows, open = 3, status = "Live"), pad, today = day, pills = RitualPills(shutTonight = false, reviewDue = true)) }
+        show { TodayScreen(TodayUiState(loading = false, rows = todayRows, open = 3, status = "Live"), pad, today = day, pills = RitualPills(evening = true, shutTonight = false, reviewDue = true)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-pills-360.png")
         compose.onNodeWithContentDescription("Empty your head").assertIsDisplayed()
         compose.onNodeWithContentDescription("Close the day").assertIsDisplayed()
@@ -212,9 +230,17 @@ class RitualsScreenshotTest {
     }
 
     @Test fun todaysRitualPillsAtLargeFontAfterClosing() {
-        show(1.5f) { TodayScreen(TodayUiState(loading = false, rows = todayRows, open = 3, status = "Live"), pad, today = day, pills = RitualPills(shutTonight = true, reviewDue = false)) }
+        show(1.5f) { TodayScreen(TodayUiState(loading = false, rows = todayRows, open = 3, status = "Live"), pad, today = day, pills = RitualPills(evening = true, shutTonight = true, reviewDue = false)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-pills-font-1.5.png")
         compose.onNodeWithContentDescription("Close the day: closed tonight").assertIsDisplayed()
         compose.onNodeWithContentDescription("Weekly review is due").assertDoesNotExist()
+    }
+
+    /** In the day with no review due, Today has only the sparkle: no row of pills over the stars (checker P5 #4). */
+    @Test fun todayInTheDayHasNoPillRow() {
+        show { TodayScreen(TodayUiState(loading = false, rows = todayRows, open = 3, status = "Live"), pad, today = day, pills = RitualPills(evening = false, reviewDue = false)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-pills-day.png")
+        compose.onNodeWithContentDescription("Empty your head").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Close the day").assertDoesNotExist()
     }
 }

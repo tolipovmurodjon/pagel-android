@@ -41,7 +41,30 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
-## START HERE v13 · PHASE 5 OF 10 = RITUALS (2026-10-28, builder agent, branch `feat/phase5-rituals`)
+## START HERE v14 · PHASE 5 OF 10 = RITUALS (2026-10-28, builder agent, branch `feat/phase5-rituals`)
+**Checker round (docs/qa/phase5-checker.md, 7.5/10), its top 10, data safety first:**
+- **#1 Edit text gave the old rows:** every "Turn into steps" gives the dump a fresh id (`RitualsRepository.split`,
+  `RitualsDao.replaceSweep`: the old row and its waiting read go), so pagel.uz's 24 h cache by id can never answer an
+  edited dump with old rows. No server change. Test `anEditedDumpGetsItsOwnRowsNotTheOldOnes` (a mock that caches by id).
+- **#2 double taps:** each VM has an in-flight guard; "Add N" claims the dump once (`claimAdd`: compare-and-set
+  ready → adding, ids written row by row so a claim taken again after a killed app skips what exists); Close the day and
+  Finish review carry one token per opened screen and the repository closes a token once (Undo frees it). Tests: add,
+  close, finish twice at once → 3 POSTs / 1 event / 1 task.
+- **#3 the pick cap is gone** (Boss's web rule: "No cap here… keep my current ones"); "Today shows them 3 at a time".
+- **#4 Today:** Empty your head is a 48 dp sparkle beside the title; one pill row that never wraps, only when it has
+  something to say: Close the day from 18:00 to 05:00 Tashkent (a minute tick moves it), Review while due. The
+  rituals' GET starts 1.5 s after Today opens.
+- **#5** the evening notification: its own group on a HIGH channel ("evening"; channels cannot be raised once made),
+  BigText; the walk taps it in the shade again. **#6** shorter words: Keep · Later · Drop (one size), "Close", "Again",
+  "Today's 3", steps "Inbox · Head · Steps · Someday" never below 11 sp. **#7** a picked star is #C2410C (~5:1).
+  **#8** the evening row shows "Notifications off · Turn on"; the wheel saves once it settles (0.6 s). The default
+  stays 21:30 (the phase brief); **Boss's question: 20:45 (his "day close") or 21:30?** **#9** "Open the Inbox" /
+  "Empty your head" in the review are quiet buttons; a closed day has "Go to Today" and says its line once. **#10** a
+  404 makes a dump or a ritual wait (an older pagel.uz), the review's next step has the 20-word check, Close the day's
+  head is the ritual date (01:30 = yesterday), "Day closed" leaves at 05:00, Undo finds a sent next step only among
+  tasks made since the review. Also: More's sweep tile violet, review rose; springs at damping 1.0; a removed row has
+  Undo; landscape shots for Close the day and the sweep.
+- **Not done:** `POST /api/v1/tasks` still has no idempotency id (older code; a lost reply + retry = a duplicate task).
 The web's `/sweep`, `/shutdown`, `/review` on the phone (`ui/rituals/`, `data/rituals/`), offline-first. Built in its own
 worktree (`D:\PAGEL\android-p5`) while another builder fixes Inbox/Upcoming on `feat/native-app`; the lead merges both.
 - **Where they live: Today's header + More.** Today gets three glass pills under its count line, as the web's loop

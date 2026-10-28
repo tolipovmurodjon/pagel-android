@@ -223,7 +223,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         ))
                     }
                     entry<SweepRoute> { org.pagel.ai.ui.rituals.SweepRoute(padding, onToday = ::goToday) }
-                    entry<ShutdownRoute> { org.pagel.ai.ui.rituals.ShutdownRoute(padding) }
+                    entry<ShutdownRoute> { org.pagel.ai.ui.rituals.ShutdownRoute(padding, onToday = ::goToday) }
                     entry<ReviewRoute> {
                         org.pagel.ai.ui.rituals.ReviewRoute(padding, onInbox = { selected = 1 }, onSweep = { stack.add(SweepRoute) }, onToday = ::goToday)
                     }
@@ -441,9 +441,9 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 MoreRow(TabIcons.Calendar, "Upcoming", Color(0xFFD9620B), onOpenUpcoming)
                 MoreRow(TabIcons.Done, "Completed", Color(0xFF0E7490), onOpenCompleted)
                 // The rituals sit beside the lists, as the web's sidebar (nav.tsx: Empty head, Close day, Review).
-                MoreRow(TabIcons.Sparkles, "Empty your head", Color(0xFF1C7E69)) { onOpenRitual(SweepRoute) }
+                MoreRow(TabIcons.Sparkles, "Empty your head", Color(0xFF7C4DDB)) { onOpenRitual(SweepRoute) }
                 MoreRow(TabIcons.Moon, "Close the day", Color(0xFF5B4BC4)) { onOpenRitual(ShutdownRoute) }
-                MoreRow(TabIcons.CalendarCheck, "Weekly review", Color(0xFFD9620B)) { onOpenRitual(ReviewRoute) }
+                MoreRow(TabIcons.CalendarCheck, "Weekly review", Color(0xFFBE123C)) { onOpenRitual(ReviewRoute) }
                 MoreRow(TabIcons.Folder, "Projects", Glass.Primary, onOpenProjects)
                 MoreRow(TabIcons.Globe, "pagel.uz", Color(0xFF246FE0), onOpenWeb)
                 MoreRow(TabIcons.Phone, "Phone", Color(0xFF692FC2), onOpenPhone)

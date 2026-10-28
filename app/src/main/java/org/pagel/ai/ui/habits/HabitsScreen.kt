@@ -448,7 +448,7 @@ private fun Hint(text: String) {
 
 /** A missing grant: its icon and name, and the one word that opens the right Settings page, on a 48 dp row. */
 @Composable
-private fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String, tone: Color, onClick: () -> Unit) {
+internal fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String, tone: Color, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp).heightIn(min = 48.dp).pressScale(press)

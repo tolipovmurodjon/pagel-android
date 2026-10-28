@@ -79,12 +79,18 @@ private val FLAGS = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE
 private val HEAD_DATE = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
 
 @Composable
-fun ShutdownRoute(contentPadding: PaddingValues, vm: ShutdownViewModel = hiltViewModel()) {
+fun ShutdownRoute(contentPadding: PaddingValues, onToday: () -> Unit = {}, vm: ShutdownViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
     var timeSheet by remember { mutableStateOf(false) }
+    // Notifications off = the reminder never rings: say so as a row Boss can tap (as Habits does, checker P5 #8).
+    var notify by remember { mutableStateOf(true) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        notify = org.pagel.ai.ui.habits.notificationsOn(ctx)
+        onPauseOrDispose {}
+    }
     // Notifications are asked for at first use (the reminder switched on), never at launch, never in a loop.
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { notify = org.pagel.ai.ui.habits.notificationsOn(ctx) }
     fun evening(on: Boolean) {
         vm.setEvening(on)
         if (on && android.os.Build.VERSION.SDK_INT >= 33 &&
@@ -93,7 +99,10 @@ fun ShutdownRoute(contentPadding: PaddingValues, vm: ShutdownViewModel = hiltVie
     }
     ShutdownScreen(
         ui, contentPadding, onChoose = vm::choose, onBack = vm::back, onPick = vm::togglePick, onClose = vm::close,
-        onEvening = ::evening, onTime = { timeSheet = true },
+        onEvening = ::evening, onTime = { timeSheet = true }, onToday = onToday, notify = notify,
+        onFixNotify = {
+            runCatching { ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)) }
+        },
     )
     if (timeSheet) {
         GlassSheet({ timeSheet = false }) {
@@ -106,7 +115,7 @@ fun ShutdownRoute(contentPadding: PaddingValues, vm: ShutdownViewModel = hiltVie
 }
 
 /**
- * Close the day, native (Phase 5, the web's /shutdown): today's open stars one at a time (Tomorrow · Later · Drop),
+ * Close the day, native (Phase 5, the web's /shutdown): today's open stars one at a time (Keep · Later · Drop),
  * then up to 3 more picked for tomorrow, then the day is closed: the changes go to pagel.uz with the shutdown event.
  * The evening reminder (21:30 unless Boss sets a time) brings him here.
  */
@@ -120,19 +129,31 @@ fun ShutdownScreen(
     onClose: () -> Unit = {},
     onEvening: (Boolean) -> Unit = {},
     onTime: () -> Unit = {},
-    today: LocalDate = LocalDate.now(Rituals.TASHKENT),
+    onToday: () -> Unit = {},
+    notify: Boolean = true,
+    onFixNotify: () -> Unit = {},
+    // The evening it closes: at 01:30 that is still yesterday (checker P5 #10).
+    today: LocalDate = Rituals.ritualDate(System.currentTimeMillis()),
 ) {
     val list = rememberLazyListState()
     LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item(key = "head", contentType = "head") {
-            RitualHead(today.format(HEAD_DATE), "Close the day", if (ui.shutTonight && !ui.done) "Closed tonight ✓ · you can close it again" else "Five minutes. Then nothing needs you tonight.")
+            RitualHead(today.format(HEAD_DATE), "Close the day", when {
+                ui.done -> null
+                ui.shutTonight -> "Closed tonight ✓ · you can close it again"
+                else -> "Five minutes. Then nothing needs you tonight."
+            })
         }
         when {
             ui.loading -> item(key = "loading", contentType = "pane") { Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3) } }
             ui.done -> item(key = "done", contentType = "pane") {
-                RitualPane("Day closed ✓") {
-                    Text("Tomorrow is written down: ${ui.tomorrow} ${if (ui.tomorrow == 1) "star" else "stars"}. Nothing else needs you tonight.",
-                        style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+                Column {
+                    RitualPane("Day closed ✓") {
+                        Text("Tomorrow is written down: ${ui.tomorrow} ${if (ui.tomorrow == 1) "star" else "stars"}. Nothing else needs you tonight.",
+                            style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+                    }
+                    Spacer(Modifier.size(12.dp))
+                    ButtonRow { MintButton("Go to Today", TabIcons.Today, Modifier.weight(1f), onClick = onToday) }
                 }
             }
             ui.deciding -> item(key = "cards", contentType = "cards") {
@@ -140,7 +161,7 @@ fun ShutdownScreen(
                     targetState = ui.step,
                     transitionSpec = {
                         val forward = targetState > initialState
-                        (slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 500f)) { if (forward) it / 3 else -it / 3 } + fadeIn())
+                        (slideInHorizontally(spring(dampingRatio = 1f, stiffness = 500f)) { if (forward) it / 3 else -it / 3 } + fadeIn())
                             .togetherWith(slideOutHorizontally(spring(dampingRatio = 1f, stiffness = 600f)) { if (forward) -it / 3 else it / 3 } + fadeOut())
                     },
                     label = "star",
@@ -152,12 +173,12 @@ fun ShutdownScreen(
             else -> {
                 item(key = "picks", contentType = "pane") {
                     RitualPane("Anything else for tomorrow?") {
-                        Hint(if (ui.stars.isEmpty()) "No open stars: everything starred is done ✓. Pick up to ${Rituals.PICK_CAP}." else "Pick up to ${Rituals.PICK_CAP}. Today shows them 3 at a time.")
+                        Hint(if (ui.stars.isEmpty()) "No open stars: everything starred is done ✓. Today shows them 3 at a time." else "Today shows them 3 at a time.")
                         Spacer(Modifier.size(6.dp))
                         if (ui.candidates.isEmpty()) Hint("Nothing waiting in your projects' NOW phases.")
                         ui.candidates.forEachIndexed { i, t ->
                             if (i > 0) HorizontalDivider(thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
-                            PickRow(t, on = t.id in ui.picks, full = ui.picks.size >= Rituals.PICK_CAP) { onPick(t.id) }
+                            PickRow(t, on = t.id in ui.picks) { onPick(t.id) }
                         }
                     }
                 }
@@ -166,13 +187,13 @@ fun ShutdownScreen(
                         Hint("${ui.tomorrow} ${if (ui.tomorrow == 1) "star" else "stars"} for tomorrow", modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
                         ButtonRow {
                             if (ui.stars.isNotEmpty()) QuietButton("Back", TabIcons.ChevronLeft, Modifier.weight(1f), onClick = onBack)
-                            MintButton("Close the day", TabIcons.Moon, Modifier.weight(if (ui.stars.isNotEmpty()) 1.4f else 1f), description = "Finish: close the day", onClick = onClose)
+                            MintButton("Close", TabIcons.Moon, Modifier.weight(1f), description = "Finish: close the day", onClick = onClose)
                         }
                     }
                 }
             }
         }
-        item(key = "evening", contentType = "pane") { EveningRow(ui.eveningOn, ui.eveningAt, onEvening, onTime) }
+        item(key = "evening", contentType = "pane") { EveningRow(ui.eveningOn, ui.eveningAt, notify, onEvening, onTime, onFixNotify) }
     }
 }
 
@@ -205,7 +226,7 @@ private fun StarCard(t: RitualTask, step: Int, total: Int, onBack: () -> Unit, o
     }
 }
 
-/** A choice: an icon over its word, 64 dp tall. Tomorrow is the bright one (keeping is the usual answer). */
+/** A choice: an icon over its word, 64 dp tall. Keep is the bright one (keeping is the usual answer). */
 @Composable
 private fun MoveButton(move: Move, icon: androidx.compose.ui.graphics.vector.ImageVector, modifier: Modifier, title: String, onChoose: (Move) -> Unit) {
     val press = remember { MutableInteractionSource() }
@@ -224,38 +245,33 @@ private fun MoveButton(move: Move, icon: androidx.compose.ui.graphics.vector.Ima
         verticalArrangement = Arrangement.Center,
     ) {
         Icon(icon, contentDescription = null, tint = if (move == Move.DROP) Glass.Risk else Glass.Ink, modifier = Modifier.size(20.dp))
-        // At 1.5x "Tomorrow" was cut ("Tomorr"): the word shrinks to fit its third of the card, never below 10 sp.
-        androidx.compose.foundation.text.BasicText(
-            move.label, style = MaterialTheme.typography.labelLarge.copy(color = if (move == Move.DROP) Glass.Risk else Glass.Ink),
-            maxLines = 1, softWrap = false, modifier = Modifier.padding(top = 4.dp),
-            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = MaterialTheme.typography.labelLarge.fontSize, stepSize = 0.5.sp),
-        )
+        Text(move.label, style = MaterialTheme.typography.labelLarge, color = if (move == Move.DROP) Glass.Risk else Glass.Ink, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
 /** A candidate for tomorrow: its tile and words, and a star that fills when picked (faded once 3 are picked). */
 @Composable
-private fun PickRow(t: RitualTask, on: Boolean, full: Boolean, onToggle: () -> Unit) {
+private fun PickRow(t: RitualTask, on: Boolean, onToggle: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     val haptics = LocalHapticFeedback.current
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp).pressScale(press)
-            .clickable(press, indication = null, role = Role.Checkbox, enabled = on || !full) { haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn); onToggle() }
+            .clickable(press, indication = null, role = Role.Checkbox) { haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn); onToggle() }
             .semantics(mergeDescendants = true) { toggleableState = ToggleableState(on); contentDescription = "Pick: ${t.title}" },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ProjectTile(t.project, t.projectColor, t.projectTitle, size = 22.dp)
         Spacer(Modifier.width(10.dp))
-        Text(t.title, style = MaterialTheme.typography.bodyLarge, color = if (!on && full) Glass.Muted else Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
+        Text(t.title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(vertical = 8.dp))
         Box(Modifier.size(TouchMin), contentAlignment = Alignment.Center) {
-            Icon(if (on) TabIcons.StarFilled else TabIcons.Star, contentDescription = null, tint = if (on) Color(0xFFEB8909) else Glass.Ink.copy(alpha = if (full) 0.25f else 0.55f), modifier = Modifier.size(22.dp))
+            Icon(if (on) TabIcons.StarFilled else TabIcons.Star, contentDescription = null, tint = if (on) Color(0xFFC2410C) else Glass.Ink.copy(alpha = 0.55f), modifier = Modifier.size(22.dp))
         }
     }
 }
 
 /** The evening reminder: one switch and its time (a tap opens Apple's wheel). Only on this phone. */
 @Composable
-private fun EveningRow(on: Boolean, at: String, onToggle: (Boolean) -> Unit, onTime: () -> Unit) {
+private fun EveningRow(on: Boolean, at: String, notify: Boolean, onToggle: (Boolean) -> Unit, onTime: () -> Unit, onFixNotify: () -> Unit) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         val press = remember { MutableInteractionSource() }
         val haptics = LocalHapticFeedback.current
@@ -286,6 +302,7 @@ private fun EveningRow(on: Boolean, at: String, onToggle: (Boolean) -> Unit, onT
                     modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = 12.dp, vertical = 6.dp))
             }
         }
+        if (on && !notify) org.pagel.ai.ui.habits.FixRow(TabIcons.Bell, "Notifications off", "Turn on", Glass.Risk, onFixNotify)
         }
     }
 }

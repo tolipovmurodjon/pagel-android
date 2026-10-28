@@ -11,7 +11,7 @@ import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 
 /** What happens to one of today's open stars at the end of the day (the web's shutdown: Tomorrow · Later · Drop). */
-enum class Move(val label: String) { KEEP("Tomorrow"), LATER("Later"), DROP("Drop") }
+enum class Move(val label: String) { KEEP("Keep"), LATER("Later"), DROP("Drop") }
 
 /** The web's sweep kinds and their words (sweep-client.tsx KIND_LABEL). */
 enum class Kind(val wire: String, val label: String) {
@@ -28,9 +28,6 @@ object Rituals {
 
     /** GTD's weekly review: due when the last one is this many days old (review.ts REVIEW_DAYS). */
     const val REVIEW_DAYS = 7
-
-    /** Close the day picks at most this many new stars for tomorrow (Today deals them 3 at a time). */
-    const val PICK_CAP = 3
 
     /** The web shows 12 candidates for tomorrow (shutdown-client.tsx `next.slice(0, 12)`). */
     const val CANDIDATES = 12
@@ -68,12 +65,17 @@ object Rituals {
         return pool.sortedWith(compareBy({ it.id !in first }, { it.priority }, { it.phaseSort }, { it.sort })).take(CANDIDATES)
     }
 
-    /** A pick toggled: on, unless the cap is reached; off always. */
-    fun togglePick(picks: List<String>, id: String): List<String> = when {
-        id in picks -> picks - id
-        picks.size >= PICK_CAP -> picks
-        else -> picks + id
-    }
+    /**
+     * A pick toggled. No cap: Today deals the stars 3 at a time, so a 4th pick costs no attention (the web's shutdown,
+     * Boss 2026-10-27: "Pick not working… keep my current ones"; checker P5 #3).
+     */
+    fun togglePick(picks: List<String>, id: String): List<String> = if (id in picks) picks - id else picks + id
+
+    /** Close the day belongs to the evening: Today shows its pill from 18:00 Tashkent until 05:00 (the ritual night). */
+    fun evening(ms: Long): Boolean = Instant.ofEpochMilli(ms).atZone(TASHKENT).hour.let { it >= 18 || it < 5 }
+
+    /** The day as the rituals see it: until 05:00 it is still last night's date. */
+    fun ritualDate(ms: Long): LocalDate = LocalDate.parse(ritualDay(ms))
 
     /** Stars tomorrow will hold: the kept ones plus the picks (the web's "N stars for tomorrow"). */
     fun starsTomorrow(stars: List<TaskEntity>, moves: Map<String, Move>, picks: List<String>): Int =

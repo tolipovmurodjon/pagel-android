@@ -68,7 +68,7 @@ class ShutdownAlarmReceiver : BroadcastReceiver() {
     private fun post(ctx: Context, stars: Int) {
         if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Close the day", NotificationManager.IMPORTANCE_DEFAULT).apply { description = "The evening shutdown, at your time" })
+        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Close the day", NotificationManager.IMPORTANCE_HIGH).apply { description = "The evening shutdown, at your time" })
         val open = PendingIntent.getActivity(
             ctx, 4,
             Intent(ctx, MainActivity::class.java).putExtra(OpenRequests.EXTRA, OpenRequests.SHUTDOWN)
@@ -85,6 +85,10 @@ class ShutdownAlarmReceiver : BroadcastReceiver() {
             .setColor(0xFF1C7E69.toInt())
             .setContentTitle("Close the day")
             .setContentText(line)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(line))
+            // Its own group, high like the habits' channel: never bundled with the anchor notification, whose intent a tap
+            // there opened instead (checker P5 #5).
+            .setGroup(GROUP)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(open)
             .setAutoCancel(true)
@@ -95,7 +99,9 @@ class ShutdownAlarmReceiver : BroadcastReceiver() {
 
     companion object {
         const val FIRE = "org.pagel.ai.EVENING_FIRE"
-        const val CHANNEL = "rituals"
+        /** "evening", not "rituals": a channel's importance cannot be raised once made, and 0.9 builds made it DEFAULT. */
+        const val CHANNEL = "evening"
+        private const val GROUP = "org.pagel.ai.rituals"
         private const val NOTIF = 5
 
         fun fireIntent(ctx: Context): PendingIntent =

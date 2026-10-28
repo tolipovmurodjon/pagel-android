@@ -24,6 +24,7 @@ import org.pagel.ai.data.tasks.TaskRepository
 import org.pagel.ai.data.today.OutboxScheduler
 import org.pagel.ai.data.today.TodayRepository
 import java.util.UUID
+import kotlinx.coroutines.sync.withLock
 
 internal val ritualJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 private val rowsSerializer = ListSerializer(SweepRowDto.serializer())
@@ -35,10 +36,10 @@ fun RitualStateEntity.stuckList(): List<StuckDto> = runCatching { ritualJson.dec
 data class Added(val sweep: String, val actions: Int, val someday: Int)
 
 /** One task change a ritual made: the op that carries it (Undo takes it back while it waits) and what it did. */
-data class RitualEdit(val taskId: String, val op: Long?, val kind: String, val project: String = "", val text: String = "")
+data class RitualEdit(val taskId: String, val op: Long?, val kind: String, val project: String = "", val text: String = "", val at: Long = 0)
 
 /** A closed ritual: its task changes, its own outbox row and the state before, so Undo puts all of it back. */
-data class Closed(val edits: List<RitualEdit>, val ritualOp: Long, val before: RitualStateEntity)
+data class Closed(val edits: List<RitualEdit>, val ritualOp: Long, val before: RitualStateEntity, val token: String = "")
 
 /**
  * The three rituals (Phase 5: the web's /sweep, /shutdown, /review), offline-first like every other edit. Every task
@@ -64,6 +65,7 @@ class RitualsRepository(
     fun sweep(id: String): Flow<SweepEntity?> = rituals.sweep(id)
 
     fun ritualDay(): String = Rituals.ritualDay(clock())
+    fun now(): Long = clock()
 
     private suspend fun stateNow() = rituals.stateOnce() ?: RitualStateEntity()
 
@@ -95,14 +97,20 @@ class RitualsRepository(
         return sid
     }
 
-    /** "Turn into steps": the dump waits for pagel.uz's AI (now if online, else when the network is back). */
-    suspend fun split(id: String) {
-        val row = rituals.sweepOnce(id) ?: return
-        if (row.dump.isBlank()) return
+    /**
+     * "Turn into steps": the dump waits for pagel.uz's AI (now if online, else when the network is back). Every split gets
+     * a fresh id: pagel.uz keeps a split's rows 24 h by id, so an edited dump sent under its old id came back with the old
+     * rows (checker P5 #1). Returns the new id.
+     */
+    suspend fun split(id: String): String? {
+        val row = rituals.sweepOnce(id) ?: return null
+        if (row.dump.isBlank()) return null
         val now = clock()
+        val fresh = newId("sw")
         rituals.takeBackSweep(id)
-        rituals.queueSweep(row.copy(state = SweepEntity.WAITING, message = null, updatedAt = now), OutboxEntity(taskId = id, op = OutboxEntity.SWEEP, createdAt = now))
+        rituals.replaceSweep(id, row.copy(id = fresh, state = SweepEntity.WAITING, rows = "[]", message = null, updatedAt = now), OutboxEntity(taskId = fresh, op = OutboxEntity.SWEEP, createdAt = now))
         scheduler.kick()
+        return fresh
     }
 
     /** "Back to the text": the rows go (as on the web) and the dump is a draft again; a read still waiting is taken back. */
@@ -125,15 +133,21 @@ class RitualsRepository(
      */
     suspend fun add(id: String): Added? {
         val row = rituals.sweepOnce(id) ?: return null
-        if (row.state != SweepEntity.READY) return null
+        if (row.state != SweepEntity.READY && row.state != SweepEntity.ADDING) return null
         val keep = Rituals.kept(row.rowList())
         if (keep.isEmpty() || keep.any(Rituals::tooLong)) return null
-        val ids = keep.map { r ->
+        // One claim, compare-and-set: a second tap (or a second coroutine) finds the dump already being added and stops
+        // (checker P5 #2: two taps 80 ms apart made 6 tasks). A claim left by a killed app is taken again after a minute.
+        if (rituals.claimAdd(id, clock(), clock() - STALE_ADD_MS) == 0) return null
+        // Each task's id is written as soon as it exists, so a claim taken again skips the rows already added.
+        val ids = rituals.sweepOnce(id)?.addedIds.orEmpty().split(',').filter(String::isNotBlank).toMutableList()
+        for (r in keep.drop(ids.size)) {
             val text = r.text.replace(Regex("\\s+"), " ").trim().take(240)
-            today.add(text, r.project, if (Kind.of(r.kind) == Kind.ACTION) 1 else 3, due = null, every = null, onToday = false)
+            ids += today.add(text, r.project, if (Kind.of(r.kind) == Kind.ACTION) 1 else 3, due = null, every = null, onToday = false)
+            rituals.setAddedIds(id, ids.joinToString(","))
         }
         val now = clock()
-        rituals.upsertSweep(row.copy(state = SweepEntity.ADDED, addedIds = ids.joinToString(","), updatedAt = now))
+        rituals.upsertSweep((rituals.sweepOnce(id) ?: row).copy(state = SweepEntity.ADDED, addedIds = ids.joinToString(","), updatedAt = now))
         rituals.pruneAdded(now - 7 * 86_400_000L)
         val actions = keep.count { Kind.of(it.kind) == Kind.ACTION }
         return Added(id, actions, keep.size - actions)
@@ -159,7 +173,7 @@ class RitualsRepository(
      * The evening shutdown (review.ts shutdown): each open star is kept (nothing changes), pushed to Later (unstarred,
      * stays in its plan) or dropped (removed, with the delete's 5 s Undo); each pick gets a star. Then the shutdown event.
      */
-    suspend fun closeDay(stars: List<TaskEntity>, moves: Map<String, Move>, picks: List<String>): Closed {
+    suspend fun closeDay(stars: List<TaskEntity>, moves: Map<String, Move>, picks: List<String>, token: String = newId("tk")): Closed = once(token) {
         val before = stateNow()
         val edits = mutableListOf<RitualEdit>()
         var pushed = 0
@@ -169,27 +183,41 @@ class RitualsRepository(
             Move.LATER -> { edits += RitualEdit(t.id, tasks.star(t.id, false), "later"); pushed++ }
             Move.DROP -> { edits += RitualEdit(t.id, tasks.delete(t.id), "drop"); dropped++ }
         }
-        val picked = picks.take(Rituals.PICK_CAP)
+        // No cap on picks: Today deals the stars 3 at a time (the web's shutdown, Boss 2026-10-27: "keep my current ones").
+        val picked = picks.distinct()
         for (id in picked) edits += RitualEdit(id, tasks.star(id, true), "pick")
         val kept = stars.count { (moves[it.id] ?: Move.KEEP) == Move.KEEP }
         val day = ritualDay()
         val op = queueRitual(RitualBody("shutdown", newId("sd"), day, kept = kept, pushed = pushed, dropped = dropped, picked = picked.size))
         rituals.saveState(before.copy(shutDay = Rituals.later(before.shutDay, day)))
         reminders.replan()
-        return Closed(edits, op, before)
+        Closed(edits, op, before, token)
     }
 
     /** The weekly review's finish (review.ts finishReview): a next step for each stuck project, someday tasks dropped. */
-    suspend fun finishReview(adds: Map<String, String>, drops: List<String>): Closed {
+    suspend fun finishReview(adds: Map<String, String>, drops: List<String>, token: String = newId("tk")): Closed = once(token) {
         val before = stateNow()
         val edits = mutableListOf<RitualEdit>()
         val added = adds.mapValues { it.value.replace(Regex("\\s+"), " ").trim() }.filterValues(String::isNotEmpty)
-        for ((project, text) in added) edits += RitualEdit(today.add(text.take(240), project, 1, due = null, every = null, onToday = false), null, "add", project, text.take(240))
+        for ((project, text) in added) {
+            val at = clock()
+            edits += RitualEdit(today.add(text.take(240), project, 1, due = null, every = null, onToday = false), null, "add", project, text.take(240), at)
+        }
         for (id in drops) edits += RitualEdit(id, tasks.delete(id), "drop")
         val day = ritualDay()
         val op = queueRitual(RitualBody("review", newId("rv"), day, added = added.size, dropped = drops.size))
         rituals.saveState(before.copy(lastReview = Rituals.later(before.lastReview, day)))
-        return Closed(edits, op, before)
+        Closed(edits, op, before, token)
+    }
+
+    /**
+     * A ritual is closed once per screen: the same token (one per opened ritual) a second time, even at the same moment,
+     * gets the first result back instead of a second set of changes and a second event (checker P5 #2). Undo frees it.
+     */
+    private val closing = kotlinx.coroutines.sync.Mutex()
+    private val closedBy = java.util.concurrent.ConcurrentHashMap<String, Closed>()
+    private suspend fun once(token: String, block: suspend () -> Closed): Closed = closing.withLock {
+        closedBy[token] ?: block().also { closedBy[token] = it }
     }
 
     /** Undo of a closed ritual: each change taken back while it waits, else the opposite is sent; the state goes back. */
@@ -202,6 +230,7 @@ class RitualsRepository(
         }
         // The ritual's own event is taken back only while it waits; once on pagel.uz it stays in the history.
         rituals.takeBackOp(c.ritualOp)
+        closedBy.remove(c.token)
         val now = stateNow()
         rituals.saveState(now.copy(shutDay = c.before.shutDay, lastReview = c.before.lastReview))
         reminders.replan()
@@ -212,7 +241,8 @@ class RitualsRepository(
         val op = rituals.waitingAdd(e.taskId)
         if (op != null && rituals.takeBackOp(op) > 0) { dao.dropLocalTask(e.taskId, keep = -1); return }
         if (dao.taskOnce(e.taskId) != null && e.taskId.startsWith(LOCAL_ID)) return
-        rituals.adoptedId(e.project, e.text)?.let { tasks.delete(it) }
+        // Only a task made since the ritual (adoptServerId keeps the phone's lastModified), never an older twin.
+        rituals.adoptedId(e.project, e.text, e.at)?.let { tasks.delete(it) }
     }
 
     // ── The evening reminder ─────────────────────────────────────────────────────────────────────────────────────
@@ -230,6 +260,11 @@ class RitualsRepository(
     }
 
     private fun newId(prefix: String) = prefix + "_" + UUID.randomUUID().toString().replace("-", "").take(16)
+
+    companion object {
+        /** A claim on "Add N" older than this was left by a killed app: it may be taken again. */
+        const val STALE_ADD_MS = 60_000L
+    }
 }
 
 /** What one ritual row in the outbox ended with. LATER = not now, without holding the rest (the AI is busy). */
@@ -248,8 +283,11 @@ class RitualSender(private val api: PagelApi, private val dao: RitualsDao, priva
         return when (val out = api.ritual(account.serverUrl, account.token, body)) {
             is Outcome.Ok -> { dao.removeFromOutbox(op.id); RitualStep.SENT }
             is Outcome.Failed -> when (val e = out.error) {
-                // The shell says it in red; the task changes before it stand on their own.
-                is DataError.Refused -> { dao.markRefused(op.id, e.message); RitualStep.SENT }
+                // 404: a pagel.uz from before the rituals: the event waits for it (checker P5 #10).
+                is DataError.Refused -> if (e.status == 404) RitualStep.LATER else {
+                    // The shell says it in red; the task changes before it stand on their own.
+                    dao.markRefused(op.id, e.message); RitualStep.SENT
+                }
                 DataError.Unauthorized -> RitualStep.SIGNED_OUT
                 else -> RitualStep.TRY_LATER
             }
@@ -268,7 +306,7 @@ class RitualSender(private val api: PagelApi, private val dao: RitualsDao, priva
                 RitualStep.SENT
             }
             is Outcome.Failed -> when (val e = out.error) {
-                is DataError.Refused -> {
+                is DataError.Refused -> if (e.status == 404) { waitAgain(row.id); RitualStep.LATER } else {
                     if (dao.sweepOnce(row.id)?.state == SweepEntity.READING) dao.setSweepState(row.id, SweepEntity.FAILED, e.message, clock())
                     dao.removeFromOutbox(op.id)
                     RitualStep.SENT

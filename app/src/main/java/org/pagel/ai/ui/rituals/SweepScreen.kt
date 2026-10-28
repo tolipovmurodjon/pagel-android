@@ -122,8 +122,8 @@ fun SweepScreen(
                 }
                 Spacer(Modifier.size(12.dp))
                 ButtonRow {
-                    QuietButton("Empty again", TabIcons.Refresh, Modifier.weight(1f)) { text = ""; onAgain() }
-                    MintButton("Pick today's 3", TabIcons.Star, Modifier.weight(1f), onClick = onToday)
+                    QuietButton("Again", TabIcons.Refresh, Modifier.weight(1f), description = "Empty again") { text = ""; onAgain() }
+                    MintButton("Today's 3", TabIcons.Star, Modifier.weight(1f), description = "Pick today's 3", onClick = onToday)
                 }
             } }
             ui.loading -> item(key = "loading", contentType = "pane") { Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3) } }
@@ -192,7 +192,7 @@ fun SweepScreen(
                 item(key = "add", contentType = "buttons") {
                     ButtonRow {
                         QuietButton("Edit text", TabIcons.ChevronLeft, Modifier.weight(1f), onClick = onBack)
-                        MintButton("Add ${ui.keep}", TabIcons.Plus, Modifier.weight(1f), enabled = ui.keep > 0 && !ui.tooLong, onClick = onAdd)
+                        MintButton("Add ${ui.keep}", TabIcons.Plus, Modifier.weight(1f), enabled = ui.keep > 0 && !ui.tooLong && ui.state == SweepEntity.READY, onClick = onAdd)
                     }
                 }
             }
@@ -250,7 +250,7 @@ private fun SweepRow(i: Int, r: SweepRowDto, projects: List<ProjectEntity>, acti
             GlassIconButton(TabIcons.Close, "Remove: ${r.text}", plain = true) { actions.remove(i) }
         }
         if (Rituals.tooLong(r)) Hint("${Rituals.words(r.text)} words: pagel.uz takes ${Rituals.MAX_WORDS}. Cut it down.", Glass.Risk)
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        androidx.compose.foundation.layout.FlowRow(Modifier.padding(end = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Segmented(Kind.entries.map { it.label }, kind.ordinal, "Kind of step ${i + 1}") { actions.kind(i, Kind.entries[it]) }
             val p = projects.firstOrNull { it.name == r.project }
             Box {

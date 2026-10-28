@@ -1,8 +1,9 @@
 package org.pagel.ai.ui.rituals
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -15,17 +16,17 @@ import org.pagel.ai.ui.glass.TabIcons
 class RitualLinks(val sweep: () -> Unit = {}, val shutdown: () -> Unit = {}, val review: () -> Unit = {})
 
 /**
- * Today's entry points to the rituals, as the web's loop (gtd/page.tsx): Empty your head, Close the day (a ✓ once it is
- * closed tonight), and the weekly review only while it is due (the web's today-note). Glass pills, an icon each, one
- * row that wraps at 1.5×.
+ * Today's ritual pills, as the web's Today shows them: Close the day in the evening (a ✓ once it is closed tonight), the
+ * weekly review only while it is due (the web's today-note). One row that never wraps (three stacked rows pushed the
+ * stars under the + on a 320 dp phone, checker P5 #4); Empty your head is the sparkle beside the title.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RitualPillsRow(pills: RitualPills, links: RitualLinks, modifier: Modifier = Modifier) {
-    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        GlassChip(TabIcons.Sparkles, "Empty your head", set = false, tint = Glass.Primary, description = "Empty your head", onClick = links.sweep)
-        if (pills.shutTonight) GlassChip(TabIcons.Check, "Day closed", set = true, description = "Close the day: closed tonight", onClick = links.shutdown)
-        else GlassChip(TabIcons.Moon, "Close the day", set = false, tint = Color(0xFF5B4BC4), description = "Close the day", onClick = links.shutdown)
-        if (pills.reviewDue) GlassChip(TabIcons.CalendarCheck, "Weekly review", set = false, tint = Color(0xFFD9620B), description = "Weekly review is due", onClick = links.review)
+    Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (pills.evening) {
+            if (pills.shutTonight) GlassChip(TabIcons.Check, "Day closed", set = true, description = "Close the day: closed tonight", onClick = links.shutdown)
+            else GlassChip(TabIcons.Moon, "Close the day", set = false, tint = Color(0xFF5B4BC4), description = "Close the day", onClick = links.shutdown)
+        }
+        if (pills.reviewDue) GlassChip(TabIcons.CalendarCheck, "Review", set = false, tint = Color(0xFFBE123C), description = "Weekly review is due", onClick = links.review)
     }
 }
