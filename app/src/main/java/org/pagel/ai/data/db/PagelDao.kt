@@ -161,6 +161,10 @@ abstract class PagelDao {
     @Query("SELECT * FROM outbox WHERE refused IS NOT NULL ORDER BY id")
     abstract fun refusedOutbox(): Flow<List<OutboxEntity>>
 
+    /** Changes still waiting to reach pagel.uz (Today's "↑ 2 waiting" chip). */
+    @Query("SELECT COUNT(*) FROM outbox WHERE refused IS NULL")
+    abstract fun waitingCount(): Flow<Int>
+
     @Query("DELETE FROM outbox WHERE id = :id")
     abstract suspend fun removeFromOutbox(id: Long)
 

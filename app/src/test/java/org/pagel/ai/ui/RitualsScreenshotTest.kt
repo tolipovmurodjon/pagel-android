@@ -130,6 +130,21 @@ class RitualsScreenshotTest {
         assertEquals("s1" to Move.LATER, chose)
     }
 
+    /** Boss note 2026-10-28: the card stays where it is from star 1 to star 2 (the Back slot is always kept). */
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun closeTheDayCardDoesNotMoveBetweenStars() {
+        val step = androidx.compose.runtime.mutableIntStateOf(0)
+        show { ShutdownScreen(ShutdownUi(loading = false, stars = stars, candidates = candidates, step = step.intValue, moves = if (step.intValue > 0) mapOf("s1" to Move.KEEP) else emptyMap()), pad, today = day) }
+        val first = compose.onNodeWithText("Ship the native app").fetchSemanticsNode().boundsInRoot.top
+        val counter = compose.onNodeWithContentDescription("Star 1 of 3").fetchSemanticsNode().boundsInRoot.bottom
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/shutdown-star-1-360x800.png")
+        step.intValue = 1
+        compose.waitForIdle()
+        val second = compose.onNodeWithText("Call the bank about the report").fetchSemanticsNode().boundsInRoot.top
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/shutdown-star-2-360x800.png")
+        assertEquals(first, second, 0.5f)
+        org.junit.Assert.assertTrue("the counter touches the card: $counter vs $first", first - counter > 20f)
+    }
+
     @Test fun closeTheDayStarCardAtLargeFont() {
         show(1.5f) { ShutdownScreen(ShutdownUi(loading = false, stars = stars, candidates = candidates, step = 1, moves = mapOf("s1" to Move.KEEP)), pad, today = day) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/shutdown-star-font-1.5.png")

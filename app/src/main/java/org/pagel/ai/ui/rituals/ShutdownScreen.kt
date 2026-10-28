@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -201,12 +202,16 @@ fun ShutdownScreen(
 @Composable
 private fun StarCard(t: RitualTask, step: Int, total: Int, onBack: () -> Unit, onChoose: (Move) -> Unit) {
     Column {
-        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Boss note 2026-10-28 ("spacing is trash"): the row is always 48 dp (the Back slot is kept empty on star 1) and
+        // Space.headerToCard above the card, so the card never jumps between stars and never touches the counter.
+        Row(Modifier.fillMaxWidth().height(48.dp).padding(start = 20.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("${step + 1} of $total", style = MaterialTheme.typography.labelSmall, color = Glass.Ink, modifier = Modifier.semantics { contentDescription = "Star ${step + 1} of $total" })
             Spacer(Modifier.width(8.dp))
-            Text("Today's open stars", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
+            Text("Today's open stars", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, modifier = Modifier.weight(1f))
             if (step > 0) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.ChevronLeft, "Back one star", plain = true, onClick = onBack)
+            else Spacer(Modifier.size(48.dp))
         }
+        Spacer(Modifier.height(org.pagel.ai.ui.glass.Space.headerToCard))
         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Column(Modifier.padding(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

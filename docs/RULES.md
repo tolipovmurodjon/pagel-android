@@ -87,6 +87,17 @@ Installed plugins (laptop, 2026-10-27; server: `claude plugin marketplace add an
 - Ask for notifications at first use, never at launch, never in a loop; check permissions every time.
 - Tokens: per-device, stored encrypted, read off Main, never logged.
 
+## Layout (Boss 2026-10-28: "don't make that trash thing ever again, audit and fix yourself")
+1. **No layout jumps.** Chrome never moves content between states. Any header, footer or row with a conditional child (a
+   back arrow, chip, count or button) reserves the child's slot with a fixed or min height or an invisible placeholder.
+   Text that can wrap gets `maxLines` plus a fixed height where the content below must not move. (Close the day's star
+   counter grew from ~16 dp to 48 dp when Back appeared on star 2: the card jumped ~40 px and touched the counter on star 1.)
+2. **Spacing comes from named tokens** in `ui/glass/Space.kt`: `Space.xs` 4 · `sm` 8 · `md` 12 · `lg` 16 · `xl` 20 ·
+   `xxl` 24 · `xxxl` 32, and the roles `Space.gutter` (screen edge), `Space.paneGap` (pane to pane), `Space.headerToCard`
+   (a header or counter to its first card). No raw off-scale dp in new code.
+3. **Proof for any screen with steps or states:** a Roborazzi pair (state A and state B) plus an assert that the main
+   card's top y is equal (example: `RitualsScreenshotTest.closeTheDayCardDoesNotMoveBetweenStars`).
+
 ## Ours (Boss's rules)
 - Respond first, save after: a tap shows its result in < 50 ms; a failed save rolls back with a toast.
 - A UI change is done only after a screenshot of its open state; speed claims come with before/after numbers.

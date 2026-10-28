@@ -358,9 +358,11 @@ private fun HabitRow(
                 }
                 if (h.times > 1) Text("${if (done) h.times else h.taps}/${h.times}", style = Glass.NumberText, color = Glass.PrimaryInk)
                 if (h.streak > 0) Streak(h.streak)
-                WeekDots(h.week) { onWeek(t.id) }
             }
         }
+        // The week at the row's end, never in its middle: a tap on the row's centre is the tick (CI 40703656629: the
+        // dots sat under the centre and the walk's tap opened the week instead of ticking).
+        WeekDots(h.week) { onWeek(t.id) }
         if (time != null) GlassIconButton(if (reminder) TabIcons.BellRing else TabIcons.Bell, "Reminder: $title", plain = true, on = reminder) { onBell(t.id) }
     }
 }
@@ -405,7 +407,7 @@ private fun WeekDots(week: List<Dot>, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     val done = week.count { it == Dot.DONE }
     Row(
-        Modifier.heightIn(min = 32.dp).pressScale(press).clickable(press, indication = null, role = Role.Button, onClickLabel = "Open the week", onClick = onClick)
+        Modifier.heightIn(min = 48.dp).pressScale(press).clickable(press, indication = null, role = Role.Button, onClickLabel = "Open the week", onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = "Last 7 days: $done done" }
             .padding(horizontal = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),

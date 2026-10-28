@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.padding
@@ -99,7 +101,7 @@ fun TodayRoute(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val pills by rituals.pills.collectAsStateWithLifecycle()
-    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onDayCleared = vm::dayCleared)
+    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onDayCleared = vm::dayCleared, onSendNow = vm::sendNow)
 }
 
 /** Today, native (NATIVE-PLAN Phase 2): the web's 3 at a time, a ring tick with ding, confetti and fold, undo. */
@@ -115,6 +117,7 @@ fun TodayScreen(
     pills: org.pagel.ai.ui.rituals.RitualPills? = null,
     links: org.pagel.ai.ui.rituals.RitualLinks = org.pagel.ai.ui.rituals.RitualLinks(),
     onDayCleared: () -> Unit = {},
+    onSendNow: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -157,6 +160,10 @@ fun TodayScreen(
     Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot(); overlayWidth = it.size.width.toFloat() }) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             item(key = "head", contentType = "head") { Header(ui, today, onSweep = if (pills != null) links.sweep else null) }
+            // Round B (A): what waits to reach pagel.uz is never invisible; a tap sends it now.
+            if (ui.outbox > 0) item(key = "outbox", contentType = "outbox") {
+                WaitingChip(ui.outbox, Modifier.padding(start = 16.dp, bottom = 8.dp)) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
+            }
             // The day's progress grows with each tick (a game's level bar), with the next task's nudge under it.
             if (!ui.loading && ui.progress.total > 0) item(key = "progress", contentType = "progress") {
                 DayProgressBar(ui.progress, nudge, Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp))
@@ -212,6 +219,27 @@ private fun Header(ui: TodayUiState, today: LocalDate, onSweep: (() -> Unit)? = 
     }
     // Empty your head: a 48 dp sparkle beside the title, any time of day (Phase 5).
     if (onSweep != null) org.pagel.ai.ui.glass.GlassIconButton(TabIcons.Sparkles, "Empty your head", Modifier.padding(end = 12.dp), tint = Glass.Primary, onClick = onSweep)
+    }
+}
+
+/** "↑ 2 waiting": a small glass chip while changes wait for pagel.uz; a tap sends them now. */
+@Composable
+internal fun WaitingChip(n: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Row(
+        modifier.heightIn(min = 48.dp).pressScale(press).clickable(press, indication = null, role = Role.Button, onClickLabel = "Send now", onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "$n waiting to send · Send now" },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier.background(Color.White.copy(alpha = 0.78f), RoundedCornerShape(16.dp)).border(1.dp, Glass.Aurora1.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("↑", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk)
+            Spacer(Modifier.width(6.dp))
+            Text("$n waiting", style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1)
+        }
     }
 }
 

@@ -41,6 +41,58 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v16 · ROUND B = BOSS'S PHONE NOTES: DATA, DOPAMINE, HABITS, PANEL TICK, RANGES (2026-10-28, builder agent)
+Brief order B, H, C, G, F, D, E, I, J, A. Done: B, H, C, G, D, E, J, A's chip. Not done: F, I (below, with why).
+- **Boss note: Close the day spacing** ("spacing is trash"): `StarCard`'s counter row had no fixed height; the 48 dp Back
+  button came only from star 2, so the card jumped ~40 px and star 1's counter touched it. The row is now always 48 dp
+  (an empty 48 dp slot on star 1) with `Space.headerToCard` (12 dp) above the card. Proof: `closeTheDayCardDoesNotMoveBetweenStars`
+  (the card's title has the same top on star 1 and 2; > 20 px between counter and card), shots `shutdown-star-1/2-360x800`.
+  Checked the same pattern: the review's and the sweep's Back sit in the bottom button rows (the card above never moves).
+- **A (already done in v13-v14):** TLS 1.2 + warm pool 5 min (PagelHttp), pairing kept over cold starts. **This round:**
+  connect 20 s / read 45 s / write 20 s; "Offline" only after 2 failed calls in a row (`statusAfter`, a single miss reads
+  "Syncing"; the outbox is nudged on every return to Live); Today's glass chip "↑ 2 waiting" while the outbox holds anything,
+  tap = send now (`OutboxWorker.nudge`); a network coming back (Session's default-network callback) restarts a sync loop
+  that waits out its backoff and nudges the outbox at once. Not done: the failure class (DNS/connect/TLS/timeout/HTTP)
+  in the diagnostics report, and a red "Not sent: <why>" chip (refused writes still show as the shell's red toast).
+- **B · a habit's time is not an Undo.** The phone path was the **reminder wheel**: `HabitsViewModel.setTime` keeps the
+  habit's own (missed) day and puts the wheel's time on it, so "Wind down" went out as `PATCH {due:"2026-10-27 04:55"}`;
+  task-store.ts logged any due change on a habit dated ≤ today as `habit_undone`. Now only `{due, undo:true}` (the tick's
+  Undo, phone and web) takes a tick out; a time edit logs `due`. Server **faf0df3**. Test
+  `aNewTimeOnAHabitIsAPlainDueChangeNeverAnUndo`.
+- **H · dopamine.** Why Boss heard/saw nothing: the ding played on the **sonification stream, which silent mode mutes**
+  (his A05s is on silent: see the mute icon in his screenshots); it now plays on the media stream at 70 %. More → **Sounds:
+  Always (default) · Silent mode** (follows the ringer; a tap plays a sample). The confetti was skipped only at animator
+  scale 0 (Samsung "Remove animations"); it is never skipped now (folds still are). The panel tick (G) had no confetti at
+  all. New: Today's progress bar "2 of 5 ✓" (tasks finished today, any list), ticks in a row within 10 min ("2 in a row
+  🔥", "3 in a row — on fire 🔥") in the toast, a nudge "Next: <title> · 10 min?" for 8 s, and the last open task =
+  **Day cleared**: 5 bursts across the screen, a C-E-G-C chord, the "Day cleared ✨ · N done" card with the streak of
+  cleared days (kept on the phone). Each burst logs `PagelFinish: confetti N`; the walk asserts it.
+- **G · the panel's ring.** It closed the panel in the same frame, so nothing was seen. Now the panel stays on the done
+  task: the ring pops and draws its tick, the title is struck through, Reopen, Confirm haptic, ding, confetti and a
+  "Done · Undo" toast (walk 24 `panel-ticked.png`: strike + Reopen + "2 in a row 🔥 · Undo"). "⭐ Pin to Today" with a
+  switch and one helper line; at 3 pinned it is off and says "3 already pinned · unpin one first". The note is hidden
+  when it equals the title. Header icons say their word on a long press; Delete is red and outlined.
+- **C · habits.** Compact rows (ring left, title ≤ 2 lines, time chip, "2/3", 🔥, 7 dots), the whole row ticks, a long
+  press takes one tap off, the dots open "This week" (tap a day = tick/untick it, best run in the title). Count habits:
+  `times` (1-12, the Repeat sheet's stepper), N arcs filling one per tap, done and moved at the Nth; web /habits shows
+  "Title · 2/3". A missed day is never red: a daily habit shows today's slot; Tue/Thu/Sun waits for its next day.
+  Room **v7** (tasks.times, habit_ticks.n). The status-bar fade is always on (the tab kept its scroll and the shell read
+  0 scrolled = no fade: "Habits" under the clock). Server **d615e15**.
+- **D · ranges.** Date sheet: "+ End" after a start (an hour later), "– 12:00" turns the end on the wheel; stored
+  `YYYY-MM-DD HH:MM-HH:MM`, shown "10:00–12:00"; reminders ring at the start. Server **2f3c172** validates (24 h, end
+  after start). Web pages show the raw "10:00-12:00" (not restyled).
+- **E.** A mint "Done" in the date sheet's header; the Add sheet closes after an add (long press on the arrow = add and
+  keep open). **J.** Evening "Close the day" default 20:45 (a phone that already saved a ritual row keeps its time, which
+  on Boss's phone is likely 21:30: set it once in Close the day). Each add sends its local id as `client_id`; server
+  **505bcd8** answers a retry with the same task.
+- **DEPLOY NEEDED (feat/gtd-core, in order, one deploy):** faf0df3 (B), d615e15 (C), 505bcd8 (J), 2f3c172 (D). Until
+  then the old pagel.uz: logs a time edit as an undo (B), moves a 3x habit at its first tap and ignores past dots (C),
+  ignores client_id (J), refuses a range (400 → the phone rolls the date back with a red toast).
+- **Not done:** **F** (Plan it + the steps redesign): needs a new AI endpoint with a daily cap (server) and a panel
+  rebuild with drag reorder; too big to finish green in this round after C. **I** (speed numbers in diagnostics,
+  JankStats, a baseline profile): no measurements were taken, so no before/after numbers. Also: the panel's "best
+  streak" lives in the week sheet, not the task panel.
+
 ## START HERE v15 · PHASE 5 OF 10 = RITUALS (merged into feat/native-app by the lead) (2026-10-28, builder agent, branch `feat/phase5-rituals`)
 **Checker round (docs/qa/phase5-checker.md, 7.5/10), its top 10, data safety first:**
 - **#1 Edit text gave the old rows:** every "Turn into steps" gives the dump a fresh id (`RitualsRepository.split`,

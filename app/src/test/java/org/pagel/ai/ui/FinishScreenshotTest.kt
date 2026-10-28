@@ -123,4 +123,17 @@ class FinishScreenshotTest {
 
     private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.onAllNodesWithTextCount(text: String): Int =
         onAllNodes(androidx.compose.ui.test.hasText(text)).fetchSemanticsNodes().size
+
+    // Round B (A): "↑ 2 waiting" while changes wait for pagel.uz.
+    @Test fun theWaitingChip() {
+        show { TodayScreen(TodayUiState(loading = false, rows = rows, open = 3, doneToday = 1, status = "Syncing", outbox = 2), pad, today = day) }
+        compose.onNodeWithContentDescription("2 waiting to send · Send now").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-waiting-chip-360x800.png")
+    }
+
+    @Test fun offlineOnlyAfterTwoFailedCallsInARow() {
+        val e = org.pagel.ai.data.DataError.Network
+        org.junit.Assert.assertEquals(org.pagel.ai.data.sync.LiveStatus.Syncing, org.pagel.ai.data.sync.statusAfter(1, e, 1_000))
+        assertTrue(org.pagel.ai.data.sync.statusAfter(2, e, 2_000) is org.pagel.ai.data.sync.LiveStatus.Offline)
+    }
 }

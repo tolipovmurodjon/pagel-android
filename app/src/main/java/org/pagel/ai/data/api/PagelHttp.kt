@@ -21,6 +21,9 @@ val PagelTls: ConnectionSpec = ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
 fun pagelHttp(): OkHttpClient = OkHttpClient.Builder()
     .connectionSpecs(listOf(PagelTls, ConnectionSpec.CLEARTEXT))
     .connectionPool(ConnectionPool(5, 5, TimeUnit.MINUTES))
-    .connectTimeout(10, TimeUnit.SECONDS)
-    .readTimeout(20, TimeUnit.SECONDS)
+    // From Tashkent pagel.uz's TLS handshake takes ~6 s on most calls and some hang past 18 s (lead, 2026-10-28): the
+    // old 10 s connect / 20 s read gave up on calls that would have landed. Round B: 20 s connect, 45 s read.
+    .connectTimeout(20, TimeUnit.SECONDS)
+    .readTimeout(45, TimeUnit.SECONDS)
+    .writeTimeout(20, TimeUnit.SECONDS)
     .build()

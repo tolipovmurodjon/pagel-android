@@ -48,6 +48,8 @@ data class TodayUiState(
     val doneToday: Int = 0,
     /** Days in a row Boss cleared his whole Today (the day-cleared card's 🔥). */
     val clearedStreak: Int = 0,
+    /** Changes waiting to reach pagel.uz: the "↑ 2 waiting" chip, tap = send now. */
+    val outbox: Int = 0,
 ) {
     val progress: DayProgress get() = DayProgress(doneToday, open)
 }
@@ -62,10 +64,10 @@ class TodayViewModel @Inject constructor(
 ) : ViewModel() {
     private val finishing = MutableStateFlow<Set<String>>(emptySet())
     private val streak = MutableStateFlow(0)
-    private val counts = combine(repo.doneToday(), streak) { done, s -> done to s }
+    private val counts = combine(repo.doneToday(), streak, repo.waiting) { done, s, w -> Triple(done, s, w) }
 
     // A refused tick is said by the shell (ShellViewModel), for every screen at once.
-    val ui: StateFlow<TodayUiState> = combine(repo.today, finishing, session.projects(), session.live, counts) { tasks, folding, projects, live, (done, cleared) ->
+    val ui: StateFlow<TodayUiState> = combine(repo.today, finishing, session.projects(), session.live, counts) { tasks, folding, projects, live, (done, cleared, outbox) ->
         val byName = projects.associateBy(ProjectEntity::name)
         val dealt = dealToday(tasks, folding)
         TodayUiState(
@@ -81,6 +83,7 @@ class TodayViewModel @Inject constructor(
             status = live.line(),
             doneToday = done,
             clearedStreak = cleared,
+            outbox = outbox,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TodayUiState())
 
@@ -98,6 +101,11 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             streak.value = withContext(io) { clearedStreak(ClearedDays.all(ctx), java.time.LocalDate.now(TASHKENT_ZONE)) }
         }
+    }
+
+    /** The chip's tap: send what waits now, not after the backoff (WorkManager's call blocks: off Main). */
+    fun sendNow() {
+        viewModelScope.launch(io) { org.pagel.ai.data.today.OutboxWorker.nudge(ctx) }
     }
 
     /** The last open task of the day was ticked: the day counts as cleared, and the streak grows. */

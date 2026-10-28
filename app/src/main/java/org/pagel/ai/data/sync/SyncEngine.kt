@@ -22,6 +22,13 @@ import org.pagel.ai.data.db.SyncStateEntity
 import org.pagel.ai.data.db.TaskEntity
 import kotlin.random.Random
 
+/**
+ * "Offline" only after 2 failed calls in a row (round B: on 4G one slow handshake showed "Offline" for 1.5 h of
+ * otherwise working sync); a single miss stays "Syncing" while the retry runs.
+ */
+fun statusAfter(failuresInARow: Int, error: DataError, retryInMs: Long): LiveStatus =
+    if (failuresInARow >= 2) LiveStatus.Offline(error, retryInMs) else LiveStatus.Syncing
+
 /** What the sync loop is doing, for the screen's small status line. */
 sealed interface LiveStatus {
     data object Idle : LiveStatus
@@ -46,6 +53,7 @@ class SyncEngine(
     private val _status = MutableStateFlow<LiveStatus>(LiveStatus.Idle)
     val status: StateFlow<LiveStatus> = _status.asStateFlow()
     private var loop: Job? = null
+    private var again: (() -> Unit)? = null
 
     /** Pulls everything since the saved cursor and applies it in one transaction. */
     suspend fun syncOnce(account: Account): Outcome<SyncResponse> = lock.withLock {
@@ -63,6 +71,7 @@ class SyncEngine(
     /** Starts the pull-then-listen loop in [scope]; a second call while it runs does nothing. */
     fun start(scope: CoroutineScope, account: Account, onUnauthorized: suspend () -> Unit) {
         if (loop?.isActive == true) return
+        again = { loop?.cancel(); loop = null; start(scope, account, onUnauthorized) }
         loop = scope.launch {
             var failures = 0
             while (isActive) {
@@ -86,13 +95,22 @@ class SyncEngine(
                     return@launch
                 }
                 val wait = backoffMs(failures++)
-                _status.value = LiveStatus.Offline(error, wait)
+                _status.value = statusAfter(failures, error, wait)
                 delay(wait)
             }
         }
     }
 
+    /**
+     * The phone has a network again (Session's network callback): a loop waiting out its backoff, which can grow to a
+     * minute, tries now (round B: "a retry within 5 s when the network changes"). A live loop is left alone.
+     */
+    fun networkBack() {
+        if (loop?.isActive == true && _status.value !is LiveStatus.Live) again?.invoke()
+    }
+
     fun stop() {
+        again = null
         loop?.cancel()
         loop = null
         _status.value = LiveStatus.Idle

@@ -92,11 +92,21 @@ class Session @Inject constructor(
     }
 
     init {
+        // A network came back (Wi-Fi after 4G, out of a tunnel): sync and the outbox try now, not after their backoff.
+        runCatching {
+            ctx.getSystemService(android.net.ConnectivityManager::class.java)?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    sync.networkBack()
+                    scope.launch(io) { runCatching { org.pagel.ai.data.today.OutboxWorker.nudge(ctx) } }
+                }
+            })
+        }
         // Back online (the live link was down and is up again): what waits in the outbox goes now, in order.
         scope.launch {
             var wasDown = false
             sync.status.collect { s ->
-                if (s is LiveStatus.Offline) wasDown = true
+                // A single failed call now reads "Syncing", not "Offline" (statusAfter): any pass that was not Live counts.
+                if (s is LiveStatus.Offline || s is LiveStatus.Syncing) wasDown = true
                 if (s is LiveStatus.Live && wasDown) {
                     wasDown = false
                     withContext(io) { runCatching { org.pagel.ai.data.today.OutboxWorker.nudge(ctx) } }

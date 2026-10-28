@@ -27,6 +27,11 @@ Repo `D:\PAGEL\android` (= `D:\10_projects\pagel\android`), branch `feat/native-
 - Apple feel: pickers are wheels/sheets with haptic ticks, current choice marked (✓ or fill), springs not tweens for interruptible motion.
 - CI emulator has a software GPU: a first frame > 5 s = launch ANR. Keep first frames light (no blur on panes).
 
+- **Layout (RULES.md "Layout", Boss 2026-10-28):** no layout jumps (a conditional back arrow, chip, count or button keeps
+  its slot: fixed/min height or an invisible placeholder; wrapping text gets maxLines + a fixed height where the content
+  below must not move); spacing only from `Space` tokens (4 · 8 · 12 · 16 · 20 · 24 · 32, roles gutter / paneGap /
+  headerToCard); every screen with steps or states proves it with a Roborazzi pair + an equal-top assert on the main card.
+
 ## Builder loop
 server endpoint (if missing) + vitest → deploy (procedure above) → Room (migration + test) → repository (Room first + outbox) →
 ViewModel → screens from `ui/glass/` kit → unit + Roborazzi (360 dp + 1.5× font) → walkthrough steps + fake-pagel asserts
