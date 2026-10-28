@@ -98,6 +98,8 @@ import org.pagel.ai.ui.tasks.TasksScreen
 import org.pagel.ai.ui.today.TodayRoute as TodayScreenRoute
 import org.pagel.ai.ui.inbox.InboxRoute as InboxScreenRoute
 import org.pagel.ai.ui.habits.HabitsRoute as HabitsScreenRoute
+import org.pagel.ai.ui.upcoming.CompletedRoute as CompletedScreenRoute
+import org.pagel.ai.ui.upcoming.UpcomingRoute as UpcomingScreenRoute
 
 /** The glass bar: 64 dp, or 48 dp on a landscape phone, where 64 dp took 30 % of the height (checker 2026-10-28 #10). */
 private val BarTall = 64.dp
@@ -200,7 +202,14 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     entry<InboxRoute> { InboxScreenRoute(padding, reselect) }
                     entry<HabitsRoute> { HabitsScreenRoute(padding, reselect) }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
-                    entry<MoreRoute> { More(padding, onOpenProjects = { stack.add(ProjectListRoute) }, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect) }
+                    entry<MoreRoute> {
+                        More(
+                            padding, onOpenUpcoming = { stack.add(UpcomingListRoute) }, onOpenCompleted = { stack.add(CompletedListRoute) },
+                            onOpenProjects = { stack.add(ProjectListRoute) }, onOpenWeb = { stack.add(WebRoute("/today")) }, onOpenPhone = onOpenPhone, onDisconnect = onDisconnect,
+                        )
+                    }
+                    entry<UpcomingListRoute> { UpcomingScreenRoute(padding, reselect) }
+                    entry<CompletedListRoute> { CompletedScreenRoute(padding, reselect) }
                     entry<ProjectListRoute> { ProjectsRoute(padding, reselect, onOpenProject = { stack.add(ProjectPageRoute(it)) }) }
                     entry<ProjectPageRoute> { r -> ProjectScreenRoute(r.name, padding, reselect, onOpenTask = { openTask = it }, onAdd = { adding = it }) }
                     entry<WebRoute> { r -> TasksScreen(onOpenPhone = onOpenPhone, startPath = r.path) }
@@ -235,7 +244,10 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 }
             }
         }
-        val pageTitle = when (top) { ProjectListRoute -> "Projects"; is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label }
+        val pageTitle = when (top) {
+            ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
+            is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
+        }
         val density = androidx.compose.ui.platform.LocalDensity.current
         // Read through derivedStateOf: the shell redraws when a switch flips, not on every scrolled pixel.
         val moved by remember(density) { derivedStateOf { scrolled > with(density) { 8.dp.toPx() } } }
@@ -388,12 +400,15 @@ private fun Coming(title: String, path: String, padding: PaddingValues, onOpenWe
 }
 
 @Composable
-private fun More(padding: PaddingValues, onOpenProjects: () -> Unit, onOpenWeb: () -> Unit, onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
+private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompleted: () -> Unit, onOpenProjects: () -> Unit, onOpenWeb: () -> Unit, onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(padding).padding(20.dp)) {
         Text("More", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         Spacer(Modifier.height(16.dp))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 6.dp)) {
+                // The web's phone bar keeps Upcoming and Completed under More too (dashboard nav.tsx PHONE).
+                MoreRow(TabIcons.Calendar, "Upcoming", Color(0xFFD9620B), onOpenUpcoming)
+                MoreRow(TabIcons.Done, "Completed", Color(0xFF0E7490), onOpenCompleted)
                 MoreRow(TabIcons.Folder, "Projects", Glass.Primary, onOpenProjects)
                 MoreRow(TabIcons.Globe, "pagel.uz", Color(0xFF246FE0), onOpenWeb)
                 MoreRow(TabIcons.Phone, "Phone", Color(0xFF692FC2), onOpenPhone)

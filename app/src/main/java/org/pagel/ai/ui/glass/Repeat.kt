@@ -43,6 +43,8 @@ object Repeat {
         every == "month" -> "Monthly"
         MONTH_DAYS.matches(every) -> "Monthly · " + monthDays(every).joinToString(", ") { if (it == LAST) "Last" else it.toString() }
         DAY_SET.matches(every) -> "Every " + WEEK.filter { it in daysOf(every) }.joinToString(", ") { NICE[it] }
+        // One weekday is a plural, as people say it ("Mondays"), not "Every monday" (checker 2026-10-28 #10).
+        every in FULL -> every.replaceFirstChar(Char::uppercase) + "s"
         else -> "Every $every"
     }
 
@@ -108,5 +110,30 @@ object Repeat {
         var d = java.time.LocalDate.parse(due.take(10))
         do d = step(d) while (d < end)
         return d.toString() + time
+    }
+
+    /**
+     * Where a tick moves a habit: its first date AFTER [today] (the web's nextAfter, lib/repeat.ts). [nextDue] stops on
+     * today, so a habit missed on Tuesday and ticked on Wednesday stayed due Wednesday and read "late" every day after
+     * (checker 2026-10-28 #1). A tick on time or early lands where [nextDue] does.
+     */
+    fun nextAfter(due: String, every: String, today: String): String {
+        var d = nextDue(due, every, today)
+        var guard = 0
+        while (d.take(10) <= today && guard++ < 400) d = nextDue(d, every, d.take(10))
+        return d
+    }
+
+    /** The days a repeating task falls on inside [from]..[to] (the web's datesBetween, for Upcoming). */
+    fun datesBetween(due: String, every: String, from: String, to: String): List<String> {
+        val out = mutableListOf<String>()
+        var cur = if (due.take(10) >= from) due else nextDue(due, every, from)
+        var i = 0
+        while (i < 60 && cur.take(10) <= to) {
+            if (cur.take(10) >= from) out += cur.take(10)
+            cur = nextDue(cur, every, cur.take(10))
+            i++
+        }
+        return out
     }
 }

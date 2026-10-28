@@ -161,17 +161,28 @@ done
 tap "Done: Drink water" && shot habit-ticked 0.4
 shot habit-done-today 2.5
 grep -q 'text="Done today ✓"' "$OUT/$(printf '%02d' $N)-habit-done-today.xml" || { log "WALKTHROUGH: the ticked habit did not move to Done today"; exit 1; }
-for i in $(seq 1 30); do grep -q 'PATCH /api/v1/tasks/t_h3 {"done":true} auth=True' "$FAKE_LOG" && break; sleep 1; done
-grep -q 'PATCH /api/v1/tasks/t_h3 {"done":true} auth=True' "$FAKE_LOG" || { log "WALKTHROUGH: the habit tick never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+TODAY=$(TZ=Asia/Tashkent date +%Y-%m-%d)
+H3="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$TODAY\",\"if_due\":\"$TODAY\"} auth=True"
+for i in $(seq 1 30); do grep -qF "$H3" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$H3" "$FAKE_LOG" || { log "WALKTHROUGH: the habit tick never reached pagel.uz as $H3"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   habit tick reached pagel.uz after ~${i} s"
 # Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
+ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")
 tap "Reminder: Stretch for ten minutes" && shot reminder-sheet 2.5
 tap "Remind me" && shot reminder-on 1.5
 front reminder-on
+# The sheet reads the grant when it opens (checker #7): the walk granted it, so no "Exact time · Allow" row.
+grep -q 'content-desc="Exact time · Allow"' "$OUT/$(printf '%02d' $N)-reminder-on.xml" && { log "WALKTHROUGH: the sheet still says exact alarms are off after the grant"; exit 1; }
 $T adb shell input keyevent 4; shot reminder-closed 1.5
-$T adb shell dumpsys alarm | grep -c "pagel://habit/t_h1" > "$OUT/alarm-count.txt"
-log "   alarms set for t_h1: $(cat "$OUT/alarm-count.txt")"
+# Proof the reminder is on AlarmManager (checker #7: the old grep for the data URI read 0 and was never asserted).
+sleep 2
+$T adb shell dumpsys alarm > "$OUT/alarm-dump.txt"
+ALARMS_AFTER=$(grep -c "org.pagel.ai.HABIT_FIRE" "$OUT/alarm-dump.txt")
+echo "$ALARMS_BEFORE -> $ALARMS_AFTER" > "$OUT/alarm-count.txt"
+log "   PAGEL habit alarms on AlarmManager: $ALARMS_BEFORE -> $ALARMS_AFTER"
+grep -B2 -A6 "org.pagel.ai.HABIT_FIRE" "$OUT/alarm-dump.txt" | head -20 >> "$OUT/steps.txt"
+[ "$ALARMS_AFTER" -gt "$ALARMS_BEFORE" ] || { log "WALKTHROUGH: turning the reminder on set no alarm"; exit 1; }
 # The alarm rings now: root adb sends the receiver the same intent PAGEL's own alarm carries.
 $T adb shell am broadcast -n "$PKG/.reminders.HabitAlarmReceiver" -a org.pagel.ai.HABIT_FIRE -d pagel://habit/t_h1 --es habit t_h1 > /dev/null
 sleep 2
@@ -184,11 +195,73 @@ if tap "Done" || tap "DONE"; then log "   tapped the notification's Done"; else
 fi
 sleep 1
 $T adb shell cmd statusbar collapse
-for i in $(seq 1 60); do grep -q 'PATCH /api/v1/tasks/t_h1 {"done":true} auth=True' "$FAKE_LOG" && break; sleep 1; done
-grep -q 'PATCH /api/v1/tasks/t_h1 {"done":true} auth=True' "$FAKE_LOG" || { log "WALKTHROUGH: the notification's Done never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+H1="PATCH /api/v1/tasks/t_h1 {\"done\":true,\"day\":\"$TODAY\""
+for i in $(seq 1 60); do grep -qF "$H1" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$H1" "$FAKE_LOG" || { log "WALKTHROUGH: the notification's Done never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   the notification's Done reached pagel.uz after ~${i} s"
 front habits-after-done
 shot habits-after-notification 2
+
+log "-- Upcoming + Completed (Phase 4): More → Upcoming; drag a task onto the day after tomorrow; Move all to today; untick"
+# The centre of the first node whose content-desc starts with $1 (the strip's days say "Friday 30 October, 2 tasks").
+centre_desc() {
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  local b; b=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n' | grep -F "content-desc=\"$1" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+  [ -n "$b" ] || { log "   (no content-desc \"$1…\" on screen)"; return 1; }
+  set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
+  echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
+}
+tap More && shot more-phase4 1.5
+tap Upcoming && shot upcoming 2.5
+for want in 'text="Overdue"' 'text="Send the grant form"' 'text="Pay the internet bill"' 'content-desc="Move all to today"'; do
+  grep -qF "$want" "$OUT/$(printf '%02d' $N)-upcoming.xml" || { log "WALKTHROUGH: Upcoming has no $want"; exit 1; }
+done
+TOMORROW_SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date -d '+1 day' '+%A %-d %B')
+AFTER2=$(TZ=Asia/Tashkent date -d '+2 days' +%Y-%m-%d)
+AFTER2_SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date -d '+2 days' '+%A %-d %B')
+# Tapping a day of the strip brings its section up (the tomorrow pane may be below the fold on a 640 dp screen).
+P=$(centre_desc "$TOMORROW_SPOKEN") || exit 1; set -- $P
+$T adb shell input tap "$1" "$2"; shot upcoming-tomorrow 2
+P=$(centre "Review the lesson draft") || exit 1; set -- $P; FX=$1; FY=$2
+P=$(centre_desc "$AFTER2_SPOKEN") || exit 1; set -- $P; TX=$1; TY=$2
+log "   drag \"Review the lesson draft\" ($FX,$FY) onto $AFTER2_SPOKEN ($TX,$TY)"
+# Long-press (held 1.2 s), then the finger travels to the strip's day in steps, then lets go.
+$T adb shell input motionevent DOWN "$FX" "$FY"
+sleep 1.2
+for k in 1 2 3 4 5 6; do
+  $T adb shell input motionevent MOVE $(( FX + (TX - FX) * k / 6 )) $(( FY + (TY - FY) * k / 6 ))
+done
+$T adb shell screencap -p /sdcard/drag.png; timeout 20 adb pull /sdcard/drag.png "$OUT/$(printf '%02d' $((N + 1)))-upcoming-dragging.png" > /dev/null 2>&1; N=$((N + 1)); log "$(printf '%02d' $N)-upcoming-dragging"
+$T adb shell input motionevent UP "$TX" "$TY"
+shot upcoming-dropped 1.5
+WANT="PATCH /api/v1/tasks/t_u3 {\"due\":\"$AFTER2\"} auth=True"
+for i in $(seq 1 30); do grep -qF "$WANT" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$WANT" "$FAKE_LOG" || { log "WALKTHROUGH: the drop never reached pagel.uz as $WANT"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got the drop: {\"due\":\"$AFTER2\"} after ~${i} s"
+# Back to the top, where Overdue is.
+$T adb shell input swipe 540 600 540 1700 250; $T adb shell input swipe 540 600 540 1700 250
+tap "Move all to today" && shot upcoming-moved-all 1.5
+for id in t_u2 t_u1; do
+  WANT="PATCH /api/v1/tasks/$id {\"due\":\"$TODAY\"} auth=True"
+  for i in $(seq 1 30); do grep -qF "$WANT" "$FAKE_LOG" && break; sleep 1; done
+  grep -qF "$WANT" "$FAKE_LOG" || { log "WALKTHROUGH: Move all to today never reached pagel.uz as $WANT"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+done
+log "   pagel.uz got both overdue tasks moved to $TODAY"
+grep -q 'text="Overdue"' "$OUT/$(printf '%02d' $N)-upcoming-moved-all.xml" && { log "WALKTHROUGH: Overdue still shows after Move all to today"; exit 1; }
+$T adb shell input keyevent 4; shot back-to-more-2 1.5
+tap Completed && shot completed 2.5
+grep -q 'text="Renew the domain"' "$OUT/$(printf '%02d' $N)-completed.xml" || { log "WALKTHROUGH: Completed has no \"Renew the domain\""; exit 1; }
+grep -q 'text="Export the hover log"' "$OUT/$(printf '%02d' $N)-completed.xml" && log "   the 20-day-old one came from /api/v1/completed"
+tap "Undo: Renew the domain" && shot completed-unticked 1.5
+WANT='PATCH /api/v1/tasks/t_c1 {"done":false} auth=True'
+for i in $(seq 1 30); do grep -qF "$WANT" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$WANT" "$FAKE_LOG" || { log "WALKTHROUGH: the untick never reached pagel.uz as $WANT"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got the untick (restore) after ~${i} s"
+tap "Write the IT Park report" && shot completed-panel 2.5
+grep -q 'content-desc="Reopen"' "$OUT/$(printf '%02d' $N)-completed-panel.xml" || { log "WALKTHROUGH: a done task's panel has no Reopen"; exit 1; }
+# Back closes the panel, then leaves Completed for More (its bar), where the walk goes on.
+$T adb shell input keyevent 4; sleep 1; $T adb shell input keyevent 4; sleep 1
+front after-phase4
 tap Today && shot today-after-inbox 1.5
 $T adb shell input swipe 540 1700 540 600 300; shot today-scrolled
 tap Today && shot today-retap-top

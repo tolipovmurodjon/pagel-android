@@ -77,6 +77,9 @@ fun habitsDay(habits: List<TaskEntity>, ticks: List<HabitTickEntity>, today: Str
     val byTime = compareBy<TaskEntity>({ it.due?.drop(11).orEmpty() }, { it.priority })
     val parts = Part.entries.map { p -> p to now.filter { Part.of(it.due) == p }.sortedWith(byTime).map(::item) }.filter { it.second.isNotEmpty() }
     val done = habits.filter { it.id in doneToday && it.id !in finishing }.sortedWith(byTime).map(::item)
-    val coming = habits.filter { !it.due.isNullOrBlank() && it.due.take(10) > today && it.id !in doneToday }.sortedBy { it.due }
-    return HabitsDay(parts, done, coming, doneCount = habits.count { it.id in doneToday }, left = now.count { it.id !in doneToday })
+    // A habit whose ring is still filling is not "coming up" yet, though its date already moved (checker #5).
+    val coming = habits.filter { !it.due.isNullOrBlank() && it.due.take(10) > today && it.id !in doneToday && it.id !in finishing }.sortedBy { it.due }
+    // A habit whose ring is filling counts as done at the tap: Room's habits and its ticks are two reads, and the
+    // header said "0 of 3" in the frame between them (checker 2026-10-28 #5, walk 35).
+    return HabitsDay(parts, done, coming, doneCount = habits.count { it.id in doneToday || it.id in finishing }, left = now.count { it.id !in doneToday && it.id !in finishing })
 }

@@ -148,3 +148,7 @@ data class HabitsResponse(
 /** `POST /api/v1/inbox {action: "triage", files}` answers 202: started, or not (one start a minute); the reads arrive with the next deck. */
 @Serializable
 data class TriageReply(val started: Boolean = false, @SerialName("wait_s") val waitS: Int? = null)
+
+/** One finished task from `GET /api/v1/completed`, with the Tashkent day it was finished (dashboard src/lib/sync.ts). */
+@Serializable
+data class CompletedResponse(val tasks: List<SyncTaskDto> = emptyList(), val before: String? = null)

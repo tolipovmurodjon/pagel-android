@@ -107,6 +107,7 @@ data class PanelActions(
     /** Null when saved; otherwise why the reason was refused. */
     val onNotDoing: (String, String) -> String? = { _, _ -> null },
     val onDelete: () -> Unit = {},
+    val onReopen: () -> Unit = {},
     val onOpenProject: () -> Unit = {},
     val onClose: () -> Unit = {},
 )
@@ -135,7 +136,7 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
                 PanelActions(
                     onTitle = vm::title, onDoneWhen = vm::doneWhen, onText = vm::text, onDue = vm::due, onEvery = vm::every,
                     onPriority = vm::priority, onStar = vm::star, onSteps = vm::steps, onMakeTasks = vm::makeStepsTasks,
-                    onComplete = { vm.complete(); onClose() }, onNotDoing = vm::notDoing, onDelete = { vm.delete(); onClose() },
+                    onComplete = { vm.complete(); onClose() }, onNotDoing = vm::notDoing, onDelete = { vm.delete(); onClose() }, onReopen = vm::reopen,
                     onOpenProject = { onOpenProject(ui.project) }, onClose = onClose,
                 ),
             )
@@ -150,6 +151,8 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
  */
 @Composable
 fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: Boolean = false, picker0: String = "") {
+    // A finished task's fields are its record, not a form (Completed → tap): read only, with Reopen.
+    if (!ui.open) { DoneContent(ui, today, a); return }
     var stopping by rememberSaveable(ui.id) { mutableStateOf(stopFirst) }
     var picker by rememberSaveable(ui.id) { mutableStateOf(picker0) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
@@ -174,7 +177,7 @@ fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: 
 }
 
 @Composable
-private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -> Unit) {
+private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -> Unit, canStop: Boolean = true) {
     val ctx = LocalContext.current
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) { if (copied) { delay(1600); copied = false } }
@@ -201,7 +204,7 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
             ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("PAGEL task", runPrompt(ui.project, ui.text, ui.priority)))
             copied = true
         }
-        GlassIconButton(TabIcons.Ban, "Won't do, with the reason", on = stopping, size = 36.dp, onClick = onStop)
+        if (canStop) GlassIconButton(TabIcons.Ban, "Won't do, with the reason", on = stopping, size = 36.dp, onClick = onStop)
         GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Risk, size = 36.dp, onClick = a.onDelete)
         GlassIconButton(TabIcons.Close, "Close", size = 36.dp, onClick = a.onClose)
     }
@@ -474,6 +477,73 @@ private fun Note(ui: PanelUi, a: PanelActions) {
             Text("Note", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
             Spacer(Modifier.height(8.dp))
             InlineField(ui.text, "Write the task", "Full note", MaterialTheme.typography.bodyMedium, Modifier.fillMaxWidth(), onSave = a.onText)
+        }
+    }
+}
+
+/**
+ * A done task's panel: what it was and when it was finished, read only. Reopen (pagel.uz's undone) is the one action;
+ * every field becomes editable again once it is open.
+ */
+@Composable
+private fun DoneContent(ui: PanelUi, today: LocalDate, a: PanelActions) {
+    val day = ui.doneAt?.let(org.pagel.ai.data.upcoming::doneDayOf)
+    val time = ui.doneAt?.let(org.pagel.ai.data.upcoming::doneTimeOf).orEmpty()
+    val word = day?.let { org.pagel.ai.data.upcoming.doneDayLabel(it, today) }?.let { if (it == "Today" || it == "Yesterday") it.lowercase() else it }
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
+        Header(ui, stopping = false, a, onStop = {}, canStop = false)
+        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 20.dp), verticalAlignment = Alignment.Top) {
+            Ring(ui.priority, done = true, title = ui.title) {}
+            Column(Modifier.weight(1f).padding(top = 10.dp)) {
+                Text(ui.title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink)
+                if (ui.doneWhen.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Done when ${ui.doneWhen}", style = MaterialTheme.typography.bodyMedium, color = Glass.PrimaryInk)
+                }
+            }
+        }
+        Spacer(Modifier.height(14.dp))
+        Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(TabIcons.Done, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(listOfNotNull("Done", word, time.ifEmpty { null }).joinToString(" "), style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f))
+                val press = remember { MutableInteractionSource() }
+                Row(
+                    Modifier.heightIn(min = TouchMin).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = a.onReopen)
+                        .semantics(mergeDescendants = true) { contentDescription = "Reopen" },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(TabIcons.Undo, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Reopen", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk)
+                    }
+                }
+            }
+        }
+        if (ui.steps.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Column(Modifier.padding(vertical = 8.dp)) {
+                    for (s in ui.steps) Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (s.done) Icon(TabIcons.Done, contentDescription = "Done", tint = Glass.Primary, modifier = Modifier.size(16.dp))
+                        else Box(Modifier.size(16.dp).border(1.5.dp, Glass.Ink.copy(alpha = 0.30f), CircleShape).semantics { contentDescription = "Not done" })
+                        Spacer(Modifier.width(10.dp))
+                        Text(s.text, style = MaterialTheme.typography.bodyMedium.copy(textDecoration = if (s.done) TextDecoration.LineThrough else null), color = if (s.done) Glass.Muted else Glass.Ink)
+                    }
+                }
+            }
+        }
+        if (ui.text.isNotBlank() && ui.text != ui.title) {
+            Spacer(Modifier.height(12.dp))
+            Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Note", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
+                    Spacer(Modifier.height(8.dp))
+                    Text(ui.text, style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+                }
+            }
         }
     }
 }

@@ -159,7 +159,7 @@ class InboxScreenshotTest {
         val unread = row("inbox/new.md", "https://x.com/a/status/9", "Unread save from last night", "", "all", "learn", "", pic = false, guessed = false)
         show { screen(ui(listOf(unread, meme)).copy(reading = true)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-ai-reading.png")
-        compose.onNodeWithText("The AI is reading it now. Pick below, or wait a moment.").assertIsDisplayed()
+        compose.onNodeWithText("AI is reading this one").assertIsDisplayed()
         oneWholeLine("Do now")
     }
 

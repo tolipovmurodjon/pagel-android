@@ -74,6 +74,8 @@ object TabIcons {
     val ArrowUpRight = icon("arrow-up-right", "M7 7h10v10", "M7 17 17 7")
     val CornerDownLeft = icon("corner-down-left", "M20 4v7a4 4 0 0 1-4 4H4", "m9 10-5 5 5 5")
     val CircleHelp = icon("circle-help", "M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0", "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01")
+    /** X's logo (Simple Icons, CC0), filled: the source mark of a post from x.com. */
+    val XLogo = icon("x-logo", "M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z", fill = true, outline = false)
     val Instagram = icon("instagram", "M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1 -5 5h-10a5 5 0 0 1 -5 -5v-10a5 5 0 0 1 5 -5z", "M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z", "M17.5 6.5h.01")
     val InboxZero = icon("inbox-check", "M3.5 13.5 6 5.6A2.5 2.5 0 0 1 8.4 4h7.2A2.5 2.5 0 0 1 18 5.6l2.5 7.9V18a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 18z", "m9 9.5 2 2 4-4")
 
@@ -107,13 +109,13 @@ object TabIcons {
 
     fun forProject(project: String): ImageVector = projects[project] ?: projects.getValue("folder")
 
-    private fun icon(name: String, vararg paths: String, fill: Boolean = false): ImageVector {
+    private fun icon(name: String, vararg paths: String, fill: Boolean = false, outline: Boolean = true): ImageVector {
         val b = ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         for (d in paths) {
             b.addPath(
                 pathData = PathParser().parsePathString(d).toNodes(),
                 fill = if (fill) SolidColor(Color.Black) else null,
-                stroke = SolidColor(Color.Black),
+                stroke = if (outline) SolidColor(Color.Black) else null,
                 strokeLineWidth = 2f,
                 strokeLineCap = StrokeCap.Round,
                 strokeLineJoin = StrokeJoin.Round,

@@ -56,7 +56,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -165,6 +164,10 @@ fun InboxRoute(contentPadding: PaddingValues, reselect: Int, vm: InboxViewModel 
     val cheer by vm.cheer.collectAsStateWithLifecycle()
     var guide by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf<InboxCard?>(null) }
+    androidx.lifecycle.compose.LifecycleStartEffect(Unit) {
+        vm.onScreen(true)
+        onStopOrDispose { vm.onScreen(false) }
+    }
     InboxScreen(
         ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer,
         actions = InboxActions(choose = vm::choose, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }),
@@ -598,7 +601,8 @@ private fun SitePill(site: Site, name: String) {
     Row(Modifier.background(bg, CircleShape).padding(start = 6.dp, end = 10.dp, top = 3.dp, bottom = 3.dp), verticalAlignment = Alignment.CenterVertically) {
         when (site) {
             Site.INSTAGRAM -> Icon(TabIcons.Instagram, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-            Site.X -> Icon(TabIcons.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+            // X's own mark, not a close cross (checker 2026-10-28 #9).
+            Site.X -> Icon(TabIcons.XLogo, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
             Site.LINKEDIN -> Text("in", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFF0A66C2),
                 modifier = Modifier.background(Color.White, RoundedCornerShape(3.dp)).padding(horizontal = 3.dp))
             else -> Icon(TabIcons.Globe, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
@@ -616,12 +620,7 @@ private fun Choose(card: InboxCard, ui: InboxUi, actions: InboxActions) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         val guess = card.guess
         if (guess != null) GuessButton(card, guess, ui) { actions.choose(card, guess, Throw.None) }
-        else Text(
-            if (ui.reading) "The AI is reading it now. Pick below, or wait a moment." else "The AI has not read this one yet. Pick below.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted,
-            modifier = Modifier.fillMaxWidth().background(Glass.Ink.copy(alpha = 0.04f), RoundedCornerShape(14.dp))
-                .drawBehind { drawRoundRect(Glass.Ink.copy(alpha = 0.18f), style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))), cornerRadius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx())) }
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-        )
+        else AiReading(ui.reading)
         Spacer(Modifier.height(8.dp))
         // One row of icons, each with its word under it (checker #5: as chips, three of six sat under the tab bar).
         Row(Modifier.fillMaxWidth()) {
@@ -698,5 +697,29 @@ private fun ChoiceIcon(choice: Choice, enabled: Boolean, modifier: Modifier, onC
             softWrap = false,
             autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = (8f / scale).sp, maxFontSize = (12.5f * minOf(scale, 1.2f) / scale).sp, stepSize = (0.25f / scale).sp),
         )
+    }
+}
+
+/**
+ * No pick yet: a white glass pill with a mint rim and a sparkle that breathes while pagel.uz's AI reads (it was a grey
+ * dashed box that read as a disabled empty slot, checker 2026-10-28 #9). Still when nothing is asked yet.
+ */
+@Composable
+private fun AiReading(reading: Boolean) {
+    val breath = if (reading) {
+        val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "ai")
+        t.animateFloat(0.45f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(900), androidx.compose.animation.core.RepeatMode.Reverse), label = "breath")
+    } else null
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .background(Color.White.copy(alpha = 0.78f), CircleShape)
+            .border(1.25.dp, Brush.linearGradient(listOf(Color.White, Glass.Aurora1, Color.White)), CircleShape)
+            .semantics(mergeDescendants = true) {}
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(TabIcons.Sparkles, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(18.dp).graphicsLayer { alpha = breath?.value ?: 1f })
+        Spacer(Modifier.width(10.dp))
+        Text(if (reading) "AI is reading this one" else "Not read yet · pick below", style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

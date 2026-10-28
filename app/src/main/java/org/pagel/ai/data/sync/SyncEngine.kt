@@ -109,17 +109,20 @@ class SyncEngine(
         dao.applySync(
             full = r.full,
             projects = r.projects.map { ProjectEntity(it.name, it.title, it.color, it.sort, it.open) },
-            tasks = r.tasks.map {
-                TaskEntity(
-                    id = it.id, project = it.project, phase = it.phase, sort = it.sort, text = it.text, title = it.title,
-                    status = it.status, priority = it.priority, star = it.star, due = it.due, every = it.every,
-                    doneWhen = it.doneWhen, doneAt = it.doneAt, updatedAt = it.updatedAt, serverVersion = it.version, lastModified = now,
-                    phaseSort = it.phaseSort, phaseNow = it.phaseNow,
-                )
-            },
-            steps = r.tasks.flatMap { t -> t.steps.mapIndexed { i, s -> StepEntity(t.id, i, s.text, s.title, s.done) } },
+            tasks = r.tasks.map { it.toEntity(now) },
+            steps = r.tasks.flatMap { it.stepEntities() },
             removed = r.removed,
             state = SyncStateEntity(cursor = r.cursor, lastSyncAt = now),
         )
     }
 }
+
+/** A task as pagel.uz sends it (/sync, /completed), as Room keeps it. */
+fun org.pagel.ai.data.api.SyncTaskDto.toEntity(now: Long) = TaskEntity(
+    id = id, project = project, phase = phase, sort = sort, text = text, title = title,
+    status = status, priority = priority, star = star, due = due, every = every,
+    doneWhen = doneWhen, doneAt = doneAt, updatedAt = updatedAt, serverVersion = version, lastModified = now,
+    phaseSort = phaseSort, phaseNow = phaseNow,
+)
+
+fun org.pagel.ai.data.api.SyncTaskDto.stepEntities() = steps.mapIndexed { i, s -> StepEntity(id, i, s.text, s.title, s.done) }

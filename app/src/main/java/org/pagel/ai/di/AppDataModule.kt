@@ -29,6 +29,7 @@ import org.pagel.ai.data.today.OutboxSender
 import org.pagel.ai.data.today.OutboxWorker
 import org.pagel.ai.data.today.TodayRepository
 import org.pagel.ai.data.tasks.TaskRepository
+import org.pagel.ai.data.upcoming.UpcomingRepository
 import java.util.concurrent.TimeUnit
 import javax.inject.Qualifier
 import javax.inject.Singleton
@@ -103,6 +104,10 @@ object AppDataModule {
     @Provides @Singleton
     fun provideHabitsRepository(@ApplicationContext ctx: Context, dao: PagelDao, api: PagelApi, reminders: ReminderPlanner): HabitsRepository =
         HabitsRepository(dao, api, OutboxWorker.scheduler(ctx), reminders)
+
+    @Provides @Singleton
+    fun provideUpcomingRepository(dao: PagelDao, api: PagelApi, tasks: TaskRepository): UpcomingRepository =
+        UpcomingRepository(dao, api, tasks)
 
     @Provides @Singleton
     fun provideAccountStore(store: EncryptedAccountStore): AccountStore = store

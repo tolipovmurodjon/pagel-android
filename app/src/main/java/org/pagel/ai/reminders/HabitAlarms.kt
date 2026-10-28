@@ -70,8 +70,14 @@ class HabitAlarms(
             val at = if (r.enabled && h != null) ReminderMath.nextFire(h.due, h.every, now) else null
             if (at == null) { am.cancel(pi); continue }
             val ms = at.toInstant().toEpochMilli()
-            if (canExact(am)) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, pi)
-            else am.setWindow(AlarmManager.RTC_WAKEUP, ms, ReminderMath.WINDOW_MS, pi)
+            // Each alarm on its own: a revoked exact grant throws SecurityException, which used to drop every habit after
+            // this one (the single runCatching around plan(), checker 2026-10-28 #7). It falls back to the window.
+            try {
+                if (canExact(am)) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, ms, pi)
+                else am.setWindow(AlarmManager.RTC_WAKEUP, ms, ReminderMath.WINDOW_MS, pi)
+            } catch (_: SecurityException) {
+                runCatching { am.setWindow(AlarmManager.RTC_WAKEUP, ms, ReminderMath.WINDOW_MS, pi) }
+            }
         }
     }
 

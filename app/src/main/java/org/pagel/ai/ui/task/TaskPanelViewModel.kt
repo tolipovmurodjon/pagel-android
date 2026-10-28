@@ -41,6 +41,8 @@ data class PanelUi(
     val priority: Int = 2,
     val star: Boolean = false,
     val open: Boolean = true,
+    /** When it was finished (UTC instant); the panel of a done task is read only and offers Reopen. */
+    val doneAt: String? = null,
     val steps: List<PanelStep> = emptyList(),
     /** Some edit waits for pagel.uz to learn the new fields (an older server): a cloud-off mark says so. */
     val held: Boolean = false,
@@ -66,7 +68,7 @@ class TaskPanelViewModel @Inject constructor(
                 PanelUi(
                     loading = false, id = t.id, project = t.project, projectLabel = shortName(t.project, p?.title ?: t.project), projectColor = p?.color,
                     title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text), text = t.text, doneWhen = t.doneWhen.orEmpty(),
-                    due = t.due, every = t.every, priority = t.priority, star = t.star, open = t.status == "open",
+                    due = t.due, every = t.every, priority = t.priority, star = t.star, open = t.status == "open", doneAt = t.doneAt,
                     steps = steps.map { PanelStep(it.text, it.done) }, held = held > 0,
                 )
             }
@@ -124,6 +126,12 @@ class TaskPanelViewModel @Inject constructor(
     fun complete() = go { taskId ->
         today.tick(taskId, done = true)
         toasts.show("Done", action = "Undo") { viewModelScope.launch { today.tick(taskId, done = false) } }
+    }
+
+    /** A done task opened again from its panel (pagel.uz's undone), with Undo. */
+    fun reopen() = go { taskId ->
+        val op = tasks.reopen(taskId) ?: return@go
+        toasts.show("Back on your list", action = "Undo") { viewModelScope.launch { if (!tasks.takeBack(taskId, op)) tasks.finish(taskId) } }
     }
 
     fun delete() = go { taskId ->

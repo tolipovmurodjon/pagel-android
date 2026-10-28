@@ -135,6 +135,31 @@ class TaskRepository(
         edit(id, buildJsonObject { put("restore", true) }, place = true) { it.copy(status = "open") }
     }
 
+    /**
+     * Done from a list that is not Today (Upcoming): `PATCH {done: true}` through the same outbox as the panel's edits,
+     * so its Undo ([takeBack], else [reopen]) never puts the task on Today the way Today's own tick Undo does.
+     */
+    suspend fun finish(id: String): Long? {
+        val at = Instant.ofEpochMilli(clock()).toString()
+        return edit(id, buildJsonObject { put("done", true) }, place = true) { it.copy(status = "done", doneAt = at) }
+    }
+
+    /** Opens a finished task again (Completed's untick, the server's undone path): `PATCH {done: false}`. */
+    suspend fun reopen(id: String): Long? =
+        edit(id, buildJsonObject { put("done", false) }, place = true) { it.copy(status = "open", doneAt = null) }
+
+    /**
+     * Takes an edit back while it still waits on the phone (an Undo inside the outbox): the phone goes back to `was` and
+     * pagel.uz never hears of it. False when it already left; the caller then sends the opposite edit.
+     */
+    suspend fun takeBack(id: String, op: Long): Boolean {
+        val row = dao.outboxRow(op) ?: return false
+        if (dao.takeBackOp(op) == 0) return false
+        wasOf(row)?.let { dao.applyWas(id, it, clock()) }
+        dao.markSyncedIfIdle(id)
+        return true
+    }
+
     /** The day in Tashkent, where pagel.uz counts its days. */
     fun tashkentDay(): String = Instant.ofEpochMilli(clock()).atZone(TASHKENT).toLocalDate().toString()
 
@@ -156,6 +181,7 @@ class TaskRepository(
                 "done_when" -> put("done_when", before.doneWhen)
                 "steps", "ticked" -> if (!stepsKept) { putSteps(oldSteps); stepsKept = true }
                 "remove", "restore", "not_doing" -> put("status", before.status)
+                "done" -> { put("status", before.status); put("done_at", before.doneAt) }
             }
             if (place) put("today", wasToday)
         }
@@ -213,6 +239,7 @@ suspend fun PagelDao.applyWas(taskId: String, was: JsonObject, at: Long = System
         "star" -> t.copy(star = v.jsonPrimitive.booleanOrNull ?: t.star)
         "done_when" -> t.copy(doneWhen = v.str())
         "status" -> t.copy(status = v.str() ?: t.status)
+        "done_at" -> t.copy(doneAt = v.str())
         else -> t
     }
     upsertTasks(listOf(t.copy(lastModified = at)))

@@ -69,8 +69,10 @@ class HabitAlarmReceiver : BroadcastReceiver() {
         val on = dao.remindersOnce().any { it.taskId == id && it.enabled }
         val today = habits.today()
         val due = t?.due
-        if (t != null && on && t.status == "open" && !t.every.isNullOrBlank() && (due == null || due.take(10) <= today)) {
-            val streak = streakOf(t.every, dao.habitTicksOf(id).map { it.day }.toSet(), today) ?: 0
+        val days = dao.habitTicksOf(id).map { it.day }.toSet()
+        // Already ticked today (in the app, on the web, or by an earlier Done): no ring for a done habit (checker #3).
+        if (t != null && on && t.status == "open" && !t.every.isNullOrBlank() && (due == null || due.take(10) <= today) && today !in days) {
+            val streak = streakOf(t.every, days, today) ?: 0
             post(ctx, id, t.title?.takeIf(String::isNotBlank) ?: headline(t.text), listOfNotNull(due?.drop(11)?.takeIf(String::isNotBlank), if (streak > 1) "🔥 $streak" else null).joinToString(" · "))
         }
         habits.replan()
@@ -91,9 +93,12 @@ class HabitAlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val n = NotificationCompat.Builder(ctx, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setSmallIcon(org.pagel.ai.R.drawable.ic_stat_bell)
+            .setColor(0xFF1C7E69.toInt())
             .setContentTitle(title)
             .setContentText(line.ifEmpty { "Time for it" })
+            // The whole habit, never "Stretch for ten min…" (walk 40).
+            .setStyle(NotificationCompat.BigTextStyle().setBigContentTitle(title).bigText(line.ifEmpty { "Time for it" }))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(open)
             .setAutoCancel(true)

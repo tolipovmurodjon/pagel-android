@@ -229,6 +229,29 @@ abstract class PagelDao {
         saveSyncState(state)
     }
 
+    // ── Upcoming · Completed · Overdue (Phase 4) ──────────────────────────────────────────────────────────────────
+
+    /** Open tasks with a date (the web's upcoming + overdue read only dated tasks), habits included. */
+    @Query("SELECT * FROM tasks WHERE status = 'open' AND due IS NOT NULL AND due != ''")
+    abstract fun datedOpen(): Flow<List<TaskEntity>>
+
+    /** Finished tasks, newest first (the web's /completed). */
+    @Query("SELECT * FROM tasks WHERE status = 'done' AND doneAt IS NOT NULL ORDER BY doneAt DESC")
+    abstract fun completed(): Flow<List<TaskEntity>>
+
+    /**
+     * A page of finished tasks from `GET /api/v1/completed` (older than /sync's 14 days): added or refreshed, never
+     * deleting anything, and never over a task with a change still waiting (the same rule as [applySync]).
+     */
+    @Transaction
+    open suspend fun applyCompleted(tasks: List<TaskEntity>, steps: List<StepEntity>) {
+        val pending = pendingIds().toSet()
+        val incoming = tasks.filter { it.id !in pending }
+        incoming.map { it.id }.chunked(MAX_IDS).forEach { deleteStepsOf(it) }
+        upsertTasks(incoming)
+        upsertSteps(steps.filter { it.taskId !in pending })
+    }
+
     // ── Habits (Phase 3) ──────────────────────────────────────────────────────────────────────────────────────────
 
     /** Open habits: repeating tasks, as the web's habitsView reads them (views.ts). */
@@ -253,18 +276,26 @@ abstract class PagelDao {
     @Query("DELETE FROM habit_ticks WHERE day = :day AND taskId = :taskId")
     abstract suspend fun deleteHabitTick(day: String, taskId: String)
 
-    @Query("DELETE FROM habit_ticks WHERE taskId NOT IN (SELECT taskId FROM outbox WHERE refused IS NULL)")
-    abstract suspend fun deleteSettledHabitTicks()
-
     /**
      * pagel.uz's ticks replace the phone's, except for a habit with a change still waiting in the outbox: its ticks
      * stay the phone's until pagel.uz has the change (the same rule as [applySync]).
      */
     @Transaction
-    open suspend fun replaceHabitTicks(rows: List<HabitTickEntity>) {
-        val waiting = waitingOutbox().map { it.taskId }.toSet()
-        deleteSettledHabitTicks()
+    open suspend fun replaceHabitTicks(rows: List<HabitTickEntity>, keep: Set<String> = emptySet()) {
+        val waiting = waitingOutbox().map { it.taskId }.toSet() + keep
+        deleteSettledHabitTicksExcept(keep.toList())
         addHabitTicks(rows.filter { it.taskId !in waiting })
+    }
+
+    @Query("DELETE FROM habit_ticks WHERE taskId NOT IN (SELECT taskId FROM outbox WHERE refused IS NULL) AND taskId NOT IN (:keep)")
+    abstract suspend fun deleteSettledHabitTicksExcept(keep: List<String>)
+
+    /** A habit's tick as one write: the new date, the day counted and the outbox row, so no screen sees half of it. */
+    @Transaction
+    open suspend fun tickHabit(task: TaskEntity, tick: HabitTickEntity, op: OutboxEntity): Long {
+        upsertTasks(listOf(task))
+        addHabitTick(tick)
+        return addToOutbox(op)
     }
 
     @Query("SELECT * FROM habit_reminders")

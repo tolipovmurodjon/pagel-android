@@ -8,6 +8,8 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -112,31 +114,51 @@ fun HabitsRoute(contentPadding: PaddingValues, reselect: Int, vm: HabitsViewMode
     var bell by remember { mutableStateOf<String?>(null) }
     var celebrate by remember { mutableStateOf(0) }
     var exact by remember { mutableStateOf(true) }
+    var notify by remember { mutableStateOf(true) }
     val alarms = remember { ctx.getSystemService(AlarmManager::class.java) }
+    fun readGrants() {
+        exact = alarms == null || HabitAlarms.canExact(alarms)
+        notify = notificationsOn(ctx)
+    }
     // Back from Settings (alarms & reminders, notifications): plan again with what Boss granted.
     LifecycleResumeEffect(Unit) {
-        exact = alarms == null || HabitAlarms.canExact(alarms)
+        readGrants()
         vm.replan()
         onPauseOrDispose {}
     }
+    // Read again when the sheet opens: a grant given while PAGEL stayed in front (adb, a quick settings tile) used to
+    // show "off" until the next resume (walk 38, checker 2026-10-28 #7).
+    LaunchedEffect(bell) { if (bell != null) readGrants() }
     LaunchedEffect(Unit) { vm.celebrate.collect { celebrate++ } }
 
     fun askExact() = vm.askExactOnce(needed = alarms != null && !HabitAlarms.canExact(alarms)) {
         runCatching { ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}"))) }
     }
     // Asked at first use (the first reminder turned on), never at launch, never twice in a row (RULES.md, security).
-    val notify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { askExact() }
+    // A no leaves the sheet's "Notifications off · Turn on" row; the exact-alarm ask waits for a yes (checker #6).
+    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> readGrants(); if (granted) askExact() }
     fun remind(id: String, on: Boolean) {
         vm.setReminder(id, on)
         if (!on) return
         val needs = android.os.Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        if (needs) notify.launch(Manifest.permission.POST_NOTIFICATIONS) else askExact()
+        if (needs) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS) else askExact()
+    }
+    fun openNotificationSettings() {
+        runCatching { ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)) }
+    }
+    fun openExactSettings() {
+        runCatching { ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}"))) }
     }
 
     HabitsScreen(ui, contentPadding, reselect, celebrate = celebrate, onTick = vm::tick, onBell = { bell = it })
     bell?.let { id ->
-        ui.byId[id]?.let { t -> ReminderSheet(t, on = id in ui.reminders, exact = exact, onToggle = { remind(id, it) }, onTime = { vm.setTime(id, it) }) { bell = null } }
+        ui.byId[id]?.let { t ->
+            ReminderSheet(
+                t, on = id in ui.reminders, exact = exact, notify = notify, onToggle = { remind(id, it) }, onTime = { vm.setTime(id, it) },
+                onFixNotify = { openNotificationSettings() }, onFixExact = { openExactSettings() },
+            ) { bell = null }
+        }
     }
 }
 
@@ -200,11 +222,13 @@ fun HabitsScreen(
             if (d.allDone && ui.finishing.isEmpty()) item(key = "all-done", contentType = "all-done") {
                 AllDone(d.doneCount, d.best, Modifier.onGloballyPositioned { allDoneAt = it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 3f) })
             }
+            // Panes slide to their new place when one grows or shrinks (apple-design §7, spatial consistency): a ticked
+            // habit's row folds out of its part and "Done today" grows, instead of the row teleporting (checker #10).
             for ((part, items) in d.parts) item(key = "part-${part.name}", contentType = "part") {
-                PartPane(part, items, ui, today, onTick = ::tick, onOpen = openTask, onBell = onBell)
+                PartPane(part, items, ui, today, onTick = ::tick, onOpen = openTask, onBell = onBell, modifier = Modifier.animateItem())
             }
-            if (d.done.isNotEmpty()) item(key = "done", contentType = "done") { DonePane(d.done) }
-            if (d.coming.isNotEmpty()) item(key = "coming", contentType = "coming") { ComingPane(d.coming) }
+            if (d.done.isNotEmpty()) item(key = "done", contentType = "done") { DonePane(d.done, Modifier.animateItem()) }
+            if (d.coming.isNotEmpty()) item(key = "coming", contentType = "coming") { ComingPane(d.coming, Modifier.animateItem()) }
         }
         for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
     }
@@ -228,7 +252,8 @@ private fun Header(ui: HabitsUi) {
 @Composable
 private fun DayBar(done: Int, total: Int) {
     val target = if (total <= 0) 0f else done.toFloat() / total
-    val p by animateFloatAsState(target, spring(dampingRatio = 0.8f, stiffness = 220f), label = "bar")
+    // Critically damped: a tap is not a fling, so the bar must not overshoot (apple-design §4, checker #10).
+    val p by animateFloatAsState(target, spring(dampingRatio = 1f, stiffness = 220f), label = "bar")
     Box(
         Modifier.fillMaxWidth().height(8.dp).background(Glass.Ink.copy(alpha = 0.08f), CircleShape)
             .semantics { progressBarRangeInfo = androidx.compose.ui.semantics.ProgressBarRangeInfo(done.toFloat(), 0f..total.toFloat()); contentDescription = "$done of $total habits done today" },
@@ -259,9 +284,9 @@ private fun PaneTitle(text: String) {
 }
 
 @Composable
-private fun PartPane(part: Part, items: List<HabitItem>, ui: HabitsUi, today: LocalDate, onTick: (String, Offset) -> Unit, onOpen: (String) -> Unit, onBell: (String) -> Unit) {
-    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Column(Modifier.padding(bottom = 6.dp)) {
+private fun PartPane(part: Part, items: List<HabitItem>, ui: HabitsUi, today: LocalDate, onTick: (String, Offset) -> Unit, onOpen: (String) -> Unit, onBell: (String) -> Unit, modifier: Modifier = Modifier) {
+    Pane(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Column(Modifier.animateContentSize(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)).padding(bottom = 6.dp)) {
             PaneTitle("${part.icon} ${part.label}")
             for ((i, h) in items.withIndex()) key(h.task.id) {
                 if (i > 0) HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
@@ -293,7 +318,9 @@ private fun HabitRow(h: HabitItem, done: Boolean, reminder: Boolean, today: Loca
                 val small = MaterialTheme.typography.labelSmall
                 val late = dueLabel(t.due, today)?.takeIf { it.tone == DueTone.LATE }
                 if (late != null || time != null) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(if (late != null) TabIcons.Calendar else TabIcons.Clock, contentDescription = null, tint = if (late != null) Glass.Risk else Glass.Muted, modifier = Modifier.size(13.dp))
+                    // The icon grows with the words (13 sp, not 13 dp): at 1.5x it stayed small beside big text.
+                    Icon(if (late != null) TabIcons.Calendar else TabIcons.Clock, contentDescription = null, tint = if (late != null) Glass.Risk else Glass.Muted,
+                        modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { 13.sp.toDp() }))
                     Spacer(Modifier.width(4.dp))
                     Text(late?.text ?: time.orEmpty(), style = small, color = if (late != null) Glass.Risk else Glass.Muted)
                 }
@@ -316,14 +343,15 @@ private fun Streak(n: Int) {
 }
 
 @Composable
-private fun DonePane(done: List<HabitItem>) {
-    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Column(Modifier.padding(bottom = 10.dp)) {
+private fun DonePane(done: List<HabitItem>, modifier: Modifier = Modifier) {
+    Pane(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Column(Modifier.animateContentSize(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)).padding(bottom = 10.dp)) {
             PaneTitle("Done today ✓")
             for (h in done) key(h.task.id) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(20.dp).background(Color(0xFF058527), CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(TabIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                    // Bright mint with an ink tick (Boss: "white, ink or bright mint"), not a 4th green (checker #9).
+                    Box(Modifier.size(20.dp).background(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(TabIcons.Check, contentDescription = null, tint = Glass.Ink, modifier = Modifier.size(13.dp))
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(titleOf(h.task), style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -335,8 +363,8 @@ private fun DonePane(done: List<HabitItem>) {
 }
 
 @Composable
-private fun ComingPane(coming: List<TaskEntity>) {
-    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+private fun ComingPane(coming: List<TaskEntity>, modifier: Modifier = Modifier) {
+    Pane(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Column(Modifier.padding(bottom = 10.dp)) {
             PaneTitle("Coming up")
             for (t in coming) key(t.id) {
@@ -354,8 +382,18 @@ private fun ComingPane(coming: List<TaskEntity>) {
 // ── The reminder sheet ─────────────────────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun ReminderSheet(t: TaskEntity, on: Boolean, exact: Boolean, onToggle: (Boolean) -> Unit, onTime: (String) -> Unit, onDismiss: () -> Unit) {
-    GlassSheet(onDismiss) { ReminderContent(t, on, exact, onToggle, onTime); Spacer(Modifier.height(SheetBottom)) }
+fun ReminderSheet(
+    t: TaskEntity, on: Boolean, exact: Boolean, notify: Boolean, onToggle: (Boolean) -> Unit, onTime: (String) -> Unit,
+    onFixNotify: () -> Unit, onFixExact: () -> Unit, onDismiss: () -> Unit,
+) {
+    GlassSheet(onDismiss) { ReminderContent(t, on, exact, onToggle, onTime, notify, onFixNotify, onFixExact); Spacer(Modifier.height(SheetBottom)) }
+}
+
+/** Notifications allowed for PAGEL, and the habits channel not switched off (it is made at the first reminder). */
+fun notificationsOn(ctx: android.content.Context): Boolean {
+    if (!androidx.core.app.NotificationManagerCompat.from(ctx).areNotificationsEnabled()) return false
+    val channel = ctx.getSystemService(android.app.NotificationManager::class.java)?.getNotificationChannel(org.pagel.ai.reminders.HabitAlarmReceiver.CHANNEL)
+    return channel == null || channel.importance != android.app.NotificationManager.IMPORTANCE_NONE
 }
 
 /**
@@ -363,7 +401,10 @@ fun ReminderSheet(t: TaskEntity, on: Boolean, exact: Boolean, onToggle: (Boolean
  * with a Done button that ticks it even offline. Without the exact-alarm grant it says it may come up to 10 min late.
  */
 @Composable
-fun ReminderContent(t: TaskEntity, on: Boolean, exact: Boolean, onToggle: (Boolean) -> Unit, onTime: (String) -> Unit) {
+fun ReminderContent(
+    t: TaskEntity, on: Boolean, exact: Boolean, onToggle: (Boolean) -> Unit, onTime: (String) -> Unit,
+    notify: Boolean = true, onFixNotify: () -> Unit = {}, onFixExact: () -> Unit = {},
+) {
     val time = t.due?.drop(11)?.trim()?.takeIf(String::isNotEmpty) ?: "08:00"
     Column(Modifier.fillMaxWidth()) {
         SheetTitle("Reminder", time)
@@ -389,12 +430,38 @@ fun ReminderContent(t: TaskEntity, on: Boolean, exact: Boolean, onToggle: (Boole
         Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             TimeWheel(time, onChange = onTime, modifier = Modifier.padding(vertical = 8.dp))
         }
-        val hint = when {
-            !on -> "Off. The habit still shows here every day."
-            exact -> "At $time on the days it repeats, with a Done button."
-            else -> "Alarms & reminders is off for PAGEL, so it may come up to 10 min late."
+        // A missing grant is a row Boss can tap, never a red paragraph (checker #6): notifications first (without them
+        // nothing rings at all), then the exact time (without it a reminder may come up to 10 min late).
+        when {
+            !on -> Hint("Off. The habit still shows here every day.")
+            !notify -> FixRow(TabIcons.Bell, "Notifications off", "Turn on", Glass.Risk, onFixNotify)
+            !exact -> FixRow(TabIcons.Clock, "Exact time", "Allow", Glass.Ink, onFixExact)
+            else -> Hint("At $time on the days it repeats, with a Done button.")
         }
-        Text(hint, style = MaterialTheme.typography.labelSmall, color = if (on && !exact) Glass.Risk else Glass.Muted, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp))
+    }
+}
+
+@Composable
+private fun Hint(text: String) {
+    Text(text, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp))
+}
+
+/** A missing grant: its icon and name, and the one word that opens the right Settings page, on a 48 dp row. */
+@Composable
+private fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String, tone: Color, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp).heightIn(min = 48.dp).pressScale(press)
+            .clickable(press, indication = null, role = Role.Button, onClickLabel = action, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "$label · $action" }
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = tone, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = tone, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(action, style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1,
+            modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = 14.dp, vertical = 8.dp))
     }
 }
 
@@ -403,7 +470,9 @@ fun ReminderContent(t: TaskEntity, on: Boolean, exact: Boolean, onToggle: (Boole
 private fun Switch(on: Boolean) {
     val x by animateFloatAsState(if (on) 1f else 0f, spring(dampingRatio = 0.7f, stiffness = 500f), label = "knob")
     Box(
-        Modifier.size(width = 51.dp, height = 31.dp).background(if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.16f), CircleShape).padding(2.dp),
+        // On = bright mint (Boss's colour theory), not a solid #1C7E69 slab (checker #9); the white knob carries the shape.
+        Modifier.size(width = 51.dp, height = 31.dp)
+            .background(if (on) Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)) else androidx.compose.ui.graphics.SolidColor(Glass.Ink.copy(alpha = 0.16f)), CircleShape).padding(2.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Box(Modifier.graphicsLayer { translationX = x * 20.dp.toPx() }.size(27.dp).background(Color.White, CircleShape))

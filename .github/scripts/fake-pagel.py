@@ -50,6 +50,30 @@ HABIT_TICKS = []  # (day, id)
 def habit_due(hid, at):
     return HABIT_DUE.get(hid, today() + (f" {at}" if at else ""))
 
+def day_from_today(n):
+    return (datetime.now(TASHKENT) + timedelta(days=n)).strftime("%Y-%m-%d")
+
+# Upcoming (Phase 4): two overdue tasks and one for tomorrow, none starred (they are not on Today). The walkthrough drags
+# t_u3 onto the day after tomorrow and moves the overdue ones to today; PATCH {due} lands in EDITS like a panel edit.
+UPCOMING = [("t_u1", "humopedia", "Send the grant form", 1, -1), ("t_u2", "me", "Pay the internet bill", 0, -3), ("t_u3", "humopedia", "Review the lesson draft", 2, 1)]
+# Completed (Phase 4): finished tasks with done_at (UTC instants); /sync carries the last 14 days, /api/v1/completed all.
+# The walkthrough unticks t_c1 (PATCH {done: false}) and it opens again.
+def ago(hours):
+    return (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+COMPLETED = [("t_c1", "me", "Renew the domain", 1), ("t_c2", "humopedia", "Write the IT Park report", 26), ("t_c3", "ababil", "Export the hover log", 24 * 20)]
+DONE_AT = {cid: ago(h) for cid, _, _, h in COMPLETED}
+REOPENED = set()
+
+def completed_rows(recent_only):
+    rows = []
+    for k, (cid, proj, text, h) in enumerate(COMPLETED):
+        if cid in REOPENED or (recent_only and h > 24 * 14):
+            continue
+        rows.append({"id": cid, "project": proj, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 80 + k, "text": text, "status": "done",
+                     "priority": 2, "star": False, "due": None, "done_at": DONE_AT[cid], "updated_at": DONE_AT[cid], "version": 2, "steps": [],
+                     "day": datetime.fromisoformat(DONE_AT[cid].replace("Z", "+00:00")).astimezone(TASHKENT).strftime("%Y-%m-%d")})
+    return rows
+
 def inbox_body():
     sorted_files = {f for f, a in SORTS if a != "later"}
     items = [{"file": f"inbox/{i}.md", "saved": "2026-10-27", "source": src, "text": f"Instagram post by @{au} posted 2026-10-27\n\n{claim}. The caption goes on for a while about it, with more words than the card shows." if "instagram" in src else f"{claim}. The post says more about it.",
@@ -76,7 +100,14 @@ def sync_body():
                       for k, (i, p, text, pr, due) in enumerate(TODAY)]
                      + [{"id": hid, "project": "me", "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 50 + k, "text": text, "status": "open",
                          "priority": 2, "star": False, "due": habit_due(hid, at), "every": "day", "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": []}
-                        for k, (hid, text, at) in enumerate(HABITS)],
+                        for k, (hid, text, at) in enumerate(HABITS)]
+                     + [{"id": uid, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 60 + k, "text": text, "status": "open",
+                         "priority": pr, "star": False, "due": day_from_today(n), "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": [], **EDITS.get(uid, {})}
+                        for k, (uid, p, text, pr, n) in enumerate(UPCOMING)]
+                     + completed_rows(recent_only=True)
+                     + [{"id": cid, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 80, "text": text, "status": "open",
+                         "priority": 2, "star": False, "due": None, "updated_at": "2026-10-28T10:00:00Z", "version": 3, "steps": []}
+                        for cid, p, text, _ in COMPLETED if cid in REOPENED],
             "removed": []}
 
 class H(BaseHTTPRequestHandler):
@@ -141,21 +172,30 @@ class H(BaseHTTPRequestHandler):
             return self.send(401, {"error": "Send Authorization: Bearer <token>."})
         tid = self.path.rsplit("/", 1)[-1]
         habits = {h for h, *_ in HABITS}
-        if not self.path.startswith("/api/v1/tasks/") or tid not in {i for i, *_ in TODAY} | habits:
+        known = {i for i, *_ in TODAY} | habits | {u for u, *_ in UPCOMING} | {c for c, *_ in COMPLETED}
+        if not self.path.startswith("/api/v1/tasks/") or tid not in known:
             return self.send(404, {"error": "No such task."})
         b = json.loads(body or "{}")
         if tid in habits:
             at = next(t for h, _, t in HABITS if h == tid)
             day = today()
-            if b.get("done") is True:
-                HABIT_TICKS.append((day, tid))
-                nxt = (datetime.now(TASHKENT) + timedelta(days=1)).strftime("%Y-%m-%d")
+            # The phone says the day it ticked and the date it moved from (task-api.ts): a tick sent after midnight counts
+            # for its own day, and one the web already counted (the date moved) does not move the habit again.
+            yesterday = (datetime.now(TASHKENT) - timedelta(days=1)).strftime("%Y-%m-%d")
+            tick_day = b.get("day") if b.get("day") in (day, yesterday) else day
+            moved = "if_due" in b and b["if_due"] != habit_due(tid, at)
+            if b.get("done") is True and not moved:
+                HABIT_TICKS.append((tick_day, tid))
+                nxt = (datetime.strptime(tick_day, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
                 HABIT_DUE[tid] = nxt + (f" {at}" if at else "")
             if "due" in b:
                 HABIT_DUE[tid] = b["due"]
                 if b["due"] and b["due"][:10] <= day and (day, tid) in HABIT_TICKS:
                     HABIT_TICKS.remove((day, tid))
             return self.send(200, {"id": tid, "status": "open", "due": HABIT_DUE.get(tid), "applied": list(b.keys())})
+        if tid in DONE_AT and "done" in b:
+            (REOPENED.add if b["done"] is False else REOPENED.discard)(tid)
+            return self.send(200, {"id": tid, "status": "open" if tid in REOPENED else "done", "applied": list(b.keys())})
         if "done" in b:
             (DONE.add if b["done"] is True else DONE.discard)(tid)
         if "steps" in b:
@@ -187,6 +227,8 @@ class H(BaseHTTPRequestHandler):
             return self.send(404, {"error": "No picture."})
         if self.path.startswith("/api/v1/inbox"):
             return self.send(200, inbox_body())
+        if self.path.startswith("/api/v1/completed"):
+            return self.send(200, {"tasks": completed_rows(recent_only=False), "before": None})
         if self.path.startswith("/api/v1/sync"):
             return self.send(200, sync_body())
         if self.path.startswith("/api/v1/stream"):

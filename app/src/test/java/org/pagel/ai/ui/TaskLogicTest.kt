@@ -27,7 +27,7 @@ class TaskLogicTest {
         assertEquals("Daily", Repeat.label("day"))
         assertEquals("Weekdays", Repeat.label("weekday"))
         assertEquals("Every Tue, Thu, Sun", Repeat.label("sun,tue,thu"))
-        assertEquals("Every monday", Repeat.label("monday"))
+        assertEquals("Mondays", Repeat.label("monday"))
         assertEquals("tue,thu,sun", Repeat.daySet(listOf(0, 2, 4)))
         assertEquals("weekday", Repeat.toggle("mon,tue,wed,thu", 5))
         assertEquals("day", Repeat.toggle("weekday", 6).let { Repeat.toggle(it, 0) })

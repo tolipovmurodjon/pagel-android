@@ -43,6 +43,8 @@ class HabitsRepositoryTest {
     private lateinit var db: PagelDatabase
     private val patches = CopyOnWriteArrayList<String>()
     @Volatile private var patchCode = 200
+    /** Runs on the server's thread while it answers GET /habits (a tick made while the GET is on its way). */
+    @Volatile private var onHabitsGet: (() -> Unit)? = null
     private var kicks = 0
     private var plans = 0
     /** 2026-10-28 13:00 in Tashkent. */
@@ -60,7 +62,8 @@ class HabitsRepositoryTest {
                         else MockResponse().setResponseCode(patchCode).setBody("""{"error":"No such task."}""")
                     }
                     request.method == "GET" && path.startsWith("/api/v1/habits") ->
-                        MockResponse().setBody("""{"day":"2026-10-28","done_today":[],"ticks":[{"day":"2026-10-27","id":"t_h"},{"day":"2026-10-26","id":"t_h"},{"day":"2026-10-27","id":"t_w"}]}""")
+                        // The reply is read before the hook's tick lands: what a slow GET sees (checker #8).
+                        MockResponse().also { onHabitsGet?.invoke(); onHabitsGet = null }.setBody("""{"day":"2026-10-28","done_today":[],"ticks":[{"day":"2026-10-27","id":"t_h"},{"day":"2026-10-26","id":"t_h"},{"day":"2026-10-27","id":"t_w"}]}""")
                     else -> MockResponse().setResponseCode(404)
                 }
             }
@@ -94,12 +97,68 @@ class HabitsRepositoryTest {
         assertEquals(listOf(HabitTickEntity("2026-10-28", "t_h")), db.dao().habitTicksOf("t_h"))
         assertEquals("2026-10-28 07:30", t.was)
         val op = db.dao().waitingOutbox().single()
-        assertEquals("""{"set":{"done":true},"was":{"due":"2026-10-28 07:30","untick":"2026-10-28"}}""", op.body)
+        assertEquals("""{"set":{"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30"},"was":{"due":"2026-10-28 07:30","untick":"2026-10-28"}}""", op.body)
         assertEquals(1, kicks)
         assertEquals(1, plans)
         // Ticked already today (the notification's Done after the app's tick): nothing more happens.
         assertNull(repo().tick("t_h"))
         assertEquals(1, db.dao().waitingOutbox().size)
+    }
+
+    /** Checker 2026-10-28 #1: missed Tuesday, ticked Wednesday → due Thursday (it was Wednesday, late forever after). */
+    @Test fun aLateHabitTickedMovesPastToday() = runBlocking {
+        db.dao().upsertTasks(listOf(habit("t_h", "Drink water", "2026-10-27 08:00")))
+        repo().tick("t_h")
+        assertEquals("2026-10-29 08:00", db.dao().taskOnce("t_h")!!.due)
+        // Still on Wednesday: a second tick (the notification's Done) is refused, nothing more is queued (#3).
+        assertNull(repo().tick("t_h"))
+        assertEquals(1, db.dao().waitingOutbox().size)
+    }
+
+    /** Checker #3: a habit already ticked today (the web's tick came with /habits) is not ticked again. */
+    @Test fun aHabitTickedTodayElsewhereIsNotTickedAgain() = runBlocking {
+        seed()
+        db.dao().addHabitTick(HabitTickEntity("2026-10-28", "t_h"))
+        assertNull(repo().tick("t_h"))
+        assertTrue(db.dao().waitingOutbox().isEmpty())
+    }
+
+    /**
+     * Checker #2: ticked at 23:50 on Tuesday on the subway, sent at 00:10 on Wednesday. The PATCH says the day it was
+     * made and the date it moved from, so pagel.uz counts Tuesday and moves the habit once.
+     */
+    @Test fun anOfflineTickSentAfterMidnightCountsForItsOwnDay() = runBlocking {
+        now = Instant.parse("2026-10-27T18:50:00Z").toEpochMilli() // Tue 23:50 Tashkent
+        db.dao().upsertTasks(listOf(habit("t_h", "Stretch for ten minutes", "2026-10-27 07:30")))
+        repo().tick("t_h")
+        assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_h")!!.due)
+        now = Instant.parse("2026-10-27T19:10:00Z").toEpochMilli() // Wed 00:10 Tashkent
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-27","if_due":"2026-10-27 07:30"}"""), patches)
+    }
+
+    /**
+     * Checker #5 (walk 35): while the ring fills, the habit is already "done" in the header and is not "Coming up",
+     * even in the frame where Room's habits moved and its ticks have not been read yet.
+     */
+    @Test fun aHabitBeingTickedCountsAsDoneAndIsNotComingUp() = runBlocking {
+        seed()
+        repo().tick("t_h")
+        val half = habitsDay(db.dao().habitsOnce(), emptyList(), "2026-10-28", finishing = setOf("t_h"))
+        assertEquals(1, half.doneCount)
+        assertEquals(1, half.left)
+        assertTrue(half.coming.isEmpty())
+        assertEquals(listOf("Morning", "Evening"), half.parts.map { it.first.label })
+    }
+
+    /** Checker #8: a GET that left before a tick landed must not erase that tick when it answers. */
+    @Test fun aRefreshThatLeftBeforeATickKeepsTheTick() = runBlocking {
+        seed()
+        val r = repo()
+        onHabitsGet = { now += 1_000; runBlocking { r.tick("t_h"); sender().sendAll(account) } }
+        r.refresh(account)
+        assertEquals(listOf("2026-10-28"), db.dao().habitTicksOf("t_h").map { it.day })
+        assertTrue(db.dao().waitingOutbox().isEmpty())
     }
 
     @Test fun aSetOfDaysMovesToTheNextDayInTheSet() = runBlocking {
@@ -113,7 +172,7 @@ class HabitsRepositoryTest {
         seed()
         repo().tick("t_h")
         assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
-        assertEquals(listOf("""t_h {"done":true}"""), patches)
+        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30"}"""), patches)
         assertTrue(db.dao().waitingOutbox().isEmpty())
         assertEquals(SyncStatus.SYNCED, db.dao().taskOnce("t_h")!!.syncStatus)
     }
@@ -139,7 +198,7 @@ class HabitsRepositoryTest {
         assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_h")!!.due)
         assertTrue(db.dao().habitTicksOf("t_h").isEmpty())
         sender().sendAll(account)
-        assertEquals(listOf("""t_h {"done":true}""", """t_h {"due":"2026-10-28 07:30"}"""), patches)
+        assertEquals(listOf("""t_h {"done":true,"day":"2026-10-28","if_due":"2026-10-28 07:30"}""", """t_h {"due":"2026-10-28 07:30"}"""), patches)
     }
 
     @Test fun aRefusedTickRollsBackTheDateAndTheDay() = runBlocking {

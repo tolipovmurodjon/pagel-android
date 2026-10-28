@@ -117,6 +117,7 @@ class HabitsScreenshotTest {
     @Test fun reminderSheetLargeFontWithoutExactAlarms() {
         show(1.5f) { Column(Modifier.padding(top = 16.dp)) { ReminderContent(habits[2], on = true, exact = false, onToggle = {}, onTime = {}) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-reminder-font-1.5.png")
-        compose.onNodeWithText("Alarms & reminders is off for PAGEL, so it may come up to 10 min late.").assertIsDisplayed()
+        // A missing grant is one tappable 48 dp row, not a 3-line red paragraph (checker 2026-10-28 #6).
+        compose.onNodeWithContentDescription("Exact time · Allow").assertIsDisplayed()
     }
 }

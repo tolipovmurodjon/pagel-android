@@ -32,6 +32,20 @@ import org.pagel.ai.ui.glass.ToastCenter
 import org.pagel.ai.ui.projects.shortName
 import javax.inject.Inject
 
+/**
+ * How many times the AI is asked to read the same unread cards: [MAX] asks that pagel.uz took, then it stops until the
+ * unread set changes. A save the AI cannot read is never asked for again every minute (checker 2026-10-28 #4).
+ */
+class ReadAsks {
+    private var n = 0
+    fun more() = n < MAX
+    fun count() { n++ }
+
+    companion object {
+        const val MAX = 3
+    }
+}
+
 /** Where a save came from, as the web's small coloured mark (learn-client.tsx Source). */
 enum class Site(val label: String) { INSTAGRAM("Instagram"), X("X"), LINKEDIN("LinkedIn"), WEB(""), NOTE("Your note") }
 
@@ -114,6 +128,7 @@ class InboxViewModel @Inject constructor(
 ) : ViewModel() {
     private val streak = MutableStateFlow(0)
     private val reading = MutableStateFlow(false)
+    private val visible = MutableStateFlow(false)
     /** Pictures that could not be fetched (offline): asked for again when the live link is back. */
     private val retryPictures = mutableSetOf<String>()
     private var lastAsk = 0L
@@ -158,11 +173,17 @@ class InboxViewModel @Inject constructor(
         }
         // The AI's read of unread saves (the web's triage after 8 s on /learn): when one of the next 5 cards has no
         // pick, ask pagel.uz's AI to read the next unread ones, at most once a minute; offline, try again in 15 s.
+        // Only while the Inbox is on screen, and at most [ReadAsks.MAX] asks for the same unread cards: app-v0.7.0 asked
+        // every minute for as long as the process lived, up to 1,440 Claude runs a day on the box lexion.uz shares
+        // (checker 2026-10-28 #4). A new unread set (a pick came, or Boss sorted on) starts a fresh count.
         viewModelScope.launch {
-            repo.deck.map { d -> d.take(NEXT).any { !it.guessed } }.distinctUntilChanged().collectLatest { unread ->
-                if (!unread) { reading.value = false; return@collectLatest }
-                while (true) {
-                    askToRead()
+            val unread = repo.deck.map { d -> d.take(NEXT).filter { !it.guessed }.map(InboxItemEntity::file) }.distinctUntilChanged()
+            combine(unread, visible) { files, on -> files to on }.collectLatest { (files, on) ->
+                if (files.isEmpty()) { reading.value = false; return@collectLatest }
+                if (!on) return@collectLatest
+                val asks = ReadAsks()
+                while (asks.more()) {
+                    if (askToRead()) asks.count()
                     delay(15_000)
                 }
             }
@@ -196,12 +217,16 @@ class InboxViewModel @Inject constructor(
         }
     }
 
-    private suspend fun askToRead() {
+    /** The Inbox is on screen (started) or not: the AI is asked to read only while Boss looks at it. */
+    fun onScreen(on: Boolean) { visible.value = on }
+
+    /** True when pagel.uz took the ask. */
+    private suspend fun askToRead(): Boolean {
         val now = System.currentTimeMillis()
-        if (now - lastAsk < ASK_GAP_MS) return
-        val account = (accounts.load() as? AccountState.Paired)?.account ?: return
+        if (now - lastAsk < ASK_GAP_MS) return false
+        val account = (accounts.load() as? AccountState.Paired)?.account ?: return false
         val files = repo.deck.first().take(25).filter { !it.guessed }.map(InboxItemEntity::file)
-        if (files.isEmpty() || !repo.askToRead(account, files)) return
+        if (files.isEmpty() || !repo.askToRead(account, files)) return false
         lastAsk = now
         reading.value = true
         // The read takes well under a minute on the server; the deck brings the picks.
@@ -210,6 +235,7 @@ class InboxViewModel @Inject constructor(
             delay(40_000); refresh()
             reading.value = false
         }
+        return true
     }
 
     /** A choice that needs no words (Later, Drop) leaves now; the others open their form first. */
@@ -263,7 +289,7 @@ class InboxViewModel @Inject constructor(
             when (choice) {
                 Choice.DROP -> toasts.show("Dropped", action = "Undo", millis = 5_000) { undo(op, card) }
                 Choice.ACT -> toasts.show("Added to ${ui.value.projects.firstOrNull { it.name == project }?.let { shortName(it.name, it.title) } ?: project}")
-                Choice.NOTE -> toasts.show("Noted. It is in Notebook → Saved notes.")
+                Choice.NOTE -> toasts.show("Noted ✓")
                 Choice.KEEP -> {
                     val n = keptBefore + 1
                     val cheer = CHEERS[n]

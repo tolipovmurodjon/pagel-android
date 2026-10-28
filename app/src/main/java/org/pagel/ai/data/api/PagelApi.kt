@@ -70,6 +70,13 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(SortReply.serializer(), it) } }
     }
 
+    /** Finished tasks newest first, a page at a time (`before` = the last done_at of the page before). */
+    suspend fun completed(baseUrl: String, token: String, limit: Int, before: String? = null): Outcome<CompletedResponse> = call {
+        val q = before?.let { "&before=" + java.net.URLEncoder.encode(it, "UTF-8") }.orEmpty()
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/completed?limit=$limit$q")), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(CompletedResponse.serializer(), it) } }
+    }
+
     suspend fun habits(baseUrl: String, token: String, days: Int): Outcome<HabitsResponse> = call {
         val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/habits?days=$days")), token).build()
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(HabitsResponse.serializer(), it) } }

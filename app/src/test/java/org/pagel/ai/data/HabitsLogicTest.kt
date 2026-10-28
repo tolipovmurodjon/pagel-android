@@ -31,6 +31,27 @@ class HabitsLogicTest {
         assertEquals("2026-10-31", Repeat.nextDue("2026-10-28", "3 days", "2026-10-28"))
     }
 
+    /** Checker 2026-10-28 #1: a tick moves a habit past today, so a late one is not late forever (web nextAfter). */
+    @Test fun aTickMovesAHabitToItsFirstDateAfterToday() {
+        // "Drink water" (daily) missed on Tuesday, ticked on Wednesday: due Thursday, not Wednesday again.
+        assertEquals("2026-10-29 08:00", Repeat.nextAfter("2026-10-27 08:00", "day", "2026-10-28"))
+        // Missed for days: the next one after today, once.
+        assertEquals("2026-10-29", Repeat.nextAfter("2026-10-25", "day", "2026-10-28"))
+        assertEquals("2026-11-02", Repeat.nextAfter("2026-10-05", "week", "2026-10-26"))
+        // Tuesday missed in "tue,thu,sun", ticked Thursday: Sunday.
+        assertEquals("2026-11-01", Repeat.nextAfter("2026-10-27", "tue,thu,sun", "2026-10-29"))
+        // On time or early: the same as nextDue.
+        assertEquals("2026-10-29 07:30", Repeat.nextAfter("2026-10-28 07:30", "day", "2026-10-28"))
+        assertEquals("2026-11-02", Repeat.nextAfter("2026-10-30", "weekday", "2026-10-30"))
+        assertEquals("Mondays", Repeat.label("monday"))
+    }
+
+    @Test fun aRepeatFallsOnTheDaysTheWebShowsInUpcoming() {
+        assertEquals(listOf("2026-10-29", "2026-11-01", "2026-11-03"), Repeat.datesBetween("2026-10-27 18:00", "tue,thu,sun", "2026-10-28", "2026-11-03"))
+        assertEquals(listOf("2026-10-28", "2026-10-29", "2026-10-30"), Repeat.datesBetween("2026-10-28", "day", "2026-10-28", "2026-10-30"))
+        assertEquals(emptyList<String>(), Repeat.datesBetween("2026-11-10", "week", "2026-10-28", "2026-11-03"))
+    }
+
     @Test fun aStreakCountsOnlyTheDaysItRepeatsOn() {
         val days = setOf("2026-10-27", "2026-10-26", "2026-10-25")
         // Today (28) not done yet does not break it.
