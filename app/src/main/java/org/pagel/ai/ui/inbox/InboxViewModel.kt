@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -109,7 +110,13 @@ data class InboxUi(
 data class Leaving(val id: Long, val card: InboxCard, val choice: Choice, val thrown: Throw = Throw.None, val shuffled: Boolean = false)
 
 /** An open choice form (Action, Note, Learn, Do now): the card it is for and the line Boss writes. */
-data class Form(val card: InboxCard, val choice: Choice, val line: String, val project: String, val someday: Boolean)
+data class Form(val card: InboxCard, val choice: Choice, val line: String, val project: String, val someday: Boolean, val due: String? = null)
+
+/** Where a toast's Open goes (round D item 2): a project's tasks or its notes. */
+sealed interface InboxOpen {
+    data class Project(val name: String) : InboxOpen
+    data class Notes(val project: String) : InboxOpen
+}
 
 /**
  * The deck as the screen shows it: the cards hidden by hand ([gone]: swiped, Room not yet caught up) leave the top
@@ -136,7 +143,14 @@ class InboxViewModel @Inject constructor(
     private val accounts: AccountStore,
     private val toasts: ToastCenter,
     private val session: Session,
+    private val where: org.pagel.ai.data.inbox.WhereItWent,
 ) : ViewModel() {
+    private val _open = kotlinx.coroutines.channels.Channel<InboxOpen>(kotlinx.coroutines.channels.Channel.BUFFERED)
+    /** A toast's Open: the shell pushes the project page or its notes. */
+    val open: kotlinx.coroutines.flow.Flow<InboxOpen> = _open.receiveAsFlow()
+    /** Today's decisions with where each went ("Sorted today", round D item 2). */
+    val sortedToday: StateFlow<List<org.pagel.ai.data.db.InboxSortedEntity>> =
+        where.sortedToday().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     private val streak = MutableStateFlow(0)
     private val reading = MutableStateFlow(false)
     /** Cards swiped or sorted that Room has not let go yet: hidden at once, so the next card is on top on the same frame. */
@@ -299,7 +313,7 @@ class InboxViewModel @Inject constructor(
         if (f.choice != Choice.NOW && words(f.line) < need) return
         _form.value = null
         when (f.choice) {
-            Choice.ACT -> leave(f.card, Choice.ACT, Throw.None, f.line, f.project, f.someday)
+            Choice.ACT -> leave(f.card, Choice.ACT, Throw.None, f.line, f.project, f.someday, f.due)
             Choice.NOTE -> leave(f.card, Choice.NOTE, Throw.None, f.line, f.project, null)
             Choice.KEEP -> leave(f.card, Choice.KEEP, Throw.None, f.line, null, null)
             else -> leave(f.card, Choice.NOW, Throw.None, null, null, null)
@@ -308,18 +322,30 @@ class InboxViewModel @Inject constructor(
 
     fun leaveDone(id: Long) = _leaving.update { if (it?.id == id) null else it }
 
-    private fun leave(card: InboxCard, choice: Choice, thrown: Throw, line: String?, project: String?, someday: Boolean?) {
+    private fun projectName(name: String?) = ui.value.projects.firstOrNull { it.name == name }?.let { org.pagel.ai.ui.projects.shortName(it.name, it.title) } ?: name.orEmpty()
+
+    /** Undo one of today's decisions from "Sorted today": only while it still waits on the phone. */
+    fun undoSorted(s: org.pagel.ai.data.db.InboxSortedEntity) {
+        viewModelScope.launch { if (!where.undo(s)) toasts.show("Already on pagel.uz", good = false) else gone.update { it - s.file } }
+    }
+
+    private fun leave(card: InboxCard, choice: Choice, thrown: Throw, line: String?, project: String?, someday: Boolean?, due: String? = null) {
         _leaving.value = Leaving(nextLeave++, card, choice, thrown)
         hide(card.file)
         if (choice != Choice.LATER) streak.update { it + 1 }
         val keptBefore = ui.value.kept
         viewModelScope.launch {
-            val op = repo.choose(card.file, choice, line, project, someday)
+            val op = repo.choose(card.file, choice, line, project, someday, due)
+            where.record(card.file, choice.wire, card.claim.ifEmpty { postBody(card.text).take(80) }, project, line, due, op)
             settle(card.file)
+            // Every toast says where it went, with Open (round D item 2: an Act used to land on no screen Boss looks at).
             when (choice) {
                 Choice.DROP -> toasts.show("Dropped", action = "Undo", millis = 5_000) { undo(op, card) }
-                Choice.ACT -> toasts.show("Added to ${ui.value.projects.firstOrNull { it.name == project }?.let { shortName(it.name, it.title) } ?: project}")
-                Choice.NOTE -> toasts.show("Noted ✓")
+                Choice.ACT -> {
+                    val whenText = when (due) { null -> if (someday == true) " · Someday" else ""; where.today() -> " · today"; else -> " · tomorrow" }
+                    toasts.show("✅ Task in ${projectName(project)}$whenText", action = "Open") { project?.let { _open.trySend(InboxOpen.Project(it)) } }
+                }
+                Choice.NOTE -> toasts.show("📝 Saved to ${projectName(project)} notes", action = "Open") { project?.let { _open.trySend(InboxOpen.Notes(it)) } }
                 Choice.KEEP -> {
                     val n = keptBefore + 1
                     val cheer = CHEERS[n]
@@ -327,7 +353,7 @@ class InboxViewModel @Inject constructor(
                     if (cheer != null) _cheer.update { it + 1 }
                 }
                 Choice.NOW -> toasts.show("Done and gone")
-                Choice.LATER -> {}
+                Choice.LATER -> toasts.show("⏳ Later · back in 3 days")
             }
             if (ui.value.cards.size < InboxRepository.LOW) refresh()
         }

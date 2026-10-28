@@ -4,6 +4,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -241,6 +242,36 @@ class MigrationTest {
             assertEquals(emptyList<org.pagel.ai.data.db.HabitFreezeEntity>(), db.habitPrefs().freezesOnce())
             db.habitPrefs().freeze(org.pagel.ai.data.db.HabitFreezeEntity("2026-10-27", "t_h"))
             assertEquals(1, db.habitPrefs().freezesOnce().size)
+            assertEquals(PagelDatabase.VERSION, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
+    /** v9 (round D item 2): the day's Inbox decisions and the quick notes start empty; the habits' prefs come through. */
+    @Test fun eightToNineAddsTheSortedLogAndNotes() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/8.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(8, schema["version"]!!.jsonPrimitive.content.toInt())
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("INSERT INTO habit_prefs (taskId, emoji, after, identity, minutes) VALUES ('t_h', 'coffee', NULL, 'I train', 10)")
+            old.version = 8
+        }
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            assertEquals("coffee", db.habitPrefs().prefOnce("t_h")!!.emoji)
+            db.inboxLog().logSorted(org.pagel.ai.data.db.InboxSortedEntity("inbox/a.md", "2026-10-29", "note", "A claim", "ababil", "One line", null, 3, 5))
+            db.inboxLog().replaceNotes("ababil", listOf(org.pagel.ai.data.db.QuickNoteEntity("ababil", 0, "RunCam", null, null, "2026-10-28")))
+            assertEquals(1, db.inboxLog().sortedOn("2026-10-29").first().size)
+            assertEquals("RunCam", db.inboxLog().notes("ababil").first().single().text)
             assertEquals(PagelDatabase.VERSION, db.openHelper.readableDatabase.version)
         } finally {
             db.close()

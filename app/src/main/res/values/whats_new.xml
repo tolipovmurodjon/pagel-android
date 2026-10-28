@@ -24,6 +24,10 @@
         <item>History (calendar icon): Calendar · All habits · Achievements|habits</item>
         <item>Namoz: Start tracking; the five prayers count from 1 November|habits</item>
         <item>The new PAGEL icon on your home screen|more</item>
+        <item>Inbox: every choice says where it went, with Open|more</item>
+        <item>Inbox Action: When? Today, Tomorrow or Someday|more</item>
+        <item>Inbox: Sorted today lists the day by where each went; Undo while it waits|more</item>
+        <item>More, Notes: each project notes from the Inbox, offline too|more</item>
         <item>Close the day: the cards no longer jump between stars|shutdown</item>
     </string-array>
 </resources>

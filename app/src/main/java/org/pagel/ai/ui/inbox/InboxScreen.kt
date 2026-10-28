@@ -1,5 +1,7 @@
 package org.pagel.ai.ui.inbox
 
+import org.pagel.ai.ui.glass.Space
+import androidx.compose.foundation.layout.wrapContentHeight
 import android.graphics.Bitmap
 import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
@@ -242,11 +244,17 @@ data class InboxActions(
     val leaveDone: (Long) -> Unit = {},
     val help: () -> Unit = {},
     val readAll: (InboxCard) -> Unit = {},
+    /** "Sorted today (N)": today's decisions and where each went (round D item 2). */
+    val sorted: () -> Unit = {},
 )
 
 @Composable
-fun InboxRoute(contentPadding: PaddingValues, reselect: Int, vm: InboxViewModel = hiltViewModel()) {
+fun InboxRoute(
+    contentPadding: PaddingValues, reselect: Int, onOpen: (InboxOpen) -> Unit = {}, onSorted: () -> Unit = {}, vm: InboxViewModel = hiltViewModel(),
+) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val sortedToday by vm.sortedToday.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.open.collect(onOpen) }
     val leaving by vm.leaving.collectAsStateWithLifecycle()
     val form by vm.form.collectAsStateWithLifecycle()
     val pictures by vm.picturesShown.collectAsStateWithLifecycle()
@@ -258,8 +266,8 @@ fun InboxRoute(contentPadding: PaddingValues, reselect: Int, vm: InboxViewModel 
         onStopOrDispose { vm.onScreen(false) }
     }
     InboxScreen(
-        ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer,
-        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }),
+        ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer, sortedCount = sortedToday.size,
+        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted),
     )
     form?.let { f -> ChoiceFormSheet(f, ui, onEdit = vm::editForm, onSubmit = vm::submit, onDismiss = vm::closeForm, withPicture = pictures[f.card.file] != null) }
     if (guide) GuideSheet { guide = false }
@@ -285,6 +293,7 @@ fun InboxScreen(
     cheer: Int = 0,
     /** Where the top card starts (screenshot tests draw it mid-swipe). */
     peek: Offset = Offset.Zero,
+    sortedCount: Int = 0,
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -316,7 +325,7 @@ fun InboxScreen(
     // drew the choice buttons behind the bar, only their tops showing).
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize().then(if (tall) Modifier else Modifier.verticalScroll(scroll)).padding(contentPadding).padding(bottom = if (tall) DockGap else 12.dp)) {
-            Header(ui, onHelp = actions.help, onRing = { ringAt = it })
+            Header(ui, onHelp = actions.help, onRing = { ringAt = it }, sortedCount = sortedCount, onSorted = actions.sorted)
             // Tall: the middle takes what the header and the dock leave, and the card sits centred in it.
             val middle = if (tall) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth()
             when {
@@ -338,7 +347,7 @@ fun InboxScreen(
 }
 
 @Composable
-private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit) {
+private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, sortedCount: Int = 0, onSorted: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -352,7 +361,16 @@ private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit) {
         }
         // The day's goal leads; the learned habit (5) follows (learn-client.tsx today-count). The counts get the whole
         // width and keep their words together, so "2/5 learned" never breaks after the number (checker #7).
-        Text(countsLine(ui), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(countsLine(ui), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
+            // Always there, so the deck never moves when the first decision lands (RULES.md Layout 1).
+            val press = remember { MutableInteractionSource() }
+            Text(
+                "Sorted today ($sortedCount)", style = MaterialTheme.typography.labelMedium, color = Glass.PrimaryInk, maxLines = 1,
+                modifier = Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onSorted)
+                    .wrapContentHeight(Alignment.CenterVertically).padding(horizontal = Space.sm),
+            )
+        }
     }
 }
 

@@ -279,7 +279,17 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     entry<ReviewRoute> {
                         org.pagel.ai.ui.rituals.ReviewRoute(padding, onInbox = { selected = 1 }, onSweep = { stack.add(SweepRoute) }, onToday = ::goToday)
                     }
-                    entry<InboxRoute> { InboxScreenRoute(padding, reselect) }
+                    entry<InboxRoute> {
+                        InboxScreenRoute(padding, reselect, onSorted = { stack.add(SortedTodayRoute) }, onOpen = { o ->
+                            when (o) { is org.pagel.ai.ui.inbox.InboxOpen.Project -> stack.add(ProjectPageRoute(o.name)); is org.pagel.ai.ui.inbox.InboxOpen.Notes -> stack.add(NotesRoute(o.project)) }
+                        })
+                    }
+                    entry<SortedTodayRoute> {
+                        org.pagel.ai.ui.inbox.SortedTodayRoute(padding, onBack = { stack.removeLastOrNull() }, onOpen = { o ->
+                            when (o) { is org.pagel.ai.ui.inbox.InboxOpen.Project -> stack.add(ProjectPageRoute(o.name)); is org.pagel.ai.ui.inbox.InboxOpen.Notes -> stack.add(NotesRoute(o.project)) }
+                        })
+                    }
+                    entry<NotesRoute> { r -> org.pagel.ai.ui.inbox.NotesRoute(r.project, padding, onBack = { stack.removeLastOrNull() }, onOpenProject = { stack.add(NotesRoute(it)) }) }
                     entry<HabitsRoute> { HabitsScreenRoute(padding, reselect, onOpenHabit = { stack.add(HabitDetailRoute(it)) }, onHistory = { stack.add(HabitHistoryRoute) }) }
                     entry<HabitDetailRoute> { r -> org.pagel.ai.ui.habits.HabitDetailRoute(r.id, padding, onBack = { stack.removeLastOrNull() }) }
                     entry<HabitHistoryRoute> { org.pagel.ai.ui.habits.HabitHistoryRoute(padding, onBack = { stack.removeLastOrNull() }, onOpenHabit = { stack.add(HabitDetailRoute(it)) }) }
@@ -339,6 +349,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
             org.pagel.ai.ui.compass.CompassRoute -> "Compass"
             is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"
+            is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"; SortedTodayRoute -> "Sorted today"; is NotesRoute -> "Notes"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
         val density = androidx.compose.ui.platform.LocalDensity.current
@@ -517,6 +528,7 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 // The web's phone bar keeps Upcoming and Completed under More too (dashboard nav.tsx PHONE).
                 MoreRow(TabIcons.Calendar, "Upcoming", Color(0xFFD9620B), onOpenUpcoming)
                 MoreRow(TabIcons.Done, "Completed", Color(0xFF0E7490), onOpenCompleted)
+                MoreRow(TabIcons.StickyNote, "Notes", Color(0xFF0B7A5E)) { onOpenRitual(NotesRoute()) }
                 // The rituals sit beside the lists, as the web's sidebar (nav.tsx: Empty head, Close day, Review).
                 MoreRow(TabIcons.Sparkles, "Empty your head", Color(0xFF7C4DDB)) { onOpenRitual(SweepRoute) }
                 MoreRow(TabIcons.Moon, "Close the day", Color(0xFF5B4BC4)) { onOpenRitual(ShutdownRoute) }

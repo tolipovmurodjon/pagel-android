@@ -85,6 +85,17 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(HabitsResponse.serializer(), it) } }
     }
 
+    /** Round D item 2: one project's quick notes (`?project=`), or the projects that have notes. */
+    suspend fun notes(baseUrl: String, token: String, project: String): Outcome<QuickNotesReply> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/notes?project=" + java.net.URLEncoder.encode(project, "UTF-8"))), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(QuickNotesReply.serializer(), it) } }
+    }
+
+    suspend fun noteProjects(baseUrl: String, token: String): Outcome<NoteProjectsReply> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/notes")), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(NoteProjectsReply.serializer(), it) } }
+    }
+
     /** The action goes first on the wire (`{"action":"triage",…}`), as the web posts it. */
     suspend fun triage(baseUrl: String, token: String, files: List<String>): Outcome<TriageReply> = call {
         val body = kotlinx.serialization.json.buildJsonObject {

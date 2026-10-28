@@ -197,6 +197,34 @@ data class HabitFreezeEntity(
     val taskId: String,
 )
 
+/**
+ * One Inbox decision of the day (v9, round D item 2, Boss: "where did it go"): what was sorted, where it went (a project's
+ * tasks or notes, Later), the line Boss wrote, and its outbox row (Undo while it waits on the phone).
+ */
+@Entity(tableName = "inbox_sorted", indices = [Index("day")])
+data class InboxSortedEntity(
+    @PrimaryKey val file: String,
+    val day: String,
+    val action: String,
+    val claim: String,
+    val project: String?,
+    val line: String?,
+    val due: String?,
+    val opId: Long,
+    val at: Long,
+)
+
+/** A project's quick notes as pagel.uz last sent them (v9, round D item 2): readable offline. */
+@Entity(tableName = "quick_notes", primaryKeys = ["project", "position"])
+data class QuickNoteEntity(
+    val project: String,
+    val position: Int,
+    val text: String,
+    val link: String?,
+    val picture: String?,
+    val day: String?,
+)
+
 /** A habit's reminder (Phase 3): on = a notification at its time, with a Done button. Only on this phone. */
 @Entity(tableName = "habit_reminders")
 data class HabitReminderEntity(

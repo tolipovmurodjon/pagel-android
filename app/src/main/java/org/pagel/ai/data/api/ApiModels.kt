@@ -132,7 +132,22 @@ data class SortBody(
     val sentence: String? = null,
     val project: String? = null,
     val someday: Boolean? = null,
+    /** An Act's date (round D item 2: When? Today · Tomorrow); an older pagel.uz ignores it. */
+    val due: String? = null,
 )
+
+/** `GET /api/v1/notes?project=` (round D item 2): one project's quick notes, newest first. */
+@Serializable
+data class QuickNoteDto(val text: String, val link: String? = null, val picture: String? = null, val day: String? = null)
+
+@Serializable
+data class QuickNotesReply(val project: String = "", val notes: List<QuickNoteDto> = emptyList())
+
+@Serializable
+data class NoteProjectDto(val project: String, val count: Int = 0, val last: String? = null)
+
+@Serializable
+data class NoteProjectsReply(val projects: List<NoteProjectDto> = emptyList())
 
 /** pagel.uz took the choice; `already` = it had happened before (a retry, or sorted on the web), never a refusal. */
 @Serializable

@@ -3,6 +3,7 @@
 (dashboard src/app/api/v1), with fixed data. Every request is logged to fake-pagel.log, so the smoke test can prove
 the app paired, synced, listened live and sent its saved crash."""
 import json, struct, sys, time, zlib
+from urllib.parse import parse_qs, urlparse
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -430,5 +431,23 @@ def sync_body():
                     "updated_at": "2026-10-29T10:00:00Z", "version": 1, "steps": []}
                    for k, (tid, b) in enumerate(ADDED) if b.get("group") == "namoz" and tid not in REMOVED]
     return s
+
+# ── Round D item 2 · GET /api/v1/notes: the projects with quick notes, and one project's notes (dashboard quick-notes-api.ts).
+NOTES = {"ababil": [{"text": "RunCam Phoenix 2: the night camera", "link": "https://example.com/p", "picture": None, "day": "2026-10-28"}]}
+_rd_get = H.do_GET
+
+def _rd2_get(self):
+    if not self.path.startswith("/api/v1/notes"):
+        return _rd_get(self)
+    LOG.write(f"GET {self.path} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    q = parse_qs(urlparse(self.path).query)
+    p = (q.get("project") or [None])[0]
+    if p is None:
+        return self.send(200, {"projects": [{"project": k, "count": len(v), "last": v[0]["day"]} for k, v in NOTES.items()]})
+    return self.send(200, {"project": p, "notes": NOTES.get(p, [])})
+
+H.do_GET = _rd2_get
 
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()
