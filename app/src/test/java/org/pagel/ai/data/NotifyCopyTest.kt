@@ -39,4 +39,24 @@ class NotifyCopyTest {
         assertFalse(NotifyCopy.quiet(LocalTime.of(7, 0)))
         assertFalse(NotifyCopy.quiet(LocalTime.of(22, 59)))
     }
+
+    /** Round C checker #7: a week of mornings (10 lines) and 21 task fires (32 lines) never repeat a line. */
+    @Test fun aWeekOfMorningsAndTwentyOneTaskFiresNeverRepeat() {
+        for ((size, fires) in listOf(10 to 7, 32 to 21)) {
+            val shown = ArrayList<Pair<Int, Long>>()
+            var now = 1_800_000_000_000L
+            repeat(fires) { k ->
+                val i = NotifyCopy.pick(size, shown, now, seed = k * 13 + 5)
+                assertFalse("$size lines: line $i came back within a week", shown.any { it.first == i })
+                shown += i to now
+                now += 7 * 24 * hour / fires - 1
+            }
+        }
+    }
+
+    @Test fun aLineMatchesTheTasksOwnWordsOrNone() {
+        assertEquals("money moves only 💸", NotifyCopy.keywordLine("Pay the internet bill"))
+        assertEquals("the gym won't lift itself 💪", NotifyCopy.keywordLine("Gym: legs"))
+        assertEquals(null, NotifyCopy.keywordLine("Onamga qo'ng'iroq"))
+    }
 }

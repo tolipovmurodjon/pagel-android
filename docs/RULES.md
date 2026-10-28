@@ -95,7 +95,7 @@ Installed plugins (laptop, 2026-10-27; server: `claude plugin marketplace add an
 2. **Spacing comes from named tokens** in `ui/glass/Space.kt`: `Space.xs` 4 · `sm` 8 · `md` 12 · `lg` 16 · `xl` 20 ·
    `xxl` 24 · `xxxl` 32, and the roles `Space.gutter` (screen edge), `Space.paneGap` (pane to pane), `Space.headerToCard`
    (a header or counter to its first card). No raw off-scale dp in new code. CI's `build` runs `.github/scripts/dp-gate.sh`:
-   a file's count of off-scale dp (1 3 5 7 9 10 13 14 15 18 22 26) in padding/spacedBy/Spacer outside `ui/glass/` may
+   a file's count of off-scale dp (1 2 3 5 6 7 9 10 13 14 15 18 22 26) in padding/spacedBy/Spacer outside `ui/glass/` may
    only go down (`--write` records a lower count in `dp-baseline.txt`).
 3. **Proof for any screen with steps or states:** a Roborazzi pair (state A and state B) plus an assert that the main
    card's top y is equal (example: `RitualsScreenshotTest.closeTheDayCardDoesNotMoveBetweenStars`).

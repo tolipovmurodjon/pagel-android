@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -148,7 +149,8 @@ fun ViewSwitch(view: CalView, modifier: Modifier = Modifier, onPick: (CalView) -
                 val press = remember { MutableInteractionSource() }
                 val lift by animateFloatAsState(if (on) 1f else 0f, spring(dampingRatio = 1f, stiffness = 600f), label = "seg")
                 Box(
-                    Modifier.weight(1f).heightIn(min = 36.dp).pressScale(press)
+                    // 44 dp parts with their own gap, so the shrinking words never run together at 1.5x (checker #2).
+                    Modifier.weight(1f).heightIn(min = 44.dp).padding(horizontal = 2.dp).pressScale(press)
                         .graphicsLayer { shadowElevation = lift * 3.dp.toPx(); shape = RoundedCornerShape(10.dp); clip = false }
                         .background(Color.White.copy(alpha = lift), RoundedCornerShape(10.dp))
                         .clickable(press, indication = null, role = Role.Tab) { if (!on) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick(v) } }
@@ -248,7 +250,10 @@ fun MonthBar(month: YearMonth, onMonth: (YearMonth) -> Unit) {
 
 // ── The timeline (Day · 3 days · Week) ─────────────────────────────────────────────────────────────────────────────
 
-private val GUTTER = 44.dp
+/** The hour column: hours as "05" (checker #5: "05:00" was wider than the column at 1.5x). */
+val GUTTER = 36.dp
+/** The timeline's right edge = the glass top's inner edge (16 + 4), so its columns line up with the day heads. */
+val TIMELINE_END = 20.dp
 /** A strip dot: the slot is kept with or without dots. */
 private val DOT = 5.dp
 
@@ -266,7 +271,14 @@ fun Timeline(
     val hourH = if (days.size == 1) 60.dp else 52.dp
     val density = LocalDensity.current
     val haptics = LocalHapticFeedback.current
-    val layouts = remember(ui.tasks, days) { days.map { layoutDay(tasksOn(ui.tasks, it)) } }
+    // In 3 days / Week the timed daily habits fold into the All-day count too: they filled every column at the same
+    // hours and crushed the real blocks (checker #5). The Day view keeps them as blocks.
+    val layouts = remember(ui.tasks, days) {
+        days.map { d -> layoutDay(tasksOn(ui.tasks, d)).let { l -> if (days.size == 1) l else {
+            val daily = l.blocks.filter { it.task.every == "day" }
+            l.copy(blocks = org.pagel.ai.data.upcoming.lanes(l.blocks.filter { it.task.every != "day" }.map { it.copy(lane = 0, lanes = 1) }), dailyHabits = l.dailyHabits + daily.size)
+        } } }
+    }
     var colW by remember { mutableFloatStateOf(0f) }
     var hoursAt by remember { mutableIntStateOf(-1) }
     // Opened at 05:00 under the glass top, once per view (Google opens at the working morning).
@@ -279,7 +291,7 @@ fun Timeline(
     Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
         Spacer(Modifier.height(top))
         // All day: untimed tasks per day, the daily habits as one "N habits" chip.
-        Row(Modifier.fillMaxWidth().padding(end = Space.sm)) {
+        Row(Modifier.fillMaxWidth().padding(end = TIMELINE_END)) {
             Text("All day", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 2,
                 modifier = Modifier.width(GUTTER).padding(start = Space.xs, top = Space.xs))
             for ((i, l) in layouts.withIndex()) Column(Modifier.weight(1f).padding(horizontal = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -299,9 +311,12 @@ fun Timeline(
                 val h = hourH.toPx()
                 for (k in 0..24) drawLine(line, Offset(GUTTER.toPx(), k * h), Offset(size.width, k * h), 1.dp.toPx())
             }
-            for (k in 1..23) Text(hhmm(k * 60), style = Glass.NumberText, color = Glass.Muted,
-                modifier = Modifier.offset(x = Space.xs, y = hourH * k - 8.dp))
-            Row(Modifier.fillMaxSize().padding(start = GUTTER, end = Space.sm)) {
+            // A label under the glass top is not drawn (checker #10: "02", "03" peeked, cut, beside it).
+            for (k in 1..23) Text("%02d".format(k), style = Glass.NumberText, color = Glass.Muted,
+                modifier = Modifier.offset(x = Space.sm, y = hourH * k - 8.dp).graphicsLayer {
+                    alpha = if (hoursAt + (hourH * k).toPx() - scroll.value < top.toPx() + 4.dp.toPx()) 0f else 1f
+                })
+            Row(Modifier.fillMaxSize().padding(start = GUTTER, end = TIMELINE_END)) {
                 for ((i, d) in days.withIndex()) Box(Modifier.weight(1f).fillMaxHeight().onSizeChanged { colW = it.width.toFloat() }) {
                     if (i > 0) Box(Modifier.width(1.dp).fillMaxHeight().background(Glass.Ink.copy(alpha = 0.06f)))
                     for (b in layouts[i].blocks) key(b.task.id) {
@@ -347,6 +362,10 @@ private fun BlockView(b: Block, ui: UpcomingUi, hourH: Dp, colW: Float, onOpen: 
     var dy by remember { mutableFloatStateOf(0f) }
     var held by remember { mutableStateOf(false) }
     var step by remember { mutableIntStateOf(0) }
+    var dropped by remember { mutableIntStateOf(0) }
+    // The new place reached the layout (or the drop was refused): the offset goes back to 0 in the same frame.
+    LaunchedEffect(b.start, b.task.due) { dx = 0f; dy = 0f }
+    LaunchedEffect(dropped) { if (dropped > 0) { delay(800); if (!held) { dx = 0f; dy = 0f } } }
     val top = hourH * (b.start / 60f)
     val height = (hourH * ((b.end - b.start).coerceAtLeast(20) / 60f)).coerceAtLeast(22.dp)
     val ranged = b.task.due?.drop(11)?.contains('-') == true
@@ -357,7 +376,10 @@ private fun BlockView(b: Block, ui: UpcomingUi, hourH: Dp, colW: Float, onOpen: 
     Row(
         Modifier.offset { IntOffset((colW / b.lanes * b.lane).toInt(), top.roundToPx()) }.width(laneW).height(height).padding(end = 2.dp, bottom = 2.dp)
             .graphicsLayer {
-                translationX = dx; translationY = dy
+                // On the 15-minute grid and the column it will land on, not the free finger (checker #9).
+                val q = hourH.toPx() / 4f
+                translationX = if (held && colW > 0f) Math.round(dx / colW) * colW else dx
+                translationY = if (held) Math.round(dy / q) * q else dy
                 val k = if (held) 1.03f else 1f; scaleX = k; scaleY = k
                 shadowElevation = if (held) 10.dp.toPx() else 0f; this.shape = shape; clip = false
             }
@@ -369,7 +391,8 @@ private fun BlockView(b: Block, ui: UpcomingUi, hourH: Dp, colW: Float, onOpen: 
                 val quarter = hourH.toPx() / 4f
                 detectDragGesturesAfterLongPress(
                     onDragStart = { held = true; dx = 0f; dy = 0f; step = 0; haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
-                    onDragEnd = { held = false; onDrop(dx, dy); dx = 0f; dy = 0f },
+                    // The block stays where it was dropped until Room moves it (no flash back to the old slot).
+                    onDragEnd = { val q = quarter; dx = if (colW > 0f) Math.round(dx / colW) * colW else 0f; dy = Math.round(dy / q) * q; held = false; onDrop(dx, dy); dropped++ },
                     onDragCancel = { held = false; dx = 0f; dy = 0f },
                 ) { change, d ->
                     change.consume(); dx += d.x; dy += d.y
@@ -382,7 +405,8 @@ private fun BlockView(b: Block, ui: UpcomingUi, hourH: Dp, colW: Float, onOpen: 
         Box(Modifier.width(3.dp).fillMaxHeight().background(color, RoundedCornerShape(topStart = 8.dp, bottomStart = 8.dp)))
         Column(Modifier.weight(1f).padding(start = Space.xs, end = 2.dp, top = 2.dp)) {
             Text(titleOf(b.task), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink,
-                maxLines = if (height > 40.dp) 2 else 1, overflow = TextOverflow.Ellipsis)
+                maxLines = ((height.value - 4f) / 14f).toInt().coerceAtLeast(1), overflow = if (laneW < 60.dp) TextOverflow.Clip else TextOverflow.Ellipsis,
+                fontSize = if (laneW < 60.dp) 11.sp else androidx.compose.ui.unit.TextUnit.Unspecified)
             if (height > 40.dp && laneW > 72.dp) Text(time, style = Glass.NumberText, color = Glass.Muted, maxLines = 1)
         }
     }
@@ -421,7 +445,8 @@ fun MonthGrid(month: YearMonth, ui: UpcomingUi, focus: LocalDate, onPick: (Local
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Box(
-                        Modifier.size(26.dp).then(
+                        // At least 28 dp, one line: "28" never breaks into "2" at 1.5x (checker #1).
+                        Modifier.sizeIn(minWidth = 28.dp, minHeight = 28.dp).then(
                             when {
                                 d == ui.today -> Modifier.background(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), CircleShape)
                                 d == focus -> Modifier.border(1.25.dp, Glass.Ink, CircleShape)
@@ -429,7 +454,7 @@ fun MonthGrid(month: YearMonth, ui: UpcomingUi, focus: LocalDate, onPick: (Local
                             },
                         ),
                         contentAlignment = Alignment.Center,
-                    ) { Text(d.dayOfMonth.toString(), style = MaterialTheme.typography.labelLarge, color = if (inMonth) Glass.Ink else Glass.Muted.copy(alpha = 0.6f)) }
+                    ) { Text(d.dayOfMonth.toString(), style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false, color = if (inMonth) Glass.Ink else Glass.Muted.copy(alpha = 0.6f)) }
                     Spacer(Modifier.height(2.dp))
                     for (t in tasks.take(3)) Box(Modifier.fillMaxWidth().padding(horizontal = 2.dp).padding(top = 2.dp).height(4.dp)
                         .background(projectColor(ui, t.project).copy(alpha = if (inMonth) 1f else 0.4f), RoundedCornerShape(2.dp)))
@@ -465,5 +490,17 @@ fun DayList(day: LocalDate, ui: UpcomingUi, onOpen: (String) -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** The timeline's columns named ("Thu 29"), today in mint ink; laid out exactly as the columns under them. */
+@Composable
+fun DayHeads(days: List<LocalDate>, today: LocalDate, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth()) {
+        for (d in days) Text(
+            if (days.size == 1) d.format(SPOKEN) else "${d.format(LETTER)} ${d.dayOfMonth}",
+            style = MaterialTheme.typography.labelSmall, color = if (d == today) Glass.PrimaryInk else Glass.Ink, maxLines = 1, softWrap = false,
+            overflow = TextOverflow.Clip, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f),
+        )
     }
 }

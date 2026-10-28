@@ -62,6 +62,25 @@ object NotifyCopy {
         return (0 until size).minBy { last[it] ?: Long.MIN_VALUE }
     }
 
+    /**
+     * A line that fits the task's own words, when they say what it is (round C checker #7: "the gym won't lift itself"
+     * rang for "Pay the internet bill"). English keywords only; any other title gets the tone's rotation.
+     */
+    fun keywordLine(title: String): String? {
+        val t = title.lowercase()
+        return KEYWORDS.firstOrNull { (words, _) -> words.any { Regex("\\b" + Regex.escape(it.trim())).containsMatchIn(t) } }?.second
+    }
+    private val KEYWORDS = listOf(
+        listOf("gym", "workout", "lift", "run ", "stretch", "push-up", "pushup") to "the gym won't lift itself 💪",
+        listOf("pay", "bill", "bank", "invoice", "tax") to "money moves only 💸",
+        listOf("call", "phone") to "one call, then freedom 📞",
+        listOf("read", "book", "pages") to "pages won't flip themselves 📖",
+        listOf("email", "mail", "reply", "message") to "inbox zero arc ✉️",
+        listOf("write", "draft", "report") to "first sentence, then flow ✍️",
+        listOf("clean", "tidy", "wash") to "clean space, clean mind 🧽",
+        listOf("study", "learn", "lesson", "course") to "brain gains loading 🧠",
+    )
+
     /** 23:00-07:00: a reminder comes without sound or buzz; the morning and evening nudges do not come at all. */
     fun quiet(t: LocalTime): Boolean = t.hour >= 23 || t.hour < 7
 }

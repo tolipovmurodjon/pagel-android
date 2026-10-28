@@ -99,7 +99,7 @@ fun NotifyScreen(
             Spacer(Modifier.height(Space.paneGap))
         }
         RitualPane("Tone") {
-            Segmented(listOf("Chill", "Normal", "No mercy"), NotifyPrefs.TONES.indexOf(ui.tone).coerceAtLeast(0), "Tone") { onTone(NotifyPrefs.TONES[it]) }
+            Segmented(listOf("Chill", "Normal", "No mercy"), NotifyPrefs.TONES.indexOf(ui.tone).coerceAtLeast(0), "Tone", fill = true) { onTone(NotifyPrefs.TONES[it]) }
             Hint(when (ui.tone) { NotifyPrefs.CHILL -> "“soft reminder, no pressure 🌱”"; NotifyPrefs.NO_MERCY -> "“NOW. not in 5 min. now ⚡”"; else -> "“lock in. 1 task. 10 min. go 🔒”" }, lines = 1)
         }
         Spacer(Modifier.height(Space.paneGap))

@@ -111,16 +111,17 @@ internal fun ButtonRow(modifier: Modifier = Modifier, content: @Composable RowSc
  * per change. Each part is at least 48 dp tall to touch, 36 dp drawn.
  */
 @Composable
-internal fun Segmented(options: List<String>, chosen: Int, label: String, modifier: Modifier = Modifier, onPick: (Int) -> Unit) {
+internal fun Segmented(options: List<String>, chosen: Int, label: String, modifier: Modifier = Modifier, fill: Boolean = false, onPick: (Int) -> Unit) {
     val haptics = LocalHapticFeedback.current
     Row(modifier.heightIn(min = TouchMin).semantics { contentDescription = label }, verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.background(Glass.Ink.copy(alpha = 0.06f), RoundedCornerShape(12.dp)).padding(3.dp), verticalAlignment = Alignment.CenterVertically) {
+        // [fill]: the full width in equal parts with words that shrink to fit (round C checker #3: "No mercy" was cut).
+        Row(Modifier.then(if (fill) Modifier.fillMaxWidth() else Modifier).background(Glass.Ink.copy(alpha = 0.06f), RoundedCornerShape(12.dp)).padding(3.dp), verticalAlignment = Alignment.CenterVertically) {
             options.forEachIndexed { i, o ->
                 val on = i == chosen
                 val press = remember { MutableInteractionSource() }
                 val lift by animateFloatAsState(if (on) 1f else 0f, spring(dampingRatio = 1f, stiffness = 600f), label = "seg")
                 Box(
-                    Modifier.heightIn(min = 36.dp).pressScale(press)
+                    Modifier.then(if (fill) Modifier.weight(1f).padding(horizontal = 2.dp) else Modifier).heightIn(min = 36.dp).pressScale(press)
                         .graphicsLayer { shadowElevation = lift * 3.dp.toPx(); shape = RoundedCornerShape(10.dp); clip = false }
                         .background(Color.White.copy(alpha = lift), RoundedCornerShape(10.dp))
                         .clickable(press, indication = null, role = Role.Tab) { if (!on) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick(i) } }
@@ -128,7 +129,10 @@ internal fun Segmented(options: List<String>, chosen: Int, label: String, modifi
                         .padding(horizontal = 12.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(o, style = MaterialTheme.typography.labelLarge, color = if (on) Glass.Ink else Glass.Muted, maxLines = 1, softWrap = false)
+                    if (fill) androidx.compose.foundation.text.BasicText(o, maxLines = 1, softWrap = false,
+                        style = MaterialTheme.typography.labelLarge.copy(color = if (on) Glass.Ink else Glass.Muted),
+                        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = MaterialTheme.typography.labelLarge.fontSize))
+                    else Text(o, style = MaterialTheme.typography.labelLarge, color = if (on) Glass.Ink else Glass.Muted, maxLines = 1, softWrap = false)
                 }
             }
         }

@@ -72,9 +72,11 @@ object TaskAlarms {
         val early = NotifyPrefs.early(ctx)
         val horizon = now.plusDays(HORIZON_DAYS)
         val planned = HashSet<String>()
+        // A repeating timed task rings too (round C checker), unless its own habit reminder (the bell) already does.
+        val belled = dao.remindersOnce().filter { it.enabled }.mapTo(HashSet()) { it.taskId }
         for (t in dao.datedOpen().first()) {
-            if (t.status != "open" || !t.every.isNullOrBlank()) continue
-            val at = startOf(t.due) ?: continue
+            if (t.status != "open" || t.id in belled) continue
+            val at = (if (t.every.isNullOrBlank()) startOf(t.due) else ReminderMath.nextFire(t.due, t.every, now)) ?: continue
             if (at.isAfter(now) && at.isBefore(horizon)) { set(am, at, fireIntent(ctx, t.id, false)); planned += t.id }
             val before = at.minusMinutes(10)
             if (t.id in early && before.isAfter(now) && before.isBefore(horizon)) { set(am, before, fireIntent(ctx, t.id, true)); planned += "${t.id}!" }
@@ -201,11 +203,12 @@ class TaskAlarmReceiver : BroadcastReceiver() {
     private suspend fun fire(ctx: Context, parts: Parts, id: String, early: Boolean, snoozed: Boolean) {
         val t = parts.dao().taskOnce(id) ?: return
         // Still open and still at that time (a moved or finished task does not ring); a snooze rings whatever the time.
-        val at = TaskAlarms.startOf(t.due)
         val now = ZonedDateTime.now(HabitsRepository.TASHKENT)
+        // A repeating task is on time by its hour (its date moves when it is ticked: a ticked one is not due today).
+        val at = TaskAlarms.startOf(t.due)?.let { if (t.every.isNullOrBlank()) it else now.with(it.toLocalTime()).takeIf { _ -> t.due!!.take(10) <= now.toLocalDate().toString() } }
         val onTime = at != null && kotlin.math.abs(java.time.Duration.between(if (early) at.minusMinutes(10) else at, now).toMinutes()) <= 15
         if (t.status == "open" && (snoozed || onTime)) {
-            val title = TaskAlarms.line(ctx, "task", TaskAlarms.taskLines(ctx), System.currentTimeMillis())
+            val title = NotifyCopy.keywordLine(titleOf(t)) ?: TaskAlarms.line(ctx, "task", TaskAlarms.taskLines(ctx), System.currentTimeMillis())
             val time = t.due?.drop(11)?.trim()?.replace('-', '–').orEmpty()
             post(ctx, id, if (early) "in 10 min · $title" else title, titleOf(t), time, now.toLocalDate().toString(), quiet = NotifyCopy.quiet(now.toLocalTime()), actions = true)
         }

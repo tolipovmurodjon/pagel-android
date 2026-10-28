@@ -636,7 +636,8 @@ internal fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label
     ) {
         Icon(icon, contentDescription = null, tint = tone, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = tone, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        // Two lines at 1.5x, never "Notificatio…" (round C checker #3).
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = tone, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Text(action, style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1,
             modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = 14.dp, vertical = 8.dp))
     }

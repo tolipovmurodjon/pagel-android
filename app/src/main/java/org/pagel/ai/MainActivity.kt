@@ -44,15 +44,12 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var session: Session
 
-    private val notifPerm =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // The glass bar draws under the navigation bar; Android must not paint its own scrim over it.
         window.isNavigationBarContrastEnforced = false
-        ensureNotifPermission()
+        // Notifications are asked for at first use (More → Notifications, a reminder's switch), never at launch.
         ContextCompat.startForegroundService(this, Intent(this, AnchorService::class.java))
         handle(intent)
         GlassStage.coldStart()
@@ -106,14 +103,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun ensureNotifPermission() {
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
 }
 
 /**

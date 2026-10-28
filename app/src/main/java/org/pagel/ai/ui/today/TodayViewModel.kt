@@ -87,7 +87,8 @@ class TodayViewModel @Inject constructor(
             doneToday = done,
             clearedStreak = cleared,
             outbox = outbox,
-            tomorrow = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent")).plusDays(1).toString().let { tm ->
+            // The day Close the day wrote (its ritual day + 1), so a close after midnight still peeks (checker #8).
+            tomorrow = java.time.LocalDate.parse(org.pagel.ai.data.rituals.Rituals.ritualDay(System.currentTimeMillis())).plusDays(1).toString().let { tm ->
                 dated.filter { it.star && it.status == "open" && it.due?.take(10) == tm }.map { t ->
                     val p = byName[t.project]
                     TodayRow(t.id, t.title?.takeIf(String::isNotBlank) ?: headline(t.text), t.priority, t.due, t.every, t.project, p?.title ?: t.project, p?.color, done = false)

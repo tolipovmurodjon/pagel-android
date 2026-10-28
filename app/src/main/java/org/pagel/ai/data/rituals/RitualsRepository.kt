@@ -189,7 +189,10 @@ class RitualsRepository(
         // Boss 2026-10-28: "I closed the day but it shows tasks for today?! I should have an empty Today". Kept stars and
         // picks are TOMORROW's stars: starred and dated tomorrow (date only, a time kept), so Today (here, on the web and
         // in pagel.uz's todayView) hides them tonight; the cap of 3 counts kept + picked together.
-        val keptIds = stars.filter { (moves[it.id] ?: Move.KEEP) == Move.KEEP }.map { it.id }
+        val keptAll = stars.filter { (moves[it.id] ?: Move.KEEP) == Move.KEEP }.map { it.id }
+        // Kept stars count against the cap too (round C checker): the first 3 stay, any over it go to Later.
+        val keptIds = keptAll.take(MAX_STARS)
+        for (id in keptAll.drop(MAX_STARS)) { edits += RitualEdit(id, tasks.star(id, false), "later"); pushed++ }
         val picked = picks.distinct().filter { it !in keptIds }.take((MAX_STARS - keptIds.size).coerceAtLeast(0))
         for (id in picked) edits += RitualEdit(id, tasks.star(id, true), "pick")
         val kept = keptIds.size

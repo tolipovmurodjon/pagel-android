@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Round C (Boss: "better funny Gen-Z notifications to do my job"): short, funny, kind, never shaming, never about salah.
-  The task's own title goes in the text line, in Boss's language as he wrote it; these are the titles. Rotated by
-  NotifyCopy so a line never comes back within 7 days. Three tones: chill, normal, no mercy (More → Notifications).
+  The task's own title goes in the text line, in Boss's language as he wrote it; these are the titles. NotifyCopy
+  rotates them so a line never comes back within 7 days: 32 per task tone (a busy week has ~20 timed tasks) and 10 per
+  daily nudge. No topic lines here (a gym line rang for "Pay the internet bill"): NotifyCopy.keywordLine matches those.
+  Counts read the same for 1 and for 12 ("left: 1"), so no plural ever breaks.
 -->
 <resources>
     <string-array name="notify_task_chill">
@@ -20,11 +22,28 @@
         <item>breathe in, tap Done after 🌬️</item>
         <item>your list misses you a bit 🫶</item>
         <item>soft launch this task 🚀</item>
+        <item>no rush, just a start 🌿</item>
+        <item>easy mode: open it, look at it 👀</item>
+        <item>tea first, then this ☕</item>
+        <item>a calm 10 minutes, that\'s all 🕯️</item>
+        <item>you\'ve done harder things 🌈</item>
+        <item>one gentle step forward 👣</item>
+        <item>cozy productivity hours 🧸</item>
+        <item>tiny effort, big relief 🍃</item>
+        <item>start messy, finish proud 🎨</item>
+        <item>a small yes to this one 🌼</item>
+        <item>pace yourself, but begin 🚲</item>
+        <item>low effort, high reward 💎</item>
+        <item>just the first minute 🕐</item>
+        <item>be kind to future you 🤍</item>
+        <item>sunny side up: this task 🍳</item>
+        <item>peaceful progress time 🕊️</item>
+        <item>quiet focus, soft wins 🌙</item>
+        <item>nothing big, just this ✨</item>
     </string-array>
     <string-array name="notify_task_normal">
         <item>lock in. 1 task. 10 min. go 🔒</item>
         <item>main character energy: this one ✨</item>
-        <item>bro this task won\'t do itself 💪</item>
         <item>it\'s time. you know it\'s time ⏰</item>
         <item>no cap, this is the move 🧢</item>
         <item>speedrun this one? 🏃</item>
@@ -36,6 +55,25 @@
         <item>one tap away from a dopamine hit 🔥</item>
         <item>this one hits different when it\'s done ✅</item>
         <item>certified doer moment 📜</item>
+        <item>focus mode: on 🎧</item>
+        <item>ship it, then flex 💪</item>
+        <item>you vs this task: you win 🥊</item>
+        <item>quest accepted? 🗡️</item>
+        <item>do it now, brag later 😎</item>
+        <item>the streak wants this one 🔥</item>
+        <item>10 minutes of greatness ⏱️</item>
+        <item>clean list era starts now 🧹</item>
+        <item>level up: this task ⬆️</item>
+        <item>be the plot twist: start it 🎬</item>
+        <item>big brain move: begin 🧠</item>
+        <item>go touch this task 🫵</item>
+        <item>checkpoint reached, save with ✓ 💾</item>
+        <item>you\'re literally built for this 🛠️</item>
+        <item>slay this one quickly 💅</item>
+        <item>on time looks good on you ⌚</item>
+        <item>rent-free in your head? finish it 🏠</item>
+        <item>energy check: enough for this ⚡</item>
+        <item>tick it and feel the ding 🔔</item>
     </string-array>
     <string-array name="notify_task_nomercy">
         <item>NOW. not in 5 min. now ⚡</item>
@@ -43,7 +81,6 @@
         <item>legends finish. be a legend 🦁</item>
         <item>excuses loading… cancelled ❌</item>
         <item>open it. do it. done. 🔨</item>
-        <item>the gym won\'t lift itself 💪</item>
         <item>you said you would. so 👀</item>
         <item>zero mercy mode: GO 🚨</item>
         <item>stop reading this and start 🏁</item>
@@ -52,29 +89,60 @@
         <item>clock\'s ticking, boss 🕰️</item>
         <item>finish line is right there 🏃‍♂️</item>
         <item>no snooze for champions 🥇</item>
+        <item>later is a lie. now 🔥</item>
+        <item>phone down. task up 📲</item>
+        <item>no "after this video" 🎬❌</item>
+        <item>you\'re not tired, you\'re stalling 😤</item>
+        <item>do the hard thing first 🪨</item>
+        <item>it won\'t get easier tomorrow ⏳</item>
+        <item>commit. execute. done. 🎯</item>
+        <item>winners don\'t negotiate with tasks 🤝❌</item>
+        <item>full send, right now 🚀</item>
+        <item>the plan said now. obey the plan 📋</item>
+        <item>one tap to start, zero to quit 🚫</item>
+        <item>grind o\'clock 🕛</item>
+        <item>this is your sign. go 🪧</item>
+        <item>stop thinking, start doing 🧨</item>
+        <item>the task is waiting. so are we 👁️</item>
+        <item>no breaks until ✓ 🛑</item>
+        <item>sharpen up and swing 🪓</item>
+        <item>prove it today 🏋️</item>
+        <item>go go go go go 🏎️</item>
     </string-array>
     <string-array name="notify_morning">
-        <item>gm ☀️ %1$d things today. first up:</item>
-        <item>new day, new W\'s 🌅 %1$d on the list. start with:</item>
-        <item>rise and lock in 🔒 %1$d today. step one:</item>
-        <item>morning, legend ✨ %1$d moves today. open with:</item>
-        <item>coffee + %1$d tasks = main character day ☕ first:</item>
-        <item>today\'s quest log has %1$d 📜 begin with:</item>
+        <item>gm ☀️ today\'s list: %1$d. first up:</item>
+        <item>new day, new W\'s 🌅 on the list: %1$d. start with:</item>
+        <item>rise and lock in 🔒 today: %1$d. step one:</item>
+        <item>morning, legend ✨ moves today: %1$d. open with:</item>
+        <item>coffee + today\'s list (%1$d) = main character day ☕ first:</item>
+        <item>today\'s quest log: %1$d 📜 begin with:</item>
+        <item>sun\'s up, list\'s up 🌞 today: %1$d. go:</item>
+        <item>fresh start 🌱 on deck: %1$d. lead with:</item>
+        <item>good morning ☕ the plan: %1$d. kick off with:</item>
+        <item>wakey wakey 🐣 today\'s count: %1$d. first move:</item>
     </string-array>
     <string-array name="notify_evening">
-        <item>main character energy: %1$d left today ✨</item>
-        <item>%1$d stars still glowing ⭐ finish strong?</item>
-        <item>almost there: %1$d to go before you close the day 🌙</item>
-        <item>last lap 🏁 %1$d left, then rest</item>
-        <item>%1$d more and the day is cleared 🎉</item>
-        <item>sunset push 🌇 %1$d left on Today</item>
+        <item>main character energy: stars left: %1$d ✨</item>
+        <item>stars still glowing: %1$d ⭐ finish strong?</item>
+        <item>almost there 🌙 left before you close the day: %1$d</item>
+        <item>last lap 🏁 left: %1$d, then rest</item>
+        <item>one push and the day is cleared 🎉 left: %1$d</item>
+        <item>sunset push 🌇 left on Today: %1$d</item>
+        <item>evening check ✨ stars open: %1$d</item>
+        <item>wrap it up, champ 🎁 left: %1$d</item>
+        <item>before the couch 🛋️ stars left: %1$d</item>
+        <item>night mode soon 🌌 still open: %1$d</item>
     </string-array>
     <string-array name="notify_overdue">
-        <item>%1$d from before are waiting, no stress, pick one 🧹</item>
+        <item>from before, waiting: %1$d. no stress, pick one 🧹</item>
         <item>old quests: %1$d. clear one, feel great 🗡️</item>
-        <item>%1$d overdue, a 2-min triage? 🩺</item>
+        <item>overdue: %1$d. a 2-min triage? 🩺</item>
         <item>backlog check: %1$d. move or do 📦</item>
-        <item>%1$d leftovers, tiny cleanup? 🧽</item>
-        <item>%1$d old ones say hi 👋 sort them in a minute</item>
+        <item>leftovers: %1$d. tiny cleanup? 🧽</item>
+        <item>old ones say hi 👋 count: %1$d. sort them in a minute</item>
+        <item>past-due pile: %1$d. one at a time 🪜</item>
+        <item>yesterday\'s things: %1$d. today\'s chance ☀️</item>
+        <item>still hanging: %1$d. move them to today? 📅</item>
+        <item>overdue club: %1$d. let\'s close it 🔐</item>
     </string-array>
 </resources>

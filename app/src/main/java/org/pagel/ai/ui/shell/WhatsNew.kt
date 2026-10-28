@@ -2,6 +2,7 @@ package org.pagel.ai.ui.shell
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -99,7 +100,8 @@ fun WhatsNewContent(onOpen: (String) -> Unit) {
                     ) {
                         Box(
                             Modifier.size(22.dp).background(if (done) Glass.Primary else Color.Transparent, CircleShape)
-                                .then(if (done) Modifier else Modifier.background(Glass.Ink.copy(alpha = 0.10f), CircleShape)),
+                                // An untried ring ≥ 3:1 on the pane (round C checker: 0.10 ink was ~1.3:1).
+                                .then(if (done) Modifier else Modifier.border(1.5.dp, Glass.Ink.copy(alpha = 0.55f), CircleShape)),
                             contentAlignment = Alignment.Center,
                         ) { if (done) Icon(TabIcons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp)) }
                         Spacer(Modifier.width(Space.md))

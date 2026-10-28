@@ -271,6 +271,7 @@ fun UpcomingScreen(
         )
     }
 
+    val shown = when (view) { CalView.DAY -> listOf(focus); CalView.THREE -> (0 until 3).map { focus.plusDays(it.toLong()) }; else -> stripDays }
     fun tapDay(d: LocalDate) {
         focusText = d.toString()
         if (view == CalView.SCHEDULE) {
@@ -316,7 +317,6 @@ fun UpcomingScreen(
                         Spacer(Modifier.height(contentPadding.calculateBottomPadding() + Space.sm))
                     }
                     else -> {
-                        val shown = when (view) { CalView.DAY -> listOf(focus); CalView.THREE -> (0 until 3).map { focus.plusDays(it.toLong()) }; else -> stripDays }
                         Timeline(shown, ui, rememberScrollState(), top = headDp + Space.sm, bottom = contentPadding.calculateBottomPadding() + Space.sm,
                             onOpen = openTask, onMove = onMoveTo)
                     }
@@ -333,13 +333,16 @@ fun UpcomingScreen(
                 if (view == CalView.MONTH) MonthBar(month) { monthText = it.toString() }
                 else {
                     Row(Modifier.fillMaxWidth().padding(start = Space.md), verticalAlignment = Alignment.CenterVertically) {
-                        Text(rangeText(stripStart), style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, modifier = Modifier.weight(1f))
+                        // Day says its day, 3 days its three (checker #6: Day still said the week's range).
+                        Text(when (view) { CalView.DAY -> focus.format(DAY_HEAD); CalView.THREE -> rangeText(focus, 2); else -> rangeText(stripStart) }, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, modifier = Modifier.weight(1f))
                         TodayPill(shown = page != 0 || focus != ui.today) {
                             focusText = ""
                             scope.launch { pager.animateScrollToPage(STRIP_BACK); if (view == CalView.SCHEDULE) list.animateScrollToItem(0) }
                         }
                     }
                     WeekPager(pager, ui, focus, drag.hovered, Modifier.padding(bottom = Space.xs).onGloballyPositioned { strip[0] = it }) { d -> tapDay(d) }
+                    // The timeline's own day heads, on its columns (checker #6: the strip's days sat ~15 dp off them).
+                    if (view != CalView.SCHEDULE) DayHeads(shown, ui.today, Modifier.padding(start = GUTTER - Space.xl, bottom = Space.xs))
                 }
             }
         }
@@ -349,8 +352,10 @@ fun UpcomingScreen(
 
 private val RANGE_DAY = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
 
-/** "28 Oct – 3 Nov": the strip's week. */
-private fun rangeText(start: LocalDate): String = "${start.format(RANGE_DAY)} – ${start.plusDays(6).format(RANGE_DAY)}"
+private val DAY_HEAD = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
+
+/** "28 Oct – 3 Nov": the strip's week (or [days] after [start]). */
+private fun rangeText(start: LocalDate, days: Long = 6): String = "${start.format(RANGE_DAY)} – ${start.plusDays(days).format(RANGE_DAY)}"
 
 /** The view Boss chose last, kept on the phone (read and written off Main). */
 internal object CalendarPrefs {
