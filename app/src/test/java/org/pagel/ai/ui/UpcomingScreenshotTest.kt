@@ -133,13 +133,13 @@ class UpcomingScreenshotTest {
         )
         show { UpcomingScreen(upcoming(open.drop(2) + habits), pad) }
         // Today and Tomorrow show them in full; from Friday they fold into one line (Monday keeps its weigh-in row).
-        val list = compose.onNode(hasScrollAction())
+        // The list, not the week pager (round C: the strip scrolls sideways too).
+        val list = compose.onNode(hasScrollAction() and androidx.compose.ui.test.SemanticsMatcher("scrolls vertically") { it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange) })
         list.performScrollToNode(hasContentDescription("4 daily habits, folded"))
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-habits-folded.png")
         // The scroll brings the line to the list's top edge, under the glass top (round C): tap it by its action.
         compose.onAllNodesWithContentDescription("4 daily habits, folded")[0].performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
-        // It may sit under the glass top after the scroll (round C), so the fold's state is what is checked.
-        compose.onAllNodesWithContentDescription("4 daily habits, shown")[0].assertExists()
+        compose.onNodeWithContentDescription("4 daily habits, shown").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-habits-open.png")
     }
 
