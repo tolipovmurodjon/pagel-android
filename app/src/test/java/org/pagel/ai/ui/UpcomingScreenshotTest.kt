@@ -10,15 +10,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -122,6 +126,36 @@ class UpcomingScreenshotTest {
         show { UpcomingScreen(upcoming(), pad, onMoveAll = { moved = it }) }
         compose.onNodeWithContentDescription("Move all to today").performClick()
         assertEquals(listOf("u2", "u1"), moved)
+    }
+
+    /** Long-press a row, then carry it in steps onto a day of the strip and let go there (as the walk's finger does). */
+    private fun SemanticsNodeInteraction.dragOnto(day: String) {
+        val to = compose.onNodeWithContentDescription(day).fetchSemanticsNode().boundsInRoot.center
+        val at = fetchSemanticsNode().boundsInRoot.topLeft
+        performTouchInput {
+            val from = center
+            val by = to - (at + from)
+            down(from)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 200)
+            for (k in 1..8) { moveTo(from + by * (k / 8f)); advanceEventTime(16) }
+            up()
+        }
+        compose.waitForIdle()
+    }
+
+    @Test fun aTaskDraggedOntoADayOfTheStripMovesThere() {
+        var moved: Pair<String, LocalDate>? = null
+        show { UpcomingScreen(upcoming(), pad, onMove = { id, day -> moved = id to day }) }
+        compose.onNodeWithText("Review the lesson draft").dragOnto("Saturday 31 October, 1 task")
+        assertEquals("u4" to LocalDate.parse("2026-10-31"), moved)
+    }
+
+    /** Checker P4 #1: a habit row has no drag (its due is the whole series; Habits owns it). */
+    @Test fun aHabitRowCannotBeDragged() {
+        var moved: Pair<String, LocalDate>? = null
+        show { UpcomingScreen(upcoming(), pad, onMove = { id, day -> moved = id to day }) }
+        compose.onAllNodesWithText("Gym")[0].dragOnto("Saturday 31 October, 1 task")
+        assertNull(moved)
     }
 
     @Test fun completedByDayAt360() {

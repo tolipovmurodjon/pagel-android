@@ -32,9 +32,14 @@ class UpcomingRepository(
 
     fun today(): LocalDate = Instant.ofEpochMilli(clock()).atZone(TASHKENT).toLocalDate()
 
-    /** A task dropped on another day: the day changes, its time stays. Null when it was already there. */
+    /**
+     * A task dropped on another day: the day changes, its time stays. Null when it was already there, or when it is a
+     * habit: a habit's due is its series (Repeat.datesBetween counts from it), so a new due would move every later day,
+     * and on pagel.uz a due of today or earlier undoes today's tick (task-store.ts `habit_undone`). Habits owns habits.
+     */
     suspend fun reschedule(id: String, day: LocalDate): Moved? {
         val t = dao.taskOnce(id) ?: return null
+        if (!t.every.isNullOrBlank()) return null
         val due = movedTo(t.due, day)
         if (due == t.due) return null
         val op = tasks.due(id, due) ?: return null

@@ -80,9 +80,9 @@ class UpcomingRepositoryTest {
     private fun repo() = UpcomingRepository(db.dao(), api, tasks, clock = { now })
     private fun sender() = OutboxSender(api, db.dao(), clock = { now + 60_000 })
 
-    private fun task(id: String, due: String?, status: String = "open", doneAt: String? = null) = TaskEntity(
+    private fun task(id: String, due: String?, status: String = "open", doneAt: String? = null, every: String? = null) = TaskEntity(
         id = id, project = "me", phase = "Now", sort = 1.0, text = id, title = null, status = status, priority = 2, star = false,
-        due = due, every = null, doneWhen = null, doneAt = doneAt, updatedAt = "2026-10-27T05:00:00Z", serverVersion = 1, lastModified = 0,
+        due = due, every = every, doneWhen = null, doneAt = doneAt, updatedAt = "2026-10-27T05:00:00Z", serverVersion = 1, lastModified = 0,
     )
 
     @Test fun aDropOnAnotherDayMovesItInRoomAtOnceAndSendsTheDueKeepingTheTime() = runBlocking {
@@ -96,6 +96,23 @@ class UpcomingRepositoryTest {
         assertNull(r.reschedule("t_b", LocalDate.parse("2026-10-30")))
         assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
         assertEquals(listOf("""t_a {"due":"2026-10-30 10:00"}""", """t_b {"due":"2026-10-30"}"""), patches)
+    }
+
+    /**
+     * Checker P4 #1: a habit's due is its series. A drop of "Gym" (tue,thu,sun) on a Monday would put it on Monday and
+     * take Thursday away; a late habit sent to today would undo today's tick on pagel.uz. Neither moves, nothing is sent.
+     */
+    @Test fun aHabitIsNeverRescheduledNeitherByADropNorByMoveAll() = runBlocking {
+        db.dao().upsertTasks(listOf(task("t_gym", "2026-10-29 18:00", every = "tue,thu,sun"), task("t_late", "2026-10-26 07:30", every = "day"), task("t_1", "2026-10-25")))
+        val r = repo()
+        assertNull(r.reschedule("t_gym", LocalDate.parse("2026-11-02")))
+        assertEquals("2026-10-29 18:00", db.dao().taskOnce("t_gym")!!.due)
+        assertEquals(SyncStatus.SYNCED, db.dao().taskOnce("t_gym")!!.syncStatus)
+        val moved = r.moveAllToToday(listOf("t_late", "t_1"))
+        assertEquals(listOf("t_1"), moved.map { it.id })
+        assertEquals("2026-10-26 07:30", db.dao().taskOnce("t_late")!!.due)
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(listOf("""t_1 {"due":"2026-10-28"}"""), patches)
     }
 
     @Test fun moveAllToTodayMovesEachOverdueAndUndoWhileWaitingPutsThemBack() = runBlocking {

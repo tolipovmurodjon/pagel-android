@@ -373,14 +373,18 @@ private fun TaskRow(t: TaskEntity, ui: UpcomingUi, held: Boolean, handlers: Drag
             .graphicsLayer { alpha = dim }
             .onPlaced { coords[0] = it }
             // Long-press, then drag onto a day of the strip (iOS Calendar's move). A plain tap still opens the panel.
-            .pointerInput(t.id) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { local -> coords[0]?.takeIf { it.isAttached }?.let { handlers.start(t, it.positionInRoot(), local) } },
-                    onDrag = { change, amount -> change.consume(); handlers.move(amount) },
-                    onDragEnd = { handlers.end(false) },
-                    onDragCancel = { handlers.end(true) },
-                )
-            }
+            // Never a habit: a new due would move its whole series and can undo today's tick on pagel.uz (checker P4 #1).
+            .then(
+                if (!t.every.isNullOrBlank()) Modifier
+                else Modifier.pointerInput(t.id) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { local -> coords[0]?.takeIf { it.isAttached }?.let { handlers.start(t, it.positionInRoot(), local) } },
+                        onDrag = { change, amount -> change.consume(); handlers.move(amount) },
+                        onDragEnd = { handlers.end(false) },
+                        onDragCancel = { handlers.end(true) },
+                    )
+                },
+            )
             .padding(start = 6.dp, end = 16.dp),
         verticalAlignment = Alignment.Top,
     ) {
