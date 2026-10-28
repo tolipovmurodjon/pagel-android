@@ -196,7 +196,7 @@ class RitualsScreenshotTest {
         show { ReviewScreen(review(2), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/review-next-steps-360.png")
         compose.onNodeWithText("3. Every project needs one next step").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Step 3: Next steps").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Step 3: Steps").assertIsDisplayed()
     }
 
     @Test fun reviewSomedayAt360() {
