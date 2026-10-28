@@ -124,7 +124,15 @@ grep -q "content-desc=\"$((RING + 1)) of 20 sorted today\"" "$OUT/$(printf '%02d
   || { log "WALKTHROUGH: the ring did not go $RING -> $((RING + 1)) after one sort"; grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-swiped-left-drop.xml" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   the ring went $RING -> $((RING + 1))"
 P=$(centre "Quizzes beat rereading: recall builds memory") || exit 1; set -- $P
-$T adb shell input swipe "$1" "$2" "$1" $(( $2 - 800 )) 250; shot inbox-swiped-up-later 1.5
+# Inside the 320x640 screen (an 800-px swipe ended at y < 0 and was lost once, CI 40635928160); one retry if the
+# card is still there (a lost swipe sorts nothing, so it cannot sort twice).
+UP=$(( $2 - 400 )); [ "$UP" -lt 12 ] && UP=12
+$T adb shell input swipe "$1" "$2" "$1" "$UP" 200; sleep 1.5
+if P=$(centre "Quizzes beat rereading: recall builds memory"); then
+  log "   the swipe up was lost; once more"; set -- $P; UP=$(( $2 - 400 )); [ "$UP" -lt 12 ] && UP=12
+  $T adb shell input swipe "$1" "$2" "$1" "$UP" 200
+fi
+shot inbox-swiped-up-later 1.5
 P=$(centre "A meme about Mondays") || exit 1; set -- $P
 $T adb shell input swipe "$1" "$2" $(( $1 + 700 )) "$2" 250; shot inbox-swiped-right-ai-drop 1.5
 tap "AI pick: Action" && shot inbox-action-form 2
