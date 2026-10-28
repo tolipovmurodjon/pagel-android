@@ -206,7 +206,7 @@ fun UpcomingScreen(
             WeekStrip(
                 ui.view.days, ui.today, drag.hovered,
                 Modifier.padding(horizontal = 16.dp).onGloballyPositioned { strip[0] = it },
-            ) { i -> scope.launch { list.animateScrollToItem(overdueFirst + i) } }
+            ) { i -> scope.launch { list.animateScrollToItem(if (i == 0) 0 else overdueFirst + i) } } // today = the top, Overdue included
             LazyColumn(
                 Modifier.fillMaxWidth().weight(1f), state = list,
                 contentPadding = PaddingValues(top = 12.dp, bottom = contentPadding.calculateBottomPadding() + 8.dp),
@@ -300,10 +300,16 @@ private fun WeekStrip(days: List<UpcomingDay>, today: LocalDate, hovered: Int?, 
     }
 }
 
+/** A pane's title and its one action; at large font the action wraps under the title ("Overd/ue" at 1.5x shared a row). */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun PaneTitle(text: String, color: Color = Glass.Ink, trailing: (@Composable () -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, style = MaterialTheme.typography.titleMedium, color = color, modifier = Modifier.weight(1f).padding(vertical = 6.dp).semantics { heading() })
+    FlowRow(
+        Modifier.fillMaxWidth().padding(start = 18.dp, end = 10.dp, top = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        itemVerticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = MaterialTheme.typography.titleMedium, color = color, maxLines = 2, modifier = Modifier.padding(vertical = 6.dp).semantics { heading() })
         trailing?.invoke()
     }
 }
@@ -430,7 +436,8 @@ private fun Ghost(drag: Drag, rootAt: Offset) {
             .graphicsLayer {
                 val s = drag.scale.value
                 scaleX = s; scaleY = s
-                alpha = ((s - 0.2f) / 0.8f).coerceIn(0f, 1f)
+                // Over the strip the card lets the ink target cell show through it.
+                alpha = ((s - 0.2f) / 0.8f).coerceIn(0f, 1f) * if (drag.hovered != null) 0.82f else 1f
                 shadowElevation = 18.dp.toPx()
                 shape = RoundedCornerShape(18.dp)
                 clip = true

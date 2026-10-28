@@ -238,8 +238,10 @@ WANT="PATCH /api/v1/tasks/t_u3 {\"due\":\"$AFTER2\"} auth=True"
 for i in $(seq 1 30); do grep -qF "$WANT" "$FAKE_LOG" && break; sleep 1; done
 grep -qF "$WANT" "$FAKE_LOG" || { log "WALKTHROUGH: the drop never reached pagel.uz as $WANT"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   pagel.uz got the drop: {\"due\":\"$AFTER2\"} after ~${i} s"
-# Back to the top, where Overdue is.
-$T adb shell input swipe 540 600 540 1700 250; $T adb shell input swipe 540 600 540 1700 250
+# Today on the strip brings the list back to the top, where Overdue is.
+TODAY_SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date '+%A %-d %B')
+P=$(centre_desc "$TODAY_SPOKEN") || exit 1; set -- $P
+$T adb shell input tap "$1" "$2"; sleep 1.5
 tap "Move all to today" && shot upcoming-moved-all 1.5
 for id in t_u2 t_u1; do
   WANT="PATCH /api/v1/tasks/$id {\"due\":\"$TODAY\"} auth=True"

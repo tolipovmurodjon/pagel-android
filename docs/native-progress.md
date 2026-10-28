@@ -41,6 +41,73 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v11 · PHASE 4 OF 10 = UPCOMING · COMPLETED · OVERDUE, + THE PHASE 3 CHECKER'S FIXES (2026-10-28, builder agent)
+The web's `/upcoming` and `/completed` on the phone (`ui/upcoming/`, `data/upcoming/`), offline-first, plus the Phase 3
+checker's top 10 (`docs/qa/phase3-checker.md`).
+- **Where it lives: More → Upcoming, More → Completed.** The web's phone bar keeps exactly Today · Inbox · Habits · Notebook
+  in the bar and Upcoming/Completed under More (dashboard `nav.tsx` `PHONE`), so the phone does the same. A segmented switch
+  on Today was the other option; it would make Today two screens and break "Today = 3 at a time". Overdue is the top section
+  of Upcoming, as on the web (`upcoming/page.tsx`).
+- **Server** (dashboard `feat/gtd-core`): **e759107 (URGENT)** the AI read is bounded: `apiTriage` skips a file asked for in
+  the last 24 h and starts at most 24 reads a Tashkent day (app-v0.7.0 asked every minute with no end, up to 1,440 Claude
+  runs a day on the box lexion.uz shares). **34c6704** `nextAfter` (lib/repeat.ts): a tick moves a habit to its first date
+  after today, in task-store.ts and plans.ts; `PATCH {done, day, if_due}`: an offline tick counts for the Tashkent day it was
+  made (today or yesterday; older or bad = today) and does not move a habit whose date already moved (the web ticked first);
+  `repeatLabel("monday")` = "Mondays"; `GET /api/v1/completed?before=&limit=` (sync.ts `completedPage`): finished tasks newest
+  first, each with its Tashkent `day`, paged by `before` = the last done_at. vitest: repeat 3 new, task-api 4 new (late habit
+  Tue→Thu, 23:50 Tue sent 00:10 Wed counts Tue, if_due mismatch moves nothing, an old day counts today), sync 2 new (an
+  explicit +05:00 boundary: 23:59 and 00:01 Tashkent), inbox-api 2 new (24 h skip, day cap reset at Tashkent midnight); the
+  touched files' tests all green; `tsc --noEmit` clean. The full run's 13 failures are git tests at the 5 s timeout on the laptop;
+  the same files pass serially with a 60 s timeout (77/77). **DEPLOY: see the report; until then** the old pagel.uz ignores
+  `day`/`if_due` (it still names `done` in `applied`, so nothing is held or rolled back) and answers 404 for /completed
+  (Completed shows Room's 14 days from /sync, silently).
+- **Upcoming** (`UpcomingScreen.kt`): "Next 7 days" · Upcoming · "N planned · M overdue"; a glass **week strip** pinned under
+  the title (weekday, the date in a circle, a mint dot under a day with tasks; today = bright mint with an ink number; a tap
+  scrolls to that day), then Overdue (red title, **Move all to today** pill, oldest first) and the 7 days ("Today ·",
+  "Tomorrow ·", "Friday 30 Oct"; "Nothing planned"). A habit shows on every day it falls on (`Repeat.datesBetween`, a port of
+  the web's) with its repeat mark instead of a ring (it is ticked on Habits). Rows: ring (done from here: `PATCH {done:true}`
+  through the panel's outbox, so its Undo never puts it on Today), title, time or late date, repeat, project tile.
+- **Drag to reschedule**: long-press a row (haptic LongPress, it lifts to a white card at 1.04×, the row dims to 35 %), drag
+  onto the strip; the day under the finger fills ink and grows (spring), one SegmentTick per day crossed
+  (`stripDayAt`, with 28 dp of slop above and below); let go on a day = Confirm haptic, the card springs into the cell and
+  shrinks away, Room moves the task at once (`movedTo` keeps its time), one outbox `PATCH {due}`, toast "Moved to Fri 30 Oct ·
+  Undo". Let go elsewhere = it springs home. "Move all to today": each overdue gets today (time kept), one toast "2 moved to
+  today · Undo"; Undo takes back what still waits on the phone, newest first, else sends the old date.
+- **Completed** (`CompletedScreen.kt`): "N tasks done", panes by the Tashkent day it was finished (Today, Yesterday, weekday
+  names for the last week, then "2 October", another year with its year), newest first, the time done (14:32, Tashkent),
+  the project tile; the filled check (bright mint, ink tick) = untick: `PATCH {done:false}` (pagel.uz's undone), Room first,
+  "Back on your list · Undo". Tap = the task panel, **read only for a done task** (`DoneContent`: title, finish line, "Done
+  today 09:12", **Reopen**, steps and note as text; no Won't do). Older than /sync's 14 days come from
+  `GET /api/v1/completed` (200) when Completed opens; `applyCompleted` never overwrites a task with a change waiting.
+- **Offline**: all three read Room only (`PagelDao.datedOpen`, `completed`); every change is a TaskRepository edit (Room first
+  + outbox), so moves made offline reach pagel.uz in the order made (`UpcomingRepositoryTest`). No Room migration: no new
+  table or column.
+- **Phase 3 checker fixes**: #1 `Repeat.nextAfter` (late habit ticked → next date after today) both sides; #2 the tick's
+  PATCH carries `day` + `if_due`; #3 no tick and no ring for a habit already ticked today (`HabitsRepository.tick`,
+  `HabitAlarmReceiver.fire`); #4 the AI read only while the Inbox is started (`LifecycleStartEffect` → `onScreen`) and at
+  most 3 taken asks per unread set (`ReadAsks`), + the server bound above; #5 tick = one `@Transaction` (`tickHabit`), a
+  finishing habit counts as done in the header and is not "Coming up"; #6 permission denied → the sheet shows a 48 dp red row
+  "Notifications off · Turn on" (→ app notification settings), no exact grant → "Exact time · Allow" (→ the exact-alarm
+  page), the exact ask only after a yes; #7 grants read again when the sheet opens, each alarm in its own try with a
+  `setWindow` fallback on SecurityException, CI asserts `dumpsys alarm` gains a `HABIT_FIRE` alarm; #8 400 days of ticks
+  (`DAYS`), a refresh keeps the ticks of a habit touched after its GET left; #9 bright-mint done discs and switch (no
+  #058527, no solid #1C7E69 track), the AI pill (white glass, mint rim, breathing sparkle, "AI is reading this one"), X's own
+  logo; #10 panes slide (`animateItem` + `animateContentSize`), day bar damping 1.0, lucide bell small icon + BigTextStyle,
+  "Mondays", "Noted ✓". Also: the meta icons grow with the font (13 sp).
+- **Not in this phase**: dropping a row onto a day *section* in the list (only the strip is a target); a TalkBack action
+  for the move (the panel's date does it); paging Completed past 200 (one page; the web shows 200 too); Upcoming's habit
+  rows are not tickable (Habits owns the tick); a midnight ticker on Habits (Upcoming/Completed re-read today each
+  minute); snooze/offsets/history calendar for habits; the Inbox gaps from v9; the Action/Note #1C7E69 slab (Boss's open
+  question, unchanged).
+- **CI**: run 40626531451 (9f71886): build ✅ (unit + Roborazzi; new shots upcoming-360, upcoming-360-font-1.5,
+  upcoming-no-overdue, completed-360, completed-360-font-1.5, panel-done-read-only, habits-reminder-notifications-off, all
+  looked at); smoke ❌ only at "Move all to today" (the walk's scroll-to-top swipe used 1080-px coordinates on the 320-px
+  emulator); before that it proved the drag (`PATCH t_u3 {"due":"<+2 days>"}` in ~1 s, walk 45 dragging / 46 "Moved to Fri
+  30 Oct · Undo"), the habit tick with `day`/`if_due`, and `dumpsys alarm` 0 → 1 `HABIT_FIRE` (RTC_WAKEUP, exact). Fixed in
+  the next commit: Today on the strip scrolls to the top (Overdue included); also the done ring in the panel is bright
+  mint (was #058527), the X pill is the logo alone, a pane title wraps its action under it at 1.5x ("Overd/ue"). The run on
+  the commit after this block is the judge (`gh run list -R tolipovmurodjon/pagel-android --branch feat/native-app`).
+
 ## START HERE v10 · PHASE 3 OF 10 = HABITS + REMINDERS, + THE PHASE 2 CHECKER'S FIXES (2026-10-28, builder agent)
 The web's `/habits` on the phone, behind the Habits tab (`ui/habits/`), offline-first, plus reminders with a Done button.
 - **Server** (dashboard `feat/gtd-core` **99b420a, DEPLOY NEEDED**): `GET /api/v1/habits?days=60` (`src/lib/habits-api.ts`:

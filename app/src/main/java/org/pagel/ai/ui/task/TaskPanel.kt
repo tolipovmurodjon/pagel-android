@@ -311,11 +311,13 @@ private fun Ring(priority: Int, done: Boolean, title: String, onTick: () -> Unit
             val r = size.minDimension / 2
             val line = 1.6.dp.toPx()
             val c = flag ?: Color(0xFF9AA2BB)
-            if (done) drawCircle(Color(0xFF058527), r) else { drawCircle(c.copy(alpha = 0.08f), r); drawCircle(c, r - line / 2, style = Stroke(line)) }
+            // Done = bright mint with an ink tick, as Completed and Habits draw it (no 4th green, checker 2026-10-28 #9).
+            if (done) drawCircle(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), r)
+            else { drawCircle(c.copy(alpha = 0.08f), r); drawCircle(c, r - line / 2, style = Stroke(line)) }
             val u = size.minDimension / 20f
             if (done) {
-                drawLine(Color.White, Offset(5.5f * u, 10.5f * u), Offset(8.5f * u, 13.5f * u), 2.2f * u, StrokeCap.Round)
-                drawLine(Color.White, Offset(8.5f * u, 13.5f * u), Offset(14.5f * u, 6.5f * u), 2.2f * u, StrokeCap.Round)
+                drawLine(Glass.Ink, Offset(5.5f * u, 10.5f * u), Offset(8.5f * u, 13.5f * u), 2.2f * u, StrokeCap.Round)
+                drawLine(Glass.Ink, Offset(8.5f * u, 13.5f * u), Offset(14.5f * u, 6.5f * u), 2.2f * u, StrokeCap.Round)
             }
         }
     }

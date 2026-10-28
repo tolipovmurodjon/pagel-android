@@ -602,13 +602,16 @@ private fun SitePill(site: Site, name: String) {
         when (site) {
             Site.INSTAGRAM -> Icon(TabIcons.Instagram, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
             // X's own mark, not a close cross (checker 2026-10-28 #9).
-            Site.X -> Icon(TabIcons.XLogo, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+            Site.X -> Icon(TabIcons.XLogo, contentDescription = "X", tint = Color.White, modifier = Modifier.size(12.dp))
             Site.LINKEDIN -> Text("in", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = Color(0xFF0A66C2),
                 modifier = Modifier.background(Color.White, RoundedCornerShape(3.dp)).padding(horizontal = 3.dp))
             else -> Icon(TabIcons.Globe, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
         }
-        Spacer(Modifier.width(6.dp))
-        Text(name, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // X's logo is its name: "X X" said it twice.
+        if (site != Site.X) {
+            Spacer(Modifier.width(6.dp))
+            Text(name, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
