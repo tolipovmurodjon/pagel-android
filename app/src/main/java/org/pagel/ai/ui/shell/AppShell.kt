@@ -280,7 +280,9 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         org.pagel.ai.ui.rituals.ReviewRoute(padding, onInbox = { selected = 1 }, onSweep = { stack.add(SweepRoute) }, onToday = ::goToday)
                     }
                     entry<InboxRoute> { InboxScreenRoute(padding, reselect) }
-                    entry<HabitsRoute> { HabitsScreenRoute(padding, reselect) }
+                    entry<HabitsRoute> { HabitsScreenRoute(padding, reselect, onOpenHabit = { stack.add(HabitDetailRoute(it)) }, onHistory = { stack.add(HabitHistoryRoute) }) }
+                    entry<HabitDetailRoute> { r -> org.pagel.ai.ui.habits.HabitDetailRoute(r.id, padding, onBack = { stack.removeLastOrNull() }) }
+                    entry<HabitHistoryRoute> { org.pagel.ai.ui.habits.HabitHistoryRoute(padding, onBack = { stack.removeLastOrNull() }, onOpenHabit = { stack.add(HabitDetailRoute(it)) }) }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
                     entry<MoreRoute> {
                         More(
@@ -336,6 +338,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
             org.pagel.ai.ui.compass.CompassRoute -> "Compass"
+            is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
         val density = androidx.compose.ui.platform.LocalDensity.current

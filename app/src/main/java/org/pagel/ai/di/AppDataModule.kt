@@ -81,6 +81,15 @@ object AppDataModule {
     @Provides
     fun provideRitualsDao(db: PagelDatabase): RitualsDao = db.rituals()
 
+    @Provides
+    @Singleton
+    fun provideHabitPrefsDao(db: PagelDatabase): org.pagel.ai.data.db.HabitPrefsDao = db.habitPrefs()
+
+    @Provides
+    @Singleton
+    fun provideHabitPrefsRepository(dao: org.pagel.ai.data.db.HabitPrefsDao): org.pagel.ai.data.habits.HabitPrefsRepository =
+        org.pagel.ai.data.habits.HabitPrefsRepository(dao)
+
     /** The rituals (Phase 5): Empty your head, Close the day, the weekly review, the evening reminder. */
     @Provides @Singleton
     fun provideRitualsRepository(

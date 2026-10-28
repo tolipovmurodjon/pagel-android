@@ -19,6 +19,10 @@ import org.pagel.ai.ui.glass.TabIcons
 @Serializable data object CompletedListRoute : NavKey
 /** One project's open tasks by phase, opened from Projects or from a task panel's project capsule. */
 @Serializable data class ProjectPageRoute(val name: String) : NavKey
+/** One habit's page (round D): chain calendar, stats, emoji, stacking. */
+@Serializable data class HabitDetailRoute(val id: String) : NavKey
+/** Habits' History (round D): Calendar · All habits · Achievements. */
+@Serializable data object HabitHistoryRoute : NavKey
 /** pagel.uz itself in the kept-alive WebView, until each native feature replaces its page. */
 @Serializable data class WebRoute(val path: String) : NavKey
 

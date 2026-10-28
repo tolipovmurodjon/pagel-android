@@ -40,6 +40,8 @@ data class SyncTaskDto(
     val steps: List<SyncStepDto> = emptyList(),
     /** Taps a habit needs a day (round B); an older pagel.uz sends none = 1. */
     val times: Int = 1,
+    /** A habit's group (round D): "namoz" for the five prayers; an older pagel.uz sends none. */
+    val group: String? = null,
 )
 
 @Serializable
@@ -71,6 +73,8 @@ data class NewTaskBody(
     val project: String, val text: String, val priority: Int, val due: String? = null, val every: String? = null,
     /** The phone's own id for this add (round B): a retry after a lost reply gets the same task back, never a second. */
     @SerialName("client_id") val clientId: String? = null,
+    /** A habit's group (round D, "namoz"); left out when null, so an older pagel.uz never sees it. */
+    val group: String? = null,
 )
 
 /** The created task; only its id is needed here, the next sync brings the rest. */
