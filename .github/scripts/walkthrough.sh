@@ -682,3 +682,25 @@ $T adb shell locksettings clear --old 1111 > /dev/null 2>&1 || true
 $T adb logcat -d > "$OUT/logcat-notebook.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-notebook.txt" && { log "WALKTHROUGH: CRASH in the Notebook or the journal (see logcat-notebook.txt)"; exit 1; }
 log "PHASE 6b WALK DONE: $N steps"
+
+log "-- Phase 8, home-screen widgets (stub): an emulator cannot place a widget by itself, so the walk checks what it can:"
+log "   the six widget receivers are installed, and the widgets' taps (MainActivity + pagel.open) open the right screens"
+$T adb shell cmd package query-receivers --brief -a android.appwidget.action.APPWIDGET_UPDATE > "$OUT/widget-receivers.txt" 2>&1
+for r in Today Habits Namoz Calories NextTask QuickAdd; do
+  grep -q "${r}WidgetReceiver" "$OUT/widget-receivers.txt" || { log "WALKTHROUGH: ${r}WidgetReceiver is not installed (widget-receivers.txt)"; exit 1; }
+done
+log "   six widget receivers installed"
+for k in 1 2 3; do $T adb shell input keyevent 4; sleep 1; done
+$T adb shell am start -n "$PKG/$PKG.MainActivity" --es pagel.open add > /dev/null 2>&1
+shot w-add 3
+grep -q 'content-desc="New task"' "$OUT/$(printf '%02d' $N)-w-add.xml" || { log "WALKTHROUGH: the widget's + did not open the Add sheet"; exit 1; }
+log "   + opens the Add sheet"
+$T adb shell input keyevent 4; sleep 1
+$T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
+$T adb shell am start -n "$PKG/$PKG.MainActivity" --es pagel.open habits > /dev/null 2>&1
+shot w-habits 3
+$T adb shell am start -n "$PKG/$PKG.MainActivity" --es pagel.open "task:../../etc" > /dev/null 2>&1
+shot w-bad-task 2
+$T adb logcat -d > "$OUT/logcat-widgets.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-widgets.txt" && { log "WALKTHROUGH: CRASH after a widget's open request (see logcat-widgets.txt)"; exit 1; }
+log "PHASE 8 WALK DONE (stub): $N steps"

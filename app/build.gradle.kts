@@ -162,6 +162,8 @@ dependencies {
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.roborazzi.junit.rule)
+    // Phase 8: the widgets' Glance layout tests (runGlanceAppWidgetUnitTest) next to their Roborazzi pictures.
+    testImplementation(libs.androidx.glance.appwidget.testing)
 
     // Instrumented test
     androidTestImplementation(libs.androidx.junit)
