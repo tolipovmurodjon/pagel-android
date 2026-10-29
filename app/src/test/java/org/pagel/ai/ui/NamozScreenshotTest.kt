@@ -134,7 +134,9 @@ class NamozScreenshotTest {
         compose.onAllNodesWithText("Asr")[0].performClick()
         assertEquals(listOf(Namoz.Prayer.ASR), taps)
         compose.onAllNodesWithText("Shom")[0].performTouchInput { longClick() }
-        compose.onNodeWithText("In the mosque").performClick()
+        // Peshin's row already reads "In the mosque" (a Checkbox): pick the sheet's choice, the Button.
+        compose.onNode(androidx.compose.ui.test.hasText("In the mosque") and androidx.compose.ui.test.SemanticsMatcher.expectValue(
+            androidx.compose.ui.semantics.SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button)).performClick()
         assertEquals(listOf(Namoz.Prayer.SHOM to NamozMarkEntity.MOSQUE), marks)
     }
 
