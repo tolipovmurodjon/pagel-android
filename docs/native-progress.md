@@ -41,6 +41,42 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v18.2 · ROUND D FIX = THE CHECKER'S 7/10 LIST (docs/qa/roundD-checker.md) (2026-10-29, builder agent, branch `feat/roundD-fix`)
+- **Data first.** (1) A habit counts in the all-habits chain only from its start = its first tick or its own date,
+  whichever is earlier (none = today): `startsOf` / `dueOn` in `HabitBoard.kt`; adding a habit today keeps last week's full
+  days full (`HabitBoardTest.addingAHabitTodayKeepsLastWeeksFullDaysFull`, through `habitBoard`, real ticks). A habit's own
+  month shows the days before it started as faint. (2) Only a whole day holds: `Clear.SOME` is always a partial ring, a whole
+  day with a freeze is ice (`aFreezeOnAPartialDayDoesNotLinkTheChain`, `theChainFromRealTicksAndAFreeze` shot); a future
+  day is never frozen (`markOf` checks FUTURE first; `freeze` refuses a day ahead). (3) A clock keeps the day it was started
+  for and ticks that day (`tickOn`), and lives in `HabitClocks`: one set for the tab and the habit's page, saved in the
+  phone's prefs, so it survives a kill; a clock that ran out while PAGEL was closed ticks its day on the next open
+  (`aRunningClockSurvivesTheAppBeingKilled`). Not done: an exact alarm at the clock's end while PAGEL is closed.
+- **Screen.** (4) Titles get 2 lines in one fixed box (2 × 22 sp + the 18 sp progress line, in sp so it grows with the font);
+  every row stays the same height (`titlesWrapToTwoLinesAtLargeFont`: "Stretch for ten minutes" on 2 lines, not cut, at
+  1.5×). (5) Namoz is one row: its 3/5 ring in the check's slot · mosque · "Asr · 15:37" (the next prayer) · a chevron;
+  tap opens the five rows + "Namoz reminders"; before 1 Nov a quiet row with a small "Start tracking" pill. (7) Chain
+  mint #109A78 (3.55:1 on white, 3.11:1 on the pane) with ink numerals (5.0:1); today = a soft filled disc (never a ring);
+  a frozen day has an ice-blue outline (4.06:1); the never-miss dot is ringed in #B45309. (9) The week strip follows the
+  finger 1:1, springs back, moves a week on 80 px or a flick (> 0.11 px/ms); the bar runs off the edge when the chain goes
+  on into last/next week (`chainIn`/`chainOut`). (10) History's tabs share the width ("Badges"); a count habit is a plain
+  ring with one dot per tap (no dashed spinner); the toast says "🔥 N in a row" with the row's own streak + 1; the check's
+  pop settles (damping 0.8).
+- **Habit page (8):** chips (no bell chip) → identity → 3 stat cards → the month's chain → the actions; Freeze / Take back /
+  Done act on TODAY whatever the strip shows.
+- **Icon v2 (6, the checker's order):** light pool moved to the tile's corner (aur1 .08/.06 r .35), mid-teal tile under the
+  glyph; a clear body (a 1.06× refracted copy of the tile with 7 px displaced edges, 50 → 30 % white over it); a crisp 2 px
+  rim (white .95 top-left → .25 bottom-right, no blur) + soft mint caustics; no dark inner shade, no dark lift; a separate
+  small master (body 90 %, 12 px rim at 1024 ≈ 1 px at 48, stem +8 %, bead +10 %) for the mdpi/hdpi buckets (a launcher
+  picks a layer by screen density, not by icon size, so only low-density phones draw it); optically centred (+4.5, +4 px).
+  Board `docs/qa/roundD-icon-board.png` (512 + 48 px, squircle + round, light + dark). Glyph/tile contrast, measured the
+  same way for all three: flat P 2.33 / 2.40 · glass v1 1.47 / 1.48 · **glass v2 1.95 at 512 / 2.92 at 48**.
+  `check_icon.py` v2 vs v1 (a change map, not a 1:1 score: there is no target picture): every glyph cell darker and crisper,
+  the corner shade gone.
+- **Icon verdict (maker's own; a fresh checker still owes one):** vs glass v1 BETTER at 512 and 48. vs round D's flat P:
+  BETTER at 48 (2.92 vs 2.40), still a little WORSE in clarity at 512 (1.95 vs 2.33) but reads as glass, not a sticker.
+  vs the Humopedia finish (body/tile 2.56 at 512, 1.9 at 48): SAME family now (corner light, crisp lit edge, no dark shade),
+  WORSE at 512 (1.95 vs 2.56), BETTER at 48 (2.92 vs 1.9).
+
 ## START HERE v18.1 · ROUND D, BOSS'S 12:00-12:15 NOTES: MINIMAL ROWS, THE ALL-HABITS CHAIN, THE LIQUID-GLASS ICON (2026-10-29, builder agent, branch `feat/roundD-habits-2`)
 - **Branch:** `feat/roundD-habits` rebased onto `feat/native-app` eb4d254 (Compass) and pushed as **`feat/roundD-habits-2`** (a new
   name instead of a force push). Conflicts: the manifest (Compass backup rules + the round D icon) and this file (v18 on top).
