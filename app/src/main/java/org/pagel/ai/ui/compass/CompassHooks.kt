@@ -85,11 +85,13 @@ fun CompassTodayLine(line: String, modifier: Modifier = Modifier) {
 @HiltViewModel
 class ServesGoalViewModel @Inject constructor(private val repo: CompassRepository) : ViewModel() {
     val links: StateFlow<Map<String, String>> = repo.links.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
-    val state: StateFlow<VaultState> = repo.state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VaultState.READING)
+    // Eagerly (this ViewModel lives with the project page): the picker opens with its rows ready, so the sheet takes its
+    // full height at once (CI 40827967510: it opened on an empty list and kept a 88 dp height, the goal below the fold).
+    val state: StateFlow<VaultState> = repo.state.stateIn(viewModelScope, SharingStarted.Eagerly, VaultState.READING)
     /** The goals a project can serve: open goals above Someday, the season's first. */
     val goals: StateFlow<List<Goal>> = repo.opened.map { o ->
         o.goals.filter { it.level != Level.SOMEDAY && it.body.state == GoalBody.OPEN }.sortedBy { listOf(Level.SEASON, Level.YEAR, Level.TEN_YEAR, Level.PURPOSE).indexOf(it.level) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** The one-use cipher for the Compass's own prompt, handed to [prompt] on Main (nothing if the key is gone). */
     fun beginUnlock(prompt: (javax.crypto.Cipher) -> Unit) { viewModelScope.launch { runCatching { repo.cipherForUnlock() }.onSuccess(prompt) } }
@@ -130,7 +132,8 @@ private fun GoalPickerSheet(project: String, vm: ServesGoalViewModel, onDismiss:
     GlassSheet(onDismiss = onDismiss, secure = true) {
         SecureWindow()
         AutoLock(onLeave = vm::leave, onStay = vm::stay)
-        Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter).padding(bottom = Space.xl), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        // A reserved height: Material keeps the height a sheet opened with, so rows that come a frame later still show.
+        Column(Modifier.fillMaxWidth().heightIn(min = PickerMin).padding(horizontal = Space.gutter).padding(bottom = Space.xl), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Text("Which goal does it serve?", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink)
             when (state) {
                 VaultState.OPEN -> {
@@ -153,6 +156,8 @@ private fun GoalPickerSheet(project: String, vm: ServesGoalViewModel, onDismiss:
         }
     }
 }
+
+private val PickerMin = 320.dp
 
 @Composable
 private fun PickRow(label: String, on: Boolean, onClick: () -> Unit) {

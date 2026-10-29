@@ -608,7 +608,8 @@ front c-projects
 tap Humopedia && shot c-project 2 || { log "WALKTHROUGH: no Humopedia project"; exit 1; }
 tap "Link to a goal" && shot c-picker 2 || { log "WALKTHROUGH: the project page has no Link to a goal"; exit 1; }
 if grep -q 'content-desc="Unlock"' "$OUT/$(printf '%02d' $N)-c-picker.xml"; then tap Unlock && unlock_pin; shot c-picker-open 1.5; fi
-tap 'Serves: Why I live[^"]*' && shot c-linked 2 || { log "WALKTHROUGH: the picker has no purpose to pick"; exit 1; }
+# The sheet may still be rising: look again once before calling it missing.
+{ tap 'Serves: Why I live[^"]*' || { sleep 2; tap 'Serves: Why I live[^"]*'; }; } && shot c-linked 2 || { log "WALKTHROUGH: the picker has no purpose to pick"; exit 1; }
 wait_log 'PUT /api/v1/compass/links/humopedia {"goal":"g_' 40 || { log "WALKTHROUGH: the link never reached pagel.uz as an id"; grep compass "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 grep -q 'content-desc="Serves a goal"' "$OUT/$(printf '%02d' $N)-c-linked.xml" || log "   (WARN: the project row did not turn to Serves a goal yet)"
 grep -qi 'zebra' "$FAKE_LOG" && { log "WALKTHROUGH: GOAL WORDS REACHED pagel.uz IN THE CLEAR"; exit 1; }
