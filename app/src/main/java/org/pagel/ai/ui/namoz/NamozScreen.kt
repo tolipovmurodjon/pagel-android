@@ -111,18 +111,16 @@ fun NamozScreen(
 @Composable
 private fun NextPane(ui: NamozUi) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
-        // "Next · Asr", then "15:42  in 1 h 03 m" on one line; the countdown changes once a minute, never per second.
+        // "Next · Asr", "15:42", "in 1 h 03 m"; the countdown changes once a minute, never per second.
         Row(Modifier.fillMaxWidth().padding(Space.lg).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
             Image(painterResource(Emoji.res(ui.next.prayer.emoji)), null, Modifier.size(48.dp))
             Spacer(Modifier.width(Space.lg))
             Column(Modifier.weight(1f)) {
                 Text("Next · ${ui.next.prayer.uz}", style = MaterialTheme.typography.labelLarge, color = Glass.Muted, maxLines = 1)
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(ui.next.label().take(5), style = Glass.NumberText.copy(fontSize = MaterialTheme.typography.headlineLarge.fontSize, lineHeight = MaterialTheme.typography.headlineLarge.lineHeight, fontWeight = FontWeight.Bold),
-                        color = Glass.Ink, maxLines = 1, softWrap = false)
-                    Text(ui.countdown, style = Glass.NumberText, color = Glass.PrimaryInk, maxLines = 1, softWrap = false,
-                        modifier = Modifier.padding(start = Space.md, bottom = Space.xs))
-                }
+                // Time and countdown stacked: side by side they overflow 360 dp at 1.5× font (~275 dp in ~232).
+                Text(ui.next.label().take(5), style = Glass.NumberText.copy(fontSize = MaterialTheme.typography.headlineLarge.fontSize, lineHeight = MaterialTheme.typography.headlineLarge.lineHeight, fontWeight = FontWeight.Bold),
+                    color = Glass.Ink, maxLines = 1, softWrap = false)
+                Text(ui.countdown, style = Glass.NumberText, color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
             }
         }
     }

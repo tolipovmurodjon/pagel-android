@@ -56,12 +56,12 @@ internal fun StatsPane(ui: NamozUi) {
                     Modifier.semantics(mergeDescendants = true) { contentDescription = "${p.uz}: $n of $days days" },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(p.uz, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 1, modifier = Modifier.width(76.dp))
+                    Text(p.uz, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 1, modifier = Modifier.width(88.dp))
                     Box(Modifier.weight(1f).height(8.dp).background(Glass.Ink.copy(alpha = 0.07f), CircleShape)) {
                         if (days > 0 && n > 0) Box(Modifier.fillMaxWidth(n / days.toFloat()).height(8.dp).background(Glass.Primary, CircleShape))
                     }
                     Text("$n/$days", style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false,
-                        textAlign = TextAlign.End, modifier = Modifier.padding(start = Space.sm).width(48.dp))
+                        textAlign = TextAlign.End, modifier = Modifier.padding(start = Space.sm).width(60.dp))
                 }
             }
             MonthGrid(ui)
