@@ -471,7 +471,8 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
                             }
                             .clickable(press, indication = null, role = Role.Checkbox) {
                                 // The finger lifting after a drag is not a tick.
-                                if (SystemClock.uptimeMillis() - droppedAt < 400) return@clickable
+                                // 0 = never dropped: uptime starts near 0 (Robolectric, a fresh boot), so no drop must not eat a tap.
+                                if (droppedAt != 0L && SystemClock.uptimeMillis() - droppedAt < 400) return@clickable
                                 haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                 a.onSteps(texts, if (s.done) ticked - i else (ticked + i).sorted())
                             }
