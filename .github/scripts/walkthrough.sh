@@ -578,7 +578,15 @@ tap Compass && shot c-new 2.5 || { log "WALKTHROUGH: More has no Compass"; exit 
 grep -q 'content-desc="Start my Compass"' "$OUT/$(printf '%02d' $N)-c-new.xml" || { log "WALKTHROUGH: the empty Compass does not invite writing"; exit 1; }
 # FLAG_SECURE: the window that shows the Compass is marked secure (screenshots of it come out black).
 $T adb shell dumpsys window windows > "$OUT/window-dump-compass.txt" 2>&1
-grep -B2 -A12 "$PKG/$PKG.MainActivity" "$OUT/window-dump-compass.txt" | grep -q "SECURE" && log "   the Compass window is FLAG_SECURE" || log "   (WARN: dumpsys did not show SECURE on the Compass window)"
+grep -B2 -A12 "$PKG/$PKG.MainActivity" "$OUT/window-dump-compass.txt" | grep -q "SECURE" || { log "WALKTHROUGH: the Compass window is NOT FLAG_SECURE (window-dump-compass.txt)"; exit 1; }
+log "   the Compass window is FLAG_SECURE"
+# A secure window's capture is black: a goal on screen in a readable capture is a leak (compass re-check N3).
+secure_shot() {
+  local said
+  said=$(python3 .github/scripts/png-dark.py "$OUT/$(printf '%02d' $N)-$1.png" 0.01) \
+    || { log "WALKTHROUGH: LEAK - $1 was captured readable ($said; at most 1 % may be not black)"; exit 1; }
+  log "   $1 capture is black ($said)"
+}
 unlock_pin() {
   sleep 2.5
   $T adb shell input text 1111; sleep 0.5; $T adb shell input keyevent 66; sleep 3
@@ -591,6 +599,7 @@ tap "Why I live" || { log "WALKTHROUGH: the goal sheet has no Why I live field";
 $T adb shell "input text 'Walkthrough%szebra%spurpose%sline'"
 $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
 tap_scroll Save && shot c-saved 2.5 || { log "WALKTHROUGH: no Save in the goal sheet"; exit 1; }
+secure_shot c-saved
 grep -q 'Walkthrough zebra purpose line' "$OUT/$(printf '%02d' $N)-c-saved.xml" || { log "WALKTHROUGH: the purpose is not on the path after Save"; exit 1; }
 wait_log 'PUT /api/v1/compass/items/g_' 40 || { log "WALKTHROUGH: the sealed purpose never reached pagel.uz"; exit 1; }
 grep -F 'PUT /api/v1/compass/items/g_' "$FAKE_LOG" | head -1 | grep -qE '\{"kind":"purpose","parent":null,"blob":"[A-Za-z0-9+/=]{40,}","starts":null,"ends":null,"deleted":false,"base":0\} auth=True' \
@@ -607,6 +616,10 @@ for k in 1 2 3; do tap Projects && break; $T adb shell input keyevent 4; sleep 1
 front c-projects
 tap Humopedia && shot c-project 2 || { log "WALKTHROUGH: no Humopedia project"; exit 1; }
 tap "Link to a goal" && shot c-picker 2 || { log "WALKTHROUGH: the project page has no Link to a goal"; exit 1; }
+# Judge the capture only once the sheet is up (its own words are in the tree), never the page before it.
+grep -q 'Which goal does it serve' "$OUT/$(printf '%02d' $N)-c-picker.xml" || shot c-picker 2
+grep -q 'Which goal does it serve' "$OUT/$(printf '%02d' $N)-c-picker.xml" || { log "WALKTHROUGH: the goal picker did not open"; exit 1; }
+secure_shot c-picker
 if grep -q 'content-desc="Unlock"' "$OUT/$(printf '%02d' $N)-c-picker.xml"; then tap Unlock && unlock_pin; shot c-picker-open 1.5; fi
 # The sheet may still be rising: look again once before calling it missing.
 { tap 'Serves: Why I live[^"]*' || { sleep 2; tap 'Serves: Why I live[^"]*'; }; } && shot c-linked 2 || { log "WALKTHROUGH: the picker has no purpose to pick"; exit 1; }

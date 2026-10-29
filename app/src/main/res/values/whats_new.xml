@@ -8,6 +8,7 @@
     <string name="whats_new_title">Round C: calendar + notifications</string>
     <string-array name="whats_new_items">
         <item>🧭 Compass: write your goals; only you can read them|compass</item>
+        <item>Today’s goal line blocks screenshots while it shows|compass</item>
         <item>Calendar: switch List · Day · 3 days · Week · Month|upcoming</item>
         <item>Swipe the week strip left for next week, “Today” to come back|upcoming</item>
         <item>Hold a block in Day or Week and drag it to a new time|upcoming</item>
