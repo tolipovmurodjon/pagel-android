@@ -389,14 +389,21 @@ private fun IconCell(description: String, on: Boolean, onClick: () -> Unit, cont
 /** The finish moment: confetti, one line of what was shipped (saved to the project), then Done projects. */
 @Composable
 fun FinishProjectSheet(ui: ProjectUi, onDismiss: () -> Unit, onFinish: (String) -> Unit) {
+    GlassSheet(onDismiss) { FinishProjectContent(ui, onDismiss, onFinish) }
+}
+
+/** The finish sheet's body on its own, so a screenshot test can show it without the sheet's window. */
+@Composable
+fun FinishProjectContent(ui: ProjectUi, onDismiss: () -> Unit, onFinish: (String) -> Unit, confetti: Boolean = true) {
     var shipped by rememberSaveable { mutableStateOf("") }
-    var burst by remember { mutableStateOf<org.pagel.ai.ui.today.Burst?>(org.pagel.ai.ui.today.Burst(1L, androidx.compose.ui.geometry.Offset(420f, 140f), power = 2)) }
-    GlassSheet(onDismiss) {
+    var burst by remember { mutableStateOf(if (confetti) org.pagel.ai.ui.today.Burst(1L, androidx.compose.ui.geometry.Offset(420f, 140f), power = 2) else null) }
+    run {
         Box {
             Column(Modifier.padding(bottom = Space.xxxl)) {
                 SheetTitle("Finish ${ui.title}", onDone = onDismiss)
                 Column(Modifier.padding(horizontal = Space.xl)) {
-                Text("${ui.done} ${if (ui.done == 1) "task" else "tasks"} done. What did you ship?", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink)
+                Text(finishSummary(ui.done, ui.days), style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
+                Text("What did you ship?", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
                 Spacer(Modifier.height(Space.md))
                 val style = MaterialTheme.typography.titleMedium.copy(color = Glass.Ink)
                 BasicTextField(
@@ -413,5 +420,15 @@ fun FinishProjectSheet(ui: ProjectUi, onDismiss: () -> Unit, onFinish: (String) 
             }
             burst?.let { b -> org.pagel.ai.ui.today.ConfettiBurst(b, onEnd = { burst = null }) }
         }
+    }
+}
+
+/** The finish moment's summary: "8 tasks done over 12 days." (one day reads "in 1 day"; no days known, just the count). */
+internal fun finishSummary(done: Int, days: Int?): String {
+    val tasks = "$done ${if (done == 1) "task" else "tasks"} done"
+    return when (days) {
+        null -> "$tasks."
+        1 -> "$tasks in 1 day."
+        else -> "$tasks over $days days."
     }
 }

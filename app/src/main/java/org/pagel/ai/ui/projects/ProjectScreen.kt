@@ -155,6 +155,8 @@ data class ProjectUi(
     val finishedAt: String? = null, val shipped: String? = null, val goals: List<ProjectGoal> = emptyList(),
     /** Other projects a task can be dragged onto (the "Move to" strip). */
     val others: List<ProjectEntity> = emptyList(),
+    /** Days from its first finished task to today: the finish moment's "over N days". */
+    val days: Int? = null,
 ) {
     val next: ProjectRow? get() = groups.firstOrNull { it.now }?.rows?.firstOrNull() ?: groups.firstOrNull { it.rows.isNotEmpty() }?.rows?.firstOrNull()
     val total: Int get() = open + done
@@ -202,6 +204,7 @@ class ProjectViewModel @Inject constructor(
                         done = list.count { it.status == "done" }, step = s.firstOrNull { !it.done }?.let { it.title?.takeIf(String::isNotBlank) ?: it.text },
                         finishedAt = p?.finishedAt, shipped = p?.shipped, goals = p?.goals?.let(::goalsOf).orEmpty(),
                         others = all.filter { it.name != n && !it.archived && it.finishedAt == null },
+                        days = projects.daysTaken(list),
                     )
                 }
             }

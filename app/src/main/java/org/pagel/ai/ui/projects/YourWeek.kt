@@ -28,13 +28,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.pagel.ai.data.Outcome
 import org.pagel.ai.data.account.AccountState
 import org.pagel.ai.data.account.AccountStore
 import org.pagel.ai.data.api.KpiWeekReply
-import org.pagel.ai.data.Outcome
 import org.pagel.ai.data.api.PagelApi
+import org.pagel.ai.data.projects.ProjectRepository
+import org.pagel.ai.data.projects.WeekCounts
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.Pane
 import org.pagel.ai.ui.glass.Space
@@ -42,7 +46,8 @@ import javax.inject.Inject
 
 /** Real use, measured (Boss 2026-10-29: "real using is the main KPI"): pagel.uz's counts of the last 7 days. */
 @HiltViewModel
-class YourWeekViewModel @Inject constructor(private val api: PagelApi, private val accounts: AccountStore) : ViewModel() {
+class YourWeekViewModel @Inject constructor(private val api: PagelApi, private val accounts: AccountStore, projects: ProjectRepository) : ViewModel() {
+    val local: StateFlow<WeekCounts?> = projects.week().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     private val _week = MutableStateFlow<KpiWeekReply?>(null)
     val week: StateFlow<KpiWeekReply?> = _week
 
@@ -58,22 +63,25 @@ class YourWeekViewModel @Inject constructor(private val api: PagelApi, private v
 fun YourWeekRoute(vm: YourWeekViewModel = hiltViewModel()) {
     LaunchedEffect(Unit) { vm.load() }
     val w by vm.week.collectAsStateWithLifecycle()
-    YourWeekCard(w)
+    val local by vm.local.collectAsStateWithLifecycle()
+    YourWeekCard(w, local)
 }
 
-/** Four numbers and one bar per day (ticks); no words from tasks, ever. Offline shows the frame with dashes. */
+/** Three numbers counted on the phone, pagel.uz's line, one bar per day (ticks); no words from tasks, ever. Offline shows dashes. */
 @Composable
-fun YourWeekCard(w: KpiWeekReply?) {
+fun YourWeekCard(w: KpiWeekReply?, local: WeekCounts? = null) {
     Pane(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = Space.lg, vertical = Space.md)) {
             Text("Your week", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
             Spacer(Modifier.height(Space.sm))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                val ticks = w?.days?.lastOrNull()?.firstTickMs
-                Stat(w?.done?.toString() ?: "–", "done")
-                Stat(w?.projectsFinished?.toString() ?: "–", "projects closed")
-                Stat(w?.daysOpened?.let { "$it/7" } ?: "–", "days opened")
-                Stat(ticks?.let { "${(it / 1000).coerceAtMost(5999) / 60}:${"%02d".format((it / 1000) % 60)}" } ?: "–", "to first tick")
+                Stat(local?.done?.toString() ?: "–", "tasks done")
+                Stat(local?.projectsMoved?.toString() ?: "–", "projects moved")
+                Stat(local?.habitsKept?.toString() ?: "–", "habits kept")
+            }
+            w?.let { serverLine(it) }?.let { line ->
+                Spacer(Modifier.height(Space.xs))
+                Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
             }
             Spacer(Modifier.height(Space.md))
             val days = w?.days.orEmpty()
@@ -100,3 +108,9 @@ private fun Stat(value: String, label: String) {
     }
 }
 
+/** pagel.uz's counts in one quiet line: projects closed, days opened, open to first tick (m:ss). */
+internal fun serverLine(w: KpiWeekReply): String {
+    val parts = mutableListOf("${w.projectsFinished} closed", "opened ${w.daysOpened}/7 days")
+    w.days.lastOrNull()?.firstTickMs?.let { ms -> val s = (ms / 1000).coerceAtMost(5999); parts += "first tick ${s / 60}:${"%02d".format(s % 60)}" }
+    return parts.joinToString(" · ")
+}

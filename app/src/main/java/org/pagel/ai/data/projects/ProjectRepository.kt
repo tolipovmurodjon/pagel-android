@@ -1,6 +1,7 @@
 package org.pagel.ai.data.projects
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -11,14 +12,18 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import org.pagel.ai.data.db.HabitTickEntity
 import org.pagel.ai.data.db.OutboxEntity
 import org.pagel.ai.data.db.PagelDao
 import org.pagel.ai.data.db.ProjectEntity
+import org.pagel.ai.data.db.TaskEntity
 import org.pagel.ai.data.tasks.TaskRepository
 import org.pagel.ai.data.today.OutboxScheduler
 import java.net.URLEncoder
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 @Serializable
 data class Milestone(val id: String, val title: String, val due: String? = null, val done: Boolean = false)
@@ -28,6 +33,33 @@ data class Milestone(val id: String, val title: String, val due: String? = null,
 data class ProjectGoal(val id: String, val title: String, val milestones: List<Milestone> = emptyList())
 
 private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+private val TASHKENT: ZoneId = ZoneId.of("Asia/Tashkent")
+private const val INBOX = "inbox"
+
+/** "Your week" counted on this phone, so it works offline: tasks finished, projects they moved forward, habit-days kept. */
+data class WeekCounts(val done: Int, val projectsMoved: Int, val habitsKept: Int)
+
+private fun dayOf(iso: String): LocalDate? =
+    runCatching { Instant.parse(iso).atZone(TASHKENT).toLocalDate() }.getOrNull() ?: runCatching { LocalDate.parse(iso.take(10)) }.getOrNull()
+
+private fun firstDayOfWeek(now: Long): LocalDate = Instant.ofEpochMilli(now).atZone(TASHKENT).toLocalDate().minusDays(6)
+
+/** The last 7 Tashkent days, today included. Inbox is not a project; a habit-day counts once its taps reach its times. */
+fun weekCounts(done: List<TaskEntity>, habits: List<TaskEntity>, ticks: List<HabitTickEntity>, now: Long): WeekCounts {
+    val first = firstDayOfWeek(now)
+    val inWeek = done.filter { t -> t.status == "done" && t.every.isNullOrEmpty() && t.doneAt?.let(::dayOf)?.let { !it.isBefore(first) } == true }
+    val times = habits.associate { it.id to it.times.coerceAtLeast(1) }
+    val kept = ticks.count { k -> times[k.taskId]?.let { k.n >= it } == true && dayOf(k.day)?.let { !it.isBefore(first) } == true }
+    return WeekCounts(inWeek.size, inWeek.map { it.project }.filter { it != INBOX }.distinct().size, kept)
+}
+
+/** Days a project took, for its finish moment: its first finished task's day to today (Tashkent), at least 1; null if none. */
+fun daysTakenOf(tasks: List<TaskEntity>, now: Long): Int? {
+    val start = tasks.filter { it.every.isNullOrEmpty() }.mapNotNull { it.doneAt?.let(::dayOf) }.minOrNull() ?: return null
+    val today = Instant.ofEpochMilli(now).atZone(TASHKENT).toLocalDate()
+    return (ChronoUnit.DAYS.between(start, today) + 1).toInt().coerceAtLeast(1)
+}
 
 fun goalsOf(raw: String): List<ProjectGoal> = runCatching { json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(ProjectGoal.serializer()), raw) }.getOrDefault(emptyList())
 
@@ -58,6 +90,13 @@ class ProjectRepository(
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     fun projects(): Flow<List<ProjectEntity>> = dao.projects()
+
+    /** "Your week" from Room alone: the numbers are right offline and right after a tick, before any sync. */
+    fun week(): Flow<WeekCounts> =
+        combine(dao.completed(), dao.habits(), dao.habitTicks(firstDayOfWeek(clock()).toString())) { done, habits, ticks -> weekCounts(done, habits, ticks, clock()) }
+
+    /** The finish moment's "over N days". */
+    fun daysTaken(project: List<TaskEntity>): Int? = daysTakenOf(project, clock())
 
     /** A new project from its name alone (2 taps: + then Enter); the next swatch colours it. Returns its name. */
     suspend fun create(title: String, color: String? = null, area: String? = null, parent: String? = null): String {
@@ -144,7 +183,7 @@ class ProjectRepository(
      * tasks in order (the first is the tiny next step), and the task leaves (restorable). A task with no steps moves in.
      */
     suspend fun turnIntoProject(taskId: String, add: suspend (text: String, project: String) -> String): String? {
-        val t = dao.taskOnce(taskId)?.takeIf { it.every == null } ?: return null
+        val t = dao.taskOnce(taskId)?.takeIf { it.every.isNullOrEmpty() } ?: return null
         val area = dao.projectOnce(t.project)?.area
         val name = create(t.title?.takeIf(String::isNotBlank) ?: t.text, area = area)
         val steps = dao.stepsOnce(taskId).filter { !it.done }

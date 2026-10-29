@@ -29,11 +29,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.pagel.ai.data.api.KpiDayDto
+import org.pagel.ai.data.api.KpiWeekReply
 import org.pagel.ai.data.db.ProjectEntity
 import org.pagel.ai.data.projects.Milestone
 import org.pagel.ai.data.projects.ProjectGoal
+import org.pagel.ai.data.projects.WeekCounts
 import org.pagel.ai.ui.glass.AuroraBackground
 import org.pagel.ai.ui.glass.GlassTheme
+import org.pagel.ai.ui.projects.FinishProjectContent
 import org.pagel.ai.ui.projects.PhaseGroup
 import org.pagel.ai.ui.projects.ProjectActions
 import org.pagel.ai.ui.projects.ProjectRow
@@ -43,6 +47,7 @@ import org.pagel.ai.ui.projects.ProjectUi
 import org.pagel.ai.ui.projects.ProjectsScreen
 import org.pagel.ai.ui.projects.ProjectsUiState
 import org.pagel.ai.ui.projects.SettingsActions
+import org.pagel.ai.ui.projects.YourWeekCard
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.LocalDate
@@ -202,5 +207,30 @@ class ProjectsScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/projects-new.png")
         compose.onNodeWithContentDescription("New project name").performImeAction()
         assertEquals("Learn Blender", made)
+    }
+
+    @Test fun finishMomentSaysWhatWasDoneAndOverHowLong() {
+        var shipped: String? = null
+        show { FinishProjectContent(running.copy(open = 0, done = 8, days = 12), onDismiss = {}, onFinish = { shipped = it }, confetti = false) }
+        compose.onNodeWithText("8 tasks done over 12 days.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("What I shipped").performTextInput("QUASAR 0.1 on the phone")
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-finish-moment.png")
+        compose.onNodeWithText("Finish project").performClick()
+        assertEquals("QUASAR 0.1 on the phone", shipped)
+    }
+
+    @Test fun yourWeekCountsOnThePhoneWithServerLine() {
+        val server = KpiWeekReply(days = listOf(KpiDayDto("2026-10-29", firstTickMs = 80_000)), projectsFinished = 1, daysOpened = 5)
+        show { YourWeekCard(server, WeekCounts(done = 14, projectsMoved = 3, habitsKept = 9)) }
+        compose.onNodeWithContentDescription("14 tasks done").assertIsDisplayed()
+        compose.onNodeWithContentDescription("9 habits kept").assertIsDisplayed()
+        compose.onNodeWithText("1 closed · opened 5/7 days · first tick 1:20").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/your-week.png")
+    }
+
+    @Test fun yourWeekOfflineShowsDashes() {
+        show(fontScale = 1.5f) { YourWeekCard(null, null) }
+        compose.onNodeWithText("Your week").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/your-week-offline-font-1.5.png")
     }
 }
