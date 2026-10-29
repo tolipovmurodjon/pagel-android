@@ -523,7 +523,7 @@ log "WALKTHROUGH DONE: $N steps"
 log "== Phase 5: Empty your head (3 lines -> 3 tasks on pagel.uz), the evening reminder opens Close the day, keep/later/drop + a pick -> the shutdown, the weekly review"
 # Tap $1; if it is not on screen, scroll the list up a little and try again (twice).
 tap_scroll() {
-  for k in 1 2 3; do
+  for k in $(seq 1 "${2:-3}"); do
     tap "$1" && return 0
     $T adb shell input swipe 160 460 160 200 300; sleep 1
   done
@@ -768,9 +768,9 @@ $T adb shell input keyevent 4; sleep 1
 tap_scroll "CI Rocket" && shot core-rocket 2 || { log "WALKTHROUGH: CI Rocket is not in the list"; exit 1; }
 tap "Project settings" || exit 1
 sleep 1.5
-tap_scroll "Merge into another project" || { log "WALKTHROUGH: settings have no Merge"; exit 1; }
-tap_scroll "Into Humopedia" || { log "WALKTHROUGH: Merge offers no Humopedia"; exit 1; }
-tap_scroll "Merge into Humopedia" || { log "WALKTHROUGH: no Merge button"; exit 1; }
+tap_scroll "Merge into another project" 8 || { log "WALKTHROUGH: settings have no Merge"; exit 1; }
+tap_scroll "Into Humopedia" 4 || { log "WALKTHROUGH: Merge offers no Humopedia"; exit 1; }
+tap_scroll "Merge into Humopedia" 4 || { log "WALKTHROUGH: no Merge button"; exit 1; }
 sleep 1; shot core-merged 0.5
 tap Undo || { log "WALKTHROUGH: the merge toast has no Undo"; exit 1; }
 sleep 8
