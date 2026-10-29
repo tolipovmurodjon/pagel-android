@@ -63,12 +63,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.pagel.ai.data.db.ProjectEntity
 import org.pagel.ai.data.projects.ProjectRepository
+import org.pagel.ai.di.AppScope
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.GlassSheet
 import org.pagel.ai.ui.glass.InlineField
@@ -87,9 +89,12 @@ private val FieldShape = RoundedCornerShape(14.dp)
 private val SmallIcon = 14.dp
 
 @HiltViewModel
-class ProjectSettingsViewModel @Inject constructor(val repo: ProjectRepository) : ViewModel() {
+class ProjectSettingsViewModel @Inject constructor(val repo: ProjectRepository, @AppScope private val scope: CoroutineScope) : ViewModel() {
     val projects: StateFlow<List<ProjectEntity>> = repo.projects().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    fun run(block: suspend ProjectRepository.() -> Unit) { viewModelScope.launch { repo.block() } }
+
+    // Merge and delete close this page, which clears this ViewModel: an Undo tapped seconds later must still run
+    // (on viewModelScope it was cancelled, and the held merge reached pagel.uz; CI 40960659809).
+    fun run(block: suspend ProjectRepository.() -> Unit) { scope.launch { repo.block() } }
 }
 
 /** What the settings sheet can change; the sheet itself holds no data logic (tests drive it with fakes). */
