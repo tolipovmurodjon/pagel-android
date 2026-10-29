@@ -25,7 +25,6 @@ pair/PairScreen.kt 4
 pair/PairViewModel.kt 0
 projects/ProjectScreen.kt 14
 projects/ProjectsScreen.kt 6
-projects/ProjectsViewModel.kt 0
 rituals/NotifyScreen.kt 0
 rituals/ReviewScreen.kt 5
 rituals/RitualKit.kt 6

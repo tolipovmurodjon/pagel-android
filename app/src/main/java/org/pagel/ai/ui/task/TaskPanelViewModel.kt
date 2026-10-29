@@ -63,7 +63,7 @@ class TaskPanelViewModel @Inject constructor(
     private val today: TodayRepository,
     private val toasts: ToastCenter,
     session: Session,
-    private val projects: org.pagel.ai.data.projects.ProjectRepository,
+    private val projectRepo: org.pagel.ai.data.projects.ProjectRepository,
 ) : ViewModel() {
     private val id = MutableStateFlow<String?>(null)
 
@@ -159,7 +159,7 @@ class TaskPanelViewModel @Inject constructor(
 
     /** "Turn into project": its open steps become the new project's tasks (the first is the next step). */
     fun turnIntoProject(then: (String) -> Unit) = go { taskId ->
-        val name = projects.turnIntoProject(taskId) { text, project -> today.add(text, project, 2, null, null, onToday = false) } ?: return@go
+        val name = projectRepo.turnIntoProject(taskId) { text, project -> today.add(text, project, 2, null, null, onToday = false) } ?: return@go
         toasts.show("Now a project")
         then(name)
     }

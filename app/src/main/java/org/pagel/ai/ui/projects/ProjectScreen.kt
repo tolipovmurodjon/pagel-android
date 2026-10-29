@@ -565,8 +565,7 @@ private fun AddLine(project: String, actions: ProjectActions, autoFocus: Boolean
         var text by rememberSaveable { mutableStateOf("") }
         val style = MaterialTheme.typography.bodyLarge.copy(color = Glass.Ink)
         androidx.compose.foundation.text.BasicTextField(
-            value = text, onValueChange = { text = it.replace('
-', ' ') },
+            value = text, onValueChange = { text = it.replace('\n', ' ') },
             modifier = Modifier.weight(1f).semantics { contentDescription = "Add a task to $project" },
             textStyle = style, singleLine = true, cursorBrush = androidx.compose.ui.graphics.SolidColor(Glass.Primary),
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
