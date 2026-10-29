@@ -47,6 +47,20 @@ class NamozTest {
         assertEquals(LocalDate.of(2026, 11, 3), next.toLocalDate())
     }
 
+    @Test fun offsetsMoveOnlyTheirPrayerAndShafiiAsrIsEarlier() {
+        val d = LocalDate.of(2026, 11, 1)
+        val base = Namoz.day(d)
+        val moved = Namoz.day(d, Namoz.Setup(offsets = listOf(2, 0, 0, 0, -3)))
+        assertEquals(base[0].plusMinutes(2), moved[0])
+        assertEquals(base[1], moved[1]) // sunrise never moves
+        assertEquals(base[2], moved[2])
+        assertEquals(base[5].minusMinutes(3), moved[5])
+        val shafii = Namoz.day(d, Namoz.Setup(hanafi = false))
+        assertTrue("Shafi'i Asr ${shafii[3]} before Hanafi ${base[3]}", shafii[3] < base[3])
+        // An unknown method key falls back to Uzbekistan's, so a bad saved row never changes the times.
+        assertEquals(base, Namoz.day(d, Namoz.Setup(method = "nope")))
+    }
+
     @Test fun onlyFromTheFirstOfNovember() {
         assertFalse(Namoz.counts("2026-10-31"))
         assertTrue(Namoz.counts("2026-11-01"))

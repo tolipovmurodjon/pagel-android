@@ -21,7 +21,6 @@ object Namoz {
     const val GROUP = "namoz"
     /** No chain before this day and no missed day counted before it. */
     const val START = "2026-11-01"
-    private val TASHKENT = Coordinates(41.2995, 69.2401)
     private val ZONE: ZoneId = ZoneId.of("Asia/Tashkent")
 
     enum class Prayer(val uz: String, val emoji: String) {
@@ -35,28 +34,51 @@ object Namoz {
 
     private fun LocalTime.hhmm() = "%02d:%02d".format(hour, minute)
 
-    private fun params() = CalculationMethod.OTHER.parameters.apply {
-        fajrAngle = 15.5
-        ishaAngle = 15.0
-        madhab = Madhab.HANAFI
-        adjustments.dhuhr = 4
-        adjustments.maghrib = 1
-        adjustments.isha = -1
-    }
+    /**
+     * Where and how the times are computed (the Namoz page's settings). The default is Tashkent on the Muslim Board of
+     * Uzbekistan's method, the one checked against the published table. [offsets] = minutes added to Bomdod, Peshin,
+     * Asr, Shom, Xufton (Boss's own nudges to match his mosque); sunrise is never moved.
+     */
+    data class Setup(
+        val lat: Double = 41.2995,
+        val lon: Double = 69.2401,
+        val method: String = UZBEKISTAN,
+        val hanafi: Boolean = true,
+        val offsets: List<Int> = listOf(0, 0, 0, 0, 0),
+    )
 
-    private fun times(day: LocalDate) = PrayerTimes(TASHKENT, DateComponents(day.year, day.monthValue, day.dayOfMonth), params())
+    const val UZBEKISTAN = "uzbekistan"
+    /** The methods the page offers, by key; an unknown key falls back to Uzbekistan's. */
+    val METHODS = listOf(UZBEKISTAN to "Uzbekistan (O'zbekiston musulmonlari idorasi)", "mwl" to "Muslim World League", "karachi" to "Karachi")
+
+    private fun params(s: Setup) = when (s.method) {
+        "mwl" -> CalculationMethod.MUSLIM_WORLD_LEAGUE.parameters
+        "karachi" -> CalculationMethod.KARACHI.parameters
+        else -> CalculationMethod.OTHER.parameters.apply {
+            fajrAngle = 15.5
+            ishaAngle = 15.0
+            adjustments.dhuhr = 4
+            adjustments.maghrib = 1
+            adjustments.isha = -1
+        }
+    }.apply { madhab = if (s.hanafi) Madhab.HANAFI else Madhab.SHAFI }
+
+    private fun times(day: LocalDate, s: Setup) =
+        PrayerTimes(Coordinates(s.lat, s.lon), DateComponents(day.year, day.monthValue, day.dayOfMonth), params(s))
 
     private fun local(d: java.util.Date): LocalTime = d.toInstant().atZone(ZONE).toLocalTime().withSecond(0).withNano(0)
 
     /** The day's six times: Bomdod, Quyosh (sunrise), Peshin, Asr, Shom, Xufton. */
-    fun day(day: LocalDate): List<LocalTime> {
-        val t = times(day)
-        return listOf(t.fajr, t.sunrise, t.dhuhr, t.asr, t.maghrib, t.isha).map(::local)
+    fun day(day: LocalDate, s: Setup = Setup()): List<LocalTime> {
+        val t = times(day, s)
+        val raw = listOf(t.fajr, t.sunrise, t.dhuhr, t.asr, t.maghrib, t.isha).map(::local)
+        val add = listOf(s.offsets.getOrElse(0) { 0 }, 0) + (1..4).map { s.offsets.getOrElse(it) { 0 } }
+        return raw.mapIndexed { i, time -> time.plusMinutes(add[i].toLong()) }
     }
 
-    fun windows(day: LocalDate): List<Window> {
-        val (fajr, sunrise, dhuhr, asr, maghrib, isha) = day(day)
-        val nextFajr = day(day.plusDays(1))[0]
+    fun windows(day: LocalDate, s: Setup = Setup()): List<Window> {
+        val (fajr, sunrise, dhuhr, asr, maghrib, isha) = day(day, s)
+        val nextFajr = day(day.plusDays(1), s)[0]
         return listOf(
             Window(Prayer.BOMDOD, fajr, sunrise), Window(Prayer.PESHIN, dhuhr, asr), Window(Prayer.ASR, asr, maghrib),
             Window(Prayer.SHOM, maghrib, isha), Window(Prayer.XUFTON, isha, nextFajr),
@@ -70,15 +92,15 @@ object Namoz {
     fun counts(day: String): Boolean = day >= START
 
     /** When [prayer]'s time next comes after [now], on or after [START] (the reminder's alarm). */
-    fun nextStart(prayer: Prayer, now: java.time.ZonedDateTime): java.time.ZonedDateTime {
+    fun nextStart(prayer: Prayer, now: java.time.ZonedDateTime, s: Setup = Setup()): java.time.ZonedDateTime {
         var day = maxOf(now.withZoneSameInstant(ZONE).toLocalDate(), LocalDate.parse(START))
         repeat(3) {
-            val w = windows(day).first { it.prayer == prayer }
+            val w = windows(day, s).first { it.prayer == prayer }
             val at = java.time.ZonedDateTime.of(day, w.from, ZONE)
             if (at.isAfter(now)) return at
             day = day.plusDays(1)
         }
-        return java.time.ZonedDateTime.of(day, windows(day).first { it.prayer == prayer }.from, ZONE)
+        return java.time.ZonedDateTime.of(day, windows(day, s).first { it.prayer == prayer }.from, ZONE)
     }
 
     /** The whole of the reminder: "Peshin vaqti kirdi · 12:10". Plain and respectful, nothing more (Boss). */
