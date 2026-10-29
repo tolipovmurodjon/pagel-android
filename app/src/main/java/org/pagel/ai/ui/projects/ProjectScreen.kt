@@ -817,7 +817,10 @@ private fun GoalsPane(ui: ProjectUi, today: LocalDate, actions: ProjectActions) 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(TabIcons.Flag, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(Space.sm))
-                        Text(g.title, style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.weight(1f))
+                        // Tap to fix a typo; clear the words to remove the goal (a goal used to be write-once).
+                        InlineField(g.title, "Goal", "Goal: ${g.title}", MaterialTheme.typography.titleMedium, Modifier.weight(1f), allowBlank = true) { t ->
+                            put(if (t.isBlank()) ui.goals.filter { it.id != g.id } else ui.goals.map { x -> if (x.id == g.id) x.copy(title = t.trim()) else x })
+                        }
                         if (g.milestones.isNotEmpty()) Text("$reached/${g.milestones.size}", style = Glass.NumberText, color = Glass.Muted)
                     }
                     g.milestones.forEach { m ->
