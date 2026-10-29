@@ -138,6 +138,14 @@ class NamozScreenshotTest {
         assertEquals(listOf(Namoz.Prayer.SHOM to NamozMarkEntity.MOSQUE), marks)
     }
 
+    /** The ⋮ sheet open: every reminder off by default, Show on Today, Qaza off. */
+    @Config(qualifiers = "w360dp-h800dp-xxhdpi")
+    @Test fun theSettingsSheetOpen() {
+        show { org.pagel.ai.ui.namoz.NamozSettingsSheet(dayUi(), onSave = {}, onRemind = { _, _ -> }, onPlace = {}) {} }
+        compose.mainClock.advanceTimeBy(1_000)
+        com.github.takahirom.roborazzi.captureScreenRoboImage("build/outputs/roborazzi/namoz-settings.png")
+    }
+
     /** The calm-words wall: none of these words is ever on the page. */
     @Test fun noShamingWords() {
         show { NamozScreen(dayUi(), pad) }
