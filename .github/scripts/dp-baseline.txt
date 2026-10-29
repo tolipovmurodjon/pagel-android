@@ -1,11 +1,17 @@
 add/AddTaskSheet.kt 3
 add/AddTaskViewModel.kt 0
 add/QuickAdd.kt 0
+compass/CompassHooks.kt 0
+compass/CompassKit.kt 0
+compass/CompassScreen.kt 0
+compass/CompassSecurity.kt 0
+compass/CompassViewModel.kt 0
+compass/GoalSheet.kt 0
 gateway/GatewayDebugScreen.kt 7
 gateway/GatewayViewModel.kt 0
 habits/HabitDetail.kt 0
 habits/HabitReminder.kt 1
-habits/HabitsScreen.kt 4
+habits/HabitsScreen.kt 2
 habits/HabitsViewModel.kt 0
 home/HomeScreen.kt 0
 hud/BootScreen.kt 3
@@ -14,6 +20,7 @@ inbox/ChoiceSound.kt 0
 inbox/InboxScreen.kt 33
 inbox/InboxSheets.kt 18
 inbox/InboxViewModel.kt 0
+inbox/WhereScreens.kt 0
 pair/PairScreen.kt 4
 pair/PairViewModel.kt 0
 projects/ProjectScreen.kt 14

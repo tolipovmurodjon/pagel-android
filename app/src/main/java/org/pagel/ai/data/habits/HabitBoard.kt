@@ -185,7 +185,13 @@ data class HabitCard(
     val done: Boolean get() = mark == Mark.DONE
 }
 
-data class StripDay(val date: LocalDate, val clear: Clear, val frozen: Boolean = false)
+/**
+ * One day of the all-habits chain on top of the Habits tab (Boss 2026-10-29: "when I complete ALL habits, it marks that
+ * day"): [held] of [due] habits done or frozen that day; the strip fills a day only at held == due.
+ */
+data class StripDay(val date: LocalDate, val clear: Clear, val frozen: Boolean = false, val held: Int = 0, val due: Int = 0) {
+    val progress: Float get() = if (due == 0) 0f else held.toFloat() / due
+}
 
 data class HabitBoard(
     val today: LocalDate,
@@ -258,7 +264,10 @@ fun habitBoard(
     val namoz = prayers.map(::card).sortedBy { it.window?.prayer?.ordinal ?: 9 }
 
     val monday = selected.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-    val week = (0L..6L).map { i -> monday.plusDays(i) }.map { d -> StripDay(d, clearOf(others, taps, frozenOf, d, today), others.any { d.toString() in frozenOf[it.id].orEmpty() }) }
+    val week = (0L..6L).map { i -> monday.plusDays(i) }.map { d ->
+        val (held, due) = heldOf(others, taps, frozenOf, d)
+        StripDay(d, clearOf(others, taps, frozenOf, d, today), others.any { d.toString() in frozenOf[it.id].orEmpty() }, held, due)
+    }
     return HabitBoard(today, selected, week, cards, namoz, freezesLeft(freezes, YearMonth.from(today)))
 }
 
@@ -272,6 +281,12 @@ private fun stack(cards: List<HabitCard>): List<HabitCard> {
         if (at < 0) out += f else out.add(at + 1, f)
     }
     return out
+}
+
+/** How many of the habits due on [d] were held (done or frozen), and how many were due. */
+fun heldOf(habits: List<TaskEntity>, taps: Map<String, Int>, frozen: Map<String, Set<String>>, d: LocalDate): Pair<Int, Int> {
+    val due = habits.filter { repeatsOn(it, d) }
+    return due.count { (taps["$d ${it.id}"] ?: 0) >= it.times.coerceAtLeast(1) || d.toString() in frozen[it.id].orEmpty() } to due.size
 }
 
 /** A day across [habits]: every due one held = ALL; some = SOME; none = NONE; nothing due = EMPTY; ahead = FUTURE. */

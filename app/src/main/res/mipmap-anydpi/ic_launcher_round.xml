@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- PAGEL's liquid-glass icon (round D, Boss 2026-10-29): both layers are rendered from one 1024 px master
+     (docs/icon/make_svg.py): a translucent frosted P with a lit top-left rim and the aurora's tint, the yellow bead,
+     on a 3-stop OKLCH mint tile. The themed (Android 13+) layer stays the plain vector P. -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@mipmap/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
     <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

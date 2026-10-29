@@ -74,6 +74,8 @@ for tab in Today Inbox Habits Notebook More; do
   tap "$tab" && shot "tab-$tab"
 done
 log "-- projects live under More now"
+# More grew (Compass, Notes): Projects sits under the tab bar on a 640 dp screen, so scroll it up before the tap.
+$T adb shell input swipe 160 450 160 120 400; sleep 1
 tap Projects && shot projects
 grep -q 'text="Humopedia"' "$OUT/$(printf '%02d' $N)-projects.xml" || { log "WALKTHROUGH: Projects under More shows no projects"; exit 1; }
 $T adb shell input swipe 540 1700 540 500 400; shot projects-down 1.5
@@ -295,10 +297,11 @@ H3="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$TODAY\",\"if_due\":\"$TOD
 for i in $(seq 1 30); do grep -qF "$H3" "$FAKE_LOG" && break; sleep 1; done
 grep -qF "$H3" "$FAKE_LOG" || { log "WALKTHROUGH: the habit tick never reached pagel.uz as $H3"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   habit tick reached pagel.uz after ~${i} s"
-log "-- a timed habit: tap Stretch's card, its 10-minute clock runs"
-tap "Stretch for ten minutes" && shot habit-timer 3
+log "-- a timed habit: Stretch's play ring runs its 10-minute clock (the row itself opens the habit's page)"
+tap "Start: Stretch for ten minutes" && shot habit-timer 3
 grep -q 'text="0:0[1-9] / 10 min"\|text="0:1[0-9] / 10 min"' "$OUT/$(printf '%02d' $N)-habit-timer.xml" || log "   (WARN: the timer shows no running seconds)"
-tap "Stretch for ten minutes" && sleep 1
+grep -q 'content-desc="Reminder: \|content-desc="More: ' "$OUT/$(printf '%02d' $N)-habit-timer.xml" && { log "WALKTHROUGH: a habit row still has a bell or a menu (Boss 2026-10-29: minimal rows)"; exit 1; }
+tap "Pause: Stretch for ten minutes" && sleep 1
 log "-- a 3x habit (round B): Log food tapped 3 times in Afternoon; pagel.uz gets 3 ticks"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 tap Afternoon && sleep 1
@@ -319,16 +322,19 @@ grep -q 'text="Bomdod"' "$OUT/$(printf '%02d' $N)-namoz-group.xml" || log "   (W
 tap History && shot habits-history 2
 $T adb shell input keyevent 4; sleep 1
 tap Morning && sleep 1
-# The Namoz group (5 rows now) pushes Stretch's card down: scroll until its time tab is on screen.
+# The Namoz group (5 rows now) pushes Stretch's row down: scroll until it is on screen, then open its page, where the
+# reminder lives now (Boss 2026-10-29: no bell on the row).
 for k in 1 2 3; do
   $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
-  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -qF 'content-desc="Reminder: Stretch for ten minutes"' && break
+  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -qF 'text="Stretch for ten minutes"' && break
   $T adb shell input swipe 160 500 160 300 400; sleep 1
 done
+tap "Stretch for ten minutes" && shot habit-page 2.5
+grep -q 'text="Reminder · off"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no Reminder row"; exit 1; }
 # Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
 ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")
-tap "Reminder: Stretch for ten minutes" && shot reminder-sheet 2.5
+tap "Reminder · off" && shot reminder-sheet 2.5
 tap "Remind me" && shot reminder-on 1.5
 front reminder-on
 # The sheet reads the grant when it opens (checker #7): the walk granted it, so no "Exact time · Allow" row.
@@ -360,6 +366,8 @@ grep -qF "$H1" "$FAKE_LOG" || { log "WALKTHROUGH: the notification's Done never 
 log "   the notification's Done reached pagel.uz after ~${i} s"
 front habits-after-done
 shot habits-after-notification 2
+# Leave the habit's page for the tabs.
+$T adb shell input keyevent 4; sleep 1
 
 log "-- Upcoming + Completed (Phase 4): More → Upcoming; drag a task onto the day after tomorrow; Move all to today; untick"
 # The centre of the first node whose content-desc starts with $1 (the strip's days say "Friday 30 October, 2 tasks").
@@ -665,7 +673,7 @@ log "   pagel.uz got the purpose as ciphertext only (no goal words in its log or
 
 log "-- a project serves the goal: Projects → Humopedia → Link to a goal → the purpose; pagel.uz gets only its id"
 $T adb shell input keyevent 4; sleep 1
-for k in 1 2 3; do tap Projects && break; $T adb shell input keyevent 4; sleep 1; done
+for k in 1 2 3; do $T adb shell input swipe 160 450 160 120 400; sleep 1; tap Projects && break; $T adb shell input keyevent 4; sleep 1; done
 front c-projects
 tap Humopedia && shot c-project 2 || { log "WALKTHROUGH: no Humopedia project"; exit 1; }
 tap "Link to a goal" && shot c-picker 2 || { log "WALKTHROUGH: the project page has no Link to a goal"; exit 1; }

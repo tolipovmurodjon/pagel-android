@@ -21,7 +21,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -151,4 +153,51 @@ internal fun Switch(on: Boolean) {
     ) {
         Box(Modifier.graphicsLayer { translationX = x * 20.dp.toPx() }.size(27.dp).background(Color.White, CircleShape))
     }
+}
+
+/**
+ * The grants a reminder needs (notifications, exact alarms), read on every resume, and the one call that turns a
+ * habit's reminder on: it asks for notifications at first use (never at launch) and then for exact alarms once.
+ * The Habits tab (the Namoz sheet) and each habit's page share it, so the bell lives on the page, not on the row.
+ */
+internal class ReminderGrants(
+    val exact: Boolean, val notify: Boolean, val remind: (String, Boolean) -> Unit, val fixNotify: () -> Unit, val fixExact: () -> Unit,
+)
+
+@Composable
+internal fun rememberReminderGrants(vm: HabitsViewModel): ReminderGrants {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val alarms = remember { ctx.getSystemService(android.app.AlarmManager::class.java) }
+    var exact by remember { mutableStateOf(true) }
+    var notify by remember { mutableStateOf(true) }
+    fun read() {
+        exact = alarms == null || org.pagel.ai.reminders.HabitAlarms.canExact(alarms)
+        notify = notificationsOn(ctx)
+    }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { read(); onPauseOrDispose {} }
+    fun openExact() = runCatching {
+        ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, android.net.Uri.parse("package:${ctx.packageName}")))
+    }
+    fun askExact() = vm.askExactOnce(needed = alarms != null && !org.pagel.ai.reminders.HabitAlarms.canExact(alarms)) { openExact() }
+    val askNotify = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        read(); if (granted) askExact()
+    }
+    return ReminderGrants(
+        exact = exact, notify = notify,
+        remind = { id, on ->
+            vm.setReminder(id, on)
+            if (on) {
+                val needs = android.os.Build.VERSION.SDK_INT >= 33 &&
+                    androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (needs) askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS) else askExact()
+            }
+            read()
+        },
+        fixNotify = {
+            runCatching {
+                ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName))
+            }
+        },
+        fixExact = { openExact() },
+    )
 }

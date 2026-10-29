@@ -1,13 +1,5 @@
 package org.pagel.ai.ui.habits
 
-import android.Manifest
-import android.app.AlarmManager
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -71,6 +63,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -85,7 +78,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -98,7 +90,6 @@ import org.pagel.ai.data.habits.Namoz
 import org.pagel.ai.data.habits.Part
 import org.pagel.ai.data.habits.StripDay
 import org.pagel.ai.data.habits.Clear
-import org.pagel.ai.reminders.HabitAlarms
 import org.pagel.ai.ui.glass.Emoji
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.GlassIconButton
@@ -131,73 +122,32 @@ fun HabitsRoute(
     vm: HabitsViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val ctx = LocalContext.current
-    var bell by remember { mutableStateOf<String?>(null) }
-    var menu by remember { mutableStateOf<String?>(null) }
     var namozSheet by remember { mutableStateOf(false) }
     var celebrate by remember { mutableStateOf(0) }
     var finished by remember { mutableStateOf<Pair<String, Int>?>(null) }
-    var exact by remember { mutableStateOf(true) }
-    var notify by remember { mutableStateOf(true) }
-    val alarms = remember { ctx.getSystemService(AlarmManager::class.java) }
-    fun readGrants() {
-        exact = alarms == null || HabitAlarms.canExact(alarms)
-        notify = notificationsOn(ctx)
-    }
+    val grants = rememberReminderGrants(vm)
     LifecycleResumeEffect(Unit) {
-        readGrants()
         vm.replan()
         onPauseOrDispose {}
     }
-    LaunchedEffect(bell) { if (bell != null) readGrants() }
     LaunchedEffect(Unit) { vm.celebrate.collect { celebrate++ } }
     LaunchedEffect(Unit) { var n = 0; vm.timerDone.collect { finished = it to ++n } }
 
-    fun askExact() = vm.askExactOnce(needed = alarms != null && !HabitAlarms.canExact(alarms)) {
-        runCatching { ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}"))) }
-    }
-    val askNotify = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> readGrants(); if (granted) askExact() }
-    fun remind(id: String, on: Boolean) {
-        vm.setReminder(id, on)
-        if (!on) return
-        val needs = android.os.Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        if (needs) askNotify.launch(Manifest.permission.POST_NOTIFICATIONS) else askExact()
-    }
-
     HabitsScreen(
         ui, contentPadding, reselect, celebrate = celebrate, finished = finished,
-        onTick = vm::tick, onUntick = vm::untick, onBell = { bell = it }, onOpen = onOpenHabit, onMenu = { menu = it },
+        onTick = vm::tick, onUntick = vm::untick, onOpen = onOpenHabit,
         onSelectDay = vm::selectDay, onSelectPart = vm::selectPart, onTimer = vm::toggleTimer, onHistory = onHistory,
         onStartNamoz = vm::startNamoz, onNamozMenu = { namozSheet = true },
     )
-    bell?.let { id ->
-        ui.byId[id]?.let { t ->
-            ReminderSheet(
-                t, on = id in ui.reminders, exact = exact, notify = notify, onToggle = { remind(id, it) }, onTime = { vm.setTime(id, it) },
-                onFixNotify = { runCatching { ctx.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)) } },
-                onFixExact = { runCatching { ctx.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}"))) } },
-            ) { bell = null }
-        }
-    }
-    menu?.let { id ->
-        val card = ui.board?.let { it.cards + it.namoz }?.firstOrNull { it.task.id == id }
-        if (card == null) menu = null
-        else HabitMenuSheet(
-            card, freezesLeft = ui.board?.freezesLeft ?: 0,
-            onDetail = { menu = null; onOpenHabit(id) }, onReminder = { menu = null; bell = id },
-            onFreeze = { menu = null; if (card.mark == Mark.FROZEN) vm.unfreeze(id) else vm.freeze(id) },
-            onUndo = { menu = null; vm.untick(id) }, onResetTimer = { menu = null; vm.resetTimer(id) },
-        ) { menu = null }
-    }
-    if (namozSheet) NamozSheet(ui.board?.namoz.orEmpty(), ui.reminders, onToggle = { id, on -> remind(id, on) }) { namozSheet = false }
+    if (namozSheet) NamozSheet(ui.board?.namoz.orEmpty(), ui.reminders, onToggle = grants.remind) { namozSheet = false }
 }
 
 /**
- * Habits 2.0 (round D; Boss: "cleaner, better, like a chain"): the week as a chain on top (held days fuse into one mint
- * bar, a miss is a gap), Morning · Afternoon · Evening pills that start on the clock's part, then one bold card per
- * habit with its own gradient tile and Fluent emoji, its progress, a "•••" menu and the time tab on its edge. The
- * check sits outside the card; a done card goes quiet with "✓ Finished". The five prayers are one Namoz group.
+ * Habits 2.0 (round D; Boss 2026-10-29: "minimalistic… the main screen = the main task, no friction, no mental load"):
+ * on top the ALL-HABITS chain (a day fills only when every habit that day is done, a partial day is a thin ring, full
+ * days in a row join into one bar), Morning · Afternoon · Evening pills, then one quiet row per habit with at most five
+ * things: the check · the emoji · the title · the progress · 🔥 the streak. Tapping a row opens the habit's own page,
+ * where the reminder, days, emoji, freeze, stacking and history live. The five prayers are one Namoz group.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -209,9 +159,7 @@ fun HabitsScreen(
     finished: Pair<String, Int>? = null,
     onTick: (String) -> Unit = {},
     onUntick: (String) -> Unit = {},
-    onBell: (String) -> Unit = {},
     onOpen: (String) -> Unit = {},
-    onMenu: (String) -> Unit = {},
     onSelectDay: (LocalDate?) -> Unit = {},
     onSelectPart: (Part) -> Unit = {},
     onTimer: (String, Int) -> Unit = { _, _ -> },
@@ -244,6 +192,8 @@ fun HabitsScreen(
     }
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot() }) {
+        // One spacing rhythm (Boss 2026-10-29: "the spacing is different for all"): every block and every habit row sits
+        // Space.paneGap apart, every row has the same height (HabitsScreenshotTest.rowsHaveOneHeightAndOneGap).
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.paneGap)) {
             item(key = "head", contentType = "head") { Header(ui, board, onHistory) }
             if (ui.loading || board == null) {
@@ -253,14 +203,14 @@ fun HabitsScreen(
             item(key = "strip", contentType = "strip") { WeekStrip(board, onSelectDay) }
             item(key = "parts", contentType = "parts") { PartPills(ui.part, board, onSelectPart) }
             item(key = "namoz", contentType = "namoz") {
-                NamozGroup(board, today, onTick = ::tick, onUntick = onUntick, onStart = onStartNamoz, onMenu = onNamozMenu, centres = centres, modifier = Modifier.animateItem())
+                NamozGroup(board, today, onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onStart = onStartNamoz, onMenu = onNamozMenu, centres = centres, modifier = Modifier.animateItem())
             }
             val cards = board.inPart(ui.part)
             if (cards.isEmpty()) item(key = "empty-${ui.part}", contentType = "note") { EmptyPart(ui.part, board.total) }
             items(cards, key = { it.task.id }, contentType = { "card" }) { c ->
                 HabitCardRow(
-                    c, finishing = c.task.id in ui.finishing, reminder = c.task.id in ui.reminders, timer = ui.timers[c.task.id], now = ui.now,
-                    onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onMenu = onMenu, onBell = onBell, onTimer = onTimer,
+                    c, finishing = c.task.id in ui.finishing, timer = ui.timers[c.task.id], now = ui.now,
+                    onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onTimer = onTimer,
                     onCentre = { centres[c.task.id] = it }, modifier = Modifier.animateItem(),
                 )
             }
@@ -329,9 +279,11 @@ internal fun DayRing(done: Int, total: Int, modifier: Modifier = Modifier, size:
 // ── The week as a chain ─────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Seven days, Monday first. A day where every habit held is a filled mint circle, and held days side by side fuse into
- * one bar (the chain); a day with some is a soft ring; a miss is a plain number with a gap around it; today is a mint
- * ring; days ahead are faint. Tap a day to look at it; swipe for the week before or after.
+ * The ALL-HABITS chain, seven days, Monday first (Boss 2026-10-29: "when I complete ALL habits, it marks that day"). A
+ * day fills mint only when every habit due that day is done; full days side by side join into one solid bar of the
+ * same mint (the chain, like his reference's 26-27); a partial day is a thin ring that shows how much (2 of 4 = half a
+ * ring), never a fill; a miss is a plain number with a gap; today is a ring; days ahead are faint. The prayers are not
+ * in it (Namoz is its own group with its own ring). Tap a day to look at it; swipe for the week before or after.
  */
 @Composable
 private fun WeekStrip(board: HabitBoard, onSelect: (LocalDate?) -> Unit) {
@@ -359,6 +311,7 @@ private fun WeekStrip(board: HabitBoard, onSelect: (LocalDate?) -> Unit) {
             Spacer(Modifier.height(Space.sm))
             ChainRow(
                 board.week.map { it.date to it.clear.toMark(it, board.today) }, board.today, board.selected,
+                counts = board.week.map { it.held to it.due },
                 onSelect = { d -> haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelect(if (d == board.today) null else d) },
                 modifier = Modifier.padding(horizontal = Space.sm),
             )
@@ -374,44 +327,47 @@ private fun Clear.toMark(d: StripDay, today: LocalDate): Mark = when (this) {
     Clear.FUTURE -> Mark.FUTURE
 }
 
-/** A row of day circles with the chain drawn behind them (the strip, the month calendar and the Namoz row use it). */
+/**
+ * A row of day circles with the chain drawn behind them (the strip, the month calendars and the Namoz row use it).
+ * [counts] = (held, due) per day: a PARTIAL day's thin ring shows held / due; without counts the ring is whole.
+ */
 @Composable
 internal fun ChainRow(
     days: List<Pair<LocalDate, Mark>>, today: LocalDate, chosen: LocalDate?, onSelect: ((LocalDate) -> Unit)?, modifier: Modifier = Modifier,
-    circle: androidx.compose.ui.unit.Dp = 38.dp, slots: Int = days.size, startSlot: Int = 0,
+    circle: androidx.compose.ui.unit.Dp = 38.dp, slots: Int = days.size, startSlot: Int = 0, counts: List<Pair<Int, Int>>? = null,
 ) {
     val marks = days.map { it.second }
     val joined = org.pagel.ai.data.habits.links(marks)
     Box(modifier.fillMaxWidth().height(circle + Space.sm)) {
-        // The chain: one bar under every pair of linked neighbours, from centre to centre.
+        // The chain: one solid bar, the circles' own mint, from centre to centre of every pair of linked days.
         Canvas(Modifier.fillMaxWidth().height(circle + Space.sm)) {
             val cell = size.width / slots
-            val h = circle.toPx() * 0.46f
+            val h = circle.toPx() * CHAIN_BAR
             val y = size.height / 2 - Space.xs.toPx() / 2
             for (i in joined.indices) if (joined[i]) {
                 val x0 = (startSlot + i + 0.5f) * cell
                 val ice = marks[i] == Mark.FROZEN || marks.getOrNull(i + 1) == Mark.FROZEN
-                drawRoundRect(
-                    if (ice) Brush.horizontalGradient(listOf(ICE, ICE)) else Brush.horizontalGradient(listOf(Glass.Aurora2, Glass.Aurora1)),
-                    topLeft = Offset(x0, y - h / 2), size = Size(cell, h), cornerRadius = CornerRadius(0f),
-                )
+                drawRect(if (ice) ICE else CHAIN, topLeft = Offset(x0, y - h / 2), size = Size(cell, h))
             }
         }
         Row(Modifier.fillMaxWidth()) {
             if (startSlot > 0) Spacer(Modifier.weight(startSlot.toFloat()))
-            for ((d, m) in days) {
+            for ((i, pair) in days.withIndex()) {
+                val (d, m) = pair
+                val count = counts?.getOrNull(i)
                 val press = remember { MutableInteractionSource() }
                 Box(
                     Modifier.weight(1f).height(circle + Space.sm).then(
                         if (onSelect != null) Modifier.pressScale(press).clickable(press, indication = null, role = Role.Button) { onSelect(d) } else Modifier,
                     ).semantics(mergeDescendants = true) {
                         contentDescription = d.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK))
-                        stateDescription = markWord(m)
+                        stateDescription = if (m == Mark.PARTIAL && count != null) "${count.first} of ${count.second} done" else markWord(m)
                         if (d == chosen) selected = true
                     },
                     contentAlignment = Alignment.Center,
                 ) {
-                    DayDot(d.dayOfMonth, m, d == today, d == chosen, circle)
+                    val p = if (count != null && count.second > 0) count.first.toFloat() / count.second else null
+                    DayDot(d.dayOfMonth, m, d == today, d == chosen, circle, p)
                 }
             }
             val rest = slots - startSlot - days.size
@@ -419,6 +375,12 @@ internal fun ChainRow(
         }
     }
 }
+
+/** The chain's one mint: a full day's circle and the bar that joins it to the next are the same colour. */
+internal val CHAIN = Color(0xFF66DDA8)
+
+/** The bar's height as a share of the circle (Boss's reference: about half). */
+internal const val CHAIN_BAR = 0.5f
 
 internal val ICE = Color(0xFFCDE8FB)
 
@@ -428,28 +390,34 @@ internal fun markWord(m: Mark) = when (m) {
 }
 
 @Composable
-private fun DayDot(n: Int, m: Mark, isToday: Boolean, isSelected: Boolean, circle: androidx.compose.ui.unit.Dp) {
-    val fill: Brush? = when (m) {
-        Mark.DONE -> Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1))
-        Mark.FROZEN -> Brush.linearGradient(listOf(Color.White, ICE))
-        Mark.PARTIAL -> Brush.linearGradient(listOf(Glass.PrimarySoft, Glass.PrimarySoft))
-        else -> null
-    }
+private fun DayDot(n: Int, m: Mark, isToday: Boolean, isSelected: Boolean, circle: androidx.compose.ui.unit.Dp, progress: Float? = null) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier.size(circle).clip(CircleShape)
-                .then(if (fill != null) Modifier.background(fill) else Modifier)
-                .then(if (isToday && m != Mark.DONE) Modifier.border(2.dp, Glass.Primary, CircleShape) else Modifier),
-            contentAlignment = Alignment.Center,
-        ) {
+        Box(Modifier.size(circle), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(circle)) {
+                val r = size.minDimension / 2
+                val w = 2.5.dp.toPx()
+                when (m) {
+                    Mark.DONE -> drawCircle(CHAIN, r)
+                    Mark.FROZEN -> drawCircle(ICE, r)
+                    // A partial day: a thin ring, no fill; the mint arc shows how much of the day was held.
+                    Mark.PARTIAL -> {
+                        drawCircle(Glass.Ink.copy(alpha = 0.10f), r - w / 2, style = Stroke(w))
+                        drawArc(
+                            Glass.Primary, -90f, 360f * (progress ?: 1f).coerceIn(0.08f, 1f), false,
+                            topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w), style = Stroke(w, cap = StrokeCap.Round),
+                        )
+                    }
+                    else -> if (isToday) drawCircle(Glass.Primary, r - w / 2, style = Stroke(w))
+                }
+            }
             val faint = m == Mark.FUTURE || m == Mark.OFF || m == Mark.BEFORE
             Text(
                 "$n", style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (m == Mark.DONE || isToday) FontWeight.Bold else FontWeight.Medium),
                 color = if (faint) Glass.Muted.copy(alpha = 0.6f) else Glass.Ink,
             )
         }
-        // The selected day's mark: a short mint line under it; it keeps its 3 dp slot on every day (no jump).
-        Box(Modifier.padding(top = 2.dp).size(width = 14.dp, height = 3.dp).background(if (isSelected) Glass.Primary else Color.Transparent, CircleShape))
+        // The selected day's mark: a short mint line under it; it keeps its slot on every day (no jump).
+        Box(Modifier.padding(top = Space.xs).size(width = 14.dp, height = 3.dp).background(if (isSelected) Glass.Primary else Color.Transparent, CircleShape))
     }
 }
 
@@ -532,159 +500,150 @@ internal fun EmojiTile(emoji: String, size: androidx.compose.ui.unit.Dp, quiet: 
     }
 }
 
-/** "0 / 10 min", "2 / 3", "3:20 / 10 min"; a once-a-day habit says how often it repeats. */
-internal fun progressText(c: HabitCard, timer: HabitTimer?, now: Long): String = when {
+/**
+ * The row's progress, one short line: "Finished", "0 / 10 min" (a timer's "3:20 / 10 min"), "2 / 3", a prayer's
+ * window, the time of a timed habit, or "0 / 1". Never the repeat rule: that lives on the habit's page.
+ */
+internal fun progressText(c: HabitCard, timer: HabitTimer?, now: Long, done: Boolean = c.done): String = when {
+    done -> "Finished"
+    c.mark == Mark.FROZEN -> "Frozen · chain holds"
     c.minutes != null && timer != null -> {
         val s = (timer.spent(now) / 1000).coerceAtMost(c.minutes * 60L)
         "%d:%02d / %d min".format(s / 60, s % 60, c.minutes)
     }
-    c.minutes != null -> "${if (c.done) c.minutes else 0} / ${c.minutes} min"
-    c.times > 1 -> "${if (c.done) c.times else c.taps} / ${c.times}"
+    c.minutes != null -> "0 / ${c.minutes} min"
+    c.times > 1 -> "${c.taps} / ${c.times}"
     c.window != null -> c.window.label()
-    else -> org.pagel.ai.ui.glass.Repeat.label(c.task.every.orEmpty())
+    c.time != null -> c.time
+    else -> "0 / 1"
 }
 
+/** The tags a row's parts carry, so a test can count them (Boss 2026-10-29: at most 5 things per row). */
+internal object RowPart {
+    const val ROW = "habit-row"
+    const val TICK = "row-tick"
+    const val EMOJI = "row-emoji"
+    const val TITLE = "row-title"
+    const val PROGRESS = "row-progress"
+    const val STREAK = "row-streak"
+}
+
+/**
+ * One habit, minimal (Boss 2026-10-29: "move unnecessary mental load to the habit's own page"): the check · the emoji
+ * · the title · the progress · 🔥 the streak, nothing else. A tap opens the habit's page (reminder, days, emoji,
+ * freeze, history live there). A habit with minutes has a play ring for a check: tap it to run the clock, which ticks
+ * the habit at the end. "Never miss twice" is only a tiny amber dot on the emoji's corner. Every row is the same
+ * height: one title line, one progress line.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun HabitCardRow(
-    c: HabitCard, finishing: Boolean, reminder: Boolean, timer: HabitTimer?, now: Long,
-    onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit, onMenu: (String) -> Unit, onBell: (String) -> Unit,
+    c: HabitCard, finishing: Boolean, timer: HabitTimer?, now: Long,
+    onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit,
     onTimer: (String, Int) -> Unit, onCentre: (Offset) -> Unit, modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
     val done = c.done || finishing
     val id = c.task.id
     val tickable = c.mark != Mark.FUTURE && c.mark != Mark.BEFORE && c.mark != Mark.OFF
-    Row(modifier.fillMaxWidth().padding(start = Space.sm, end = Space.gutter), verticalAlignment = Alignment.CenterVertically) {
+    val minutes = c.minutes
+    val timed = minutes != null && !done && tickable && c.mark != Mark.FROZEN
+    Row(modifier.fillMaxWidth().padding(start = Space.sm, end = Space.gutter).testTag(RowPart.ROW), verticalAlignment = Alignment.CenterVertically) {
         CheckCircle(
-            c, done, enabled = tickable,
-            onClick = { if (done) onUntick(id) else onTick(id) },
-            modifier = Modifier.onGloballyPositioned { onCentre(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) },
+            c, done, enabled = tickable, timer = if (timed) timer else null, now = now, timed = timed,
+            onClick = {
+                when {
+                    done -> onUntick(id)
+                    timed && minutes != null -> { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); onTimer(id, minutes) }
+                    else -> onTick(id)
+                }
+            },
+            modifier = Modifier.testTag(RowPart.TICK).onGloballyPositioned { onCentre(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) },
         )
-        Box(Modifier.weight(1f).padding(bottom = if (c.time != null) Space.md else 0.dp)) {
-            val press = remember { MutableInteractionSource() }
-            Pane(
-                Modifier.fillMaxWidth().pressScale(press).combinedClickable(
-                    press, indication = null, onClickLabel = if (c.minutes != null && !done) (if (timer?.running == true) "Pause" else "Start") else "Open",
-                    onLongClickLabel = "Open", onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onOpen(id) },
-                ) {
-                    when {
-                        c.minutes != null && !done && tickable && c.mark != Mark.FROZEN -> { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); onTimer(id, c.minutes) }
-                        else -> onOpen(id)
-                    }
-                },
-            ) {
-                Column(Modifier.fillMaxWidth().padding(start = Space.md, top = Space.md, bottom = Space.md)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(contentAlignment = Alignment.Center) {
-                            EmojiTile(c.emoji, 48.dp, quiet = done)
-                            if (c.minutes != null && timer != null && !done) TimerRing(timer.spent(now) / (c.minutes * 60_000f), 56.dp)
-                        }
-                        Spacer(Modifier.width(Space.md))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                c.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = if (done) Glass.Muted else Glass.Ink,
-                                maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.height(Space.xs))
-                            MetaLine(c, done, timer, now)
-                        }
-                        GlassIconButton(TabIcons.More, "More: ${c.title}", size = Space.touch, plain = true) { onMenu(id) }
-                    }
-                    if (!done && (c.times > 1 || c.minutes != null)) {
-                        val p = when {
-                            c.minutes != null -> (timer?.spent(now) ?: 0L) / (c.minutes * 60_000f)
-                            else -> c.taps.toFloat() / c.times
-                        }.coerceIn(0f, 1f)
-                        val shown by animateFloatAsState(p, spring(dampingRatio = 1f, stiffness = Spring.StiffnessLow), label = "progress")
-                        Box(Modifier.padding(top = Space.md, end = Space.md).fillMaxWidth().height(4.dp).background(Glass.Ink.copy(alpha = 0.07f), CircleShape)) {
-                            Box(Modifier.fillMaxWidth(shown).height(4.dp).background(Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)), CircleShape))
-                        }
-                    }
+        val press = remember { MutableInteractionSource() }
+        Pane(
+            Modifier.weight(1f).pressScale(press).combinedClickable(
+                press, indication = null, onClickLabel = "Open",
+                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onOpen(id) },
+            ) { onOpen(id) },
+        ) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.testTag(RowPart.EMOJI)) {
+                    EmojiTile(c.emoji, 40.dp, quiet = done)
+                    // Never miss twice (Atomic Habits): only a small amber dot, no words on the row.
+                    if (c.neverMissTwice && !done) Box(
+                        Modifier.align(Alignment.TopEnd).size(10.dp).background(Color(0xFFF59E0B), CircleShape).border(1.5.dp, Color.White, CircleShape)
+                            .semantics { contentDescription = "Missed yesterday: never miss twice" },
+                    )
                 }
-            }
-            // The time tab hangs on the card's bottom edge (Boss's reference): the bell and the time, or the prayer's window.
-            if (c.time != null) {
-                val bellPress = remember { MutableInteractionSource() }
-                Row(
-                    Modifier.align(Alignment.BottomEnd).offset(y = Space.md).padding(end = Space.lg).heightIn(min = 28.dp).pressScale(bellPress)
-                        .background(if (reminder) Glass.PrimarySoft else Color.White, RoundedCornerShape(10.dp))
-                        .border(1.dp, if (reminder) Glass.Primary.copy(alpha = 0.5f) else Glass.Ink.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
-                        .clickable(bellPress, indication = null, role = Role.Button) { onBell(id) }
-                        .semantics(mergeDescendants = true) { contentDescription = "Reminder: ${c.title}"; stateDescription = if (reminder) "On" else "Off" }
-                        .padding(horizontal = Space.sm),
+                Spacer(Modifier.width(Space.md))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        c.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = if (done) Glass.Muted else Glass.Ink,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag(RowPart.TITLE),
+                    )
+                    Spacer(Modifier.height(Space.xs))
+                    Text(
+                        progressText(c, timer, now, done), maxLines = 1, overflow = TextOverflow.Ellipsis, color = Glass.Muted,
+                        // One line height for words and numbers, so a finished row is exactly as tall as an open one.
+                        style = (if (done || c.mark == Mark.FROZEN) MaterialTheme.typography.labelMedium else Glass.NumberText.copy(fontSize = 13.sp)).copy(lineHeight = 18.sp),
+                        modifier = Modifier.testTag(RowPart.PROGRESS),
+                    )
+                }
+                if (c.streak > 0) Row(
                     verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = Space.sm).testTag(RowPart.STREAK).semantics(mergeDescendants = true) { contentDescription = "${c.streak} in a row" },
                 ) {
-                    Icon(if (reminder) TabIcons.BellRing else TabIcons.Bell, null, tint = if (reminder) Glass.PrimaryInk else Glass.Muted, modifier = Modifier.size(13.dp))
-                    Spacer(Modifier.width(Space.xs))
-                    Text(c.window?.label() ?: c.time, style = Glass.NumberText, color = Glass.Ink)
+                    Text("🔥", style = Glass.NumberText, modifier = Modifier.clearAndSetSemantics {})
+                    Text("${c.streak}", style = Glass.NumberText, color = Color(0xFFC2410C), modifier = Modifier.clearAndSetSemantics {})
                 }
             }
         }
-    }
-}
-
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun MetaLine(c: HabitCard, done: Boolean, timer: HabitTimer?, now: Long) {
-    // Wraps instead of squeezing the chip at 1.5x font.
-    androidx.compose.foundation.layout.FlowRow(
-        itemVerticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.xs),
-    ) {
-        if (done) Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(TabIcons.Check, null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
-            Spacer(Modifier.width(Space.xs))
-            Text("Finished", style = MaterialTheme.typography.labelMedium, color = Glass.Muted)
-        } else if (c.mark == Mark.FROZEN) {
-            Text("❄️ Frozen · chain holds", style = MaterialTheme.typography.labelMedium, color = Glass.Muted)
-        } else {
-            Text(progressText(c, timer, now), style = if (c.times > 1 || c.minutes != null) Glass.NumberText.copy(fontSize = 13.sp) else MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1)
-        }
-        // The flame and its number stay one item, so they never wrap apart at 1.5x.
-        if (c.streak > 0) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = "${c.streak} in a row" }) {
-            Text("🔥", style = Glass.NumberText, modifier = Modifier.clearAndSetSemantics {})
-            Text("${c.streak}", style = Glass.NumberText, color = Color(0xFFC2410C), modifier = Modifier.clearAndSetSemantics {})
-        }
-        if (c.neverMissTwice && !done) {
-            Text(
-                "Never miss twice", style = MaterialTheme.typography.labelSmall, color = Color(0xFF8A4B00), maxLines = 1,
-                modifier = Modifier.background(Color(0xFFFFEDC7), CircleShape).padding(horizontal = Space.sm, vertical = 2.dp),
-            )
-        } else if (c.after != null && !done) {
-            Text("after ${c.after}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-@Composable
-private fun TimerRing(p: Float, size: androidx.compose.ui.unit.Dp) {
-    Canvas(Modifier.size(size)) {
-        val w = 3.dp.toPx()
-        drawArc(Glass.Primary, -90f, 360f * p.coerceIn(0f, 1f), false, topLeft = Offset(w / 2, w / 2), size = Size(this.size.width - w, this.size.height - w), style = Stroke(w, cap = StrokeCap.Round))
     }
 }
 
 /**
- * The check outside the card: a ring that fills mint with an ink tick (Today's), arcs for a count habit, ice for a
- * frozen day, faint for a day it cannot be ticked. 48 dp target, 28 dp drawn.
+ * The check outside the card: a ring that fills mint with an ink tick, arcs for a count habit, ice for a frozen day,
+ * faint for a day it cannot be ticked. A habit with minutes shows a play mark and its clock's ring instead (tap = run
+ * or pause). 48 dp target, 28 dp drawn.
  */
 @Composable
-private fun CheckCircle(c: HabitCard, done: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun CheckCircle(
+    c: HabitCard, done: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier,
+    timer: HabitTimer? = null, now: Long = 0, timed: Boolean = false,
+) {
     val press = remember { MutableInteractionSource() }
     val pop by animateFloatAsState(if (done) 1f else 0f, spring(dampingRatio = 0.5f, stiffness = 500f), label = "pop")
+    val running = timer?.running == true
+    val clock = if (timed) ((timer?.spent(now) ?: 0L) / ((c.minutes ?: 1) * 60_000f)).coerceIn(0f, 1f) else 0f
     Box(
         modifier.size(Space.touch).pressScale(press)
-            .clickable(press, indication = null, enabled = enabled, role = Role.Checkbox, onClick = onClick)
-            .semantics { contentDescription = "Done: ${c.title}"; stateDescription = if (done) "Done" else if (c.times > 1) "${c.taps} of ${c.times}" else markWord(c.mark) },
+            .clickable(press, indication = null, enabled = enabled, role = if (timed) Role.Button else Role.Checkbox, onClick = onClick)
+            .semantics {
+                contentDescription = when { !timed -> "Done: ${c.title}"; running -> "Pause: ${c.title}"; else -> "Start: ${c.title}" }
+                stateDescription = if (done) "Done" else if (c.times > 1) "${c.taps} of ${c.times}" else markWord(c.mark)
+            },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(28.dp).graphicsLayer { val k = 1f + 0.12f * pop * (1f - pop) * 4f; scaleX = k; scaleY = k }) {
             val r = size.minDimension / 2
             val line = 2.dp.toPx()
+            val u = size.minDimension / 20f
             when {
                 done -> drawCircle(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), r)
                 c.mark == Mark.FROZEN -> drawCircle(ICE, r)
                 !enabled -> drawCircle(Glass.Ink.copy(alpha = 0.18f), r - line / 2, style = Stroke(1.5.dp.toPx()))
+                timed -> {
+                    drawCircle(Glass.Ink.copy(alpha = 0.18f), r - line / 2, style = Stroke(line))
+                    drawArc(Glass.Primary, -90f, 360f * clock, false, topLeft = Offset(line / 2, line / 2), size = Size(size.width - line, size.height - line), style = Stroke(line, cap = StrokeCap.Round))
+                    if (running) {
+                        drawRoundRect(Glass.Ink, Offset(7f * u, 6.5f * u), Size(2.2f * u, 7f * u), CornerRadius(u))
+                        drawRoundRect(Glass.Ink, Offset(10.8f * u, 6.5f * u), Size(2.2f * u, 7f * u), CornerRadius(u))
+                    } else {
+                        val tri = androidx.compose.ui.graphics.Path().apply { moveTo(8f * u, 6f * u); lineTo(14.5f * u, 10f * u); lineTo(8f * u, 14f * u); close() }
+                        drawPath(tri, Glass.Ink)
+                    }
+                }
                 c.times > 1 -> {
                     val gap = 360f / c.times * 0.18f
                     for (i in 0 until c.times) drawArc(
@@ -695,7 +654,6 @@ private fun CheckCircle(c: HabitCard, done: Boolean, enabled: Boolean, onClick: 
                 else -> drawCircle(Glass.Ink.copy(alpha = 0.55f), r - line / 2, style = Stroke(line))
             }
             if (done) {
-                val u = size.minDimension / 20f
                 drawLine(Glass.Ink, Offset(5.5f * u, 10.5f * u), Offset(8.5f * u, 13.5f * u), 2.2f * u, StrokeCap.Round)
                 drawLine(Glass.Ink, Offset(8.5f * u, 13.5f * u), Offset(14.5f * u, 6.5f * u), 2.2f * u, StrokeCap.Round)
             }
@@ -711,7 +669,7 @@ private fun CheckCircle(c: HabitCard, done: Boolean, enabled: Boolean, onClick: 
  */
 @Composable
 private fun NamozGroup(
-    board: HabitBoard, today: LocalDate?, onTick: (String) -> Unit, onUntick: (String) -> Unit, onStart: () -> Unit, onMenu: () -> Unit,
+    board: HabitBoard, today: LocalDate?, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit, onStart: () -> Unit, onMenu: () -> Unit,
     centres: MutableMap<String, Offset>, modifier: Modifier = Modifier,
 ) {
     val prayers = board.namoz
@@ -745,8 +703,10 @@ private fun NamozGroup(
             for (c in prayers) key(c.task.id) {
                 val w = c.window
                 val current = board.selected == today && w != null && (if (w.to > w.from) nowT >= w.from && nowT < w.to else nowT >= w.from || nowT < w.to)
+                val rowPress = remember { MutableInteractionSource() }
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = Space.touch).background(if (current) Glass.PrimarySoft.copy(alpha = 0.7f) else Color.Transparent, RoundedCornerShape(14.dp)),
+                    Modifier.fillMaxWidth().heightIn(min = Space.touch).background(if (current) Glass.PrimarySoft.copy(alpha = 0.7f) else Color.Transparent, RoundedCornerShape(14.dp))
+                        .clickable(rowPress, indication = null, onClickLabel = "Open") { onOpen(c.task.id) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CheckCircle(c, c.done, enabled = c.mark != Mark.BEFORE && c.mark != Mark.FUTURE, onClick = { if (c.done) onUntick(c.task.id) else onTick(c.task.id) },
@@ -786,32 +746,6 @@ private fun NamozSheet(prayers: List<HabitCard>, reminders: Set<String>, onToggl
                         Switch(on)
                     }
                 }
-            }
-        }
-        Spacer(Modifier.height(SheetBottom))
-    }
-}
-
-// ── The card's menu ─────────────────────────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun HabitMenuSheet(
-    c: HabitCard, freezesLeft: Int, onDetail: () -> Unit, onReminder: () -> Unit, onFreeze: () -> Unit, onUndo: () -> Unit, onResetTimer: () -> Unit, onDismiss: () -> Unit,
-) {
-    GlassSheet(onDismiss) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
-            EmojiTile(c.emoji, 40.dp)
-            Spacer(Modifier.width(Space.md))
-            Text(c.title, style = MaterialTheme.typography.titleMedium, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
-            Column {
-                MenuRow(TabIcons.CalendarCheck, "Details and history", onDetail)
-                if (c.time != null) MenuRow(TabIcons.Bell, "Reminder", onReminder)
-                if (c.mark == Mark.FROZEN) MenuRow(TabIcons.Undo, "Unfreeze this day", onFreeze)
-                else if (!c.done && !org.pagel.ai.data.habits.isNamoz(c.task)) MenuRow(TabIcons.Sparkles, "Freeze this day · $freezesLeft left", onFreeze)
-                if (c.done || c.taps > 0) MenuRow(TabIcons.Undo, "Take back", onUndo)
-                if (c.minutes != null) MenuRow(TabIcons.Refresh, "Reset the timer", onResetTimer)
             }
         }
         Spacer(Modifier.height(SheetBottom))

@@ -103,5 +103,9 @@ class HabitBoardTest {
         assertEquals(Clear.NONE, b.week[2].clear)  // today, none yet
         assertEquals(Clear.FUTURE, b.week[3].clear)
         assertEquals(10, b.cards.first().minutes)
+        // The all-habits chain (Boss 2026-10-29): a day fills only at 4 of 4; Monday's thin ring is 1 of 4.
+        assertEquals(4 to 4, b.week[1].held to b.week[1].due)
+        assertEquals(1 to 4, b.week[0].held to b.week[0].due)
+        assertEquals(0.25f, b.week[0].progress, 0.001f)
     }
 }

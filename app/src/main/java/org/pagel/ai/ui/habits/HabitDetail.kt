@@ -131,7 +131,9 @@ private fun StatCard(emoji: String, label: String, value: String, sub: String) {
 
 /** A month as a chain calendar, Monday first, with ‹ › to step months. */
 @Composable
-internal fun MonthChain(title: String, days: List<Pair<LocalDate, Mark>>, today: LocalDate, onPrev: () -> Unit, onNext: (() -> Unit)?) {
+internal fun MonthChain(
+    title: String, days: List<Pair<LocalDate, Mark>>, today: LocalDate, onPrev: () -> Unit, onNext: (() -> Unit)?, counts: List<Pair<Int, Int>>? = null,
+) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Column(Modifier.fillMaxWidth().padding(vertical = Space.md, horizontal = Space.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -152,7 +154,7 @@ internal fun MonthChain(title: String, days: List<Pair<LocalDate, Mark>>, today:
             while (at < days.size) {
                 val slots = if (first) 7 - lead else 7
                 val row = days.subList(at, minOf(days.size, at + slots))
-                ChainRow(row, today, null, null, circle = 34.dp, slots = 7, startSlot = if (first) lead else 0)
+                ChainRow(row, today, null, null, circle = 34.dp, slots = 7, startSlot = if (first) lead else 0, counts = counts?.subList(at, at + row.size))
                 at += slots
                 first = false
             }
@@ -172,6 +174,8 @@ fun HabitDetailRoute(id: String, contentPadding: PaddingValues, onBack: () -> Un
     val t = ui.byId[id]
     val ctx = LocalContext.current
     val openTask = LocalTaskOpener.current
+    var bell by remember { mutableStateOf(false) }
+    val grants = rememberReminderGrants(vm)
     if (t == null) { Box(Modifier.fillMaxSize().padding(contentPadding)); return }
     HabitDetail(
         t, ui, contentPadding, onBack = onBack, onEdit = { openTask(id) },
@@ -181,7 +185,13 @@ fun HabitDetailRoute(id: String, contentPadding: PaddingValues, onBack: () -> Un
             runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null)) }
         },
         onEmoji = { vm.setEmoji(id, it) }, onAfter = { vm.setAfter(id, it) }, onIdentity = { vm.setIdentity(id, it) },
+        onReminder = { bell = true }, onTick = vm::tick, onUntick = vm::untick, onTimer = vm::toggleTimer, onResetTimer = vm::resetTimer,
+        onFreeze = vm::freeze, onUnfreeze = vm::unfreeze,
     )
+    if (bell) ReminderSheet(
+        t, on = id in ui.reminders, exact = grants.exact, notify = grants.notify, onToggle = { grants.remind(id, it) }, onTime = { vm.setTime(id, it) },
+        onFixNotify = grants.fixNotify, onFixExact = grants.fixExact,
+    ) { bell = false }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -189,6 +199,8 @@ fun HabitDetailRoute(id: String, contentPadding: PaddingValues, onBack: () -> Un
 fun HabitDetail(
     t: TaskEntity, ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit = {}, onEdit: () -> Unit = {}, onShare: () -> Unit = {},
     onEmoji: (String?) -> Unit = {}, onAfter: (String?) -> Unit = {}, onIdentity: (String?) -> Unit = {},
+    onReminder: () -> Unit = {}, onTick: (String) -> Unit = {}, onUntick: (String) -> Unit = {}, onTimer: (String, Int) -> Unit = { _, _ -> },
+    onResetTimer: (String) -> Unit = {}, onFreeze: (String) -> Unit = {}, onUnfreeze: (String) -> Unit = {},
 ) {
     val today = runCatching { LocalDate.parse(ui.today) }.getOrElse { LocalDate.now() }
     var month by remember { mutableStateOf(YearMonth.from(today)) }
@@ -226,10 +238,14 @@ fun HabitDetail(
             modifier = Modifier.padding(horizontal = Space.textEdge).heightIn(min = Space.touch).pressScale(press)
                 .clickable(press, indication = null, role = Role.Button) { identityOpen = true },
         )
+        TodayActions(t, ui, onReminder, onTick, onUntick, onTimer, onResetTimer, onFreeze, onUnfreeze)
         StatCards(stats)
+        // This habit's own chain (the Habits tab's top bar is the all-habits one): a count habit's partial day shows taps / times.
         val marks = monthMarks(emptyList(), ui.ticks, ui.freezes, month, today, t)
+        val taps = ui.ticks.filter { it.taskId == t.id }.associate { it.day to it.n }
         MonthChain(month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)), marks, today, onPrev = { month = month.minusMonths(1) },
-            onNext = if (month < YearMonth.from(today)) ({ month = month.plusMonths(1) }) else null)
+            onNext = if (month < YearMonth.from(today)) ({ month = month.plusMonths(1) }) else null,
+            counts = marks.map { (d, _) -> (taps[d.toString()] ?: 0) to t.times.coerceAtLeast(1) })
         WeekRows(t, ui, today)
         if (!isNamoz(t)) {
             Section("Emoji")
@@ -257,6 +273,42 @@ fun HabitDetail(
         }
     }
     if (identityOpen) IdentitySheet(pref?.identity.orEmpty(), onSave = { onIdentity(it); identityOpen = false }) { identityOpen = false }
+}
+
+/**
+ * What used to crowd the row (Boss 2026-10-29: "move the reminder thing etc. to the habit's own page"): the reminder,
+ * the clock of a habit with minutes, a streak freeze for today, taking today's tick back. One quiet glass list.
+ */
+@Composable
+private fun TodayActions(
+    t: TaskEntity, ui: HabitsUi, onReminder: () -> Unit, onTick: (String) -> Unit, onUntick: (String) -> Unit, onTimer: (String, Int) -> Unit,
+    onResetTimer: (String) -> Unit, onFreeze: (String) -> Unit, onUnfreeze: (String) -> Unit,
+) {
+    val card = ui.board?.let { it.cards + it.namoz }?.firstOrNull { it.task.id == t.id }
+    val time = t.due?.drop(11)?.trim()?.take(5)?.takeIf(String::isNotEmpty)
+    val on = t.id in ui.reminders
+    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        Column {
+            MenuRow(if (on) TabIcons.BellRing else TabIcons.Bell, "Reminder · " + if (on) "${time ?: "on"}" else "off", onReminder)
+            if (card != null && card.minutes != null && !card.done && card.mark != Mark.FROZEN) {
+                val timer = ui.timers[t.id]
+                val label = when {
+                    timer?.running == true -> "Pause the clock · " + progressText(card, timer, ui.now)
+                    timer != null -> "Go on · " + progressText(card, timer, ui.now)
+                    else -> "Start ${card.minutes} min"
+                }
+                MenuRow(TabIcons.Clock, label) { onTimer(t.id, card.minutes) }
+                if (timer != null) MenuRow(TabIcons.Refresh, "Reset the clock") { onResetTimer(t.id) }
+                MenuRow(TabIcons.Check, "Done without the clock") { onTick(t.id) }
+            }
+            if (card != null && !card.done && !isNamoz(t)) {
+                val left = ui.board?.freezesLeft ?: 0
+                if (card.mark == Mark.FROZEN) MenuRow(TabIcons.Undo, "Unfreeze today") { onUnfreeze(t.id) }
+                else MenuRow(TabIcons.Sparkles, "Freeze today · $left left this month") { onFreeze(t.id) }
+            }
+            if (card != null && (card.done || card.taps > 0)) MenuRow(TabIcons.Undo, "Take back today's tick") { onUntick(t.id) }
+        }
+    }
 }
 
 @Composable
@@ -355,8 +407,11 @@ fun HabitHistory(ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit
                     // Namoz counts from 1 November: earlier days are blank, never missed.
                     d to if (namoz && !Namoz.counts(d.toString())) Mark.BEFORE else m
                 }
+                val taps = ui.ticks.associate { "${it.day} ${it.taskId}" to it.n }
+                val frozen = ui.freezes.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
                 MonthChain(month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)), marks, today, onPrev = { month = month.minusMonths(1) },
-                    onNext = if (month < YearMonth.from(today)) ({ month = month.plusMonths(1) }) else null)
+                    onNext = if (month < YearMonth.from(today)) ({ month = month.plusMonths(1) }) else null,
+                    counts = marks.map { (d, _) -> org.pagel.ai.data.habits.heldOf(if (namoz) prayers else habits, taps, frozen, d) })
             }
             1 -> Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
                 Column(Modifier.padding(vertical = Space.sm)) {

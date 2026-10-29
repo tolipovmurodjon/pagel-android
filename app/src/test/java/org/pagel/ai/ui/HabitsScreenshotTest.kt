@@ -10,13 +10,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -108,15 +113,17 @@ class HabitsScreenshotTest {
         compose.onNodeWithText("0 / 10 min").assertIsDisplayed()
         // Four days in a row, today not done yet: the flame says 4.
         compose.onNodeWithContentDescription("4 in a row").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Reminder: Stretch for ten minutes").assertIsDisplayed()
-        // Stacked: the Inbox habit follows Stretch.
+        // Boss 2026-10-29: no bell, no "•••", no chips on the row; the reminder lives on the habit's page.
+        compose.onAllNodesWithContentDescription("Reminder: Stretch for ten minutes").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("More: Stretch for ten minutes").assertCountEquals(0)
+        compose.onAllNodesWithText("Never miss twice").assertCountEquals(0)
         compose.onNodeWithText("Finished").assertIsDisplayed()
     }
 
     @Test fun morningAtLargeFont() {
         show(1.5f) { HabitsScreen(ui(), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-360x800-font-1.5.png")
-        compose.onNodeWithContentDescription("Done: Stretch for ten minutes").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Start: Stretch for ten minutes").assertIsDisplayed()
     }
 
     @Test fun afternoonWithACountHabitAndARunningTimer() {
@@ -135,14 +142,94 @@ class HabitsScreenshotTest {
         compose.onNodeWithText("3:20 / 10 min").assertIsDisplayed()
     }
 
-    @Test fun tickingCallsBackAndTheCardStartsTheTimer() {
+    @Test fun theCheckTicksThePlayRingRunsTheClockAndTheRowOpensThePage() {
         var ticked = ""
         var timed = ""
-        show { HabitsScreen(ui(), pad, onTick = { ticked = it }, onTimer = { id, m -> timed = "$id $m" }) }
-        compose.onNodeWithContentDescription("Done: Stretch for ten minutes").performClick()
-        assertEquals("h1", ticked)
-        compose.onNodeWithText("Stretch for ten minutes").performClick()
+        var opened = ""
+        show { HabitsScreen(ui(), pad, onTick = { ticked = it }, onTimer = { id, m -> timed = "$id $m" }, onOpen = { opened = it }) }
+        compose.onNodeWithContentDescription("Done: Drink water").performClick()
+        assertEquals("h5", ticked)
+        compose.onNodeWithContentDescription("Start: Stretch for ten minutes").performClick()
         assertEquals("h1 10", timed)
+        compose.onNodeWithText("Stretch for ten minutes").performClick()
+        assertEquals("h1", opened)
+    }
+
+    /**
+     * Boss 2026-10-29 "the spacing is different for all": one rhythm. Every habit row has the same height and every gap
+     * between rows is the same, with a long title, a count, a timer and a done row, at 1x and 1.5x font.
+     */
+    @Test fun rowsHaveOneHeightAndOneGap() {
+        val long = habit("h7", "Log today's food and sugar, then shut down the kitchen for the night", "2026-10-28 08:00", times = 3)
+        show { HabitsScreen(ui(h = habits + long), pad) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-rows.png")
+        assertOneRhythm()
+    }
+
+    @Test fun rowsHaveOneHeightAndOneGapAtLargeFont() {
+        val long = habit("h7", "Log today's food and sugar, then shut down the kitchen for the night", "2026-10-28 08:00", times = 3)
+        show(1.5f) { HabitsScreen(ui(h = habits + long), pad) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-rows-font-1.5.png")
+        assertOneRhythm()
+    }
+
+    private fun assertOneRhythm() {
+        val rows = compose.onAllNodesWithTag("habit-row", useUnmergedTree = true).fetchSemanticsNodes().map { it.boundsInRoot }.sortedBy { it.top }
+        assertTrue("at least 3 rows on screen, got ${rows.size}", rows.size >= 3)
+        val h = rows.map { it.height }
+        assertTrue("rows have one height: $h", h.all { kotlin.math.abs(it - h[0]) < 0.6f })
+        val gaps = rows.zipWithNext { a, b -> b.top - a.bottom }
+        assertTrue("rows have one gap: $gaps", gaps.all { kotlin.math.abs(it - gaps[0]) < 0.6f })
+    }
+
+    /** Boss 2026-10-29: "at most 5 things per row": the check, the emoji, the title, the progress, the streak. */
+    @Test fun atMostFiveThingsPerRow() {
+        show { HabitsScreen(ui(), pad) }
+        val parts = setOf("row-tick", "row-emoji", "row-title", "row-progress", "row-streak")
+        fun count(n: androidx.compose.ui.semantics.SemanticsNode): Int =
+            (if (n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.TestTag) in parts) 1 else 0) + n.children.sumOf { count(it) }
+        fun clickables(n: androidx.compose.ui.semantics.SemanticsNode): Int =
+            (if (n.config.contains(androidx.compose.ui.semantics.SemanticsActions.OnClick)) 1 else 0) + n.children.sumOf { clickables(it) }
+        val rows = compose.onAllNodesWithTag("habit-row", useUnmergedTree = true).fetchSemanticsNodes()
+        assertTrue(rows.isNotEmpty())
+        for (r in rows) {
+            assertTrue("a row shows ${count(r)} things", count(r) in 3..5)
+            // Two targets only: the check and the row itself (no bell, no menu, no chip).
+            assertTrue("a row has ${clickables(r)} tap targets", clickables(r) <= 2)
+        }
+    }
+
+    /**
+     * The top bar is the ALL-HABITS chain (Boss 2026-10-29): Monday 26 held 4 of the 5 habits due, so it is a thin
+     * ring, not a fill; nothing is a full day this week yet.
+     */
+    @Test fun theTopBarIsTheAllHabitsChain() {
+        show { HabitsScreen(ui(), pad) }
+        compose.onAllNodesWithContentDescription("Monday 26 October")[0].assertStateDescription("4 of 5 done")
+        compose.onAllNodesWithContentDescription("Wednesday 28 October")[0].assertStateDescription("1 of 5 done")
+    }
+
+    /** The chain as one connected shape: a 5-day streak joined by one bar, a gap, a thin partial ring, today a ring. */
+    @Test fun aFiveDayStreakAndAGap() {
+        val oct = (1..31).map { LocalDate.of(2026, 10, it) }
+        val marks = oct.map { d ->
+            d to when (d.dayOfMonth) {
+                in 20..24 -> org.pagel.ai.data.habits.Mark.DONE
+                25 -> org.pagel.ai.data.habits.Mark.MISSED
+                26 -> org.pagel.ai.data.habits.Mark.PARTIAL
+                27 -> org.pagel.ai.data.habits.Mark.DONE
+                28 -> org.pagel.ai.data.habits.Mark.TODAY
+                in 29..31 -> org.pagel.ai.data.habits.Mark.FUTURE
+                else -> org.pagel.ai.data.habits.Mark.MISSED
+            }
+        }
+        val counts = oct.map { if (it.dayOfMonth == 26) 2 to 4 else 0 to 4 }
+        show { org.pagel.ai.ui.habits.MonthChain("October 2026", marks, LocalDate.parse(today), {}, null, counts) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-chain-streak-and-gap.png")
+        // 20-24 join (4 bars), 25 breaks it, 26 is partial so it never joins; 27 stands alone.
+        assertEquals(listOf(true, true, true, true, false, false, false, false), org.pagel.ai.data.habits.links(marks.subList(19, 27).map { it.second }))
+        compose.onNodeWithContentDescription("Monday 26 October").assertStateDescription("2 of 4 done")
+        compose.onNodeWithContentDescription("Saturday 25 October").assertStateDescription("Missed")
     }
 
     @Test fun lookingBackAtAPastDayShowsTheTodayPill() {
@@ -195,6 +282,18 @@ class HabitsScreenshotTest {
         assertTrue(started)
     }
 
+    @Test fun theHabitsPageHoldsTheReminderAndTheClock() {
+        var bell = false
+        var timed = ""
+        show { HabitDetail(habits[0], ui(), pad, onReminder = { bell = true }, onTimer = { id, m -> timed = "$id $m" }) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-detail-actions.png")
+        compose.onNodeWithText("Reminder · 07:30").performClick()
+        assertTrue(bell)
+        compose.onNodeWithText("Start 10 min").performClick()
+        assertEquals("h1 10", timed)
+        compose.onNodeWithText("Freeze today · 1 left this month").assertExists()
+    }
+
     @Test fun theHabitsPage() {
         show { HabitDetail(habits[1], ui(), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-detail.png")
@@ -235,5 +334,10 @@ class HabitsScreenshotTest {
         show(1.5f) { Column(Modifier.padding(top = 16.dp)) { ReminderContent(habits[3], on = true, exact = false, onToggle = {}, onTime = {}) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-reminder-font-1.5.png")
         compose.onNodeWithContentDescription("Exact time · Allow").assertIsDisplayed()
+    }
+
+    private fun SemanticsNodeInteraction.assertStateDescription(want: String) {
+        val got = fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
+        assertEquals(want, got)
     }
 }

@@ -32,7 +32,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Round D 0b: PAGEL's launcher icon is the mint glass P (never the default robot), drawn from the real adaptive icon at
+ * Round D 0b: PAGEL's launcher icon is the liquid-glass P (never the default robot), drawn from the real adaptive icon at
  * 48 and 108 dp, round and squircle masks, on a light and a dark wallpaper, plus the themed (monochrome) layer.
  */
 @RunWith(AndroidJUnit4::class)
@@ -46,8 +46,8 @@ class AppIconScreenshotTest {
         val icon = ctx.getDrawable(R.mipmap.ic_launcher)!!
         assertTrue("an adaptive icon, not a bitmap robot", icon is AdaptiveIconDrawable)
         val full = icon.toBitmap(324, 324).asImageBitmap()
-        val fg = ctx.getDrawable(R.drawable.ic_launcher_foreground)!!.toBitmap(324, 324).asImageBitmap()
-        val bg = ctx.getDrawable(R.drawable.ic_launcher_background)!!.toBitmap(324, 324).asImageBitmap()
+        val fg = ctx.getDrawable(R.mipmap.ic_launcher_foreground)!!.toBitmap(324, 324).asImageBitmap()
+        val bg = ctx.getDrawable(R.mipmap.ic_launcher_background)!!.toBitmap(324, 324).asImageBitmap()
         val mono = ctx.getDrawable(R.drawable.ic_launcher_monochrome)!!.toBitmap(324, 324).asImageBitmap()
         compose.setContent {
             Column {
