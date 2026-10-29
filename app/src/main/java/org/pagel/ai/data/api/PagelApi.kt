@@ -80,6 +80,12 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(CompletedResponse.serializer(), it) } }
     }
 
+    /** Phase 8's Calories widget: today's measure of each habit (unit, goal) and today's totals, one day of data only. */
+    suspend fun habitMeasures(baseUrl: String, token: String): Outcome<HabitMeasuresResponse> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/habits?days=1")), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(HabitMeasuresResponse.serializer(), it) } }
+    }
+
     suspend fun habits(baseUrl: String, token: String, days: Int): Outcome<HabitsResponse> = call {
         val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/habits?days=$days")), token).build()
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(HabitsResponse.serializer(), it) } }
