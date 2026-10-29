@@ -587,7 +587,8 @@ internal fun HabitCardRow(
                         progressText(c, timer, now, done), maxLines = 1, overflow = TextOverflow.Ellipsis, color = Glass.Muted,
                         // One line height for words and numbers, so a finished row is exactly as tall as an open one.
                         style = (if (done || c.mark == Mark.FROZEN) MaterialTheme.typography.labelMedium else Glass.NumberText.copy(fontSize = 13.sp)).copy(lineHeight = 18.sp),
-                        modifier = Modifier.testTag(RowPart.PROGRESS),
+                        // A fixed line box (it scales with the font): words and the number face have different metrics.
+                        modifier = Modifier.height(with(androidx.compose.ui.platform.LocalDensity.current) { 18.sp.toDp() }).testTag(RowPart.PROGRESS),
                     )
                 }
                 if (c.streak > 0) Row(

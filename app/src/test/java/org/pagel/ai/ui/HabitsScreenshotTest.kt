@@ -230,7 +230,7 @@ class HabitsScreenshotTest {
         // 20-24 join (4 bars), 25 breaks it, 26 is partial so it never joins; 27 stands alone.
         assertEquals(listOf(true, true, true, true, false, false, false, false), org.pagel.ai.data.habits.links(marks.subList(19, 27).map { it.second }))
         compose.onNodeWithContentDescription("Monday 26 October").assertStateDescription("2 of 4 done")
-        compose.onNodeWithContentDescription("Saturday 25 October").assertStateDescription("Missed")
+        compose.onNodeWithContentDescription("Sunday 25 October").assertStateDescription("Missed")
     }
 
     @Test fun lookingBackAtAPastDayShowsTheTodayPill() {
