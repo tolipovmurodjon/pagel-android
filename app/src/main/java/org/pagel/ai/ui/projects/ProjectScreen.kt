@@ -157,6 +157,8 @@ data class ProjectUi(
     val others: List<ProjectEntity> = emptyList(),
     /** Days from its first finished task to today: the finish moment's "over N days". */
     val days: Int? = null,
+    /** Open habits in this project: kept out of [groups], [open] and the bar; shown as one quiet line. */
+    val habits: Int = 0,
 ) {
     val next: ProjectRow? get() = groups.firstOrNull { it.now }?.rows?.firstOrNull() ?: groups.firstOrNull { it.rows.isNotEmpty() }?.rows?.firstOrNull()
     val total: Int get() = open + done
@@ -192,7 +194,11 @@ class ProjectViewModel @Inject constructor(
     private val name = MutableStateFlow<String?>(null)
 
     val ui: StateFlow<ProjectUi> = name.filterNotNull().flatMapLatest { n ->
-        combine(tasks.projectTasks(n), session.projects()) { list, all -> list to all }.flatMapLatest { (list, all) ->
+        combine(tasks.projectTasks(n), session.projects()) { all0, all -> all0 to all }.flatMapLatest { (all0, all) ->
+            // Habits never end, so they stay out of the doing list, the bar and Finish (Boss: "Now · 13" of daily habits,
+            // a 0/13 bar that can never fill). The page shows one quiet "N habits live in Habits" line instead.
+            val habits = all0.count { it.every != null && it.status == "open" }
+            val list = all0.filter { it.every == null }
             val groups = projectGroups(list)
             val next = groups.firstOrNull { it.now }?.rows?.firstOrNull() ?: groups.firstOrNull { it.rows.isNotEmpty() }?.rows?.firstOrNull()
             (if (next != null) tasks.steps(next.id) else flowOf(emptyList())).let { steps ->
@@ -204,7 +210,7 @@ class ProjectViewModel @Inject constructor(
                         done = list.count { it.status == "done" }, step = s.firstOrNull { !it.done }?.let { it.title?.takeIf(String::isNotBlank) ?: it.text },
                         finishedAt = p?.finishedAt, shipped = p?.shipped, goals = p?.goals?.let(::goalsOf).orEmpty(),
                         others = all.filter { it.name != n && !it.archived && it.finishedAt == null },
-                        days = projects.daysTaken(list),
+                        days = projects.daysTaken(list), habits = habits,
                     )
                 }
             }
@@ -331,7 +337,12 @@ private fun Head(ui: ProjectUi, actions: ProjectActions) {
         Column(Modifier.weight(1f)) {
             InlineField(ui.title.ifEmpty { "Project" }, "Project name", "Project name", MaterialTheme.typography.headlineLarge.copy(color = Glass.Ink),
                 modifier = Modifier.semantics { heading() }, onSave = actions.onRename)
-            if (!ui.loading) Text(if (ui.total == 0) "No plan yet" else "${ui.now} now · ${ui.open} open in all", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
+            if (!ui.loading) Text(when {
+                ui.total == 0 && ui.habits > 0 -> "🔁 ${ui.habits} habit${if (ui.habits == 1) "" else "s"} · in Habits"
+                ui.total == 0 -> "No plan yet"
+                ui.now == ui.open || ui.now == 0 -> "${ui.open} open" + if (ui.habits > 0) " · 🔁 ${ui.habits} in Habits" else ""
+                else -> "${ui.now} now · ${ui.open} open" + if (ui.habits > 0) " · 🔁 ${ui.habits}" else ""
+            }, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
         }
         GlassIconButton(TabIcons.More, "Project settings", onClick = actions.onSettings)
     }
