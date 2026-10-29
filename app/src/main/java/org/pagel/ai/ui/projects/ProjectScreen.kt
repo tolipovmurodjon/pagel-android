@@ -293,6 +293,9 @@ fun ProjectScreen(
     var stripTop by remember { mutableFloatStateOf(Float.MAX_VALUE) }
     val tiles = remember { mutableStateMapOf<String, ClosedFloatingPointRange<Float>>() }
     val target = if (dragging != null && pointer.isSpecified && pointer.y >= stripTop) tiles.entries.firstOrNull { pointer.x in it.value }?.key else null
+    // Read at drop time: the gesture keeps the onDrop it got at lift (pointerInput keyed by id), so a captured
+    // `target` was always null there and every drop became a reorder (CI 40945211358 sent sort, never project).
+    fun hit(): String? = if (dragging != null && pointer.isSpecified && pointer.y >= stripTop) tiles.entries.firstOrNull { pointer.x in it.value }?.key else null
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.md)) {
             item(key = "head", contentType = "head") { Head(ui, actions) }
@@ -305,7 +308,7 @@ fun ProjectScreen(
                 next != null -> item(key = "next", contentType = "card") {
                     NextCard(next, ui.step, today, actions,
                         onLift = { id, at -> dragging = id; pointer = at }, onDragAt = { pointer = it },
-                        onDrop = { id -> val t = target; dragging = null; pointer = Offset.Unspecified; if (t != null) { actions.onMoveTo(id, t); true } else false })
+                        onDrop = { id -> val t = hit(); dragging = null; pointer = Offset.Unspecified; if (t != null) { actions.onMoveTo(id, t); true } else false })
                 }
                 else -> item(key = "first", contentType = "card") { FirstStepCard(ui.title, actions) }
             }
@@ -313,7 +316,7 @@ fun ProjectScreen(
                 NowList(
                     nowGroup?.title ?: "Tasks", nowRows, ui.title, today, actions,
                     onLift = { id, at -> dragging = id; pointer = at }, onDragAt = { pointer = it },
-                    onDrop = { id -> val t = target; dragging = null; pointer = Offset.Unspecified; if (t != null) { actions.onMoveTo(id, t); true } else false },
+                    onDrop = { id -> val t = hit(); dragging = null; pointer = Offset.Unspecified; if (t != null) { actions.onMoveTo(id, t); true } else false },
                     done = nowGroup?.done.orEmpty(),
                 )
             }
