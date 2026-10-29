@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -171,12 +172,12 @@ class HabitsScreenshotTest {
         val long = habit("h7", "Log today's food and sugar, then shut down the kitchen for the night", "2026-10-28 08:00", times = 3)
         show(1.5f) { HabitsScreen(ui(h = habits + long), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-rows-font-1.5.png")
-        assertOneRhythm()
+        assertOneRhythm(min = 2)
     }
 
-    private fun assertOneRhythm() {
+    private fun assertOneRhythm(min: Int = 3) {
         val rows = compose.onAllNodesWithTag("habit-row", useUnmergedTree = true).fetchSemanticsNodes().map { it.boundsInRoot }.sortedBy { it.top }
-        assertTrue("at least 3 rows on screen, got ${rows.size}", rows.size >= 3)
+        assertTrue("at least $min rows on screen, got ${rows.size}", rows.size >= min)
         val h = rows.map { it.height }
         assertTrue("rows have one height: $h", h.all { kotlin.math.abs(it - h[0]) < 0.6f })
         val gaps = rows.zipWithNext { a, b -> b.top - a.bottom }
@@ -201,13 +202,49 @@ class HabitsScreenshotTest {
     }
 
     /**
-     * The top bar is the ALL-HABITS chain (Boss 2026-10-29): Monday 26 held 4 of the 5 habits due, so it is a thin
-     * ring, not a fill; nothing is a full day this week yet.
+     * The top bar is the ALL-HABITS chain (Boss 2026-10-29), each habit counted from its own start: on Monday 26 the
+     * four habits that had started were all done (full); Tuesday 27 held 4 of 5 (a thin ring); today 1 of 5.
      */
     @Test fun theTopBarIsTheAllHabitsChain() {
         show { HabitsScreen(ui(), pad) }
-        compose.onAllNodesWithContentDescription("Monday 26 October")[0].assertStateDescription("4 of 5 done")
+        compose.onAllNodesWithContentDescription("Monday 26 October")[0].assertStateDescription("Done")
+        compose.onAllNodesWithContentDescription("Tuesday 27 October")[0].assertStateDescription("4 of 5 done")
         compose.onAllNodesWithContentDescription("Wednesday 28 October")[0].assertStateDescription("1 of 5 done")
+    }
+
+    /**
+     * Checker 2026-10-29 #2, from real ticks and a freeze through habitBoard (not hand-made marks): Mon-Wed full and
+     * joined, Thursday half done with a freeze on the done habit = a ring that never links, today soft.
+     */
+    @Test fun theChainFromRealTicksAndAFreeze() {
+        val h = listOf(habit("a", "Stretch", "2026-10-19 07:30"), habit("b", "Drink water", "2026-10-19"))
+        val sunday = "2026-11-01"
+        val t = listOf("2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28").flatMap { d -> listOf(HabitTickEntity(d, "a"), HabitTickEntity(d, "b")) } +
+            HabitTickEntity("2026-10-29", "a")
+        val f = listOf(HabitFreezeEntity("2026-10-29", "a"))
+        val u = HabitsUi(
+            loading = false, today = "2026-10-31", day = habitsDay(h, t, "2026-10-31"),
+            board = habitBoard(h, t, emptyList(), f, LocalDate.parse("2026-10-31")), part = Part.MORNING, byId = h.associateBy { it.id }, ticks = t, freezes = f,
+        )
+        show { HabitsScreen(u, pad) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-chain-from-ticks.png")
+        compose.onAllNodesWithContentDescription("Wednesday 28 October")[0].assertStateDescription("Done")
+        compose.onAllNodesWithContentDescription("Thursday 29 October")[0].assertStateDescription("1 of 2 done")
+        // Sunday 25 was full too: the bar runs in from last week.
+        assertTrue(u.board!!.chainIn)
+        assertEquals(sunday, u.board!!.week.last().date.toString())
+    }
+
+    /** Checker #4: a title gets two lines, never cut, at 1.5x font, and every row keeps one height. */
+    @Test fun titlesWrapToTwoLinesAtLargeFont() {
+        show(1.5f) { HabitsScreen(ui(), pad) }
+        val node = compose.onNodeWithText("Stretch for ten minutes", useUnmergedTree = true).fetchSemanticsNode()
+        val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        node.config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+        val l = layouts.first()
+        assertTrue("two lines, got ${l.lineCount}", l.lineCount == 2)
+        assertTrue("not cut", (0 until l.lineCount).none { l.isLineEllipsized(it) })
+        assertOneRhythm(min = 2)
     }
 
     /** The chain as one connected shape: a 5-day streak joined by one bar, a gap, a thin partial ring, today a ring. */
@@ -259,6 +296,10 @@ class HabitsScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-before.png")
         compose.onNodeWithText("Namoz").assertIsDisplayed()
         compose.onNodeWithText("From 1 November").assertIsDisplayed()
+        // One quiet row (checker #5): the prayers show only when it is opened.
+        compose.onAllNodesWithText("Bomdod").assertCountEquals(0)
+        compose.onNodeWithText("Namoz").performClick()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-open.png")
         compose.onNodeWithText("Bomdod").assertIsDisplayed()
     }
 
@@ -273,7 +314,6 @@ class HabitsScreenshotTest {
         show { HabitsScreen(u, pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-3-of-5.png")
         compose.onNodeWithContentDescription("3 of 5 habits done today").assertIsDisplayed()
-        compose.onNodeWithText("Five a day").assertIsDisplayed()
     }
 
     @Test fun namozNotStartedYetOffersOneButton() {
@@ -288,11 +328,16 @@ class HabitsScreenshotTest {
         var timed = ""
         show { HabitDetail(habits[0], ui(), pad, onReminder = { bell = true }, onTimer = { id, m -> timed = "$id $m" }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-detail-actions.png")
-        compose.onNodeWithText("Reminder · 07:30").performClick()
+        // Chips, stats and the month's chain come first (checker #8); the actions sit under them.
+        compose.onAllNodesWithText("🔔 07:30").assertCountEquals(0)
+        compose.onNodeWithText("Reminder · 07:30").performScrollTo().performClick()
         assertTrue(bell)
-        compose.onNodeWithText("Start 10 min").performClick()
+        compose.onNodeWithText("Start 10 min").performScrollTo().performClick()
         assertEquals("h1 10", timed)
         compose.onNodeWithText("Freeze today · 1 left this month").assertExists()
+        val chain = compose.onNodeWithText("October 2026").fetchSemanticsNode().boundsInRoot.top
+        val actions = compose.onNodeWithText("Reminder · 07:30").fetchSemanticsNode().boundsInRoot.top
+        assertTrue("the month's chain sits above the actions", chain < actions)
     }
 
     @Test fun theHabitsPage() {

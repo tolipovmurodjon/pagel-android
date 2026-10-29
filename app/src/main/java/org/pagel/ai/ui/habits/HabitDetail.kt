@@ -185,8 +185,9 @@ fun HabitDetailRoute(id: String, contentPadding: PaddingValues, onBack: () -> Un
             runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null)) }
         },
         onEmoji = { vm.setEmoji(id, it) }, onAfter = { vm.setAfter(id, it) }, onIdentity = { vm.setIdentity(id, it) },
-        onReminder = { bell = true }, onTick = vm::tick, onUntick = vm::untick, onTimer = vm::toggleTimer, onResetTimer = vm::resetTimer,
-        onFreeze = vm::freeze, onUnfreeze = vm::unfreeze,
+        onReminder = { bell = true }, onTick = { vm.tickOn(it, LocalDate.parse(ui.today)) }, onUntick = { vm.untick(it, onToday = true) },
+        onTimer = vm::toggleTimer, onResetTimer = vm::resetTimer,
+        onFreeze = { vm.freeze(it, onToday = true) }, onUnfreeze = { vm.unfreeze(it, onToday = true) },
     )
     if (bell) ReminderSheet(
         t, on = id in ui.reminders, exact = grants.exact, notify = grants.notify, onToggle = { grants.remind(id, it) }, onTime = { vm.setTime(id, it) },
@@ -226,7 +227,6 @@ fun HabitDetail(
             val part = time?.let { runCatching { org.pagel.ai.data.habits.partAt(java.time.LocalTime.parse(it)).label }.getOrNull() } ?: "Anytime"
             Chip(part)
             Chip(Repeat.label(t.every.orEmpty()))
-            if (time != null) Chip("🔔 $time")
             minutesOf(title, pref?.minutes)?.let { Chip("$it min") }
             if (t.times > 1) Chip("${t.times}× a day")
         }
@@ -238,7 +238,6 @@ fun HabitDetail(
             modifier = Modifier.padding(horizontal = Space.textEdge).heightIn(min = Space.touch).pressScale(press)
                 .clickable(press, indication = null, role = Role.Button) { identityOpen = true },
         )
-        TodayActions(t, ui, onReminder, onTick, onUntick, onTimer, onResetTimer, onFreeze, onUnfreeze)
         StatCards(stats)
         // This habit's own chain (the Habits tab's top bar is the all-habits one): a count habit's partial day shows taps / times.
         val marks = monthMarks(emptyList(), ui.ticks, ui.freezes, month, today, t)
@@ -246,6 +245,7 @@ fun HabitDetail(
         MonthChain(month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)), marks, today, onPrev = { month = month.minusMonths(1) },
             onNext = if (month < YearMonth.from(today)) ({ month = month.plusMonths(1) }) else null,
             counts = marks.map { (d, _) -> (taps[d.toString()] ?: 0) to t.times.coerceAtLeast(1) })
+        TodayActions(t, ui, onReminder, onTick, onUntick, onTimer, onResetTimer, onFreeze, onUnfreeze)
         WeekRows(t, ui, today)
         if (!isNamoz(t)) {
             Section("Emoji")
@@ -317,11 +317,11 @@ private fun Section(text: String) {
 }
 
 @Composable
-private fun Chip(text: String, on: Boolean = false, onClick: (() -> Unit)? = null) {
+private fun Chip(text: String, on: Boolean = false, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     val press = remember { MutableInteractionSource() }
     // A Box centres the word in the 48 dp target (a Text with heightIn sat on its top edge).
     Box(
-        Modifier.heightIn(min = if (onClick != null) Space.touch else 32.dp).clip(CircleShape)
+        modifier.heightIn(min = if (onClick != null) Space.touch else 32.dp).clip(CircleShape)
             .background(if (on) Glass.PrimarySoft else Color.White.copy(alpha = 0.7f))
             .border(1.dp, if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.08f), CircleShape)
             .then(if (onClick != null) Modifier.pressScale(press).clickable(press, indication = null, role = Role.RadioButton, onClick = onClick).semantics { selected = on } else Modifier)
@@ -394,7 +394,7 @@ fun HabitHistory(ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit
             Text("History", style = MaterialTheme.typography.headlineMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs).semantics { heading() })
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            for ((i, name) in listOf("Calendar", "All habits", "Achievements").withIndex()) Chip(name, on = tab == i) { tab = i }
+            for ((i, name) in listOf("Calendar", "All habits", "Badges").withIndex()) Chip(name, on = tab == i, modifier = Modifier.weight(1f)) { tab = i }
         }
         StatCards(statsOf(habits, ui.ticks, ui.freezes, today))
         when (tab) {
@@ -411,7 +411,10 @@ fun HabitHistory(ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit
                 val frozen = ui.freezes.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
                 MonthChain(month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)), marks, today, onPrev = { month = month.minusMonths(1) },
                     onNext = if (month < YearMonth.from(today)) ({ month = month.plusMonths(1) }) else null,
-                    counts = marks.map { (d, _) -> org.pagel.ai.data.habits.heldOf(if (namoz) prayers else habits, taps, frozen, d) })
+                    counts = (if (namoz) prayers else habits).let { list ->
+                        val starts = org.pagel.ai.data.habits.startsOf(list, ui.ticks, today)
+                        marks.map { (d, _) -> org.pagel.ai.data.habits.heldOf(list, taps, frozen, d, starts) }
+                    })
             }
             1 -> Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
                 Column(Modifier.padding(vertical = Space.sm)) {
