@@ -21,6 +21,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -323,34 +324,89 @@ class HabitsScreenshotTest {
         assertTrue(started)
     }
 
-    @Test fun theHabitsPageHoldsTheReminderAndTheClock() {
-        var bell = false
-        var timed = ""
-        show { HabitDetail(habits[0], ui(), pad, onReminder = { bell = true }, onTimer = { id, m -> timed = "$id $m" }) }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-detail-actions.png")
-        // Chips, stats and the month's chain come first (checker #8); the actions sit under them.
-        compose.onAllNodesWithText("🔔 07:30").assertCountEquals(0)
-        compose.onNodeWithText("Reminder · 07:30").performScrollTo().performClick()
-        assertTrue(bell)
-        compose.onNodeWithText("Start 10 min").performScrollTo().performClick()
-        assertEquals("h1 10", timed)
-        compose.onNodeWithText("Freeze today · 1 left this month").assertExists()
-        val chain = compose.onNodeWithText("October 2026").fetchSemanticsNode().boundsInRoot.top
-        val actions = compose.onNodeWithText("Reminder · 07:30").fetchSemanticsNode().boundsInRoot.top
-        assertTrue("the month's chain sits above the actions", chain < actions)
+    /** Boss 2026-10-29: the page = header → stats → the month; every action sits behind ⋮ (and the bell chip). */
+    @Test fun theHabitsPageIsMainlyStats() {
+        var at: org.pagel.ai.ui.habits.SheetAt? = null
+        show { HabitDetail(habits[0], ui(), pad, onSettings = { at = it }) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-page-360x800.png")
+        compose.onNode(hasTestTag("habit-stats")).assertIsDisplayed()
+        compose.onNodeWithText("October 2026").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("Reminder · 07:30").assertCountEquals(0)
+        compose.onAllNodesWithText("Freeze today · 1 left this month").assertCountEquals(0)
+        compose.onAllNodesWithText("Emoji").assertCountEquals(0)
+        // The bell chip is the quick glance (h1's reminder is on) and opens the sheet at Reminder.
+        compose.onNodeWithText("🔔 07:30").performClick()
+        assertEquals(org.pagel.ai.ui.habits.SheetAt.REMINDER, at)
+        compose.onNodeWithContentDescription("Habit settings").performClick()
+        assertEquals(org.pagel.ai.ui.habits.SheetAt.TOP, at)
     }
 
-    @Test fun theHabitsPage() {
+    @Test fun theHabitsPageShowsItsRecipe() {
         show { HabitDetail(habits[1], ui(), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-detail.png")
         compose.onNodeWithText("Go through five saves in your Inbox").assertIsDisplayed()
-        compose.onNodeWithText("“I'm someone who reads what he saves”").assertIsDisplayed()
-        compose.onNodeWithText("October 2026").assertIsDisplayed()
+        // h2 comes after h1: "After 🧘 Stretch for ten minutes → 📥 Go through five saves in your Inbox".
+        compose.onNodeWithText("Stretch for ten minutes →", substring = true).assertIsDisplayed()
     }
 
     @Test fun theHabitsPageAtLargeFont() {
         show(1.5f) { HabitDetail(habits[0], ui(), pad) }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-detail-font-1.5.png")
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-page-font-1.5.png")
+        compose.onNode(hasTestTag("habit-stats")).assertIsDisplayed()
+    }
+
+    /** Stats, state 1: a habit 3 days old shows when the chart comes, one bar, no "0 / 0" rows. */
+    @Test fun statsForANewHabit() {
+        val fresh = habit("n1", "Read 10 pages", "2026-10-26 21:00")
+        show { org.pagel.ai.ui.habits.StatsCard(org.pagel.ai.data.habits.habitWeeks(fresh, listOf(HabitTickEntity("2026-10-27", "n1")), emptyList(), LocalDate.parse(today))) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-stats-new.png")
+        compose.onNodeWithText("Stats show up after a week · 4 days to go").assertIsDisplayed()
+        compose.onAllNodesWithText("0 / 0").assertCountEquals(0)
+    }
+
+    private val twelveWeeks: Pair<TaskEntity, List<HabitTickEntity>> = run {
+        val h = habit("t12", "Stretch", "2026-08-01 07:30")
+        val start = LocalDate.parse("2026-08-03")
+        // Most days done, a weaker stretch in September, a full last week.
+        val t = (0L..86L).map { start.plusDays(it) }.filter { d -> !(d.monthValue == 9 && d.dayOfMonth % 3 == 0) && d.dayOfMonth % 7 != 0 }
+            .map { HabitTickEntity(it.toString(), "t12") }
+        h to t
+    }
+
+    /** Stats, state 2: 12 weeks of data, the strip over the bars. */
+    @Test fun statsForTwelveWeeks() {
+        val (h, t) = twelveWeeks
+        val w = org.pagel.ai.data.habits.habitWeeks(h, t, emptyList(), LocalDate.parse(today))
+        assertEquals(12, w.bars.size)
+        show { org.pagel.ai.ui.habits.StatsCard(w) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-stats-12-weeks.png")
+        compose.onNodeWithText("Average ${w.average} % · Best week ${w.bestWeek} %").assertIsDisplayed()
+    }
+
+    /** Stats, state 3: the same at 1.5x font, no sideways scroll, the three numbers fit 360 dp. */
+    @Test fun statsForTwelveWeeksAtLargeFont() {
+        val (h, t) = twelveWeeks
+        show(1.5f) { org.pagel.ai.ui.habits.StatsCard(org.pagel.ai.data.habits.habitWeeks(h, t, emptyList(), LocalDate.parse(today))) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-stats-12-weeks-font-1.5.png")
+        compose.onNode(hasTestTag("habit-weeks")).assertIsDisplayed()
+    }
+
+    /** The ⋮ sheet: Look · Schedule · Routine · Actions; "After" lists only real habits, never itself or a loop. */
+    @Test fun theSettingsSheetAndTheStackPicker() {
+        val weekly = habit("w1", "Run the weekly review", "2026-11-01", every = "week")
+        val u = ui(h = habits + weekly)
+        show { androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) { org.pagel.ai.ui.habits.HabitSettings(habits[0], u, org.pagel.ai.ui.habits.SheetAt.TOP, reminder = {}) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-sheet.png")
+        compose.onNodeWithText("LOOK").assertIsDisplayed()
+        compose.onNodeWithText("ROUTINE").performScrollTo()
+        compose.onNodeWithText("After · None").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("After: ☕ Coffee").performScrollTo().assertExists()
+        compose.onNodeWithContentDescription("After: Drink water").performScrollTo().assertExists()
+        // A weekly task is not a habit; h2 already comes after h1, so h1 after h2 would be a loop; never itself.
+        compose.onAllNodesWithContentDescription("After: Run the weekly review").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("After: Go through five saves in your Inbox").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("After: Stretch for ten minutes").assertCountEquals(0)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-after.png")
     }
 
     @Test fun historyCalendar() {

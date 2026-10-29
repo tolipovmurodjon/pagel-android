@@ -1,34 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  "What's new" (Boss 2026-10-28: never feel lost when testing an update). Update every round: one line per thing to
-  try, "words|where" (where = today, upcoming, habits, notifications, shutdown, more). The sheet opens once after an
+  "What's new" (Boss 2026-10-28: never feel lost when testing an update). NEWEST FIRST, one group per version: a line
+  "#version · title" starts a group, then one line per thing to try, "words|where" (where = today, upcoming, habits,
+  notifications, shutdown, compass, more). The first group is this version: it shows open with its own counter; older
+  groups fold. Keep each line short (one line on a 360 dp phone) and 3-8 lines a version. The sheet opens once after an
   update; More → What's new opens it again.
 -->
 <resources>
-    <string name="whats_new_title">Round D: habits 2.0, Namoz, the new icon</string>
     <string-array name="whats_new_items">
-        <item>🧭 Compass: write your goals; only you can read them|compass</item>
-        <item>Today’s goal line blocks screenshots while it shows|compass</item>
-        <item>Calendar: switch List · Day · 3 days · Week · Month|upcoming</item>
-        <item>Swipe the week strip left for next week, “Today” to come back|upcoming</item>
-        <item>Hold a block in Day or Week and drag it to a new time|upcoming</item>
-        <item>Notifications: pick your tone (chill · normal · no mercy) and the morning plan|notifications</item>
-        <item>Open a task with a time: “Also 10 min before”|today</item>
-        <item>Clear your last task from anywhere: the big confetti + chord|today</item>
-        <item>Close the day: your Today is empty after it, tomorrow\'s stars wait folded|shutdown</item>
-        <item>The status bar and the sheets show the mint page, no white band|today</item>
-        <item>Habits: the week on top is a chain; tap a day to look back, the Today pill brings you home|habits</item>
-        <item>Morning · Afternoon · Evening pills: your habits for that part of the day|habits</item>
-        <item>Tap the Stretch card: its 10-minute timer runs and ticks itself|habits</item>
-        <item>The dots on a card: freeze a sick day (2 a month) or take a tick back|habits</item>
-        <item>Long-press a card: its page with the chain calendar, stats, emoji and its after habit|habits</item>
-        <item>History (calendar icon): Calendar · All habits · Achievements|habits</item>
-        <item>Namoz: Start tracking; the five prayers count from 1 November|habits</item>
-        <item>The new PAGEL icon on your home screen|more</item>
-        <item>Inbox: every choice says where it went, with Open|more</item>
-        <item>Inbox Action: When? Today, Tomorrow or Someday|more</item>
-        <item>Inbox: Sorted today lists the day by where each went; Undo while it waits|more</item>
-        <item>More, Notes: each project notes from the Inbox, offline too|more</item>
-        <item>Close the day: the cards no longer jump between stars|shutdown</item>
+        <item>#0.3.33 · Habits, fixed</item>
+        <item>The top chain fills a day only when all are done|habits</item>
+        <item>Swipe the week: it follows your finger|habits</item>
+        <item>Long habit names wrap to two lines|habits</item>
+        <item>Namoz is one row: tap it for the five|habits</item>
+        <item>▶ on a timed habit; the clock survives closing|habits</item>
+        <item>A habit\'s page: stats and calendar first|habits</item>
+        <item>The new glass icon on your home screen|more</item>
+        <item>#0.3.32 · Habits 2.0, Namoz, Inbox</item>
+        <item>Habits: the week on top is a chain|habits</item>
+        <item>Morning · Afternoon · Evening pills|habits</item>
+        <item>Tap a habit: its own page and calendar|habits</item>
+        <item>History: Calendar · All habits · Badges|habits</item>
+        <item>Namoz counts from 1 November|habits</item>
+        <item>Inbox: each choice says where it went|more</item>
+        <item>Inbox: Sorted today, with Undo|more</item>
+        <item>More → Notes: your project notes|more</item>
+        <item>#0.3.30 · Compass</item>
+        <item>🧭 Compass: goals only you can read|compass</item>
+        <item>Today\'s goal line blocks screenshots|compass</item>
+        <item>#Round C · Calendar, notifications</item>
+        <item>Calendar: List · Day · 3 days · Week · Month|upcoming</item>
+        <item>Hold a block and drag it to a new time|upcoming</item>
+        <item>Notifications: pick your tone|notifications</item>
+        <item>A task with a time: also 10 min before|today</item>
+        <item>Close the day: Today empties, stars wait|shutdown</item>
+        <item>Mint status bar, no white band|today</item>
     </string-array>
 </resources>

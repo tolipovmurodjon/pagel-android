@@ -336,11 +336,15 @@ for k in 1 2 3 4 5; do
   $T adb shell input swipe 160 460 160 300 400; sleep 1
 done
 tap "Stretch for ten minutes" && shot habit-page 2.5
-grep -q 'text="Reminder · off"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no Reminder row"; exit 1; }
+# The page is mainly stats (Boss 2026-10-29); every setting sits behind ⋮.
+grep -q 'content-desc="Habit settings"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no ⋮ settings"; exit 1; }
+grep -q 'text="Reminder · off"' "$OUT/$(printf '%02d' $N)-habit-page.xml" && { log "WALKTHROUGH: the reminder card is still on the page body"; exit 1; }
 # Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
 ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")
-tap "Reminder · off" && shot reminder-sheet 2.5
+tap "Habit settings" && shot reminder-sheet 2.5
+# The Reminder block sits under Look and Schedule in the sheet: scroll until its switch is on screen.
+for k in 1 2 3 4 5; do onscreen "Remind me" && break; $T adb shell input swipe 160 500 160 220 400; sleep 1; done
 tap "Remind me" && shot reminder-on 1.5
 front reminder-on
 # The sheet reads the grant when it opens (checker #7): the walk granted it, so no "Exact time · Allow" row.

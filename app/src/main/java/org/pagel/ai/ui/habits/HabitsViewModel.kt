@@ -298,8 +298,56 @@ class HabitsViewModel @Inject constructor(
         viewModelScope.launch { prefsRepo.unfreeze(id, day) }
     }
 
-    fun setEmoji(id: String, key: String?) = viewModelScope.launch { prefsRepo.emoji(id, key) }
+    /** The emoji keeps the colour and the colour keeps the emoji (both live in one prefs field, HabitLook). */
+    fun setEmoji(id: String, key: String?) = viewModelScope.launch {
+        prefsRepo.emoji(id, org.pagel.ai.data.habits.HabitLook.look(key, org.pagel.ai.data.habits.HabitLook.colourOf(ui.value.prefs[id]?.emoji)))
+    }
+    fun setColour(id: String, colour: String?) = viewModelScope.launch {
+        prefsRepo.emoji(id, org.pagel.ai.data.habits.HabitLook.look(org.pagel.ai.data.habits.HabitLook.emojiOf(ui.value.prefs[id]?.emoji), colour))
+    }
     fun setAfter(id: String, other: String?) = viewModelScope.launch { prefsRepo.after(id, other) }
+
+    /**
+     * The anchor (habit stacking): another habit or a daily moment. A habit that would make a loop is refused
+     * (HabitLook.leadsTo), and so is the habit itself.
+     */
+    fun setAnchor(id: String, anchor: org.pagel.ai.data.habits.HabitLook.Anchor?) {
+        val habit = anchor as? org.pagel.ai.data.habits.HabitLook.Anchor.Habit
+        if (habit != null && (habit.id == id || org.pagel.ai.data.habits.HabitLook.leadsTo(habit.id, id, ui.value.prefs))) {
+            toasts.show("That would make a loop"); return
+        }
+        viewModelScope.launch { prefsRepo.after(id, org.pagel.ai.data.habits.HabitLook.store(anchor)) }
+    }
+
+    fun rename(id: String, title: String) {
+        val clean = title.replace(Regex("\\s+"), " ").trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch { tasks.title(id, clean) }
+    }
+
+    /** Morning 07:00 · Afternoon 13:00 · Evening 19:00, or Anytime (no time); the date stays. */
+    fun setPart(id: String, part: Part) {
+        val t = ui.value.byId[id] ?: return
+        val date = t.due?.take(10) ?: repo.today()
+        val time = when (part) { Part.MORNING -> "07:00"; Part.AFTERNOON -> "13:00"; Part.EVENING -> "19:00"; Part.ANYTIME -> null }
+        viewModelScope.launch { tasks.due(id, if (time == null) date else "$date $time"); repo.replan() }
+    }
+
+    /** The weekdays it repeats on (0 = Sunday); all seven = every day; none is refused. */
+    fun setDays(id: String, days: Set<Int>) {
+        if (days.isEmpty()) { toasts.show("Pick at least one day"); return }
+        val every = if (days.size == 7) "day" else org.pagel.ai.ui.glass.Repeat.daySet(days)
+        viewModelScope.launch { tasks.every(id, every); repo.replan() }
+    }
+
+    /** Delete with Undo (5 s): gone from the phone at once; pagel.uz hears of it only after the Undo window. */
+    fun delete(id: String, onGone: () -> Unit) {
+        viewModelScope.launch {
+            val op = tasks.delete(id) ?: return@launch
+            onGone()
+            toasts.show("Habit deleted", action = "Undo", millis = 5_000) { viewModelScope.launch { tasks.undoDelete(id, op) } }
+        }
+    }
     fun setIdentity(id: String, line: String?) = viewModelScope.launch { prefsRepo.identity(id, line) }
     fun setMinutes(id: String, n: Int?) = viewModelScope.launch { prefsRepo.minutes(id, n) }
 

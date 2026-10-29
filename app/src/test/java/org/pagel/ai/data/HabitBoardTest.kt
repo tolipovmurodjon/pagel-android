@@ -160,4 +160,36 @@ class HabitBoardTest {
         assertEquals(m, back)
         assertEquals(emptyMap<String, org.pagel.ai.ui.habits.HabitTimer>(), org.pagel.ai.ui.habits.HabitClocks.decode("broken|line"))
     }
+
+    /** Boss 2026-10-29: stacking offers only real habits, never itself, never a loop; a moment is kept as words. */
+    @Test fun theAnchorPickerOffersOnlyHabitsAndNoLoops() {
+        val L = org.pagel.ai.data.habits.HabitLook
+        val a = t("a", text = "Workout"); val b = t("b", text = "Floor routine"); val w = t("w", text = "Weekly review", every = "week")
+        val prayer = t("p", text = "Bomdod", group = "namoz")
+        val prefs = mapOf("b" to HabitPrefEntity("b", after = "a"))
+        assertEquals(listOf("b"), L.anchorChoices("a", listOf(a, b, w, prayer), emptyMap()).map { it.id })
+        // b already follows a: a after b would be a loop.
+        assertEquals(emptyList<String>(), L.anchorChoices("a", listOf(a, b, w), prefs).map { it.id })
+        assertEquals(L.Anchor.Moment("☕ Coffee"), L.anchorOf(L.store(L.Anchor.Moment("☕ Coffee"))))
+        assertEquals(L.Anchor.Habit("a"), L.anchorOf("a"))
+        assertEquals("After ☕ coffee → 🧘 Floor routine", L.recipe(L.Anchor.Moment("☕ Coffee"), null, "🧘", "Floor routine"))
+    }
+
+    @Test fun aHabitsLookKeepsEmojiAndColourTogether() {
+        val L = org.pagel.ai.data.habits.HabitLook
+        assertEquals("coffee/amber", L.look("coffee", "amber"))
+        assertEquals("coffee", L.emojiOf("coffee/amber")); assertEquals("amber", L.colourOf("coffee/amber"))
+        assertEquals("/teal", L.look(null, "teal")); assertNull(L.emojiOf("/teal"))
+        assertEquals("coffee", L.look("coffee", "purple"))  // not one of the ten: dropped
+    }
+
+    /** Boss 2026-10-29: never a week before the habit started; a 3-day-old habit has one bar and is "too new". */
+    @Test fun weeksStartWithTheHabit() {
+        val h = t("n", text = "Read", due = "2026-10-26 21:00")
+        val w = org.pagel.ai.data.habits.habitWeeks(h, listOf(HabitTickEntity("2026-10-27", "n")), emptyList(), wed)
+        assertEquals(1, w.bars.size)
+        assertTrue(w.tooNew)
+        assertEquals(3, w.daysTracked)
+        assertEquals(1 to 7, w.bars[0].done to w.bars[0].target)
+    }
 }

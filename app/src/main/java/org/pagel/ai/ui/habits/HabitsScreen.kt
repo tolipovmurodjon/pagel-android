@@ -455,6 +455,8 @@ private fun DayDot(n: Int, m: Mark, isToday: Boolean, isSelected: Boolean, circl
                     else -> Unit
                 }
             }
+            // A frozen day keeps a small ❄ (the only trace of a freeze on the page body, Boss 2026-10-29).
+            if (m == Mark.FROZEN) Text("❄", fontSize = 9.sp, modifier = Modifier.align(Alignment.TopEnd).clearAndSetSemantics {})
             val faint = m == Mark.FUTURE || m == Mark.OFF || m == Mark.BEFORE
             Text(
                 "$n", style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (m == Mark.DONE || isToday) FontWeight.Bold else FontWeight.Medium),
@@ -528,10 +530,13 @@ internal fun tileOf(emoji: String): String = when (emoji) {
 }
 
 @Composable
-internal fun EmojiTile(emoji: String, size: androidx.compose.ui.unit.Dp, quiet: Boolean = false) {
-    val (a, b) = TileColors.stops("", tileOf(emoji))
+internal fun EmojiTile(emoji: String, size: androidx.compose.ui.unit.Dp, quiet: Boolean = false, colour: String? = null) {
+    // The habit's own colour when Boss picked one (HabitLook), else one by what it is about.
+    val (a, b) = TileColors.stops("", colour ?: tileOf(emoji))
     Box(
         Modifier.size(size).clip(RoundedCornerShape(size * 0.3f))
+            // A glass rim: one thin light edge, never a dark outline.
+            .border(1.dp, Color.White.copy(alpha = 0.55f), RoundedCornerShape(size * 0.3f))
             .background(if (quiet) Brush.linearGradient(listOf(Color(0xFFEDEFF3), Color(0xFFDCE0E7))) else Brush.linearGradient(listOf(a, b), start = Offset.Zero, end = Offset.Infinite))
             // The one light, top-left: a soft inner highlight so the tile reads as a lit object.
             .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.Transparent), endY = 40f)),
@@ -617,7 +622,7 @@ internal fun HabitCardRow(
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.testTag(RowPart.EMOJI)) {
-                    EmojiTile(c.emoji, 40.dp, quiet = done)
+                    EmojiTile(c.emoji, 40.dp, quiet = done, colour = c.colour)
                     // Never miss twice (Atomic Habits): only a small amber dot, no words on the row.
                     if (c.neverMissTwice && !done) Box(
                         Modifier.align(Alignment.TopEnd).size(10.dp).background(Color(0xFFF59E0B), CircleShape).border(1.5.dp, Color(0xFFB45309), CircleShape)

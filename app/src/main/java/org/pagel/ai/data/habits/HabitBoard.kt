@@ -195,6 +195,8 @@ data class HabitCard(
     val time: String?,
     val window: Namoz.Window? = null,
     val identity: String? = null,
+    /** The tile colour Boss picked (one of HabitLook.COLOURS), else null = by what it is about. */
+    val colour: String? = null,
 ) {
     val times: Int get() = task.times.coerceAtLeast(1)
     val done: Boolean get() = mark == Mark.DONE
@@ -272,6 +274,7 @@ fun habitBoard(
             minutes = if (window != null) null else minutesOf(title, p?.minutes),
             neverMissTwice = selected == today && neverMissTwice(t, done, frozen, today),
             after = p?.after?.let { byId[it] }?.let(::titleOf), time = time, window = window, identity = p?.identity,
+            colour = HabitLook.colourOf(p?.emoji),
         )
     }
 
