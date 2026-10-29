@@ -57,6 +57,20 @@ class CompassSchemaTest {
         }
     }
 
+    /**
+     * compass.db v1 shipped in 0.3.30 (app-v0.12.1): its schema file is committed and its identity is pinned here. A
+     * changed entity makes Room write a new 1.json with another hash and this fails: bump to v2 with a Migration
+     * (re-check N4).
+     */
+    @Test fun versionOneIsTheShippedSchema() {
+        val schema = Json.parseToJsonElement(schemaFile.readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(SHIPPED_V1, schema["identityHash"]!!.jsonPrimitive.content)
+    }
+
+    private companion object {
+        const val SHIPPED_V1 = "d7f4df5af55768ec5edef270d5a41dbc"
+    }
+
     @Test fun noColumnCanHoldAGoalsWords() {
         val schema = Json.parseToJsonElement(schemaFile.readText()).jsonObject["database"]!!.jsonObject
         val words = setOf("title", "text", "why", "mypart", "my_part", "outcome", "note", "answer", "words", "body")
