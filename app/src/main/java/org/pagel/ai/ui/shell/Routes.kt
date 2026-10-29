@@ -47,12 +47,24 @@ object OpenRequests {
     const val SHUTDOWN = "shutdown"
     /** The Compass's birthday and season-review notifications (Phase 6a). */
     const val COMPASS = "compass"
-    private val names = setOf(SHUTDOWN, COMPASS)
+    /** The home-screen widgets (Phase 8): the Add sheet, voice add, the food log, the Habits tab, Today, one task. */
+    const val ADD = "add"
+    const val VOICE = "voice"
+    const val FOOD = "food"
+    const val HABITS = "habits"
+    const val TODAY = "today"
+    const val TASK_PREFIX = "task:"
+    private val names = setOf(SHUTDOWN, COMPASS, ADD, VOICE, FOOD, HABITS, TODAY)
+    /** A task id as pagel.uz and the phone make them (t_…, local_…); anything else is not opened. */
+    private val TASK_ID = Regex("[A-Za-z0-9_-]{1,64}")
     val pending = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
 
     fun open(name: String) {
-        if (name in names) pending.value = name
+        if (name in names || taskOf(name) != null) pending.value = name
     }
+
+    /** The task a "task:<id>" request opens, or null. */
+    fun taskOf(name: String): String? = name.takeIf { it.startsWith(TASK_PREFIX) }?.removePrefix(TASK_PREFIX)?.takeIf(TASK_ID::matches)
 
     fun route(name: String): NavKey? = when (name) {
         SHUTDOWN -> ShutdownRoute

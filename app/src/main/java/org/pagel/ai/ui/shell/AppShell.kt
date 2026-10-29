@@ -161,6 +161,8 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     val onTop = stack.lastOrNull() == Tab.entries[selected].root
     // The Add sheet's target: null = closed, "" = Today, a name = that project. The open task panel's task id.
     var adding by rememberSaveable { mutableStateOf<String?>(null) }
+    // Words the Add sheet opens with (the widget's voice add); empty for a plain +.
+    var addInitial by rememberSaveable { mutableStateOf("") }
     var openTask by rememberSaveable { mutableStateOf<String?>(null) }
     val toasts = LocalToasts.current
     val top = stack.lastOrNull()
@@ -203,8 +205,26 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     }
     // The evening notification's "Close the day" (MainActivity → OpenRequests): opened on Today's stack.
     val opening by OpenRequests.pending.collectAsStateWithLifecycle()
+    // The widget's 🎤 (Phase 8): Android's own speech sheet, then the Add sheet with the words in it. No recognizer on
+    // the phone, or nothing heard: the Add sheet opens empty, so the tap is never lost.
+    val voice = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        addInitial = r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
+        adding = ""
+    }
     LaunchedEffect(opening) {
         val name = opening ?: return@LaunchedEffect
+        // The home-screen widgets (Phase 8): a task opens its panel over Today, + opens the Add sheet, 🎤 speaks first.
+        OpenRequests.taskOf(name)?.let { id -> goToday(); openTask = id }
+        when (name) {
+            OpenRequests.TODAY -> goToday()
+            OpenRequests.ADD -> { addInitial = ""; adding = "" }
+            OpenRequests.HABITS, OpenRequests.FOOD -> selected = Tab.entries.indexOf(Tab.Habits)
+            OpenRequests.VOICE -> runCatching {
+                voice.launch(android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                    .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Say the task"))
+            }.onFailure { addInitial = ""; adding = "" }
+        }
         OpenRequests.route(name)?.let { r ->
             val today = stacks[0]
             while (today.size > 1) today.removeLastOrNull()
@@ -377,7 +397,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     }
     }
     if (whatsNew) WhatsNewSheet(onDismiss = { whatsNew = false }, onOpen = ::openWhere)
-    adding?.let { target -> AddTaskSheet(onClose = { adding = null }, project = target.ifEmpty { null }) }
+    adding?.let { target -> AddTaskSheet(onClose = { adding = null; addInitial = "" }, project = target.ifEmpty { null }, initial = addInitial) }
     openTask?.let { id ->
         androidx.compose.runtime.key(id) {
             TaskPanelSheet(id, onClose = { openTask = null }, onOpenProject = { name -> openTask = null; if (top != ProjectPageRoute(name)) stack.add(ProjectPageRoute(name)) })

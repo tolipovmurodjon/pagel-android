@@ -83,13 +83,13 @@ import java.time.LocalDateTime
  * joins that project, not Today). Enter or the mint arrow saves; the field clears and stays open for the next one.
  */
 @Composable
-fun AddTaskSheet(onClose: () -> Unit, project: String? = null, vm: AddTaskViewModel = hiltViewModel()) {
+fun AddTaskSheet(onClose: () -> Unit, project: String? = null, initial: String = "", vm: AddTaskViewModel = hiltViewModel()) {
     val projects by vm.projects.collectAsStateWithLifecycle()
     val notSaved by vm.notSaved.collectAsStateWithLifecycle()
     GlassSheet(onClose) {
         // The sheet closes once a task is added (round B: the toast showed and the sheet stayed); a long press on the
         // arrow adds and keeps it open with the project, for a quick second one.
-        AddTaskContent(projects, home = project ?: "me", toToday = project == null, now = vm::now, notSaved = notSaved, onAdded = onClose, onSave = vm::save)
+        AddTaskContent(projects, home = project ?: "me", toToday = project == null, now = vm::now, initial = initial, notSaved = notSaved, onAdded = onClose, onSave = vm::save)
         Spacer(Modifier.height(SheetBottom))
     }
 }
