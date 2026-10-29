@@ -52,6 +52,8 @@ data class GoalBody(
     val keyResults: List<KeyResult> = emptyList(),
     val leadAction: String = "",
     val habitId: String? = null,
+    /** The habit's own neutral title on pagel.uz ("🧭 Compass step", "🧭 Compass step 2"), to find it again by. */
+    val habitTitle: String? = null,
     val state: String = OPEN,
     val excused: List<String> = emptyList(),
     val createdAt: Long = 0,
@@ -163,12 +165,13 @@ object CompassRules {
      */
     fun score(season: Season, today: LocalDate, body: GoalBody, hitDays: Set<String>): Score {
         val thisWeek = weekOf(season, today).coerceAtMost(WEEKS)
+        val first = firstWeek(season, body).coerceAtMost(thisWeek)
         val excused = body.excused.toSet()
         fun hit(w: Int): Boolean {
             val s = weekStart(season, w)
             return (0 until 7).any { s.plusDays(it.toLong()).toString() in hitDays }
         }
-        val counted = (1..thisWeek).filter { w -> weekStart(season, w).toString() !in excused && (w < thisWeek || hit(w)) }
+        val counted = (first..thisWeek).filter { w -> weekStart(season, w).toString() !in excused && (w < thisWeek || hit(w)) }
         val weeksHit = if (body.leadAction.isBlank()) 0 else counted.count(::hit)
         val weeks = if (body.leadAction.isBlank()) 0 else counted.size
         val krTotal = body.keyResults.size
@@ -177,7 +180,7 @@ object CompassRules {
             if (weeks > 0) add(weeksHit.toFloat() / weeks)
             if (krTotal > 0) add(krDone.toFloat() / krTotal)
         }
-        val missed = { w: Int -> w >= 1 && body.leadAction.isNotBlank() && weekStart(season, w).toString() !in excused && !hit(w) }
+        val missed = { w: Int -> w >= first && body.leadAction.isNotBlank() && weekStart(season, w).toString() !in excused && !hit(w) }
         return Score(
             value = parts.takeIf { it.isNotEmpty() }?.average()?.toFloat(),
             weeksHit = weeksHit, weeksCounted = weeks, krDone = krDone, krTotal = krTotal,
@@ -186,14 +189,49 @@ object CompassRules {
         )
     }
 
+    /**
+     * The first week that counts for a goal: the week it was written in, when that is inside the season (compass
+     * checker #8: a goal written in week 5 started with four "misses" and "Two quiet weeks" on its first day).
+     */
+    fun firstWeek(season: Season, body: GoalBody): Int {
+        if (body.createdAt <= 0) return 1
+        val made = java.time.Instant.ofEpochMilli(body.createdAt).atZone(TASHKENT).toLocalDate()
+        return if (made.isBefore(season.starts)) 1 else weekOf(season, made)
+    }
+
+    val TASHKENT: java.time.ZoneId = java.time.ZoneId.of("Asia/Tashkent")
+
+    /** Milliseconds from [nowMs] to the next Tashkent midnight (+1 s), when the Compass reads the date again. */
+    fun untilNextMidnight(nowMs: Long): Long {
+        val now = java.time.Instant.ofEpochMilli(nowMs).atZone(TASHKENT)
+        val next = now.toLocalDate().plusDays(1).atStartOfDay(TASHKENT)
+        return java.time.Duration.between(now, next).toMillis() + 1_000
+    }
+
     /** "Reset, not restart": every missed week so far is set aside; the plan goes on from this week. No red, no guilt. */
     fun reset(season: Season, today: LocalDate, body: GoalBody, hitDays: Set<String>): GoalBody {
         val thisWeek = weekOf(season, today).coerceAtMost(WEEKS)
-        val missed = (1 until thisWeek).map { weekStart(season, it).toString() }.filter { s ->
+        val missed = (firstWeek(season, body) until thisWeek).map { weekStart(season, it).toString() }.filter { s ->
             val start = LocalDate.parse(s)
             (0 until 7).none { start.plusDays(it.toLong()).toString() in hitDays }
         }
         return body.copy(excused = (body.excused + missed).distinct().sorted())
+    }
+
+    /** The next free neutral habit title: "🧭 Compass step", then "🧭 Compass step 2", 3… (never a goal's words). */
+    fun stepTitle(taken: Set<String>): String =
+        generateSequence(1) { it + 1 }.map { if (it == 1) STEP else "$STEP $it" }.first { it !in taken }
+
+    const val STEP = "🧭 Compass step"
+
+    const val PASSPHRASE_MIN = 12
+    private val WEAK = setOf("password", "qwerty", "123456", "letmein", "iloveyou", "parol", "murodjon", "pagel", "compass")
+
+    /** A recovery passphrase: 12+ characters, 6+ different ones, not a run of one key or a well-known word repeated. */
+    fun passphraseOk(p: String): Boolean {
+        if (p.length < PASSPHRASE_MIN || p.toSet().size < 6) return false
+        val squeezed = p.lowercase().filter(Char::isLetterOrDigit)
+        return WEAK.none { w -> squeezed.isNotEmpty() && squeezed.replace(w, "").isEmpty() } && !squeezed.all(Char::isDigit)
     }
 
     /** The first words of a goal for Today's quiet line (at most 6 words, 48 letters). */

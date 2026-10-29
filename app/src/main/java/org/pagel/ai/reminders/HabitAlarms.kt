@@ -69,6 +69,8 @@ class HabitAlarms(
         rituals?.let { runCatching { planEvening(am, it, now) } }
         // Round C: the tasks' reminders, the morning plan and the evening nudge ride on the same planner.
         runCatching { TaskAlarms.plan(ctx, dao, rituals, am, now) }
+        // Phase 6a: the Compass's birthday morning and season review (kinds and dates only, never words).
+        runCatching { CompassAlarms.plan(ctx, am, now) }
         for (r in dao.remindersOnce()) {
             val pi = fireIntent(ctx, r.taskId)
             val h = habits[r.taskId]

@@ -1,5 +1,16 @@
 package org.pagel.ai.ui.compass
 
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.platform.InterceptPlatformTextInput
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -103,7 +114,13 @@ private fun Mark(mark: StopMark) {
     }
 }
 
-/** A text field that stays on the phone: white glass, ink words, the label as its accessible name. */
+/**
+ * A text field that stays on the phone: white glass, ink words, the label as its accessible name. The keyboard is told
+ * not to learn what is typed (IME_FLAG_NO_PERSONALIZED_LEARNING through [PrivateKeyboard], compass checker #4), so
+ * Gboard or Samsung Keyboard never suggests a goal's words in another app. A [secret] field (the recovery passphrase)
+ * is masked, has no autocorrect and no auto-caps (both would change what the same hands type on a new phone), uses the
+ * password keyboard, cannot be copied, and has an eye to show it (checker #3).
+ */
 @Composable
 internal fun SealedField(
     value: String,
@@ -114,27 +131,78 @@ internal fun SealedField(
     lines: Int = 1,
     maxChars: Int = 280,
     style: TextStyle = MaterialTheme.typography.bodyLarge,
+    secret: Boolean = false,
 ) {
+    var shown by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth()) {
         // The field itself carries the label as its name; the visible label is not a second node to read or tap.
         Text(label, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, modifier = Modifier.padding(start = Space.xs, bottom = Space.xs).clearAndSetSemantics {})
-        BasicTextField(
-            value = value,
-            onValueChange = { onChange(it.take(maxChars)) },
-            singleLine = lines == 1,
-            minLines = lines,
-            maxLines = if (lines == 1) 1 else 8,
-            textStyle = style.copy(color = Glass.Ink),
-            cursorBrush = SolidColor(Glass.Primary),
-            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = if (lines == 1) ImeAction.Next else ImeAction.Default),
-            modifier = Modifier.fillMaxWidth().heightIn(min = TouchMin)
-                .background(Color.White.copy(alpha = 0.84f), RoundedCornerShape(16.dp))
-                .border(1.dp, FieldRim, RoundedCornerShape(16.dp))
-                .padding(horizontal = Space.lg, vertical = Space.md)
-                .semantics { contentDescription = label },
-            decorationBox = { inner -> Box { if (value.isEmpty()) Text(hint, style = style, color = Glass.Muted, maxLines = lines); inner() } },
-        )
+        PrivateKeyboard {
+            BasicTextField(
+                value = value,
+                onValueChange = { onChange(it.take(maxChars)) },
+                singleLine = secret || lines == 1,
+                minLines = if (secret) 1 else lines,
+                maxLines = if (secret || lines == 1) 1 else 8,
+                textStyle = style.copy(color = Glass.Ink),
+                cursorBrush = SolidColor(Glass.Primary),
+                keyboardOptions = keyboardFor(secret, lines),
+                visualTransformation = if (secret && !shown) PasswordVisualTransformation() else VisualTransformation.None,
+                modifier = Modifier.fillMaxWidth().heightIn(min = TouchMin)
+                    .background(Color.White.copy(alpha = 0.84f), RoundedCornerShape(16.dp))
+                    .border(1.dp, FieldRim, RoundedCornerShape(16.dp))
+                    .padding(start = Space.lg, end = if (secret) TouchMin else Space.lg, top = Space.md, bottom = Space.md)
+                    .semantics { contentDescription = label },
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (value.isEmpty()) Text(hint, style = style, color = Glass.Muted, maxLines = lines)
+                        inner()
+                    }
+                },
+            )
+            if (secret) {
+                val press = remember { MutableInteractionSource() }
+                Box(
+                    Modifier.align(Alignment.CenterEnd).size(TouchMin).pressScale(press)
+                        .clickable(press, indication = null, role = Role.Button) { shown = !shown }
+                        .semantics { contentDescription = if (shown) "Hide passphrase" else "Show passphrase" },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(if (shown) CompassIcons.EyeOff else CompassIcons.Eye, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(20.dp)) }
+            }
+        }
     }
+}
+
+/** The keyboard a Compass field asks for: a passphrase gets the password keyboard with nothing that changes its letters. */
+internal fun keyboardFor(secret: Boolean, lines: Int): KeyboardOptions =
+    if (secret) KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, keyboardType = KeyboardType.Password, imeAction = ImeAction.Done)
+    else KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = if (lines == 1) ImeAction.Next else ImeAction.Default)
+
+/** What [PrivateKeyboard] does to the keyboard's request: the "do not learn" flag, kept apart so a test reads it. */
+internal fun noLearning(info: EditorInfo) {
+    info.imeOptions = info.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+}
+
+/**
+ * Every text field inside asks the keyboard not to learn (incognito typing): the request Compose sends to the
+ * keyboard gets IME_FLAG_NO_PERSONALIZED_LEARNING (the documented InterceptPlatformTextInput pattern). The content
+ * sits in a Box, so a field's trailing eye can align over it.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+internal fun PrivateKeyboard(content: @Composable BoxScope.() -> Unit) {
+    InterceptPlatformTextInput(
+        interceptor = { request, next ->
+            val quiet = object : PlatformTextInputMethodRequest by request {
+                override fun createInputConnection(outAttributes: EditorInfo): InputConnection {
+                    val connection = request.createInputConnection(outAttributes)
+                    noLearning(outAttributes)
+                    return connection
+                }
+            }
+            next.startInputMethod(quiet)
+        },
+    ) { Box(Modifier.fillMaxWidth(), content = content) }
 }
 
 /** Apple's switch, drawn only: the row around it is the target. */

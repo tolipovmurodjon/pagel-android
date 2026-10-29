@@ -368,7 +368,7 @@ import base64
 COMPASS = {}       # id -> body
 COMPASS_LINKS = {}  # project -> goal id
 COMPASS_RECOVERY = [None]
-ITEM_KEYS = {"kind", "parent", "blob", "starts", "ends", "deleted"}
+ITEM_KEYS = {"kind", "parent", "blob", "starts", "ends", "deleted", "base"}
 
 def sealed(blob):
     try:
@@ -394,6 +394,8 @@ def _compass_put(self):
         if not sealed(b.get("blob")):
             return self.send(400, {"error": "blob must be the phone's sealed envelope (base64, version 1)."})
         old = COMPASS.get(parts[5], {}).get("version", 0)
+        if parts[5] in COMPASS and int(b.get("base") or 0) != old:
+            return self.send(409, {"error": "A newer copy is on pagel.uz.", "version": old})
         COMPASS[parts[5]] = {**b, "id": parts[5], "version": old + 1}
         return self.send(200, {"id": parts[5], "version": old + 1})
     if what == "links" and len(parts) == 6:

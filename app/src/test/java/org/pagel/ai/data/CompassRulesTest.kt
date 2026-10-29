@@ -120,6 +120,46 @@ class CompassRulesTest {
         assertFalse(after.missedLastWeek)
     }
 
+    /** Checker #8: a goal written in week 5 starts counting in week 5, never with four "misses". */
+    @Test fun aGoalWrittenInWeekFiveCountsFromWeekFive() {
+        val made = java.time.ZonedDateTime.of(CompassRules.weekStart(season, 5).plusDays(1), java.time.LocalTime.NOON, CompassRules.TASHKENT).toInstant().toEpochMilli()
+        val body = GoalBody(title = "s", leadAction = "Run", createdAt = made)
+        assertEquals(5, CompassRules.firstWeek(season, body))
+        val day = CompassRules.weekStart(season, 5).plusDays(2)
+        val first = CompassRules.score(season, day, body, emptySet())
+        assertEquals(0, first.weeksCounted)
+        assertFalse(first.missedLastWeek)
+        assertFalse(first.missedTwice)
+        // Week 7: weeks 5 and 6 counted, one hit = 50 %; a goal from before the season counts from week 1.
+        val later = CompassRules.score(season, CompassRules.weekStart(season, 7).plusDays(1), body, setOf(weekDay(5)))
+        assertEquals(2, later.weeksCounted)
+        assertEquals(0.5f, later.value!!, 0.001f)
+        assertEquals(1, CompassRules.firstWeek(season, body.copy(createdAt = java.time.Instant.parse("2026-10-20T08:00:00Z").toEpochMilli())))
+        assertEquals(emptyList<String>(), CompassRules.reset(season, CompassRules.weekStart(season, 5).plusDays(3), body, emptySet()).excused)
+    }
+
+    /** Checker #5: the Compass reads the date again at Tashkent midnight: 31 Oct 23:59 → 1 Nov 00:00:01. */
+    @Test fun theNextReadIsJustAfterTashkentMidnight() {
+        val beforeBirthday = java.time.ZonedDateTime.of(d("2026-10-31"), java.time.LocalTime.of(23, 59), CompassRules.TASHKENT).toInstant().toEpochMilli()
+        assertEquals(61_000L, CompassRules.untilNextMidnight(beforeBirthday))
+        val next = java.time.Instant.ofEpochMilli(beforeBirthday + CompassRules.untilNextMidnight(beforeBirthday)).atZone(CompassRules.TASHKENT).toLocalDate()
+        assertEquals("Year 19", CompassRules.yearTitle(CompassRules.yearStart(next)))
+    }
+
+    @Test fun theWeeklyStepsHabitHasANeutralNumberedTitle() {
+        assertEquals("🧭 Compass step", CompassRules.stepTitle(emptySet()))
+        assertEquals("🧭 Compass step 2", CompassRules.stepTitle(setOf("🧭 Compass step")))
+        assertEquals("🧭 Compass step 3", CompassRules.stepTitle(setOf("🧭 Compass step", "🧭 Compass step 2")))
+    }
+
+    @Test fun aRecoveryPassphraseMustBeLongAndNotObvious() {
+        assertFalse(CompassRules.passphraseOk("short one"))
+        assertFalse(CompassRules.passphraseOk("aaaaaaaaaaaaaaaa"))
+        assertFalse(CompassRules.passphraseOk("123456789012345"))
+        assertFalse(CompassRules.passphraseOk("passwordpassword"))
+        assertTrue(CompassRules.passphraseOk("tea under the old walnut"))
+    }
+
     @Test fun todaysLineIsTheFirstWords() {
         assertEquals("Build the school that finds every…", CompassRules.firstWords("Build the school that finds every child's gift in Uzbekistan"))
         assertEquals("Be kind", CompassRules.firstWords("  Be   kind "))

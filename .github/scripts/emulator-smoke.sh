@@ -87,9 +87,14 @@ $T adb shell am force-stop "$PKG"
 $T adb shell am start -W -n "$PKG/.MainActivity" --es pagel.server http://127.0.0.1:8799 > /dev/null
 wait_glass
 $T adb exec-out screencap -p > "$OUT/pair-screen.png"
+# The 6th digit connects by itself (PairViewModel: code.length == 6 → connect). No Enter after it: in CI 40826284386
+# the pair POST and the keyboard's hide came at 06:07:59, the Enter was handled ~3 s later on Today (two input events
+# in the 06:08:02 Davey frames, the main thread stalled 102 frames), where it clicked the first focusable in key
+# navigation, Today's "Empty your head" button, and the check for Today failed on the Sweep screen.
 $T adb shell input text 482913
-sleep 1
-$T adb shell input keyevent 66
+# Only if the code did not go out by itself (an old build): press Connect's Done once, while the pair screen is up.
+for i in $(seq 1 8); do grep -q "POST /api/v1/devices/pair" "$OUT/fake-pagel.log" && break; sleep 1; done
+grep -q "POST /api/v1/devices/pair" "$OUT/fake-pagel.log" || $T adb shell input keyevent 66
 # Wait on the real signal (the app opened the live stream), not a fixed sleep: the emulator draws in software.
 for i in $(seq 1 40); do grep -q "GET /api/v1/stream" "$OUT/fake-pagel.log" && break; sleep 1; done
 # 2026-10-27: the first frame after pairing froze the main thread ~13 s. Dump every thread's stack 3 s in, so the

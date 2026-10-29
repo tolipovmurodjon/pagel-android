@@ -61,12 +61,17 @@ class CompassLineViewModel @Inject constructor(repo: CompassRepository) : ViewMo
     val line: StateFlow<String?> = repo.line.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 }
 
-/** One quiet line on top of Today: his chosen goal's first words, to remember why. Nothing when it is off. */
+/**
+ * One quiet line on top of Today: his chosen goal's first words, to remember why. Nothing when it is off. While it is
+ * on screen, Today's window is FLAG_SECURE too (compass checker #1/#6: the safer of the two choices; a tap-to-reveal
+ * line would still sit on a plain window once revealed). TalkBack reads the words themselves; no description repeats them.
+ */
 @Composable
 fun CompassTodayLine(line: String, modifier: Modifier = Modifier) {
+    SecureWindow()
     Row(
         modifier.fillMaxWidth().padding(start = Space.textEdge, end = Space.gutter, top = Space.headerTop)
-            .semantics(mergeDescendants = true) { contentDescription = "Compass: $line" },
+            .semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(CompassIcons.Compass, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(16.dp))
@@ -80,14 +85,17 @@ fun CompassTodayLine(line: String, modifier: Modifier = Modifier) {
 @HiltViewModel
 class ServesGoalViewModel @Inject constructor(private val repo: CompassRepository) : ViewModel() {
     val links: StateFlow<Map<String, String>> = repo.links.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
-    val state: StateFlow<VaultState> = repo.state.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), VaultState.READING)
+    // Eagerly (this ViewModel lives with the project page): the picker opens with its rows ready, so the sheet takes its
+    // full height at once (CI 40827967510: it opened on an empty list and kept a 88 dp height, the goal below the fold).
+    val state: StateFlow<VaultState> = repo.state.stateIn(viewModelScope, SharingStarted.Eagerly, VaultState.READING)
     /** The goals a project can serve: open goals above Someday, the season's first. */
     val goals: StateFlow<List<Goal>> = repo.opened.map { o ->
         o.goals.filter { it.level != Level.SOMEDAY && it.body.state == GoalBody.OPEN }.sortedBy { listOf(Level.SEASON, Level.YEAR, Level.TEN_YEAR, Level.PURPOSE).indexOf(it.level) }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    fun prepare() { viewModelScope.launch { runCatching { repo.prepare() } } }
-    fun unlocked() { viewModelScope.launch { runCatching { repo.unlock() } } }
+    /** The one-use cipher for the Compass's own prompt, handed to [prompt] on Main (nothing if the key is gone). */
+    fun beginUnlock(prompt: (javax.crypto.Cipher) -> Unit) { viewModelScope.launch { runCatching { repo.cipherForUnlock() }.onSuccess(prompt) } }
+    fun unlocked(cipher: javax.crypto.Cipher) { viewModelScope.launch { runCatching { repo.unlock(cipher) } } }
     fun link(project: String, goal: String?) { viewModelScope.launch { repo.link(project, goal) } }
     fun leave() = repo.leave()
     fun stay() = repo.stay()
@@ -121,10 +129,11 @@ private fun GoalPickerSheet(project: String, vm: ServesGoalViewModel, onDismiss:
     val goals by vm.goals.collectAsStateWithLifecycle()
     val links by vm.links.collectAsStateWithLifecycle()
     val ctx = LocalContext.current
-    GlassSheet(onDismiss = onDismiss) {
+    GlassSheet(onDismiss = onDismiss, secure = true) {
         SecureWindow()
         AutoLock(onLeave = vm::leave, onStay = vm::stay)
-        Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter).padding(bottom = Space.xl), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        // A reserved height: Material keeps the height a sheet opened with, so rows that come a frame later still show.
+        Column(Modifier.fillMaxWidth().heightIn(min = PickerMin).padding(horizontal = Space.gutter).padding(bottom = Space.xl), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             Text("Which goal does it serve?", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink)
             when (state) {
                 VaultState.OPEN -> {
@@ -139,8 +148,7 @@ private fun GoalPickerSheet(project: String, vm: ServesGoalViewModel, onDismiss:
                     Hint("Your goals are locked. Unlock to pick one.")
                     MintButton("Unlock", CompassIcons.KeyRound, Modifier.fillMaxWidth()) {
                         val activity = ctx.findActivity() ?: return@MintButton
-                        vm.prepare()
-                        askUnlock(activity, "Open your Compass") { if (it == UnlockAnswer.Ok) vm.unlocked() }
+                        vm.beginUnlock { cipher -> askUnlock(activity, "Open your Compass", cipher) { a -> if (a is UnlockAnswer.Ok) vm.unlocked(a.cipher) } }
                     }
                 }
                 else -> Hint("Start your Compass in More → Compass first.")
@@ -148,6 +156,8 @@ private fun GoalPickerSheet(project: String, vm: ServesGoalViewModel, onDismiss:
         }
     }
 }
+
+private val PickerMin = 320.dp
 
 @Composable
 private fun PickRow(label: String, on: Boolean, onClick: () -> Unit) {

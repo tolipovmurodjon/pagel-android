@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.Dispatcher
@@ -140,7 +141,7 @@ class CompassPrivacyTest {
                 "", Level.SEASON, year, season.starts.toString(), season.ends.toString(),
                 GoalBody(
                     title = "Zebra season: 100 learners", myPart = "zebra my part: 3 lessons a week", outcome = "zebra outcome: the grant",
-                    keyResults = listOf(KeyResult("zebra key result one")), leadAction = "Walk 20 minutes",
+                    keyResults = listOf(KeyResult("zebra key result one")), leadAction = "zebra weekly walk at dawn",
                 ),
             ),
         )
@@ -155,7 +156,7 @@ class CompassPrivacyTest {
     @Test fun goalWordsLeaveThePhoneOnlyAsCiphertext() = runBlocking {
         val (repo, key) = phone()
         assertEquals(VaultState.NEW, repo.state.first())
-        repo.create()
+        repo.create(repo.cipherForUnlock())
         assertEquals(VaultState.OPEN, repo.state.first())
         val season = writeTheCascade(repo)
         repo.setRecovery("a long recovery passphrase".toCharArray())
@@ -170,8 +171,11 @@ class CompassPrivacyTest {
         for (r in puts) {
             val id = r.substringAfter("/items/").substringBefore(' ')
             val body = json.parseToJsonElement(r.substringAfter(' ').substringAfter(' ')).jsonObject
-            assertEquals(setOf("kind", "parent", "blob", "starts", "ends", "deleted"), body.keys)
-            val plain = CompassCrypto.open(k, id, body["blob"]!!.jsonPrimitive.content)
+            assertEquals(setOf("kind", "parent", "blob", "starts", "ends", "deleted", "base"), body.keys)
+            fun field(n: String) = body[n]?.jsonPrimitive?.contentOrNull
+            val plain = CompassCrypto.open(k, CompassCrypto.aad(id, field("kind")!!, field("parent"), field("starts"), field("ends")), body["blob"]!!.jsonPrimitive.content)
+            // Bound to its kind: the same blob under another level does not open (pagel.uz cannot move it unseen).
+            assertNull(CompassCrypto.open(k, CompassCrypto.aad(id, "someday", field("parent"), field("starts"), field("ends")), body["blob"]!!.jsonPrimitive.content))
             assertNotNull("a blob that does not open with the key", plain)
             if (hasMarker(String(plain!!))) openedWithKey++
         }
@@ -180,10 +184,16 @@ class CompassPrivacyTest {
         assertTrue(requests.any { it == """PUT /api/v1/compass/links/humopedia {"goal":"$season"}""" })
         assertTrue(requests.any { it.startsWith("PUT /api/v1/compass/recovery {\"blob\":\"") })
 
-        // 2. The lead action became a habit through the normal path, with its own words only.
+        // 2. The weekly step (marked words) became a habit through the normal path under a NEUTRAL title: no task row,
+        // no task outbox entry, nothing pagel.uz's task API or the MCP can list holds the step's words.
         val habits = main.dao().habitsOnce()
-        assertEquals(listOf("Walk 20 minutes"), habits.map { it.text })
+        assertEquals(listOf(CompassRules.STEP), habits.map { it.text })
         assertEquals("week", habits.single().every)
+        main.openHelper.readableDatabase.query("SELECT text, title FROM tasks").use { c ->
+            while (c.moveToNext()) for (i in 0 until c.columnCount) assertFalse("goal words in pagel.db tasks", hasMarker(c.getString(i).orEmpty()))
+        }
+        // The step's words open only in the unlocked Compass.
+        assertEquals("zebra weekly walk at dawn", repo.opened.first().goals.single { it.level == Level.SEASON }.body.leadAction)
 
         // 3. No log line (Timber or android.util.Log) carries the words.
         for (l in logs + ShadowLog.getLogs().map { it.msg.orEmpty() }) assertFalse("plain goal words in a log: $l", hasMarker(l))
@@ -221,7 +231,7 @@ class CompassPrivacyTest {
 
     @Test fun aNewPhoneOpensTheSealedCopyOnlyWithTheRecoveryPassphrase() = runBlocking {
         val (old, _) = phone()
-        old.create()
+        old.create(old.cipherForUnlock())
         writeTheCascade(old)
         old.setRecovery("a long recovery passphrase".toCharArray())
         old.sendAll(account)
@@ -229,9 +239,9 @@ class CompassPrivacyTest {
         val (fresh, _) = phone(CompassTestKeys())
         fresh.pullIfNew(account)
         assertEquals(VaultState.LOST, fresh.state.first())
-        assertFalse(fresh.recover("not the passphrase".toCharArray()))
+        assertFalse(fresh.recover("not the passphrase".toCharArray(), fresh.cipherForUnlock()))
         assertEquals(VaultState.LOST, fresh.state.first())
-        assertTrue(fresh.recover("a long recovery passphrase".toCharArray()))
+        assertTrue(fresh.recover("a long recovery passphrase".toCharArray(), fresh.cipherForUnlock()))
         assertEquals(VaultState.OPEN, fresh.state.first())
         val goals = fresh.opened.first().goals
         assertEquals(4, goals.size)
@@ -240,7 +250,7 @@ class CompassPrivacyTest {
 
     @Test fun aServerWithoutTheCompassKeepsEverythingWaiting() = runBlocking {
         val (repo, _) = phone()
-        repo.create()
+        repo.create(repo.cipherForUnlock())
         repo.saveGoal(Goal("", Level.PURPOSE, null, null, null, GoalBody(title = "Zebra purpose")))
         putCode = 405
         assertEquals(SendResult.ALL_SENT, repo.sendAll(account))
@@ -253,11 +263,11 @@ class CompassPrivacyTest {
     @Test fun aLostGuardKeySaysSoAndNoLockAsksForOne() = runBlocking {
         val keys = CompassTestKeys()
         val (repo, _) = phone(keys)
-        repo.create()
+        repo.create(repo.cipherForUnlock())
         repo.saveGoal(Goal("", Level.PURPOSE, null, null, null, GoalBody(title = "Zebra purpose")))
         repo.lock()
         keys.gone = true
-        val thrown = runCatching { repo.unlock() }.exceptionOrNull()
+        val thrown = runCatching { repo.unlock(repo.cipherForUnlock()) }.exceptionOrNull()
         assertTrue(thrown is KeyGone)
         assertEquals(VaultState.LOST, repo.state.first())
 
@@ -267,7 +277,7 @@ class CompassPrivacyTest {
 
     @Test fun todaysLineIsSealedOnThePhoneAndShowsTheFirstWords() = runBlocking {
         val (repo, _) = phone()
-        repo.create()
+        repo.create(repo.cipherForUnlock())
         val id = repo.saveGoal(Goal("", Level.PURPOSE, null, null, null, GoalBody(title = "Find every child's gift and grow it")))
         assertNull(repo.line.first())
         repo.setLine(true, repo.opened.first().goals.single { it.id == id })

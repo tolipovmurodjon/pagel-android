@@ -43,7 +43,18 @@ private val SheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GlassSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, full: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+fun GlassSheet(
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    full: Boolean = false,
+    /**
+     * The sheet's own window is FLAG_SECURE (no screenshot, no recording, a blank Recents card) whatever the window under
+     * it is. Material's default (SecureFlagPolicy.Inherit) copies the parent: over a plain page it cleared the Compass
+     * picker's flag and CI's screenshot 108 showed a goal (compass checker #1).
+     */
+    secure: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val toasts = LocalToasts.current
     // This sheet's place in the stack: only the top sheet draws the toast.
     val level = remember { toasts.sheets + 1 }
@@ -63,6 +74,9 @@ fun GlassSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, full: Boole
         scrimColor = if (full) Color.Transparent else Glass.Ink.copy(alpha = 0.18f),
         dragHandle = null,
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+        properties = androidx.compose.material3.ModalBottomSheetProperties(
+            securePolicy = if (secure) androidx.compose.ui.window.SecureFlagPolicy.SecureOn else androidx.compose.ui.window.SecureFlagPolicy.Inherit,
+        ),
     ) {
         SheetSystemBars()
         // A full sheet's aurora runs under the status bar and the nav bar (edge to edge); its content keeps clear of both.
