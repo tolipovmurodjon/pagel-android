@@ -740,20 +740,22 @@ shot core-icon 1.5
 tap Done || $T adb shell input keyevent 4
 sleep 1
 
-log "-- drag a task in: Me → long-press Call the bank (Weigh in was dropped in Close the day) → drop it on CI Rocket in the Move to strip"
+log "-- drag a task in: Me → long-press Pay the internet bill (a list row: the next step sits in its card, and Weigh in was dropped in Close the day) → drop it on CI Rocket in the Move to strip"
 $T adb shell input keyevent 4; sleep 1
 tap_scroll Me && shot core-me 2 || { log "WALKTHROUGH: no Me project"; exit 1; }
 XML="$(last core-me)"
 BAR=$(y_of Today 2)
-FROM=$(centre "Call the bank about the report") || { $T adb shell input swipe 160 450 160 300 300; sleep 1; FROM=$(centre "Call the bank about the report"); } || { log "WALKTHROUGH: Call the bank is not on the Me page"; exit 1; }
+# Me's habits come before it, so scroll in small steps until the row is clear of the Move to strip's place.
+for k in 1 2 3 4 5 6; do FROM=$(centre "Pay the internet bill") && [ "${FROM#* }" -lt $(( ${BAR:-550} - 120 )) ] && break; FROM=""; $T adb shell input swipe 160 450 160 300 400; sleep 1; done
+[ -n "$FROM" ] || { log "WALKTHROUGH: Pay the internet bill is not on the Me page"; exit 1; }
 DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
 BAR=${BAR:-$(( $($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2) - 90 * DPI / 160 ))}
 TX=$(( 46 * DPI / 160 )); TY=$(( BAR - 44 * DPI / 160 ))
 log "   drag from $FROM to $TX $TY (tab bar top $BAR)"
 $T adb shell input draganddrop $FROM $TX $TY 1800
 shot core-dragged 2
-wait_log 'PATCH /api/v1/tasks/t_ci2 {"project":"ci-rocket"}' 30 || { log "WALKTHROUGH: the dragged task never moved on pagel.uz"; grep -E 'PATCH /api/v1/tasks/t_ci2' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
-log "   Call the bank moved into CI Rocket (pagel.uz has it)"
+wait_log 'PATCH /api/v1/tasks/t_u2 {"project":"ci-rocket"}' 30 || { log "WALKTHROUGH: the dragged task never moved on pagel.uz"; grep -E 'PATCH /api/v1/tasks/t_u2' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   Pay the internet bill moved into CI Rocket (pagel.uz has it)"
 
 log "-- merge CI Rocket into Humopedia, then Undo inside 5 s: pagel.uz never hears of the merge"
 $T adb shell input keyevent 4; sleep 1
@@ -774,7 +776,7 @@ log "   merge undone in time: no POST merge, CI Rocket is back"
 
 log "-- finish: tick both tasks → Everything is done → Finish project with a shipped line"
 tap_scroll "CI Rocket" && shot core-rocket-2 2 || exit 1
-for t in "Write the flight plan" "Call the bank about the report"; do tap "Done: $t" || { sleep 2; tap "Done: $t"; } || { log "WALKTHROUGH: no ring for $t"; exit 1; }; sleep 2; done
+for t in "Write the flight plan" "Pay the internet bill"; do tap "Done: $t" || { sleep 2; tap "Done: $t"; } || { log "WALKTHROUGH: no ring for $t"; exit 1; }; sleep 2; done
 shot core-all-done 2
 tap_scroll "Finish project" || { log "WALKTHROUGH: all done but no Finish project"; exit 1; }
 sleep 1.5; tap "What I shipped"; sleep 1
