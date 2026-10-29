@@ -14,6 +14,7 @@ import org.pagel.ai.ui.glass.DatePick
 import org.pagel.ai.ui.glass.Repeat
 import org.pagel.ai.ui.glass.TimeWheelMath
 import org.pagel.ai.ui.projects.projectGroups
+import org.pagel.ai.ui.task.movedStep
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
@@ -173,5 +174,15 @@ class TaskLogicTest {
         assertEquals("Today 10:00–12:00", DatePick.dueText("2026-10-28 10:00-12:00", day))
         assertEquals("2026-10-30 10:00-12:00", DatePick.due(LocalDate.of(2026, 10, 30), "10:00-12:00"))
         assertEquals("Today 10:00–12:00", org.pagel.ai.ui.today.dueLabel("2026-10-28 10:00-12:00", day)!!.text)
+    }
+
+    @Test fun aDraggedStepKeepsItsTick() {
+        val steps = listOf(
+            org.pagel.ai.ui.task.PanelStep("Get the book", true),
+            org.pagel.ai.ui.task.PanelStep("Open page 12", false),
+            org.pagel.ai.ui.task.PanelStep("Read one line", false),
+        )
+        assertEquals(listOf("Open page 12", "Read one line", "Get the book") to listOf(2), steps.movedStep(0, 2))
+        assertEquals(listOf("Read one line", "Get the book", "Open page 12") to listOf(1), steps.movedStep(2, 0))
     }
 }

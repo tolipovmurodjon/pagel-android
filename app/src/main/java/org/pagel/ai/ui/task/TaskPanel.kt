@@ -1,5 +1,14 @@
 package org.pagel.ai.ui.task
 
+import android.os.SystemClock
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
+import org.pagel.ai.ui.projects.dropIndex
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -400,6 +409,12 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
         else a.onSteps(texts.filterIndexed { n, _ -> n != i }, ticked.filter { it != i }.map { if (it > i) it - 1 else it })
     }
     fun add() { val s = adding.trim(); if (s.isNotEmpty()) { a.onSteps(texts + s, ticked); adding = "" } }
+    val heights = remember { mutableStateMapOf<Int, Int>() }
+    var from by remember { mutableIntStateOf(-1) }
+    var slot by remember { mutableIntStateOf(-1) }
+    var dy by remember { mutableFloatStateOf(0f) }
+    var droppedAt by remember { mutableLongStateOf(0L) }
+    val steps by androidx.compose.runtime.rememberUpdatedState(ui.steps)
 
     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Column(Modifier.padding(vertical = 10.dp)) {
@@ -416,12 +431,47 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
                     }
                 }
             }
-            ui.steps.forEachIndexed { i, s ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            ui.steps.forEachIndexed { i, s -> key(i, s.text) {
+                val lifted = from == i
+                val shift = if (from >= 0 && !lifted && slot >= 0) {
+                    val h = (heights[from] ?: 0).toFloat()
+                    when { i in (from + 1)..slot -> -h; i in slot until from -> h; else -> 0f }
+                } else 0f
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).onSizeChanged { heights[i] = it.height }
+                        .zIndex(if (lifted) 1f else 0f)
+                        .graphicsLayer {
+                            translationY = if (lifted) dy else shift
+                            if (lifted) { scaleX = 1.03f; scaleY = 1.03f; shadowElevation = 16.dp.toPx(); shape = RoundedCornerShape(16.dp); clip = true }
+                        }
+                        .background(if (lifted) Color.White.copy(alpha = 0.92f) else Color.Transparent)
+                        .padding(end = Space.xs)
+                        .semantics { stateDescription = if (lifted) "Lifted" else "" },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     val press = remember { MutableInteractionSource() }
                     Box(
                         Modifier.size(48.dp).pressScale(press)
+                            // Long-press the ring to lift a step (the words are a live field, so a long-press there selects text).
+                            .pointerInput(i, texts.size) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { from = i; slot = i; dy = 0f; haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                                    onDrag = { c, d ->
+                                        c.consume(); dy += d.y
+                                        val t = dropIndex(texts.indices.map { heights[it] ?: 0 }, i, dy)
+                                        if (t != slot) { slot = t; haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+                                    },
+                                    onDragEnd = {
+                                        val f = from; val t = slot
+                                        from = -1; slot = -1; dy = 0f; droppedAt = SystemClock.uptimeMillis()
+                                        if (f >= 0 && t >= 0 && t != f) steps.movedStep(f, t).let { (x, y) -> a.onSteps(x, y) }
+                                    },
+                                    onDragCancel = { from = -1; slot = -1; dy = 0f },
+                                )
+                            }
                             .clickable(press, indication = null, role = Role.Checkbox) {
+                                // The finger lifting after a drag is not a tick.
+                                if (SystemClock.uptimeMillis() - droppedAt < 400) return@clickable
                                 haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                                 a.onSteps(texts, if (s.done) ticked - i else (ticked + i).sorted())
                             }
@@ -440,7 +490,7 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
                     ) { edit(i, it) }
                     GlassIconButton(TabIcons.Close, "Remove step: ${s.text}", tint = Glass.Muted, size = 40.dp, plain = true) { edit(i, "") }
                 }
-            }
+            } }
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 13.dp, end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(TabIcons.Plus, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(13.dp))
@@ -680,4 +730,10 @@ private fun DoneContent(ui: PanelUi, today: LocalDate, a: PanelActions, drawIn: 
             }
         }
     }
+}
+
+/** A step moved from [from] to [to]: the new texts and the ticks re-pointed at the same steps, for one onSteps call. */
+internal fun List<PanelStep>.movedStep(from: Int, to: Int): Pair<List<String>, List<Int>> {
+    val moved = toMutableList().apply { add(to.coerceIn(0, lastIndex), removeAt(from)) }
+    return moved.map { it.text } to moved.mapIndexedNotNull { i, s -> if (s.done) i else null }
 }
