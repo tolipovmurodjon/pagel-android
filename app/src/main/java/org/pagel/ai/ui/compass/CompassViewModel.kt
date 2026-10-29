@@ -157,12 +157,12 @@ class CompassViewModel @Inject constructor(
      */
     fun save(goal: Goal, why: String? = null) = guarded {
         val id = repo.saveGoal(goal)
-        if (!why.isNullOrBlank()) repo.saveNote(NoteKind.CHANGE_WHY, today.toString(), NoteBody(listOf(why.trim()), id))
+        if (!why.isNullOrBlank()) repo.saveNote(NoteKind.CHANGE_WHY, day.value.toString(), NoteBody(listOf(why.trim()), id))
     }
 
     fun delete(goal: Goal, why: String? = null) = guarded {
         repo.deleteGoal(goal.id)
-        if (!why.isNullOrBlank()) repo.saveNote(NoteKind.CHANGE_WHY, today.toString(), NoteBody(listOf(why.trim()), goal.id))
+        if (!why.isNullOrBlank()) repo.saveNote(NoteKind.CHANGE_WHY, day.value.toString(), NoteBody(listOf(why.trim()), goal.id))
     }
 
     fun tickKeyResult(goal: Goal, i: Int) = guarded {
@@ -175,7 +175,7 @@ class CompassViewModel @Inject constructor(
 
     fun reset(goal: Goal) = guarded {
         val hits = ui.value.progress[goal.id]?.hitDays.orEmpty()
-        repo.saveGoal(goal.copy(body = CompassRules.reset(ui.value.season, today, goal.body, hits)))
+        repo.saveGoal(goal.copy(body = CompassRules.reset(ui.value.season, day.value, goal.body, hits)))
     }
 
     fun saveNote(kind: String, day: String, answers: List<String>, id: String = "", goalId: String? = null) = guarded {
