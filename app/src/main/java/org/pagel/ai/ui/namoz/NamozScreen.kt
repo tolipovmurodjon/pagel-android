@@ -195,7 +195,7 @@ private fun StatsPane(ui: NamozUi) {
             }
             // The month: one dot per day, its fill = prayers ticked that day (an empty day is just an empty dot).
             ui.month.chunked(7).forEach { week ->
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
                     for ((d, set) in week) Box(
                         Modifier.size(18.dp).background(if (set.isEmpty()) Glass.Ink.copy(alpha = 0.06f) else Glass.Primary.copy(alpha = 0.2f + 0.16f * set.size), CircleShape)
                             .semantics { contentDescription = "${d.dayOfMonth}: ${set.size} of 5" },
