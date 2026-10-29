@@ -64,7 +64,9 @@ class ProjectRepository(
         val names = dao.projectNames()
         val name = slugOf(title, names)
         val all = dao.projectsOnce()
-        val pick = color ?: SWATCHES[all.size % SWATCHES.size]
+        // First colour no project uses yet, so new projects don't repeat colours.
+        val used = all.mapNotNull { it.color }.toSet()
+        val pick = color ?: SWATCHES.firstOrNull { it !in used } ?: SWATCHES[all.size % SWATCHES.size]
         val sort = (all.maxOfOrNull { it.sort } ?: -1) + 1
         dao.upsertProjects(listOf(ProjectEntity(name, title.trim(), pick, sort, 0, area = area, parent = parent)))
         send(name, "POST", "/api/v1/projects", buildJsonObject { put("name", name); put("title", title.trim()); put("color", pick); if (area != null) put("area", area) })
