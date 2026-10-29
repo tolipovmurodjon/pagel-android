@@ -410,7 +410,7 @@ fun FinishProjectContent(ui: ProjectUi, onDismiss: () -> Unit, onFinish: (String
                     shipped, { shipped = it.take(140) },
                     Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(FieldShape).background(Glass.Ink.copy(alpha = 0.05f)).padding(Space.md)
                         .semantics { contentDescription = "What I shipped" },
-                    textStyle = style, cursorBrush = SolidColor(Glass.Primary),
+                    textStyle = style, singleLine = true, cursorBrush = SolidColor(Glass.Primary),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { onFinish(shipped) }),
                     decorationBox = { inner -> Box { if (shipped.isEmpty()) Text("I shipped…", style = style, color = Glass.Muted); inner() } },
                 )
