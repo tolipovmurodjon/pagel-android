@@ -41,6 +41,40 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE v18.1 · ROUND D, BOSS'S 12:00-12:15 NOTES: MINIMAL ROWS, THE ALL-HABITS CHAIN, THE LIQUID-GLASS ICON (2026-10-29, builder agent, branch `feat/roundD-habits-2`)
+- **Branch:** `feat/roundD-habits` rebased onto `feat/native-app` eb4d254 (Compass) and pushed as **`feat/roundD-habits-2`** (a new
+  name instead of a force push). Conflicts: the manifest (Compass backup rules + the round D icon) and this file (v18 on top).
+- **Rows (Boss: "minimalistic… no mental load"):** each habit row is the check · the emoji · the title (1 line) · the progress
+  (1 line: "Finished", "0 / 10 min", "2 / 3", a prayer's window, the time, or "0 / 1") · 🔥 the streak. Gone from the row: the bell
+  and time tab, "•••" and its menu sheet, the "never miss twice" chip (now a 10 dp amber dot on the emoji), "after X", the progress
+  bar. Tap a row = the habit's page; a habit with minutes has a play ring for a check (tap = run/pause the clock; it ticks itself
+  at the end). Proof: `HabitsScreenshotTest.atMostFiveThingsPerRow` (3-5 tagged parts, ≤ 2 tap targets per row),
+  `rowsHaveOneHeightAndOneGap` (+ 1.5×): every row the same height, every gap the same (`Space.paneGap`).
+- **The habit's page** now holds what the row lost: Reminder · time/off (the reminder sheet, grants in `rememberReminderGrants`,
+  shared with the Namoz sheet), Start N min / Pause / Reset the clock / Done without the clock, Freeze today · N left, Take back
+  today's tick; plus its own month chain (a count habit's partial day = taps / times ring) and the 3 stat cards.
+- **The top bar = ONE all-habits chain:** a day fills mint only when every habit due that day is held (`StripDay.held/due`,
+  `heldOf`); a partial day is a thin ring whose arc = held / due (no fill); full days in a row are joined by one solid bar of the
+  same mint (`CHAIN`, bar = half the circle, like his 26-27); a miss is a gap; today is a ring; ahead is faint. History's
+  all-habits month uses the same rings. Proof: `theTopBarIsTheAllHabitsChain` (Mon 26 = "4 of 5 done"),
+  `aFiveDayStreakAndAGap` → `habits-chain-streak-and-gap.png` (20-24 joined, 25 a gap, 26 a 2-of-4 ring, 27 alone, 28 today).
+- **Namoz and the top chain, Boss picks:** (A, built) Namoz stays its own group with its own "3/5" ring and its own month in
+  History; the top chain counts only the other habits, so a late prayer never breaks the habits chain. (B) count the five prayers
+  inside the top chain from 1 November: one line in `habitBoard` (`others` → `habits` for `week`); then a day is full only when
+  all habits AND all five prayers are done.
+- **Icon (real liquid glass):** master `docs/icon/make_svg.py` → 1024 px (Chrome render, `docs/icon/render.cjs`): a translucent
+  frosted P (white 92 → 62 % with the aurora's mint tint), an inner lit rim brightest top-left, a soft mint inner shade low-right
+  (no dark outline), a hue-tinted lift shadow, the glossy #FFD166 bead; tile = 3 OKLCH stops + aurora pools + 4.5 % grain. Layers:
+  `mipmap-*/ic_launcher_foreground.webp` (alpha recovered from a white and a black render, composite error ≤ 4.6/255) and
+  `ic_launcher_background.webp`, 108 → 432 px; the themed layer stays the vector P, the status-bar P silhouette and the splash
+  (`@mipmap/ic_launcher`) are unchanged. minSdk 30, so no legacy PNG launcher icons are needed. **Board:**
+  `docs/qa/roundD-icon-board.png` (240 + 48 px, squircle + round, light + dark wallpaper, robot · flat P · glass P).
+- **Icon verdict (the maker's own eye; no fresh checker: agents were not allowed this round, so a checker still owes one):**
+  vs round D's flat P: BETTER at 240 px (reads as lit glass, not a sticker); slightly WORSE at 48 px (the translucent P has less
+  contrast than solid white; still legible). vs the Humopedia icon's finish: SAME family (one top-left light, crisp edges, no dark
+  outline, hue-tinted shadow); WORSE on character (a letter, not a mascot). First render was too opaque (read as clay) and too
+  big in the mask: fixed (body 97 % → 92 %, glyph 13.6 → 11.6 px/unit).
+
 ## START HERE v18 · ROUND D = HABITS 2.0 (THE CHAIN, OUR OWN LOOK), NAMOZ, THE ICON, HUMAN-MADE EMOJI (2026-10-29, builder agent, branch `feat/roundD-habits`)
 - **Order Boss set:** 0a habits (rebuilt from zero in our own glass, ideas from his 4 loved screens in `D:\00_inbox\taste\habit-*__loved__pagel-habits.jpg`),
   0b icon, 0c emoji, Namoz (Boss 2026-10-28: "start tracking namaz fully … from 1 November"). Items 1 (amount + calories photo), 2 (Inbox
