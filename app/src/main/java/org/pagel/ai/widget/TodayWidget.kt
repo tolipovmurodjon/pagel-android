@@ -12,10 +12,8 @@ import androidx.glance.GlanceTheme
 import androidx.glance.LocalContext
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
-import androidx.glance.action.actionStartActivity
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.provideContent
@@ -29,13 +27,17 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.pagel.ai.MainActivity
 import org.pagel.ai.R
 import org.pagel.ai.data.db.PagelDao
 import org.pagel.ai.data.db.ProjectEntity
@@ -60,9 +62,27 @@ import javax.inject.Singleton
 interface WidgetParts {
     fun dao(): PagelDao
     fun today(): TodayRepository
+    /** Phase 8: the habit and namoz widgets' door (WidgetSources.kt), and the Calories widget's numbers. */
+    fun habits(): WidgetHabits
+    fun calories(): WidgetCalories
 }
 
-private fun parts(ctx: Context) = EntryPointAccessors.fromApplication(ctx, WidgetParts::class.java)
+internal fun parts(ctx: Context): WidgetParts = partsOf(ctx)
+
+/** Hilt's entry point in the app; a test puts fakes here to run a widget's ActionCallback on the JVM. */
+internal var partsOf: (Context) -> WidgetParts = { EntryPointAccessors.fromApplication(it, WidgetParts::class.java) }
+
+/** Today's 3 and the day's count ("12 done · 1 left"), from Room only. */
+internal fun todayGlanceFlow(dao: PagelDao, today: TodayRepository): Flow<TodayGlance> =
+    combine(dao.todayTasks(), dao.projects(), today.doneToday()) { t, p, done -> todayGlance(t, p, done, LocalDate.now(TASHKENT)) }
+
+/** The next task on Today and its next open step; the steps are read for that one task only. */
+@OptIn(ExperimentalCoroutinesApi::class)
+internal fun nextTaskFlow(dao: PagelDao): Flow<NextTaskGlance?> =
+    combine(dao.todayTasks(), dao.projects()) { t, p -> t to p }.flatMapLatest { (tasks, projects) ->
+        val first = dealToday(tasks, finishing = emptySet()).visible.firstOrNull()
+        if (first == null) flowOf(null) else dao.steps(first.id).map { steps -> nextTaskGlance(tasks, steps, projects) }
+    }
 
 /**
  * White by day, deep ink at night; mint only for the ticks and the icon. The container greens read as a dull
@@ -85,37 +105,42 @@ private val WidgetColors = ColorProviders(
  * "Today's 3" on the home screen (NATIVE-PLAN Phase 2): the same 3 tasks the app shows, in pagel.uz's order, from
  * Room. Tick one and it goes through the app's outbox; the next task is dealt. Google's check_list canonical layout.
  */
-class TodayWidget : GlanceAppWidget() {
-    // Exact: one layout for the real size, without holding a view per breakpoint in the launcher's memory.
-    override val sizeMode: SizeMode = SizeMode.Exact
-
+class TodayWidget : PagelWidget() {
+    // Exact (PagelWidget): one layout for the real size, without holding a view per breakpoint in the launcher's memory.
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val dao = parts(context).dao()
-        val firstTasks = withContext(Dispatchers.IO) { dao.todayTasks().first() }
-        val firstProjects = withContext(Dispatchers.IO) { dao.projects().first() }
+        val p = parts(context)
+        val flow = todayGlanceFlow(p.dao(), p.today())
+        val first = withContext(Dispatchers.IO) { flow.first() }
         provideContent {
-            val tasks by remember { dao.todayTasks() }.collectAsState(firstTasks)
-            val projects by remember { dao.projects() }.collectAsState(firstProjects)
-            GlanceTheme(colors = WidgetColors) { Content(rows(tasks, projects)) }
+            val g by remember { flow }.collectAsState(first)
+            TodayContent(g)
         }
     }
+}
 
-    @androidx.compose.runtime.Composable
-    private fun Content(items: List<CheckListItem>) {
+/**
+ * Today's 3 in the white-mint glass (Phase 8): the title bar, "12 done · 1 left" under it (Today's own bar words), the
+ * 3 rows with their tick, a row's words open the task. Drawn from the model only, so tests render it without the app.
+ */
+@androidx.compose.runtime.Composable
+fun TodayContent(g: TodayGlance) {
+    GlanceTheme(colors = WidgetColors) {
         val ctx = LocalContext.current
         CheckListLayout(
             title = ctx.getString(R.string.widget_today_title),
+            subtitle = g.line.takeIf { g.done + g.open > 0 },
             titleIconRes = R.drawable.widget_today_icon,
             titleBarActionIconRes = R.drawable.sample_add_icon,
             titleBarActionIconContentDescription = ctx.getString(R.string.widget_today_open),
-            titleBarAction = actionStartActivity<MainActivity>(),
-            items = items,
+            titleBarAction = WidgetOpen.add,
+            items = g.rows,
             checkedItems = emptyList(),
             checkedIconRes = R.drawable.sample_checked_circle_icon,
             unCheckedIconRes = R.drawable.sample_circle_icon,
             checkButtonContentDescription = ctx.getString(R.string.widget_today_mark_done),
             onCheck = { key -> actionRunCallback<TickFromWidget>(actionParametersOf(TickFromWidget.TaskId to key)) },
-            emptyAction = actionStartActivity<MainActivity>(),
+            onOpen = { key -> WidgetOpen.task(key) },
+            emptyAction = WidgetOpen.today,
         )
     }
 }
@@ -138,7 +163,9 @@ class TickFromWidget : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val id = parameters[TaskId] ?: return
         parts(context).today().tick(id, done = true)
+        WidgetHaptics.finish(context)
         TodayWidget().updateAll(context)
+        NextTaskWidget().updateAll(context)
     }
 
     companion object {
@@ -151,22 +178,49 @@ class TodayWidgetReceiver : GlanceAppWidgetReceiver() {
 }
 
 /**
- * Keeps the widget true: whenever Room's Today changes (a tick in the app, a sync from pagel.uz), the widget is redrawn.
- * Glance only redraws on its own while its session is open (~45 s), so this push is what keeps it live all day.
+ * Keeps every widget true: whenever what a widget shows changes (a tick in the app, a sync from pagel.uz), that widget
+ * is redrawn. Glance only redraws on its own while its session is open (~45 s), so this push is what keeps them live
+ * all day. Each push compares the widget's model with the last one pushed ([WidgetRevisions]): a sync that changed
+ * nothing a widget shows wakes no launcher.
  */
 @Singleton
 class TodayWidgetUpdater @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val dao: PagelDao,
+    private val today: TodayRepository,
+    private val habits: WidgetHabits,
     @AppScope private val scope: CoroutineScope,
 ) {
-    @OptIn(FlowPreview::class)
+    private val revisions = WidgetRevisions()
+
     fun start() {
+        watch("today", todayGlanceFlow(dao, today)) { TodayWidget().updateAll(ctx) }
+        watch("next", nextTaskFlow(dao)) { NextTaskWidget().updateAll(ctx) }
+        watch("habits", habits.habits()) { HabitsWidget().updateAll(ctx) }
+        watch("namoz", habits.namoz()) { NamozWidget().updateAll(ctx) }
+    }
+
+    @OptIn(FlowPreview::class)
+    private fun <T> watch(name: String, models: Flow<T>, push: suspend () -> Unit) {
         scope.launch {
-            combine(dao.todayTasks(), dao.projects()) { t, p -> t to p }
-                .distinctUntilChanged()
-                .debounce(300)
-                .collect { runCatching { TodayWidget().updateAll(ctx) } }
+            models.distinctUntilChanged().debounce(300).collect { m ->
+                if (revisions.changed(name, m)) runCatching { push() }
+            }
         }
+    }
+}
+
+/**
+ * The last model each widget was drawn from. A new model equal to the last one is not pushed again (skill
+ * glance-appwidget-updates-and-memory: a revision decides a redraw), so a sync that touched other rows costs nothing.
+ */
+class WidgetRevisions {
+    private val last = HashMap<String, Any?>()
+
+    @Synchronized
+    fun changed(widget: String, model: Any?): Boolean {
+        if (last.containsKey(widget) && last[widget] == model) return false
+        last[widget] = model
+        return true
     }
 }

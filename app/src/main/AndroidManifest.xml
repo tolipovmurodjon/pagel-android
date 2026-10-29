@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- The Compass (Phase 6a): Android's own unlock sheet (fingerprint or screen-lock PIN). Normal permission. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Phase 8: the finish feel when a task or habit is ticked from a home-screen widget. Normal permission. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- device.status reads ConnectivityManager for the network block (AndroidDeviceInfoSource.network()).
          Without this, the whole command dies at the framework boundary with
@@ -139,13 +141,75 @@
         <!-- "Today's 3" home-screen widget. exported=true: the launcher sends APPWIDGET_UPDATE from outside. -->
         <receiver
             android:name=".widget.TodayWidgetReceiver"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/widget_today_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/today_widget_info" />
+        </receiver>
+        <!-- Phase 8 widgets (widget/GlanceWidgets.kt). exported=true for the same reason: the launcher sends APPWIDGET_UPDATE. -->
+        <!-- Habits rings: tap a ring to tick it. -->
+        <receiver
+            android:name=".widget.HabitsWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_habits_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/habits_widget_info" />
+        </receiver>
+        <!-- Namoz: today's five times, ticks from 1 November. -->
+        <receiver
+            android:name=".widget.NamozWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_namoz_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/namoz_widget_info" />
+        </receiver>
+        <!-- Calories today against the goal, a camera to log food. -->
+        <receiver
+            android:name=".widget.CaloriesWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_calories_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/calories_widget_info" />
+        </receiver>
+        <!-- The next task on Today and its next step. -->
+        <receiver
+            android:name=".widget.NextTaskWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_next_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/next_task_widget_info" />
+        </receiver>
+        <!-- Quick add: + opens the Add sheet, the mic says it. -->
+        <receiver
+            android:name=".widget.QuickAddWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_add_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quick_add_widget_info" />
         </receiver>
     </application>
 </manifest>

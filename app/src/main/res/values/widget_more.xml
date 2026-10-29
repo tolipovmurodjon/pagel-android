@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Phase 8 widgets (GlanceWidgets.kt). English, short; Boss's own words (task and habit titles) come from his data. -->
+<resources>
+    <string name="widget_fallback">Tap to open PAGEL</string>
+
+    <string name="widget_habits_name">Habits</string>
+    <string name="widget_habits_title">Habits</string>
+    <string name="widget_habits_description">Today\'s habits as rings. Tap one to tick it.</string>
+    <string name="widget_habits_empty">No habits today</string>
+
+    <string name="widget_namoz_name">Namoz</string>
+    <string name="widget_namoz_title">Namoz</string>
+    <string name="widget_namoz_description">Today\'s five prayer times, the next one marked.</string>
+    <string name="widget_namoz_from">From 1 Nov</string>
+    <string name="widget_namoz_set_up">Set up</string>
+
+    <string name="widget_calories_name">Calories</string>
+    <string name="widget_calories_title">Calories</string>
+    <string name="widget_calories_description">Today\'s kcal against your goal, and a camera to log food.</string>
+    <string name="widget_calories_log">Log food</string>
+    <string name="widget_calories_none">No kcal habit yet</string>
+    <string name="widget_calories_hint">Make one on pagel.uz</string>
+
+    <string name="widget_next_name">Next task</string>
+    <string name="widget_next_description">The next task on Today and its next step.</string>
+    <string name="widget_next_none">Nothing on Today</string>
+    <string name="widget_next_step">Next: %1$s</string>
+
+    <string name="widget_add_name">Quick add</string>
+    <string name="widget_add_description">Add a task in one tap, or say it.</string>
+    <string name="widget_add_task">Add a task</string>
+    <string name="widget_add_voice">Add by voice</string>
+</resources>

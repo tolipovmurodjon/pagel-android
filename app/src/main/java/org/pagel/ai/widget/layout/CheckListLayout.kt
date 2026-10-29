@@ -12,7 +12,13 @@ import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.Action
 import androidx.glance.appwidget.components.CircleIconButton
-import androidx.glance.appwidget.components.Scaffold
+import android.os.Build
+import androidx.glance.appwidget.appWidgetBackground
+import androidx.glance.appwidget.cornerRadius
+import androidx.glance.background
+import androidx.glance.layout.Box
+import androidx.glance.layout.Column
+import androidx.glance.layout.ContentScale
 import androidx.glance.appwidget.components.TitleBar
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
@@ -84,6 +90,10 @@ fun CheckListLayout(
   checkButtonContentDescription: String,
   onCheck: (String) -> Action,
   emptyAction: Action,
+  /** PAGEL Phase 8: the line under the title ("12 done · 1 left"); null hides it. */
+  subtitle: String? = null,
+  /** PAGEL Phase 8: a tap on a row's words opens that task in the app; null keeps the words still. */
+  onOpen: ((String) -> Action)? = null,
 ) {
   val checkListLayoutSize = CheckListLayoutSize.fromLocalSize()
 
@@ -112,30 +122,38 @@ fun CheckListLayout(
     widgetPadding
   }
 
-  Scaffold(
-    backgroundColor = GlanceTheme.colors.widgetBackground,
-    horizontalPadding = scaffoldHorizontalPadding,
-    modifier = GlanceModifier.padding(
-      top = scaffoldTopPadding,
-      bottom = widgetPadding
-    ),
-    titleBar = if (showTitleBar()) {
-      titleBar()
-    } else {
-      null
-    }
+  // PAGEL Phase 8: Glance's Scaffold paints one flat colour; this is the same column on the white-mint glass drawable
+  // (aurora glow + white card + mint rim, drawable-night for dark mode), with the day's count under the title.
+  val glass = GlanceModifier.fillMaxSize()
+    .background(ImageProvider(R.drawable.widget_glass), contentScale = ContentScale.FillBounds)
+    .appWidgetBackground()
+  Column(
+    modifier = (if (Build.VERSION.SDK_INT >= 31) glass.cornerRadius(android.R.dimen.system_app_widget_background_radius) else glass)
+      .padding(top = scaffoldTopPadding, bottom = widgetPadding)
   ) {
-    if (items.isEmpty()) {
-      EmptyListContent(emptyAction)
-    } else {
-      Content(
-        items = items,
-        checkedItems = checkedItems,
-        onCheck = onCheck,
-        checkedIconRes = checkedIconRes,
-        unCheckedIconRes = unCheckedIconRes,
-        checkButtonContentDescription = checkButtonContentDescription,
+    if (showTitleBar()) titleBar()()
+    if (subtitle != null) {
+      Text(
+        text = subtitle,
+        style = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp, color = GlanceTheme.colors.primary),
+        maxLines = 1,
+        modifier = GlanceModifier.padding(start = widgetPadding, bottom = verticalItemSpacing),
       )
+    }
+    Box(modifier = GlanceModifier.padding(horizontal = scaffoldHorizontalPadding).defaultWeight()) {
+      if (items.isEmpty()) {
+        EmptyListContent(emptyAction)
+      } else {
+        Content(
+          items = items,
+          checkedItems = checkedItems,
+          onCheck = onCheck,
+          onOpen = onOpen,
+          checkedIconRes = checkedIconRes,
+          unCheckedIconRes = unCheckedIconRes,
+          checkButtonContentDescription = checkButtonContentDescription,
+        )
+      }
     }
   }
 }
@@ -145,6 +163,7 @@ private fun Content(
   items: List<CheckListItem>,
   checkedItems: List<String>,
   onCheck: (String) -> Action,
+  onOpen: ((String) -> Action)?,
   @DrawableRes checkedIconRes: Int,
   @DrawableRes unCheckedIconRes: Int,
   checkButtonContentDescription: String,
@@ -158,6 +177,7 @@ private fun Content(
         item = item,
         isChecked = checkedItems.contains(item.key),
         onCheck = onCheck,
+        onClick = onOpen?.invoke(item.key),
         checkedIconRes = checkedIconRes,
         unCheckedIconRes = unCheckedIconRes,
         checkButtonContentDescription = checkButtonContentDescription,
@@ -181,6 +201,7 @@ private fun CheckListItem(
   onCheck: (String) -> Action,
   modifier: GlanceModifier = GlanceModifier,
   isChecked: Boolean,
+  onClick: Action? = null,
 ) {
     val listItemEndPadding = if (item.hasTrailingIcons) {
         0.dp
@@ -229,6 +250,7 @@ private fun CheckListItem(
     leadingContent = { CheckButton() },
     headlineContent = { Title() },
     supportingContent = { SupportingText() },
+    onClick = onClick,
   )
 }
 
