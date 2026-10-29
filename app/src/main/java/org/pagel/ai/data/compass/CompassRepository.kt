@@ -228,8 +228,7 @@ class CompassRepository(
 
     /** A goal leaves the Compass (its sealed blob is marked deleted on pagel.uz too). */
     suspend fun deleteGoal(id: String) = withContext(io) {
-        val old = dao.item(id) ?: return@withContext
-        dao.upsertItem(old.copy(deleted = true, syncStatus = CompassItemEntity.PENDING, lastModified = clock()))
+        if (dao.markDeleted(id, clock()) == 0) return@withContext
         queue(CompassOutboxEntity.ITEM, id)
     }
 
@@ -262,9 +261,10 @@ class CompassRepository(
         val bytes = plain.toByteArray(Charsets.UTF_8)
         val blob = CompassCrypto.seal(k, CompassCrypto.aad(id, kind, parent, starts, ends), bytes)
         bytes.fill(0)
-        val old = dao.item(id)
         val now = clock()
-        dao.upsertItem(CompassItemEntity(id, kind, parent, blob, starts, ends, sort = old?.sort ?: now, lastModified = now, serverVersion = old?.serverVersion ?: 0))
+        if (dao.updateSealed(id, kind, parent, blob, starts, ends, now) == 0) {
+            dao.insertItem(CompassItemEntity(id, kind, parent, blob, starts, ends, sort = now, lastModified = now))
+        }
         queue(CompassOutboxEntity.ITEM, id)
     }
 
@@ -310,14 +310,7 @@ class CompassRepository(
         for (op in dao.outbox()) {
             dao.attempt(op.id)
             val out: Outcome<*> = when (op.what) {
-                CompassOutboxEntity.ITEM -> {
-                    val row = dao.item(op.ref)
-                    if (row == null) Outcome.Ok(Unit) else {
-                        val r = api.putItem(account.serverUrl, account.token, row.id, SealedItemBody(row.kind, row.parent, row.blob, row.starts, row.ends, row.deleted, row.serverVersion))
-                        if (r is Outcome.Ok) { dao.setServerVersion(row.id, r.value); dao.markSynced(row.id, r.value, row.lastModified) }
-                        r
-                    }
-                }
+                CompassOutboxEntity.ITEM -> sendItem(account, op.ref)
                 CompassOutboxEntity.LINK -> api.putLink(account.serverUrl, account.token, op.ref, dao.link(op.ref)?.goal)
                 CompassOutboxEntity.RECOVERY -> api.putRecovery(account.serverUrl, account.token, vaultNow().recovery)
                 else -> Outcome.Ok(Unit)
@@ -325,13 +318,37 @@ class CompassRepository(
             when (out) {
                 is Outcome.Ok -> dao.sent(op.id)
                 is Outcome.Failed -> when (val e = out.error) {
-                    is DataError.Refused -> if (e.status in WAIT_FOR_SERVER) return@withContext SendResult.ALL_SENT else dao.sent(op.id)
+                    is DataError.Refused -> when {
+                        e.status in WAIT_FOR_SERVER -> return@withContext SendResult.ALL_SENT
+                        // A conflict is never dropped (re-check N1): it waits and is tried again.
+                        e.status == 409 -> return@withContext SendResult.TRY_LATER
+                        else -> dao.sent(op.id)
+                    }
                     DataError.Unauthorized -> return@withContext SendResult.SIGNED_OUT
                     else -> return@withContext SendResult.TRY_LATER
                 }
             }
         }
         SendResult.ALL_SENT
+    }
+
+    /**
+     * One sealed item to pagel.uz. On a 409 the phone takes the version pagel.uz holds and sends its own copy over it:
+     * this phone is the only writer, so that copy is an earlier write of its own whose reply was lost (re-check N1:
+     * the change used to be dropped and pagel.uz's copy froze). Twice stale in one pass → kept, tried later.
+     */
+    private suspend fun sendItem(account: Account, id: String): Outcome<*> {
+        repeat(3) {
+            val row = dao.item(id) ?: return Outcome.Ok(Unit)
+            val r = api.putItem(account.serverUrl, account.token, row.id, SealedItemBody(row.kind, row.parent, row.blob, row.starts, row.ends, row.deleted, row.serverVersion))
+            if (r !is Outcome.Ok) return r
+            dao.setServerVersion(row.id, r.value.version)
+            if (!r.value.stale) {
+                dao.markSynced(row.id, r.value.version, row.lastModified)
+                return r
+            }
+        }
+        return Outcome.Failed(DataError.Server(409))
     }
 
     // ── Counts from the rest of PAGEL (plain numbers only) ──────────────────────────────────────────────────────────

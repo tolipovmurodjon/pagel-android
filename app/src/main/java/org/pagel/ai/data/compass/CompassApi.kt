@@ -22,6 +22,9 @@ import java.io.IOException
 @Serializable
 data class SealedItemBody(val kind: String, val parent: String?, val blob: String, val starts: String?, val ends: String?, val deleted: Boolean, val base: Int)
 
+/** pagel.uz's answer to one sealed write: saved at [version], or [stale] (409): it already holds [version]. */
+data class PutReply(val version: Int, val stale: Boolean = false)
+
 @Serializable
 data class PulledItem(val id: String, val kind: String, val parent: String? = null, val blob: String, val starts: String? = null, val ends: String? = null, val version: Int = 1, val deleted: Boolean = false)
 
@@ -51,11 +54,19 @@ class CompassApi(private val http: OkHttpClient, private val io: CoroutineDispat
         http.newCall(authed(base, "/api/v1/compass", token).get().build()).execute().use { r -> read(r) { json.decodeFromString(CompassPull.serializer(), it) } }
     }
 
-    /** One item, whole: a retry is the same write. Returns pagel.uz's version. */
-    suspend fun putItem(base: String, token: String, id: String, body: SealedItemBody): Outcome<Int> = call {
+    /**
+     * One item, whole: a retry is the same write. Saved → pagel.uz's new version. A 409 (pagel.uz holds a version this
+     * phone did not see, e.g. its own earlier write whose reply was lost) → [PutReply.stale] with the version it holds.
+     */
+    suspend fun putItem(base: String, token: String, id: String, body: SealedItemBody): Outcome<PutReply> = call {
         val b = json.encodeToString(SealedItemBody.serializer(), body).toRequestBody(JSON)
         http.newCall(authed(base, "/api/v1/compass/items/$id", token).put(b).build()).execute().use { r ->
-            read(r) { json.decodeFromString(Version.serializer(), it).version }
+            if (r.code == 409) {
+                val held = runCatching { json.decodeFromString(Version.serializer(), r.body?.string().orEmpty()).version }.getOrNull()
+                if (held != null && held > 0) Outcome.Ok(PutReply(held, stale = true)) else Outcome.Failed(DataError.Server(409))
+            } else {
+                read(r) { PutReply(json.decodeFromString(Version.serializer(), it).version) }
+            }
         }
     }
 

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
@@ -99,6 +100,20 @@ interface CompassDao {
 
     @Upsert
     suspend fun upsertItems(items: List<CompassItemEntity>)
+
+    /**
+     * A new seal over an existing row, leaving serverVersion alone: the sender may have just stored pagel.uz's newer
+     * version, and writing back a copy read before it would undo it (compass re-check N2). Returns rows changed.
+     */
+    @Query("UPDATE compass_items SET kind = :kind, parent = :parent, blob = :blob, starts = :starts, ends = :ends, deleted = 0, syncStatus = 'pending', lastModified = :at WHERE id = :id")
+    suspend fun updateSealed(id: String, kind: String, parent: String?, blob: String, starts: String?, ends: String?, at: Long): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertItem(item: CompassItemEntity): Long
+
+    /** Deleted, without touching serverVersion (same reason as [updateSealed]). */
+    @Query("UPDATE compass_items SET deleted = 1, syncStatus = 'pending', lastModified = :at WHERE id = :id")
+    suspend fun markDeleted(id: String, at: Long): Int
 
     @Query("UPDATE compass_items SET syncStatus = 'synced', serverVersion = :version WHERE id = :id AND lastModified = :at")
     suspend fun markSynced(id: String, version: Int, at: Long)
