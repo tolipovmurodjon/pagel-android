@@ -806,3 +806,39 @@ grep -q 'Your week' "$(last core-week)" || { log "WALKTHROUGH: More has no Your 
 $T adb logcat -d > "$OUT/logcat-core.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-core.txt" && { log "WALKTHROUGH: CRASH in the projects round (see logcat-core.txt)"; exit 1; }
 log "CORE PROJECTS WALK DONE: $N steps"
+
+log "-- the Namoz page (namoz brief): open it from Habits; tick Asr; long-press Shom -> In the mosque; the counts change"
+# Ticks count from 1 November. Last in the walk, the emulator's clock moves to Thu 12 November 2026, 16:10 Tashkent
+# (11:10 UTC, Asr's time). adb root restarts adbd, which drops adb reverse: it is put back before the app starts.
+$T adb root > /dev/null 2>&1; sleep 3; $T adb wait-for-device
+$T adb shell "date -u 111211102026.00" > /dev/null || { log "WALKTHROUGH: could not set the emulator's date for Namoz"; exit 1; }
+$T adb reverse tcp:8799 tcp:8799
+$T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+front namoz-start
+for k in 1 2 3; do tap Habits && break; $T adb shell input keyevent 4; sleep 1; done
+sleep 2
+for k in 1 2 3; do tap Namoz && break; $T adb shell input swipe 160 200 160 600 400; sleep 1; done
+shot namoz-page 3
+grep -q 'text="Next · ' "$(last namoz-page)" || { log "WALKTHROUGH: the Namoz page did not open (no Next · line)"; exit 1; }
+grep -q 'text="Tracking starts 1 November"' "$(last namoz-page)" && { log "WALKTHROUGH: on 12 November the page still waits for 1 November"; exit 1; }
+# A row reads "Asr 14:52–16:58" (its name + its window); the stats rows read "Asr: n of d days".
+tap 'Asr [^"]*' || { log "WALKTHROUGH: no Asr row on the Namoz page"; exit 1; }
+shot namoz-asr 2
+$T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+B=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n' | grep -E 'content-desc="Shom [^"]*"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+[ -n "$B" ] || { log "WALKTHROUGH: no Shom row on the Namoz page"; exit 1; }
+set -- $(echo "$B" | grep -oE '[0-9]+' | tr '\n' ' ')
+$T adb shell input swipe $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) 900
+shot namoz-how 2
+tap "In the mosque" || { log "WALKTHROUGH: the long press showed no In the mosque choice"; exit 1; }
+sleep 2
+# The counts sit under the five rows: scroll until the mosque line shows.
+for k in 1 2 3 4; do onscreen '[0-9]+ in the mosque this month' && break; $T adb shell input swipe 160 500 160 200 400; sleep 1; done
+shot namoz-counts 2
+grep -q 'text="1 in the mosque this month"' "$(last namoz-counts)" || { log "WALKTHROUGH: the mosque count did not become 1"; exit 1; }
+grep -q 'content-desc="Asr: 1 of 12 days"' "$(last namoz-counts)" || { log "WALKTHROUGH: Asr's 30-day count did not become 1 of 12"; exit 1; }
+grep -q 'content-desc="Shom: 1 of 12 days"' "$(last namoz-counts)" || { log "WALKTHROUGH: Shom's 30-day count did not become 1 of 12"; exit 1; }
+wait_log '"day":"2026-11-12"' 30 && log "   the prayer ticks reached pagel.uz" || log "   (WARN: no tick for 2026-11-12 reached pagel.uz)"
+$T adb logcat -d > "$OUT/logcat-namoz.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-namoz.txt" && { log "WALKTHROUGH: CRASH on the Namoz page (see logcat-namoz.txt)"; exit 1; }
+log "NAMOZ WALK DONE: $N steps"

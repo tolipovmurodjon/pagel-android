@@ -42,6 +42,13 @@ object NamozStats {
     fun month(done: Map<String, Set<Namoz.Prayer>>, month: YearMonth): List<Pair<LocalDate, Set<Namoz.Prayer>>> =
         (1..month.lengthOfMonth()).map { d -> month.atDay(d).let { it to done[it.toString()].orEmpty() } }
 
+    /** The months the grid can show: the start month up to [today]'s month, oldest first (never empty). */
+    fun months(today: LocalDate): List<YearMonth> {
+        val first = YearMonth.from(LocalDate.parse(Namoz.START))
+        val last = maxOf(first, YearMonth.from(today))
+        return generateSequence(first) { it.plusMonths(1) }.takeWhile { it <= last }.toList()
+    }
+
     /** Prayers marked "In the mosque" in [month]. */
     fun mosque(marks: List<NamozMarkEntity>, month: YearMonth): Int {
         val p = month.toString()

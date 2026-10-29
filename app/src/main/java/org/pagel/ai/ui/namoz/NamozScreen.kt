@@ -2,6 +2,9 @@ package org.pagel.ai.ui.namoz
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -86,13 +89,18 @@ fun NamozScreen(
         item(key = "top") {
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
                 GlassIconButton(TabIcons.ArrowLeft, "Back", size = Space.touch, plain = true, onClick = onBack)
-                Text("Namoz", style = MaterialTheme.typography.headlineMedium, color = Glass.Ink, modifier = Modifier.weight(1f).padding(start = Space.xs).semantics { heading() })
+                Column(Modifier.weight(1f).padding(start = Space.xs)) {
+                    Text("Namoz", style = MaterialTheme.typography.headlineMedium, color = Glass.Ink, maxLines = 1, modifier = Modifier.semantics { heading() })
+                    // Today's date, the Hijri date under it (computed; may differ from the local calendar by a day).
+                    Text("${ui.today.dayOfMonth} ${ui.today.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} · ${ui.hijri}",
+                        style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                }
                 GlassIconButton(TabIcons.More, "Namoz settings", size = Space.touch, plain = true, onClick = onSettings)
             }
         }
         item(key = "next") { NextPane(ui) }
         item(key = "rows") { PrayerRows(ui, onTap, onMark, onStart) }
-        if (ui.tracking) item(key = "stats") { StatsPane(ui) }
+        if (ui.tracking && ui.started) item(key = "stats") { StatsPane(ui) }
         if (ui.settings.qazaOn) item(key = "qaza") { QazaPane(ui.settings.qaza, onQaza) }
         item(key = "learn") { LearnPane(ui.learning, onAddLearn, onLearned, onDeleteLearn) }
         item(key = "end") { Spacer(Modifier.height(Space.xxl)) }
@@ -103,15 +111,19 @@ fun NamozScreen(
 @Composable
 private fun NextPane(ui: NamozUi) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        // "Next · Asr", then "15:42  in 1 h 03 m" on one line; the countdown changes once a minute, never per second.
         Row(Modifier.fillMaxWidth().padding(Space.lg).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
             Image(painterResource(Emoji.res(ui.next.prayer.emoji)), null, Modifier.size(48.dp))
-            Spacer(Modifier.width(Space.md))
+            Spacer(Modifier.width(Space.lg))
             Column(Modifier.weight(1f)) {
-                Text("Next · ${ui.next.prayer.uz}", style = MaterialTheme.typography.labelLarge, color = Glass.Muted)
-                Text(ui.next.label().take(5), style = Glass.NumberText.copy(fontSize = MaterialTheme.typography.displaySmall.fontSize, fontWeight = FontWeight.Bold), color = Glass.Ink)
-                Text("${ui.today.dayOfMonth} ${ui.today.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} · ${ui.hijri}", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                Text("Next · ${ui.next.prayer.uz}", style = MaterialTheme.typography.labelLarge, color = Glass.Muted, maxLines = 1)
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(ui.next.label().take(5), style = Glass.NumberText.copy(fontSize = MaterialTheme.typography.headlineLarge.fontSize, lineHeight = MaterialTheme.typography.headlineLarge.lineHeight, fontWeight = FontWeight.Bold),
+                        color = Glass.Ink, maxLines = 1, softWrap = false)
+                    Text(ui.countdown, style = Glass.NumberText, color = Glass.PrimaryInk, maxLines = 1, softWrap = false,
+                        modifier = Modifier.padding(start = Space.md, bottom = Space.xs))
+                }
             }
-            Text(ui.countdown, style = Glass.NumberText, color = Glass.PrimaryInk)
         }
     }
 }
@@ -120,6 +132,7 @@ private fun NextPane(ui: NamozUi) {
 @Composable
 private fun PrayerRows(ui: NamozUi, onTap: (Namoz.Prayer) -> Unit, onMark: (Namoz.Prayer, String?) -> Unit, onStart: () -> Unit) {
     var marking by remember { mutableStateOf<Namoz.Prayer?>(null) }
+    val haptics = LocalHapticFeedback.current
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Column(Modifier.fillMaxWidth().padding(Space.sm)) {
             if (!ui.tracking) {
@@ -135,16 +148,24 @@ private fun PrayerRows(ui: NamozUi, onTap: (Namoz.Prayer) -> Unit, onMark: (Namo
                 val can = ui.tracking && ui.started
                 val how = ui.marksToday[p]
                 val press = remember { MutableInteractionSource() }
+                // Ticked = a soft mint fill; the prayer whose time it is = a faint mint wash with a hairline. Never red.
+                val fill = when { done -> Glass.PrimarySoft; ui.current == p && ui.started -> Glass.Primary.copy(alpha = 0.05f); else -> Color.Transparent }
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = Space.row)
-                        .background(if (ui.current == p) Glass.PrimarySoft.copy(alpha = 0.7f) else Color.Transparent, RoundedCornerShape(14.dp))
+                        .background(fill, RowShape)
+                        .then(if (ui.current == p && !done && ui.started) Modifier.border(1.dp, Glass.Primary.copy(alpha = 0.25f), RowShape) else Modifier)
+                        .pressScale(press)
                         .combinedClickable(press, indication = null, enabled = can, role = Role.Checkbox, onLongClickLabel = "How I prayed",
-                            onLongClick = { marking = p }, onClick = { onTap(p) })
+                            onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); marking = p },
+                            onClick = { if (!done) haptics.performHapticFeedback(HapticFeedbackType.Confirm); onTap(p) })
                         .semantics(mergeDescendants = true) { contentDescription = "${p.uz} ${w.label()}"; stateDescription = if (done) "Prayed" else if (can) "Not yet" else "From 1 November" }
                         .padding(horizontal = Space.md),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.size(26.dp).background(if (done) Glass.Primary else Glass.Ink.copy(alpha = 0.08f), CircleShape), contentAlignment = Alignment.Center) {
+                    // Not ticked = an empty ring, nothing more (before 1 November a fainter one).
+                    val ring = if (done) Modifier.background(Glass.Primary, CircleShape)
+                        else Modifier.border(1.5.dp, Glass.Ink.copy(alpha = if (can) 0.28f else 0.12f), CircleShape)
+                    Box(Modifier.size(26.dp).then(ring), contentAlignment = Alignment.Center) {
                         if (done) androidx.compose.material3.Icon(TabIcons.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
                     }
                     Spacer(Modifier.width(Space.md))
@@ -154,9 +175,14 @@ private fun PrayerRows(ui: NamozUi, onTap: (Namoz.Prayer) -> Unit, onMark: (Namo
                         Text(p.uz, style = MaterialTheme.typography.bodyLarge, color = if (done) Glass.Muted else Glass.Ink)
                         if (how != null) Text(howLabel(how), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
                     }
-                    Text(w.label(), style = Glass.NumberText, color = Glass.Muted)
+                    Text(w.label(), style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false)
                 }
             }
+            if (!ui.started) Text(
+                "Tracking starts 1 November", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = Space.sm, bottom = Space.xs),
+            )
         }
     }
     marking?.let { p -> MarkSheet(p, onPick = { onMark(p, it); marking = null }) { marking = null } }
@@ -176,34 +202,6 @@ private fun MarkSheet(p: Namoz.Prayer, onPick: (String?) -> Unit, onDismiss: () 
             }
         }
         Spacer(Modifier.height(org.pagel.ai.ui.glass.SheetBottom))
-    }
-}
-
-/** His own counts: full days this week, each prayer over 30 days, the month as dots, mosque prayers this month. */
-@Composable
-private fun StatsPane(ui: NamozUi) {
-    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
-        Column(Modifier.fillMaxWidth().padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            val (full, of) = ui.week
-            Text(if (of == 0) "Counts start on 1 November" else "$full/$of full days this week", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
-            for ((p, n, days) in ui.perPrayer) Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(p.uz, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, modifier = Modifier.width(72.dp))
-                Box(Modifier.weight(1f).height(8.dp).background(Glass.Ink.copy(alpha = 0.08f), CircleShape)) {
-                    if (days > 0 && n > 0) Box(Modifier.fillMaxWidth(n / days.toFloat()).height(8.dp).background(Glass.Primary, CircleShape))
-                }
-                Text("$n/$days", style = Glass.NumberText, color = Glass.Muted, modifier = Modifier.padding(start = Space.sm).width(44.dp))
-            }
-            // The month: one dot per day, its fill = prayers ticked that day (an empty day is just an empty dot).
-            ui.month.chunked(7).forEach { week ->
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                    for ((d, set) in week) Box(
-                        Modifier.size(18.dp).background(if (set.isEmpty()) Glass.Ink.copy(alpha = 0.06f) else Glass.Primary.copy(alpha = 0.2f + 0.16f * set.size), CircleShape)
-                            .semantics { contentDescription = "${d.dayOfMonth}: ${set.size} of 5" },
-                    )
-                }
-            }
-            if (ui.mosque > 0) Text("${ui.mosque} in the mosque this month", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
-        }
     }
 }
 
@@ -244,6 +242,8 @@ private fun LearnPane(items: List<org.pagel.ai.data.db.NamozLearnEntity>, onAdd:
         }
     }
 }
+
+private val RowShape = RoundedCornerShape(14.dp)
 
 private fun howLabel(how: String) = when (how) {
     NamozMarkEntity.ON_TIME -> "On time"; NamozMarkEntity.LATER -> "Later"; NamozMarkEntity.MOSQUE -> "In the mosque"; else -> ""

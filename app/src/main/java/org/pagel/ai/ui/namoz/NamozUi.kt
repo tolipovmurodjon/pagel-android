@@ -28,6 +28,10 @@ data class NamozUi(
     val week: Pair<Int, Int>,
     val perPrayer: List<Triple<Namoz.Prayer, Int, Int>>,
     val month: List<Pair<LocalDate, Set<Namoz.Prayer>>>,
+    /** Every counted day's ticked prayers, so the month grid can draw any month it is swiped to. */
+    val done: Map<String, Set<Namoz.Prayer>>,
+    /** The months the grid swipes through: November 2026 up to this month, oldest first. */
+    val months: List<YearMonth>,
     val mosque: Int,
     val learning: List<NamozLearnEntity>,
     val settings: NamozSettingsEntity,
@@ -54,7 +58,7 @@ data class NamozUi(
                 doneToday = done[day].orEmpty(),
                 marksToday = marks.filter { it.day == day }.mapNotNull { m -> Namoz.Prayer.entries.firstOrNull { it.name == m.prayer }?.let { it to m.how } }.toMap(),
                 week = NamozStats.week(done, today), perPrayer = NamozStats.perPrayer(done, today),
-                month = NamozStats.month(done, YearMonth.from(today)), mosque = NamozStats.mosque(marks, YearMonth.from(today)),
+                month = NamozStats.month(done, YearMonth.from(today)), done = done, months = NamozStats.months(today), mosque = NamozStats.mosque(marks, YearMonth.from(today)),
                 learning = learning, settings = settings, reminders = reminders,
             )
         }

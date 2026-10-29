@@ -103,6 +103,12 @@ class HabitAlarmReceiver : BroadcastReceiver() {
             .setLargeIcon(org.pagel.ai.ui.glass.Emoji.largeIcon(ctx, w.prayer.emoji))
             .setColor(0xFF1C7E69.toInt())
             .setContentTitle(org.pagel.ai.data.habits.Namoz.notice(w))
+            // On a locked screen only "Reminder" shows: the prayer's name stays private (namoz brief walls).
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(ctx, CHANNEL).setSmallIcon(org.pagel.ai.R.drawable.ic_stat_pagel).setColor(0xFF1C7E69.toInt())
+                    .setContentTitle("Reminder").setCategory(NotificationCompat.CATEGORY_REMINDER).build(),
+            )
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(open)
             .setAutoCancel(true)
