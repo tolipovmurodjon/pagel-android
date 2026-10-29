@@ -317,7 +317,7 @@ private fun Section(text: String) {
 }
 
 @Composable
-private fun Chip(text: String, on: Boolean = false, onClick: (() -> Unit)? = null) {
+internal fun Chip(text: String, on: Boolean = false, onClick: (() -> Unit)? = null) {
     val press = remember { MutableInteractionSource() }
     // A Box centres the word in the 48 dp target (a Text with heightIn sat on its top edge).
     Box(

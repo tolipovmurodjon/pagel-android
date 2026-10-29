@@ -37,6 +37,7 @@ class HabitAlarmReceiver : BroadcastReceiver() {
     interface Parts {
         fun habits(): HabitsRepository
         fun dao(): PagelDao
+        fun namoz(): org.pagel.ai.data.db.NamozDao
     }
 
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -76,7 +77,7 @@ class HabitAlarmReceiver : BroadcastReceiver() {
             val title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
             // A prayer (round D): only "Peshin vaqti kirdi · 12:11", its own picture, no streak (Boss: plain and respectful).
             val prayer = org.pagel.ai.data.habits.Namoz.prayerOf(title)?.takeIf { org.pagel.ai.data.habits.isNamoz(t) }
-            val window = prayer?.let { p -> org.pagel.ai.data.habits.Namoz.windows(java.time.LocalDate.parse(today)).first { it.prayer == p } }
+            val window = prayer?.let { p -> org.pagel.ai.data.habits.Namoz.windows(java.time.LocalDate.parse(today), org.pagel.ai.data.habits.Namoz.setupOf(parts.namoz().settingsOnce())).first { it.prayer == p } }
             if (window != null) postPrayer(ctx, id, window) else post(ctx, id, title, due?.drop(11)?.trim().orEmpty(), streak)
         }
         habits.replan()

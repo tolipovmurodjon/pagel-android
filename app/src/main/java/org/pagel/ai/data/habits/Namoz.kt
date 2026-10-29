@@ -103,8 +103,55 @@ object Namoz {
         return java.time.ZonedDateTime.of(day, windows(day, s).first { it.prayer == prayer }.from, ZONE)
     }
 
-    /** The whole of the reminder: "Peshin vaqti kirdi · 12:10". Plain and respectful, nothing more (Boss). */
-    fun notice(w: Window) = "${w.prayer.uz} vaqti kirdi · ${w.from.hhmm()}"
+    /** The whole of the reminder: "Asr · 15:42". Plain and respectful, nothing more (Boss, namoz brief). */
+    fun notice(w: Window) = "${w.prayer.uz} · ${w.from.hhmm()}"
+
+    /** The page's saved settings as a [Setup]; no row yet = Tashkent, Uzbekistan's method, Hanafi Asr, no offsets. */
+    fun setupOf(s: org.pagel.ai.data.db.NamozSettingsEntity?): Setup {
+        if (s == null) return Setup()
+        val offsets = s.offsets.split(",").map { it.trim().toIntOrNull() ?: 0 }.let { it + List((5 - it.size).coerceAtLeast(0)) { 0 } }.take(5)
+        val here = s.autoLocation && (s.lat != 0.0 || s.lon != 0.0)
+        return Setup(lat = if (here) s.lat else Setup().lat, lon = if (here) s.lon else Setup().lon, method = s.method, hanafi = s.hanafi, offsets = offsets)
+    }
+
+    private val HIJRI_MONTHS = listOf(
+        "Muharram", "Safar", "Rabiul avval", "Rabiul oxir", "Jumodul avval", "Jumodul oxir",
+        "Rajab", "Sha'bon", "Ramazon", "Shavvol", "Zulqa'da", "Zulhijja",
+    )
+
+    /** The Hijri date under the header, computed (Umm al-Qura, java.time): "19 Jumodul avval 1448". May differ by a day locally. */
+    fun hijri(day: LocalDate): String {
+        val h = java.time.chrono.HijrahDate.from(day)
+        val d = h.get(java.time.temporal.ChronoField.DAY_OF_MONTH)
+        val m = h.get(java.time.temporal.ChronoField.MONTH_OF_YEAR)
+        val y = h.get(java.time.temporal.ChronoField.YEAR)
+        return "$d ${HIJRI_MONTHS[m - 1]} $y"
+    }
+
+    /** The next prayer from [now]: today's next one, or tomorrow's Bomdod after Xufton has begun. */
+    fun next(now: java.time.LocalDateTime, s: Setup = Setup()): Pair<Window, java.time.LocalDateTime> {
+        val today = windows(now.toLocalDate(), s)
+        val w = today.firstOrNull { now.toLocalDate().atTime(it.from).isAfter(now) }
+        if (w != null) return w to now.toLocalDate().atTime(w.from)
+        val tomorrow = windows(now.toLocalDate().plusDays(1), s).first()
+        return tomorrow to now.toLocalDate().plusDays(1).atTime(tomorrow.from)
+    }
+
+    /** The prayer whose time it is at [now] (Bomdod ends at sunrise, so between sunrise and Peshin there is none). */
+    fun current(now: java.time.LocalDateTime, s: Setup = Setup()): Prayer? {
+        val t = now.toLocalTime()
+        return windows(now.toLocalDate(), s).firstOrNull { w -> if (w.to > w.from) t >= w.from && t < w.to else t >= w.from || t < w.to }?.prayer
+    }
+
+    /** "in 1 h 03 m" / "in 12 m" / "now": the countdown, whole minutes. */
+    fun countdown(now: java.time.LocalDateTime, at: java.time.LocalDateTime): String {
+        val m = java.time.Duration.between(now, at).toMinutes().coerceAtLeast(0)
+        return when {
+            m < 1 -> "now"
+            m < 60 -> "in $m m"
+            else -> "in ${m / 60} h %02d m".format(m % 60)
+        }
+    }
 }
 
 private operator fun <T> List<T>.component6(): T = this[5]

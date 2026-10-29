@@ -132,7 +132,7 @@ object AppDataModule {
     /** The habits' reminder alarms (Phase 3). */
     @Provides @Singleton
     fun provideReminderPlanner(@ApplicationContext ctx: Context, dao: PagelDao, db: PagelDatabase, @AppScope scope: CoroutineScope, @IoDispatcher io: CoroutineDispatcher): ReminderPlanner =
-        HabitAlarms(ctx, dao, scope, io, rituals = db.rituals())
+        HabitAlarms(ctx, dao, scope, io, rituals = db.rituals(), namoz = db.namoz())
 
     @Provides @Singleton
     fun provideHabitsRepository(@ApplicationContext ctx: Context, dao: PagelDao, api: PagelApi, reminders: ReminderPlanner): HabitsRepository =

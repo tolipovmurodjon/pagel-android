@@ -33,7 +33,45 @@ class NamozTest {
         // Published: Bomdod 05:35, Quyosh 06:54, Peshin 12:11, Asr 15:37, Shom 17:20, Xufton 18:35 (±1 min).
         assertTrue(abs(min(w[1].from) - min(LocalTime.of(12, 11))) <= 1)
         assertEquals(w[2].from, w[1].to)
-        assertEquals("Peshin vaqti kirdi · ${w[1].label().take(5)}", Namoz.notice(w[1]))
+        assertEquals("Peshin · ${w[1].label().take(5)}", Namoz.notice(w[1]))
+    }
+
+    @Test fun threeTashkentDatesMatchAFixedTable() {
+        // The published Tashkent table (Uzbekistan's method, Hanafi Asr) on 3 dates, pinned in code.
+        val table = mapOf(
+            LocalDate.of(2026, 11, 1) to listOf("05:35", "06:54", "12:11", "15:37", "17:20", "18:35"),
+            LocalDate.of(2026, 11, 15) to listOf("05:49", "07:11", "12:12", "15:23", "17:05", "18:22"),
+            LocalDate.of(2026, 11, 30) to listOf("06:04", "07:28", "12:16", "15:14", "16:57", "18:16"),
+        )
+        for ((d, want) in table) {
+            val ours = Namoz.day(d)
+            want.forEachIndexed { i, s -> assertTrue("$d #$i ${ours[i]} vs $s", abs(min(ours[i]) - min(LocalTime.parse(s))) <= 1) }
+        }
+    }
+
+    @Test fun settingsBecomeASetupAndNoRowIsTashkent() {
+        assertEquals(Namoz.Setup(), Namoz.setupOf(null))
+        val s = org.pagel.ai.data.db.NamozSettingsEntity(method = "mwl", hanafi = false, offsets = "1,2,x", autoLocation = true)
+        val setup = Namoz.setupOf(s)
+        assertEquals(listOf(1, 2, 0, 0, 0), setup.offsets)
+        assertEquals(41.2995, setup.lat, 0.0) // auto, but no place known yet: Tashkent
+        assertFalse(setup.hanafi)
+        val d = org.pagel.ai.data.db.NamozSettingsEntity()
+        assertFalse(d.qazaOn); assertEquals(0, d.qaza); assertTrue(d.hanafi); assertFalse(d.autoLocation)
+    }
+
+    @Test fun nextCurrentCountdownAndHijri() {
+        val d = LocalDate.of(2026, 11, 1)
+        val w = Namoz.windows(d)
+        val (next, at) = Namoz.next(d.atTime(w[2].from.minusMinutes(63)))
+        assertEquals(Namoz.Prayer.ASR, next.prayer)
+        assertEquals("in 1 h 03 m", Namoz.countdown(d.atTime(w[2].from.minusMinutes(63)), at))
+        assertEquals("in 5 m", Namoz.countdown(at.minusMinutes(5), at))
+        assertEquals(Namoz.Prayer.BOMDOD, Namoz.next(d.atTime(23, 0)).first.prayer)
+        assertEquals(Namoz.Prayer.PESHIN, Namoz.current(d.atTime(w[1].from.plusMinutes(1))))
+        assertEquals(Namoz.Prayer.XUFTON, Namoz.current(d.atTime(2, 0)))
+        assertNull(Namoz.current(d.atTime(9, 0)))
+        assertTrue(Namoz.hijri(d), Namoz.hijri(d).endsWith("1448"))
     }
 
     @Test fun aPrayerReminderRingsAtThatDaysTimeNeverBeforeTheFirst() {

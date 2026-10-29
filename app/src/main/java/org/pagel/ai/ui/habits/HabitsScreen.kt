@@ -119,6 +119,7 @@ fun HabitsRoute(
     reselect: Int,
     onOpenHabit: (String) -> Unit = {},
     onHistory: () -> Unit = {},
+    onOpenNamoz: () -> Unit = {},
     vm: HabitsViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -137,7 +138,7 @@ fun HabitsRoute(
         ui, contentPadding, reselect, celebrate = celebrate, finished = finished,
         onTick = vm::tick, onUntick = vm::untick, onOpen = onOpenHabit,
         onSelectDay = vm::selectDay, onSelectPart = vm::selectPart, onTimer = vm::toggleTimer, onHistory = onHistory,
-        onStartNamoz = vm::startNamoz, onNamozMenu = { namozSheet = true },
+        onStartNamoz = vm::startNamoz, onNamozMenu = { namozSheet = true }, onOpenNamoz = onOpenNamoz,
     )
     if (namozSheet) NamozSheet(ui.board?.namoz.orEmpty(), ui.reminders, onToggle = grants.remind) { namozSheet = false }
 }
@@ -166,6 +167,7 @@ fun HabitsScreen(
     onHistory: () -> Unit = {},
     onStartNamoz: () -> Unit = {},
     onNamozMenu: () -> Unit = {},
+    onOpenNamoz: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -203,7 +205,7 @@ fun HabitsScreen(
             item(key = "strip", contentType = "strip") { WeekStrip(board, onSelectDay) }
             item(key = "parts", contentType = "parts") { PartPills(ui.part, board, onSelectPart) }
             item(key = "namoz", contentType = "namoz") {
-                NamozGroup(board, today, onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onStart = onStartNamoz, onMenu = onNamozMenu, centres = centres, modifier = Modifier.animateItem())
+                NamozGroup(board, today, onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onStart = onStartNamoz, onMenu = onNamozMenu, onPage = onOpenNamoz, centres = centres, modifier = Modifier.animateItem())
             }
             val cards = board.inPart(ui.part)
             if (cards.isEmpty()) item(key = "empty-${ui.part}", contentType = "note") { EmptyPart(ui.part, board.total) }
@@ -670,7 +672,7 @@ private fun CheckCircle(
  */
 @Composable
 private fun NamozGroup(
-    board: HabitBoard, today: LocalDate?, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit, onStart: () -> Unit, onMenu: () -> Unit,
+    board: HabitBoard, today: LocalDate?, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit, onStart: () -> Unit, onMenu: () -> Unit, onPage: () -> Unit,
     centres: MutableMap<String, Offset>, modifier: Modifier = Modifier,
 ) {
     val prayers = board.namoz
@@ -679,7 +681,7 @@ private fun NamozGroup(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 EmojiTile("mosque", 40.dp)
                 Spacer(Modifier.width(Space.md))
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f).heightIn(min = Space.touch).clickable(onClickLabel = "Open the Namoz page", onClick = onPage), verticalArrangement = Arrangement.Center) {
                     Text("Namoz", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Glass.Ink, modifier = Modifier.semantics { heading() })
                     val started = Namoz.counts(board.selected.toString())
                     Text(if (prayers.isEmpty() || !started) "From 1 November" else "Five a day", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
@@ -727,7 +729,7 @@ private fun NamozGroup(
 private fun NamozSheet(prayers: List<HabitCard>, reminders: Set<String>, onToggle: (String, Boolean) -> Unit, onDismiss: () -> Unit) {
     GlassSheet(onDismiss) {
         org.pagel.ai.ui.glass.SheetTitle("Namoz reminders", null)
-        Text("A plain note when a prayer's time comes: \"Peshin vaqti kirdi · 12:11\".", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted,
+        Text("A plain note when a prayer's time comes: \"Peshin · 12:11\".", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted,
             modifier = Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.md))
         Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
             Column {

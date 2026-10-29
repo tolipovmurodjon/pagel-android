@@ -290,7 +290,8 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         })
                     }
                     entry<NotesRoute> { r -> org.pagel.ai.ui.inbox.NotesRoute(r.project, padding, onBack = { stack.removeLastOrNull() }, onOpenProject = { stack.add(NotesRoute(it)) }) }
-                    entry<HabitsRoute> { HabitsScreenRoute(padding, reselect, onOpenHabit = { stack.add(HabitDetailRoute(it)) }, onHistory = { stack.add(HabitHistoryRoute) }) }
+                    entry<HabitsRoute> { HabitsScreenRoute(padding, reselect, onOpenHabit = { stack.add(HabitDetailRoute(it)) }, onHistory = { stack.add(HabitHistoryRoute) }, onOpenNamoz = { stack.add(NamozRoute) }) }
+                    entry<NamozRoute> { org.pagel.ai.ui.namoz.NamozRoute(padding, onBack = { stack.removeLastOrNull() }) }
                     entry<HabitDetailRoute> { r -> org.pagel.ai.ui.habits.HabitDetailRoute(r.id, padding, onBack = { stack.removeLastOrNull() }) }
                     entry<HabitHistoryRoute> { org.pagel.ai.ui.habits.HabitHistoryRoute(padding, onBack = { stack.removeLastOrNull() }, onOpenHabit = { stack.add(HabitDetailRoute(it)) }) }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
@@ -349,7 +350,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
             org.pagel.ai.ui.compass.CompassRoute -> "Compass"
-            is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"; SortedTodayRoute -> "Sorted today"; is NotesRoute -> "Notes"
+            is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"; NamozRoute -> "Namoz"; SortedTodayRoute -> "Sorted today"; is NotesRoute -> "Notes"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
         val density = androidx.compose.ui.platform.LocalDensity.current

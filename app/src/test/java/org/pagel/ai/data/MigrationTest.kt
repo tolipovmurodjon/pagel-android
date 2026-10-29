@@ -308,4 +308,36 @@ class MigrationTest {
             db.close()
         }
     }
+
+    /** v11 (the Namoz page): projects come through; marks, his learning list and the settings start empty (all off). */
+    @Test fun tenToElevenAddsEmptyNamozTables() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/10.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(10, schema["version"]!!.jsonPrimitive.content.toInt())
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("INSERT INTO projects (name, title, color, sort, openCount) VALUES ('ababil', 'ABABIL', 'red', 1, 4)")
+            old.version = 10
+        }
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            assertEquals("red", db.dao().projectOnce("ababil")!!.color)
+            assertNull(db.namoz().settingsOnce())
+            assertEquals(0, db.namoz().marks("2026-01-01").first().size)
+            assertEquals(0, db.namoz().learning().first().size)
+            db.namoz().setMark(org.pagel.ai.data.db.NamozMarkEntity("2026-11-01", "ASR", org.pagel.ai.data.db.NamozMarkEntity.MOSQUE))
+            assertEquals("mosque", db.namoz().marks("2026-11-01").first().single().how)
+            assertEquals(PagelDatabase.VERSION, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
 }
