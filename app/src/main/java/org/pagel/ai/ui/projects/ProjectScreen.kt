@@ -302,7 +302,11 @@ fun ProjectScreen(
                 ui.loading -> item(key = "loading", contentType = "note") { Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) { SkeletonRows(4) } }
                 ui.finishedAt != null -> item(key = "finished", contentType = "card") { FinishedCard(ui, actions.onReopen) }
                 ui.canFinish -> item(key = "finish", contentType = "card") { FinishCard(actions.onFinish) }
-                next != null -> item(key = "next", contentType = "card") { NextCard(next, ui.step, today, actions) }
+                next != null -> item(key = "next", contentType = "card") {
+                    NextCard(next, ui.step, today, actions,
+                        onLift = { id, at -> dragging = id; pointer = at }, onDragAt = { pointer = it },
+                        onDrop = { id -> val t = target; dragging = null; pointer = Offset.Unspecified; if (t != null) { actions.onMoveTo(id, t); true } else false })
+                }
                 else -> item(key = "first", contentType = "card") { FirstStepCard(ui.title, actions) }
             }
             if (!ui.loading && ui.finishedAt == null && (nowRows.isNotEmpty() || next != null)) item(key = "now", contentType = "phase") {
@@ -368,7 +372,14 @@ private fun ProgressLine(ui: ProjectUi) {
 
 /** The one thing to do now: big title, its tiny first step, a tick, and "Start · 10 min" (a quiet countdown). */
 @Composable
-private fun NextCard(r: ProjectRow, step: String?, today: LocalDate, actions: ProjectActions) {
+private fun NextCard(
+    r: ProjectRow, step: String?, today: LocalDate, actions: ProjectActions,
+    // Long-press lifts the card like any row, so the task you are most likely to grab can go to another project too.
+    onLift: (String, Offset) -> Unit = { _, _ -> }, onDragAt: (Offset) -> Unit = {}, onDrop: (String) -> Boolean = { false },
+) {
+    var cardTop by remember { mutableStateOf(Offset.Zero) }
+    var cardDy by remember { mutableFloatStateOf(0f) }
+    var lifted by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
     var endsAt by rememberSaveable(r.id) { mutableLongStateOf(0L) }
     var left by remember { mutableIntStateOf(0) }
@@ -379,7 +390,16 @@ private fun NextCard(r: ProjectRow, step: String?, today: LocalDate, actions: Pr
             delay(1_000)
         }
     }
-    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)
+        .onPlaced { cardTop = it.positionInRoot() }
+        .graphicsLayer { translationY = cardDy; if (lifted) { scaleX = 1.03f; scaleY = 1.03f } }
+        .pointerInputDrag(
+            key = r.id,
+            onStart = { at -> lifted = true; cardDy = 0f; haptics.performHapticFeedback(HapticFeedbackType.LongPress); onLift(r.id, cardTop + at) },
+            onDrag = { delta, at -> cardDy += delta; onDragAt(cardTop + at + Offset(0f, cardDy)) },
+            onEnd = { lifted = false; cardDy = 0f; onDrop(r.id) },
+        )
+        .semantics { stateDescription = if (lifted) "Lifted" else "" }) {
         Column(Modifier.padding(horizontal = Space.lg, vertical = Space.md)) {
             Text("Next step", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -538,7 +558,10 @@ private fun NowList(
                                 onStart = { at -> lifted = r.id; dy = 0f; slot = i; haptics.performHapticFeedback(HapticFeedbackType.LongPress); onLift(r.id, top + at) },
                                 onDrag = { delta, at ->
                                     dy += delta
-                                    onDragAt(top + at)
+                                    // `at` is local to the lifted (translated) row and `top` is its resting place, so the
+                                    // finger on screen is top + dy + at. Without dy it never reached the Move to strip
+                                    // and every drop became a reorder (CI 40936570317 sent sort, never project).
+                                    onDragAt(top + at + Offset(0f, dy))
                                     val list = rows.map { heights[it.id] ?: 0 }
                                     val s = dropIndex(list, i, dy)
                                     if (s != slot) { slot = s; haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
