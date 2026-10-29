@@ -771,8 +771,11 @@ sleep 1.5
 tap_scroll "Merge into another project" 8 || { log "WALKTHROUGH: settings have no Merge"; exit 1; }
 tap_scroll "Into Humopedia" 4 || { log "WALKTHROUGH: Merge offers no Humopedia"; exit 1; }
 tap_scroll "Merge into Humopedia" 4 || { log "WALKTHROUGH: no Merge button"; exit 1; }
-sleep 1; shot core-merged 0.5
+# Undo straight away: the hold is 5 s, and a shot (screencap + dump) before it took ~5 s on the emulator, so the
+# Undo landed ~12 s after the merge and the merge had rightly left (CI 40966460030: POST at :12.5, Undo dump at :15.9).
+sleep 0.5
 tap Undo || { log "WALKTHROUGH: the merge toast has no Undo"; exit 1; }
+shot core-merged 0.5
 sleep 8
 grep -q 'POST /api/v1/projects/ci-rocket/merge' "$FAKE_LOG" && { log "WALKTHROUGH: the merge reached pagel.uz although it was undone"; exit 1; }
 $T adb shell input keyevent 4; sleep 1
