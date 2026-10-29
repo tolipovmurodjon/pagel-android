@@ -75,7 +75,10 @@ Installed plugins (laptop, 2026-10-27; server: `claude plugin marketplace add an
 - CI is the judge: unit + screenshot + emulator smoke on every push.
 
 ## Widget (glance-canonical-layouts, glance-appwidget-updates-and-memory)
-- `SizeMode.Exact`, the check-list layout, solid mint (Glance cannot draw glass).
+- `SizeMode.Exact`, the check-list layout for Today's 3. Glance cannot blur, so the "glass" is a drawable (Phase 8,
+  `res/drawable/widget_glass.xml`: white card + aurora glow from the top left + 1.25 dp mint rim; `drawable-night` = ink);
+  rings are bundled vector arcs in twelfths; emoji are the bundled Fluent WebP; resource images only.
+- No Compass, journal or goal words on any widget (`WidgetPrivacyTest`): a home screen is readable on a locked phone.
 - After a state write call `update()`/`updateAll`; a revision counter decides re-decoding.
 - `ActionCallback`: public zero-arg constructor + R8 keep; params via `ActionParameters.Key`.
 - No bitmaps in `provideContent`; `onCompositionError` fallback; no foreground service from the provider.

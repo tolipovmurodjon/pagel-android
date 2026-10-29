@@ -41,6 +41,64 @@ Phase 1 done-when: pair with a code from pagel.uz and see the project list on a 
 app side proven on the CI emulator against a fake pagel.uz; on Boss's phone not yet (needs an install)** · screenshot
 tests pass in CI · tick on the web → phone Room row in ≤ 3 s: JVM test against a fake stream + live stream 0.63 s.
 
+## START HERE · Phase 8 = widgets + glance surfaces (2026-10-29, builder agent, branch `feat/phase8-widgets` from `feat/6b-phone`, server `feat/8-server`)
+- **Built without a compile** (Boss: "build the rest of the phases fully"; CI blocked on GitHub billing, the laptop had 0.9 GB free):
+  every API was read from Glance 1.2.0's own api files (`glance-appwidget/api/1.2.0-beta01.txt`, `glance-appwidget-testing`).
+  **The first CI run is the first compile: read it before anything else.**
+- **Six widgets** (`widget/`), all `SizeMode.Exact` with three layouts by size (`fitOf`: 1x1 → one number, a short strip →
+  one line, bigger → the whole widget), the white-mint glass = `res/drawable/widget_glass.xml` (white card, Aurora2 glow lit
+  from the top left, 1.25 dp mint rim at 55 %) and an ink card in `drawable-night/`; rings = bundled vector arcs in twelfths
+  (`widget_ring_1..12`, mint #1C7E69 / night #66DDA8); emoji = round D's Fluent WebP; resource images only (no bitmap cap).
+  1. **Today's 3** (polished): glass instead of Scaffold's flat colour, "12 done · 1 left" under the title (Today's own words),
+     a row's words open that task, + opens the Add sheet, the tick plays the finish click (`WidgetHaptics`, VIBRATE).
+  2. **Habits rings**: today's habits (prayers apart) as emoji rings, "3/5" in the corner; tap = the Habits tab's own tick (a
+     count habit fills one twelfth-step per tap); a full ring opens Habits. 1x1 = one ring "3/5".
+  3. **Namoz**: the five with today's window (Adhan, the Muslim Board's method), the next one on a mint pill, a tick from the
+     widget only from 1 Nov ("From 1 Nov" before), "Set up" if the five are not habits yet. Updates every 30 min (the floor).
+  4. **Calories**: "1,420 / 2,000 kcal" + ring + "580 left" / "120 over", 📷 opens the app (see Not done). Numbers from
+     `GET /api/v1/habits?days=1` (the habit whose unit is kcal + `totals`), saved in `pagel-widget-calories` prefs for offline.
+  5. **Next task**: Today's first task, its project, its next open step ("Next: …"); a tap opens its panel.
+  6. **Quick add**: a field-like pill → the Add sheet; 🎤 → Android's speech sheet (`RecognizerIntent`) → the Add sheet
+     prefilled (no recognizer / cancelled → the empty Add sheet).
+- **Wiring:** `OpenRequests` takes `add`, `voice`, `food`, `habits`, `today`, `task:<id>` (id `[A-Za-z0-9_-]{1,64}`, else
+  ignored); `AppShell` handles them; `AddTaskSheet(initial = …)`. `TodayWidgetUpdater` now redraws Today, Next task, Habits
+  and Namoz from their models, skipping a push when the model equals the last one (`WidgetRevisions`).
+- **Server (DEPLOY NEEDED `accee5e`, branch `feat/8-server` from `feat/gtd-core`):** `GET /api/v1/habits` adds `unit`,
+  `goal`, `goal_kind` per habit and `totals` ({id: today's sum}); vitest `habits-api.test.ts` 5/5 (+ amount, habits, sync 11/11).
+  Until deployed the Calories widget says "No kcal habit yet" (it never invents a number).
+- **Tests (written, not run):** `WidgetModelsTest` (every model from fake rows, twelfths, Namoz before/after 1 Nov and
+  Xufton past midnight, kcal words, snapshot new day, sizes, revisions, open-request ids) · `WidgetActionsTest` (Room: a
+  Today tick = DONE outbox row; a ring tap = `PATCH {"set":{"done":true,"day":…}}`; a full ring adds nothing; a prayer counts;
+  **all six real widgets `compose()` from Room at 70×70 and 300×200 without a crash** = the instrumented-free "add a widget") ·
+  `WidgetGlanceTest` (glance-appwidget-testing: words + each tap's action) · `WidgetScreenshotTest` (compose() → RemoteViews →
+  `apply()` → Roborazzi on a wallpaper: 20 pictures `widget-*.png`, 2-3 sizes each, dark for Today/Habits/Namoz) ·
+  `WidgetPrivacyTest` (no widget file imports or names the Compass/journal; every model field is a word, number or another
+  model; the six receivers resolve for APPWIDGET_UPDATE; each widget info parses). Walkthrough: Phase 8 stub at the end
+  (`cmd package query-receivers` lists six, `am start --es pagel.open add` opens "New task", a bad `task:` id does not crash).
+- **Round D merge touch points** (round D = `feat/roundD-habits`, NOT in this base):
+  1. `Emoji.kt`, `Namoz.kt`, `drawable-nodpi/emoji_*.webp`, `NOTICE`, the Adhan lines in `build.gradle.kts` /
+     `libs.versions.toml` were taken byte-for-byte from round D (commit 4eb612f): they merge clean as long as round D does
+     not change them again.
+  2. `widget/WidgetSources.kt` `RoomWidgetHabits` is the only seam: after the merge build rings from round D's
+     `habitBoard(habits, ticks, prefs, freezes, today)` cards (`HabitCard.emoji` = Boss's pick, `.taps`, `.times`, `.done`)
+     and prayers from `board.namoz` / `isNamoz(t)` (uses `habitGroup`); inject `HabitPrefsRepository` for prefs/freezes.
+  3. `widget/WidgetModels.kt` `isPrayer` (title + every day) → replace with round D's `isNamoz` (title or `habitGroup`).
+  4. `habitsGlance(emojiOf = …)` already takes the emoji function: pass `{ prefsById[it.id]?.emoji?.let { e -> Emoji.keyFor(titleOf(it), e) } ?: Emoji.keyFor(titleOf(it)) }`.
+  5. Calories: when round D item 1 lands a Room table of habit logs, swap `ServerCalories` for a Room read (same interface
+     `WidgetCalories`), and make the 📷 open item 1's photo log sheet (`OpenRequests.FOOD` in `AppShell`).
+  6. Files both sides touch (expect small conflicts): `ApiModels.kt` (untouched here: new DTOs live in `MeasureModels.kt`),
+     `PagelApi.kt` (my method sits before `habits()`, round D's after it), `AppShell.kt` (mine: the `opening` effect and the
+     Add sheet line; round D: entries + page titles), `AndroidManifest.xml` (mine: receivers + VIBRATE; round D: the icon
+     lines), `walkthrough.sh` and this file (both append).
+- **Not done (and why):** the photo log sheet itself (📷 opens the Habits tab today): it is round D item 1 (camera →
+  `POST /habits/<id>/photo` → confirm), not built on the phone yet. A real widget placed on a home screen (CI emulators cannot
+  add one; needs Boss's phone). Widget preview images for the picker (`previewLayout` / `previewImage`; the picker shows the
+  app icon). Phone-sized 1.5x font pictures of widgets (the launcher scales text; not simulated). Lock-screen widgets: Android
+  phones only allow keyguard widgets on some tablets/Android 16 QPR builds; `widgetCategory="home_screen|keyguard"` is set,
+  untested. The haptic from a widget tap may be silent while PAGEL is in the background (Android limits background vibration).
+  A "Big picture native" surface from the plan's row: not built (no spec in the brief beyond the six above). What's new line
+  not added (round D rewrites `whats_new.xml`; add it after the merge).
+
 ## START HERE · Phase 6b phone = the second brain + the locked journal (2026-10-29, builder agent, branch `feat/6b-phone` from `feat/compass-fix`, server `feat/6b-journal-server`)
 - **Not built yet:** CI blocked (billing), laptop cannot run Gradle; nothing Android was compiled. NotebookLogicTest's 8 cases
   ran outside Gradle (cached kotlinc 2.0.21 + a JUnit shim): 8/8. Push once with `[smoke]` when Actions is back.
