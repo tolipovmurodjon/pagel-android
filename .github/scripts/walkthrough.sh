@@ -746,14 +746,18 @@ log "-- drag a task in: Me → long-press Pay the internet bill (a list row: the
 $T adb shell input keyevent 4; sleep 1
 tap_scroll Me && shot core-me 2 || { log "WALKTHROUGH: no Me project"; exit 1; }
 XML="$(last core-me)"
-BAR=$(y_of Today 2)
+DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
+H0=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2); BAR=$(( ${H0:-640} - 30 * DPI / 160 ))
 # Me's habits come before it, so scroll in small steps until the row is clear of the Move to strip's place.
 for k in 1 2 3 4 5 6; do FROM=$(centre "Pay the internet bill") && [ "${FROM#* }" -lt $(( ${BAR:-550} - 120 )) ] && break; FROM=""; $T adb shell input swipe 160 450 160 300 400; sleep 1; done
 [ -n "$FROM" ] || { log "WALKTHROUGH: Pay the internet bill is not on the Me page"; exit 1; }
 DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
-BAR=${BAR:-$(( $($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2) - 90 * DPI / 160 ))}
-TX=$(( 46 * DPI / 160 )); TY=$(( BAR - 44 * DPI / 160 ))
-log "   drag from $FROM to $TX $TY (tab bar top $BAR)"
+# The project page has no tab bar: "Today" above matched a row's date ("Today 21:30"), so the drop landed in the list
+# and became a reorder (CI 40936570317 sent {"sort":109.0}). The Move to strip is pinned to the screen bottom
+# (~95 dp tall, 8 dp + the nav inset above the edge), so drop 85 dp above the bottom: inside it for any inset 0-56 dp.
+H=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2); H=${H:-640}
+TX=$(( 46 * DPI / 160 )); TY=$(( H - 85 * DPI / 160 ))
+log "   drag from $FROM to $TX $TY (screen height $H)"
 $T adb shell input draganddrop $FROM $TX $TY 1800
 shot core-dragged 2
 wait_log 'PATCH /api/v1/tasks/t_u2 {"project":"ci-rocket"}' 30 || { log "WALKTHROUGH: the dragged task never moved on pagel.uz"; grep -E 'PATCH /api/v1/tasks/t_u2' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
