@@ -38,6 +38,7 @@ espressoCore = "3.7.0"
 mockk = "1.13.13"
 turbine = "1.1.0"
 room = "2.8.5"
+adhan = "1.2.1"
 backdrop = "2.0.1"
 kyantShapes = "1.2.1"
 robolectric = "4.17"
@@ -109,6 +110,7 @@ mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 mockk-android = { group = "io.mockk", name = "mockk-android", version.ref = "mockk" }
 cash-turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
 # JVM-side Android: Compose UI tests and screenshot tests run on Robolectric, no emulator needed.
+adhan = { group = "com.batoulapps.adhan", name = "adhan", version.ref = "adhan" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
 roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
