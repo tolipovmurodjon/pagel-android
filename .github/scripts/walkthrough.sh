@@ -264,10 +264,13 @@ shot inbox-online 2
 log "-- Inbox: where did it go (round D item 2): Sorted today lists the day's choices by where they went; More -> Notes reads a project's notes"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 tap 'Sorted today \([0-9]+\)' && shot sorted-today 2
-grep -q 'text="📝 Notes · [0-9]*"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Note"; exit 1; }
-grep -q 'text="✅ Tasks · [0-9]*"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Action"; exit 1; }
+# Match the word, not the emoji: uiautomator writes 📝 (outside the basic plane) as &#128221; but ✅ as itself.
+grep -qE 'text="[^"]*Notes · [0-9]+"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Note"; exit 1; }
+grep -qE 'text="[^"]*Tasks · [0-9]+"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Action"; exit 1; }
 $T adb shell input keyevent 4; sleep 1
 tap More && sleep 1
+# The More list may still be scrolled from the Projects step: back to its top first.
+$T adb shell input swipe 160 200 160 600 400; sleep 1
 for k in 1 2 3; do onscreen Notes && break; $T adb shell input swipe 160 500 160 300 400; sleep 1; done
 tap Notes && shot notes-projects 3
 tap '[^"]*notes, 1' || { log "WALKTHROUGH: More -> Notes lists no project with a note"; exit 1; }
@@ -635,6 +638,7 @@ $T adb shell locksettings set-pin 1111 > /dev/null 2>&1 || log "   (WARN: lockse
 # Back to a tab's root, where the bar (and More) shows.
 for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
 front c-more
+$T adb shell input swipe 160 200 160 600 400; sleep 1
 tap Compass && shot c-new 2.5 || { log "WALKTHROUGH: More has no Compass"; exit 1; }
 grep -q 'content-desc="Start my Compass"' "$OUT/$(printf '%02d' $N)-c-new.xml" || { log "WALKTHROUGH: the empty Compass does not invite writing"; exit 1; }
 # FLAG_SECURE: the window that shows the Compass is marked secure (screenshots of it come out black).
