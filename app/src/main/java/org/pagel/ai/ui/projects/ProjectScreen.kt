@@ -380,6 +380,11 @@ private fun NextCard(r: ProjectRow, step: String?, today: LocalDate, actions: Pr
             // The tiny first step: the thing to do right now (a task with no steps starts with itself).
             Text("Start: ${step ?: r.title}", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = Space.touch, top = Space.xs))
+            // The date sits on its own line: beside the Start button it wrapped as "09:00-10 / :00" (Boss, 0.3.33 CI shot).
+            r.due?.let {
+                Text(DatePick.dueText(it, today), style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = Space.touch, top = Space.xs))
+            }
             Row(Modifier.padding(start = Space.touch, top = Space.md), verticalAlignment = Alignment.CenterVertically) {
                 val running = endsAt > 0L
                 val press = remember { MutableInteractionSource() }
@@ -398,8 +403,6 @@ private fun NextCard(r: ProjectRow, step: String?, today: LocalDate, actions: Pr
                     Text(if (running) "%d:%02d".format(left / 60, left % 60) else "Start · 10 min", style = MaterialTheme.typography.labelLarge,
                         color = if (running) Glass.PrimaryInk else Color.White)
                 }
-                Spacer(Modifier.width(Space.md))
-                r.due?.let { Text(DatePick.dueText(it, today), style = MaterialTheme.typography.labelSmall, color = Glass.Muted) }
             }
         }
     }
