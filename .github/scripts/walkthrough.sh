@@ -460,11 +460,13 @@ $T adb shell input keyevent 4; sleep 1; tap Upcoming && sleep 2
 log "-- Upcoming in landscape and at 1.5x on the 320 dp screen (checker P4 #3: only the strip is pinned now)"
 $T adb shell settings put system accelerometer_rotation 0
 $T adb shell settings put system user_rotation 1; sleep 3; front upcoming-landscape; shot upcoming-landscape 1
-grep -qF "content-desc=\"$TODAY_SPOKEN" "$OUT/$(printf '%02d' $N)-upcoming-landscape.xml" || { log "WALKTHROUGH: Upcoming's strip is gone in landscape"; exit 1; }
+# The day may turn at Tashkent midnight mid-run (CI 40932552197: TODAY_SPOKEN said Thursday, the strip said Friday), so either day counts.
+TODAY_NOW=$(LC_ALL=C TZ=Asia/Tashkent date '+%A %-d %B')
+grep -qF -e "content-desc=\"$TODAY_SPOKEN" -e "content-desc=\"$TODAY_NOW" "$OUT/$(printf '%02d' $N)-upcoming-landscape.xml" || { log "WALKTHROUGH: Upcoming's strip is gone in landscape"; exit 1; }
 $T adb shell input swipe 320 240 320 90 300; shot upcoming-landscape-scrolled 1
 $T adb shell settings put system user_rotation 0; sleep 3; front upcoming-portrait
 $T adb shell settings put system font_scale 1.5; sleep 3; front upcoming-font-1.5; shot upcoming-font-1.5 1
-grep -qF "content-desc=\"$TODAY_SPOKEN" "$OUT/$(printf '%02d' $N)-upcoming-font-1.5.xml" || { log "WALKTHROUGH: Upcoming's strip is gone at 1.5x"; exit 1; }
+grep -qF -e "content-desc=\"$TODAY_SPOKEN" -e "content-desc=\"$TODAY_NOW" "$OUT/$(printf '%02d' $N)-upcoming-font-1.5.xml" || { log "WALKTHROUGH: Upcoming's strip is gone at 1.5x"; exit 1; }
 $T adb shell settings put system font_scale 1.0; sleep 3; front upcoming-font-1.0
 $T adb shell input keyevent 4; shot back-to-more-2 1.5
 tap Completed && shot completed 2.5
