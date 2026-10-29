@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -25,7 +26,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 /** PATCH fields only the 2026-10-27 pagel.uz knows; it names what it understood in `applied` (task-api.ts). */
-val NEW_FIELDS = setOf("title", "every", "remove", "restore", "not_doing", "times")
+val NEW_FIELDS = setOf("title", "every", "remove", "restore", "not_doing", "times", "project", "sort", "milestone")
 
 /** How long a delete waits on the phone before it leaves, so Undo costs pagel.uz nothing (Gmail's "Undo send"). */
 const val UNDO_WINDOW_MS = 5_000L
@@ -128,6 +129,16 @@ class TaskRepository(
         return null
     }
 
+    /** Moves a task to another project (drag onto a project, core round): it lands at the end of that project. */
+    suspend fun move(id: String, project: String): Long? =
+        edit(id, buildJsonObject { put("project", project) }) { it.copy(project = project, phase = "", phaseNow = true, sort = 1e9) }
+
+    /** A new place in its project's list (long-press drag): a sort between its new neighbours. */
+    suspend fun sort(id: String, sort: Double): Long? = edit(id, buildJsonObject { put("sort", sort) }) { it.copy(sort = sort) }
+
+    /** Links a task to one of its project's milestones (null unlinks). */
+    suspend fun milestone(id: String, milestone: String?): Long? = edit(id, buildJsonObject { put("milestone", milestone) }) { it.copy(milestone = milestone) }
+
     /** Delete: gone from the phone at once; the remove leaves after [UNDO_WINDOW_MS]. Returns the op, for Undo. */
     suspend fun delete(id: String): Long? =
         edit(id, buildJsonObject { put("remove", true) }, place = true) { it.copy(status = "dropped") }
@@ -191,6 +202,9 @@ class TaskRepository(
                 "steps", "ticked" -> if (!stepsKept) { putSteps(oldSteps); stepsKept = true }
                 "remove", "restore", "not_doing" -> put("status", before.status)
                 "done" -> { put("status", before.status); put("done_at", before.doneAt) }
+                "project" -> put("project", before.project)
+                "sort" -> put("sort", before.sort)
+                "milestone" -> put("milestone", before.milestone)
             }
             if (place) put("today", wasToday)
         }
@@ -254,6 +268,9 @@ suspend fun PagelDao.applyWas(taskId: String, was: JsonObject, at: Long = System
         "done_when" -> t.copy(doneWhen = v.str())
         "status" -> t.copy(status = v.str() ?: t.status)
         "done_at" -> t.copy(doneAt = v.str())
+        "project" -> t.copy(project = v.str() ?: t.project)
+        "sort" -> t.copy(sort = v.jsonPrimitive.doubleOrNull ?: t.sort)
+        "milestone" -> t.copy(milestone = v.str())
         else -> t
     }
     upsertTasks(listOf(t.copy(lastModified = at)))

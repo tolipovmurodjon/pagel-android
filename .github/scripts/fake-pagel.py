@@ -452,4 +452,91 @@ def _rd2_get(self):
 
 H.do_GET = _rd2_get
 
+
+# ── Core round · projects you shape (dashboard projects-api.ts) and the KPI counts. A project the phone makes or edits
+# lives here; PATCH /tasks/<id> {project, sort, milestone} moves a task (EDITS feeds /sync); merge holds nothing (the
+# phone holds it for Undo); KPI counts are only logged.
+import io
+PROJ = {}   # name -> the fields the phone set
+MADE = []   # names the phone created, in order
+_core_post, _core_patch, _core_get, _core_sync = H.do_POST, H.do_PATCH, H.do_GET, sync_body
+
+def _task_project(tid, default):
+    return EDITS.get(tid, {}).get("project", default)
+
+def sync_body():
+    s = _core_sync()
+    known = {t["id"] for t in s["tasks"]}
+    # Tasks the phone added into a project it made stay in /sync (a real server keeps them).
+    s["tasks"] += [{"id": tid, "project": b["project"], "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 200 + k, "text": b["text"], "status": "done" if tid in DONE else "open",
+                    "priority": b.get("priority", 2), "star": False, "due": b.get("due"), "every": None, "updated_at": "2026-10-29T10:00:00Z", "version": 1, "steps": [], **EDITS.get(tid, {})}
+                   for k, (tid, b) in enumerate(ADDED) if b.get("project") in MADE and tid not in known and tid not in REMOVED]
+    for t in s["tasks"]:
+        t.update({k: v for k, v in EDITS.get(t["id"], {}).items() if k in ("project", "sort", "milestone")})
+    projects = [dict(p) for p in s["projects"]] + [{"name": n, "title": PROJ[n].get("title", n), "color": None, "sort": 100 + i, "open": 0} for i, n in enumerate(MADE)]
+    for p in projects:
+        p.update({k: v for k, v in PROJ.get(p["name"], {}).items() if k not in ("deleted", "finished")})
+    s["projects"] = [p for p in projects if not PROJ.get(p["name"], {}).get("deleted")]
+    return s
+
+def _core_post_h(self):
+    if not (self.path == "/api/v1/projects" or self.path.startswith("/api/v1/projects/") or self.path == "/api/v1/kpi"):
+        return _core_post(self)
+    body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode()
+    LOG.write(f"POST {self.path} {body[:300]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    b = json.loads(body or "{}")
+    if self.path == "/api/v1/kpi":
+        return self.send(200, {"ok": True})
+    if self.path == "/api/v1/projects":
+        n = b.get("name") or "p-new"
+        if n not in MADE:
+            MADE.append(n)
+        PROJ.setdefault(n, {}).update({k: b[k] for k in ("title", "color", "icon", "area") if k in b})
+        return self.send(201, {"project": {"name": n, **PROJ[n]}})
+    name, _, what = self.path[len("/api/v1/projects/"):].partition("/")
+    if what == "merge":
+        into = b.get("into")
+        moved = [i for i, p, *_ in TODAY + UPCOMING if _task_project(i, p) == name] + [t for t, a in ADDED if _task_project(t, a.get("project")) == name]
+        for i in moved:
+            EDITS.setdefault(i, {})["project"] = into
+        PROJ.setdefault(name, {})["archived"] = True
+        return self.send(200, {"moved": moved, "into": into})
+    return self.send(404, {"error": "Unknown path."})
+
+def _core_patch_h(self):
+    raw = self.rfile.read(int(self.headers.get("content-length") or 0))
+    if self.path.startswith("/api/v1/projects/"):
+        LOG.write(f"PATCH {self.path} {raw.decode()[:300]} auth={self.authed()}\n")
+        if not self.authed():
+            return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+        b = json.loads(raw or b"{}")
+        name = self.path.rsplit("/", 1)[-1]
+        PROJ.setdefault(name, {}).update(b)
+        if b.get("finished") is True:
+            PROJ[name]["finished_at"] = "2026-10-29T12:00:00Z"
+        return self.send(200, {"project": {"name": name}, "applied": list(b.keys())})
+    b = json.loads(raw or b"{}")
+    extra = {k: b.pop(k) for k in ("project", "sort", "milestone") if k in b}
+    tid = self.path.rsplit("/", 1)[-1]
+    if extra and not b:
+        LOG.write(f"PATCH {self.path} {raw.decode()[:300]} auth={self.authed()}\n")
+        if not self.authed():
+            return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+        EDITS.setdefault(tid, {}).update(extra)
+        return self.send(200, {"id": tid, "status": "open", "applied": list(extra.keys())})
+    EDITS.setdefault(tid, {}).update(extra)
+    self.rfile = io.BytesIO(raw)
+    return _core_patch(self)
+
+def _core_get_h(self):
+    if not self.path.startswith("/api/v1/kpi/week"):
+        return _core_get(self)
+    LOG.write(f"GET {self.path} auth={self.authed()}\n")
+    days = [{"day": day_from_today(i - 6), "done": {"phone": i, "web": 1, "telegram": 0, "other": 0}, "opens": 1 if i % 2 else 0, "first_tick_ms": 95000 if i == 6 else None} for i in range(7)]
+    return self.send(200, {"days": days, "projects_finished": 1, "days_opened": 3, "done": 28})
+
+H.do_POST, H.do_PATCH, H.do_GET = _core_post_h, _core_patch_h, _core_get_h
+
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()

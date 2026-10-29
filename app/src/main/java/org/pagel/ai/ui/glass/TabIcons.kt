@@ -122,6 +122,14 @@ object TabIcons {
 
     fun forProject(project: String): ImageVector = projects[project] ?: projects.getValue("folder")
 
+    /** The line icons a project can pick (lucide names), for the icon picker and a project's `icon` ("lucide:<name>"). */
+    val pickable: Map<String, ImageVector> by lazy {
+        projects.values.associateBy { it.name } + listOf(BookOpen, Zap, Flame, Briefcase, Sparkles, Star, Bell, Globe, Phone, Calendar, Moon, Sun,
+            Inbox, StickyNote, ListTodo, Clock, Hourglass, Habits, Notebook, Search).associateBy { it.name }
+    }
+
+    fun lucide(name: String): ImageVector? = pickable[name]
+
     private fun icon(name: String, vararg paths: String, fill: Boolean = false, outline: Boolean = true): ImageVector {
         val b = ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         for (d in paths) {

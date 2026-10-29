@@ -120,6 +120,11 @@ object AppDataModule {
     fun provideTaskRepository(@ApplicationContext ctx: Context, dao: PagelDao): TaskRepository =
         TaskRepository(dao, OutboxWorker.scheduler(ctx))
 
+    /** Projects you shape (core round): create, edit, merge, delete with Undo, finish, goals, KPI counts. */
+    @Provides @Singleton
+    fun provideProjectRepository(@ApplicationContext ctx: Context, dao: PagelDao, tasks: TaskRepository): org.pagel.ai.data.projects.ProjectRepository =
+        org.pagel.ai.data.projects.ProjectRepository(dao, tasks, OutboxWorker.scheduler(ctx))
+
     /** The habits' reminder alarms (Phase 3). */
     @Provides @Singleton
     fun provideReminderPlanner(@ApplicationContext ctx: Context, dao: PagelDao, db: PagelDatabase, @AppScope scope: CoroutineScope, @IoDispatcher io: CoroutineDispatcher): ReminderPlanner =

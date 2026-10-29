@@ -699,3 +699,99 @@ $T adb shell locksettings clear --old 1111 > /dev/null 2>&1 || true
 $T adb logcat -d > "$OUT/logcat-compass.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-compass.txt" && { log "WALKTHROUGH: CRASH in the Compass (see logcat-compass.txt)"; exit 1; }
 log "PHASE 6a WALK DONE: $N steps"
+
+# ── Core round · projects you shape (2026-10-29) ───────────────────────────────────────────────────────────────────
+log "== Core: new project in 2 taps -> a task inline -> recolour (pagel.uz gets it) -> new icon -> drag a task in -> merge -> Undo -> finish"
+last() { echo "$OUT/$(printf '%02d' $N)-$1.xml"; }
+hide_keys() { $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }; return 0; }
+to_projects() {
+  for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
+  for k in 1 2 3; do $T adb shell input swipe 160 450 160 120 400; sleep 1; tap Projects && return 0; done
+  return 1
+}
+$T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+front core-start
+to_projects && shot core-projects 1.5 || { log "WALKTHROUGH: no Projects under More"; exit 1; }
+tap "New project" || { log "WALKTHROUGH: Projects has no + (New project)"; exit 1; }
+sleep 1.5
+$T adb shell "input text 'CI%sRocket'"; $T adb shell input keyevent 66
+shot core-new 2.5
+grep -q 'Add the next step' "$(last core-new)" || { log "WALKTHROUGH: the new project's page did not open on Add the next step"; exit 1; }
+wait_log 'POST /api/v1/projects {"name":"ci-rocket","title":"CI Rocket"' 30 || { log "WALKTHROUGH: the new project never reached pagel.uz"; exit 1; }
+log "   a new project in 2 taps: + then its name and Enter; pagel.uz has ci-rocket"
+
+tap "Add a task to CI Rocket" || { log "WALKTHROUGH: the project page has no inline Add"; exit 1; }
+sleep 1; $T adb shell "input text 'Write%sthe%sflight%splan'"; $T adb shell input keyevent 66; sleep 1; hide_keys
+shot core-task 2
+grep -q 'Write the flight plan' "$(last core-task)" || { log "WALKTHROUGH: the inline task is not on the page"; exit 1; }
+wait_log 'POST /api/v1/tasks {"project":"ci-rocket","text":"Write the flight plan"' 30 || { log "WALKTHROUGH: the inline task never reached pagel.uz"; exit 1; }
+grep -q 'Next step' "$(last core-task)" || { log "WALKTHROUGH: the page does not open on its Next step"; exit 1; }
+
+tap "Project settings" && shot core-settings 2 || { log "WALKTHROUGH: no Project settings on the page"; exit 1; }
+tap_scroll "Colour violet" || { log "WALKTHROUGH: the colour picker has no violet"; exit 1; }
+wait_log 'PATCH /api/v1/projects/ci-rocket {"color":"violet"}' 30 || { log "WALKTHROUGH: the colour never reached pagel.uz"; exit 1; }
+shot core-violet 1.5
+log "   recoloured: pagel.uz got color=violet"
+tap_scroll "Search icons" || { log "WALKTHROUGH: no icon search"; exit 1; }
+sleep 1; $T adb shell input text rocket; sleep 1; hide_keys
+tap_scroll "Emoji rocket" || { log "WALKTHROUGH: the icon search found no rocket"; exit 1; }
+wait_log 'PATCH /api/v1/projects/ci-rocket {"icon":"emoji:' 30 || { log "WALKTHROUGH: the icon never reached pagel.uz"; exit 1; }
+shot core-icon 1.5
+tap Done || $T adb shell input keyevent 4
+sleep 1
+
+log "-- drag a task in: Me → long-press Weigh in → drop it on CI Rocket in the Move to strip"
+$T adb shell input keyevent 4; sleep 1
+tap_scroll Me && shot core-me 2 || { log "WALKTHROUGH: no Me project"; exit 1; }
+XML="$(last core-me)"
+BAR=$(y_of Today 2)
+FROM=$(centre "Weigh in") || { $T adb shell input swipe 160 450 160 300 300; sleep 1; FROM=$(centre "Weigh in"); } || { log "WALKTHROUGH: Weigh in is not on the Me page"; exit 1; }
+DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
+BAR=${BAR:-$(( $($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2) - 90 * DPI / 160 ))}
+TX=$(( 46 * DPI / 160 )); TY=$(( BAR - 44 * DPI / 160 ))
+log "   drag from $FROM to $TX $TY (tab bar top $BAR)"
+$T adb shell input draganddrop $FROM $TX $TY 1800
+shot core-dragged 2
+wait_log 'PATCH /api/v1/tasks/t_ci5 {"project":"ci-rocket"}' 30 || { log "WALKTHROUGH: the dragged task never moved on pagel.uz"; grep -E 'PATCH /api/v1/tasks/t_ci5' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   Weigh in moved into CI Rocket (pagel.uz has it)"
+
+log "-- merge CI Rocket into Humopedia, then Undo inside 5 s: pagel.uz never hears of the merge"
+$T adb shell input keyevent 4; sleep 1
+tap_scroll "CI Rocket" && shot core-rocket 2 || { log "WALKTHROUGH: CI Rocket is not in the list"; exit 1; }
+tap "Project settings" || exit 1
+sleep 1.5
+tap_scroll "Merge into another project" || { log "WALKTHROUGH: settings have no Merge"; exit 1; }
+tap_scroll "Into Humopedia" || { log "WALKTHROUGH: Merge offers no Humopedia"; exit 1; }
+tap_scroll "Merge into Humopedia" || { log "WALKTHROUGH: no Merge button"; exit 1; }
+sleep 1; shot core-merged 0.5
+tap Undo || { log "WALKTHROUGH: the merge toast has no Undo"; exit 1; }
+sleep 8
+grep -q 'POST /api/v1/projects/ci-rocket/merge' "$FAKE_LOG" && { log "WALKTHROUGH: the merge reached pagel.uz although it was undone"; exit 1; }
+$T adb shell input keyevent 4; sleep 1
+to_projects; shot core-after-undo 2
+grep -q 'text="CI Rocket"' "$(last core-after-undo)" || { log "WALKTHROUGH: CI Rocket did not come back after Undo"; exit 1; }
+log "   merge undone in time: no POST merge, CI Rocket is back"
+
+log "-- finish: tick both tasks → Everything is done → Finish project with a shipped line"
+tap_scroll "CI Rocket" && shot core-rocket-2 2 || exit 1
+for t in "Write the flight plan" "Weigh in"; do tap "Done: $t" || { sleep 2; tap "Done: $t"; } || { log "WALKTHROUGH: no ring for $t"; exit 1; }; sleep 2; done
+shot core-all-done 2
+tap_scroll "Finish project" || { log "WALKTHROUGH: all done but no Finish project"; exit 1; }
+sleep 1.5; tap "What I shipped"; sleep 1
+$T adb shell "input text 'CI%srocket%sflew'"; $T adb shell input keyevent 66
+shot core-finished 2.5
+wait_log 'PATCH /api/v1/projects/ci-rocket {"finished":true,"shipped":"CI rocket flew"}' 30 || { log "WALKTHROUGH: the finish never reached pagel.uz"; grep ci-rocket "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+grep -q 'CI rocket flew' "$(last core-finished)" || shot core-finished 2
+log "   finished: pagel.uz has finished=true and the shipped line"
+
+log "-- KPI: the app counted opens and the first tick; Your week shows in More"
+wait_log 'POST /api/v1/kpi {"day":"' 10 || { log "WALKTHROUGH: no app-open count reached pagel.uz"; exit 1; }
+wait_log '"first_tick_ms":' 10 || { log "WALKTHROUGH: no open-to-first-tick count reached pagel.uz"; exit 1; }
+grep -E 'POST /api/v1/kpi' "$FAKE_LOG" | grep -vqE '\{"day":"[0-9-]+","(open":true|first_tick_ms":[0-9]+)\}' && { log "WALKTHROUGH: a KPI post carries more than counts"; exit 1; }
+for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
+for k in 1 2 3; do $T adb shell input swipe 160 450 160 120 400; sleep 1; done
+shot core-week 2
+grep -q 'Your week' "$(last core-week)" || { log "WALKTHROUGH: More has no Your week card"; exit 1; }
+$T adb logcat -d > "$OUT/logcat-core.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-core.txt" && { log "WALKTHROUGH: CRASH in the projects round (see logcat-core.txt)"; exit 1; }
+log "CORE PROJECTS WALK DONE: $N steps"

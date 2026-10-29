@@ -311,7 +311,8 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     entry<CompletedListRoute> { CompletedScreenRoute(padding, reselect) }
                     entry<org.pagel.ai.ui.compass.CompassRoute> { org.pagel.ai.ui.compass.CompassRouteScreen(padding) }
                     entry<ProjectListRoute> { ProjectsRoute(padding, reselect, onOpenProject = { stack.add(ProjectPageRoute(it)) }) }
-                    entry<ProjectPageRoute> { r -> ProjectScreenRoute(r.name, padding, reselect, onOpenTask = { openTask = it }, onAdd = { adding = it }) }
+                    entry<ProjectPageRoute> { r -> ProjectScreenRoute(r.name, padding, reselect, onOpenTask = { openTask = it }, onAdd = { adding = it },
+                        onGone = { stack.removeLastOrNull() }, onOpenProject = { stack.add(ProjectPageRoute(it)) }) }
                     entry<WebRoute> { r -> TasksScreen(onOpenPhone = onOpenPhone, startPath = r.path) }
                 },
             ) }
@@ -540,6 +541,9 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 MoreRow(TabIcons.LogOut, "Disconnect", Glass.Risk, onDisconnect)
             }
         }
+        Spacer(Modifier.height(Space.paneGap))
+        // Real use, measured (core round KPI): counts only, read from pagel.uz.
+        org.pagel.ai.ui.projects.YourWeekRoute()
         Spacer(Modifier.height(Space.paneGap))
         Pane(Modifier.fillMaxWidth()) { SoundsRow() }
     }

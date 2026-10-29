@@ -42,10 +42,18 @@ data class SyncTaskDto(
     val times: Int = 1,
     /** A habit's group (round D): "namoz" for the five prayers; an older pagel.uz sends none. */
     val group: String? = null,
+    /** The project goal's milestone (core round); an older pagel.uz sends none. */
+    val milestone: String? = null,
 )
 
 @Serializable
-data class SyncProjectDto(val name: String, val title: String, val color: String? = null, val sort: Int = 0, val open: Int = 0)
+data class SyncProjectDto(
+    val name: String, val title: String, val color: String? = null, val sort: Int = 0, val open: Int = 0,
+    // Core round (2026-10-29); an older pagel.uz sends none of these.
+    val icon: String? = null, val area: String? = null, val parent: String? = null, val archived: Boolean = false,
+    @SerialName("finished_at") val finishedAt: String? = null, val shipped: String? = null,
+    val goals: kotlinx.serialization.json.JsonArray = kotlinx.serialization.json.JsonArray(emptyList()),
+)
 
 @Serializable
 data class SyncResponse(
@@ -222,3 +230,20 @@ data class RitualBody(
 
 @Serializable
 data class RitualReply(val ok: Boolean = false, val already: Boolean = false)
+
+/** One day of real use (`GET /api/v1/kpi/week`): ticks by where they came from, app opens, open → first tick. */
+@Serializable
+data class KpiDayDto(
+    val day: String,
+    val done: Map<String, Int> = emptyMap(),
+    val opens: Int = 0,
+    @SerialName("first_tick_ms") val firstTickMs: Long? = null,
+)
+
+@Serializable
+data class KpiWeekReply(
+    val days: List<KpiDayDto> = emptyList(),
+    @SerialName("projects_finished") val projectsFinished: Int = 0,
+    @SerialName("days_opened") val daysOpened: Int = 0,
+    val done: Int = 0,
+)

@@ -277,4 +277,35 @@ class MigrationTest {
             db.close()
         }
     }
+
+    /** v10 (core round, projects): a project keeps its row and gets no icon, no area, no goals ("[]"), not hidden; tasks no milestone. */
+    @Test fun nineToTenAddsTheProjectFields() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/9.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(9, schema["version"]!!.jsonPrimitive.content.toInt())
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("INSERT INTO projects (name, title, color, sort, openCount) VALUES ('ababil', 'ABABIL', 'red', 1, 4)")
+            old.version = 9
+        }
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            val p = db.dao().projectOnce("ababil")!!
+            assertEquals("red", p.color)
+            assertEquals("[]", p.goals)
+            assertEquals(false, p.hidden)
+            assertEquals(null, p.icon)
+            assertEquals(PagelDatabase.VERSION, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
 }

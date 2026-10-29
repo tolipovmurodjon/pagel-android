@@ -30,11 +30,20 @@ object TileColors {
         "ovoz" to "violet", "brilliant" to "amber", "autonomy" to "slate",
     )
 
-    fun nameFor(project: String, chosen: String?): String =
-        chosen?.takeIf { it in OKLCH } ?: DEFAULT[project] ?: "slate"
+    /** The ten swatch names, in the web's order. */
+    val SWATCH_NAMES: List<String> get() = OKLCH.keys.toList()
 
+    /** A custom hue from the picker: "h<0-359>" (core round; the web's tile-colors.ts tileStops reads the same). */
+    fun hueOf(chosen: String?): Int? = chosen?.takeIf { it.length in 2..4 && it[0] == 'h' }?.drop(1)?.toIntOrNull()?.takeIf { it in 0..359 }
+
+    fun nameFor(project: String, chosen: String?): String =
+        chosen?.takeIf { it in OKLCH || hueOf(it) != null } ?: DEFAULT[project] ?: "slate"
+
+    /** Light stop then dark stop: a swatch's own pair, or the same recipe at a custom hue (0.8 0.13 h → 0.6 0.16 h+10). */
     fun stops(project: String, chosen: String?): Pair<Color, Color> {
-        val (a, b) = OKLCH.getValue(nameFor(project, chosen))
+        val name = nameFor(project, chosen)
+        hueOf(name)?.let { h -> return oklch(0.8, 0.13, h.toDouble()) to oklch(0.6, 0.16, ((h + 10) % 360).toDouble()) }
+        val (a, b) = OKLCH.getValue(name)
         return oklch(a.first, a.second, a.third) to oklch(b.first, b.second, b.third)
     }
 

@@ -21,6 +21,21 @@ data class ProjectEntity(
     val color: String?,
     val sort: Int,
     val openCount: Int,
+    /** Core round (v10): "lucide:<name>" or "emoji:<char>"; null = the project's default line icon. */
+    @ColumnInfo(defaultValue = "NULL") val icon: String? = null,
+    /** The life Area it belongs to (Health, Games…); null = no area. */
+    @ColumnInfo(defaultValue = "NULL") val area: String? = null,
+    /** A sub-project's parent (2 levels at most). */
+    @ColumnInfo(defaultValue = "NULL") val parent: String? = null,
+    @ColumnInfo(defaultValue = "0") val archived: Boolean = false,
+    /** When it was finished (an ISO instant); null = still running. */
+    @ColumnInfo(defaultValue = "NULL") val finishedAt: String? = null,
+    /** "What I shipped": one line saved at the finish. */
+    @ColumnInfo(defaultValue = "NULL") val shipped: String? = null,
+    /** The project's 1-year goals and their milestones as pagel.uz sends them (JSON, [ProjectGoals]). */
+    @ColumnInfo(defaultValue = "'[]'") val goals: String = "[]",
+    /** Hidden on the phone while a delete or merge waits inside its Undo window. */
+    @ColumnInfo(defaultValue = "0") val hidden: Boolean = false,
 )
 
 /** One task as pagel.uz has it. Conflict rule: the server wins by event order; a local edit is never dropped silently. */
@@ -50,6 +65,8 @@ data class TaskEntity(
     @ColumnInfo(defaultValue = "1") val times: Int = 1,
     /** The habit's group (v8, round D): "namoz" for the five prayers; pagel.uz sends `group`, an older one none. */
     @ColumnInfo(defaultValue = "NULL") val habitGroup: String? = null,
+    /** The project goal's milestone this task moves (v10, core round); null = none. */
+    @ColumnInfo(defaultValue = "NULL") val milestone: String? = null,
 )
 
 @Entity(tableName = "steps", primaryKeys = ["taskId", "position"], indices = [Index("taskId")])
@@ -111,6 +128,10 @@ data class OutboxEntity(
         const val SWEEP = "sweep"
         /** A ritual closed on the phone (Phase 5): [body] is the `POST /api/v1/rituals` JSON, [taskId] its own id. */
         const val RITUAL = "ritual"
+        /** A project change (core round): [taskId] = "project:<name>", [body] = `{"method", "path", "body", "hold"?}`. */
+        const val PROJECT = "project"
+        /** A use count (KPI): [body] = the `POST /api/v1/kpi` JSON. Plain numbers, never words. */
+        const val KPI = "kpi"
     }
 }
 

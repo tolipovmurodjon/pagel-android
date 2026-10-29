@@ -123,6 +123,8 @@ data class PanelActions(
     /** Null when saved; otherwise why the reason was refused. */
     val onNotDoing: (String, String) -> String? = { _, _ -> null },
     val onDelete: () -> Unit = {},
+    /** A big task becomes its own project (core round); null hides the button (a habit, a done task). */
+    val onTurnIntoProject: (() -> Unit)? = null,
     val onReopen: () -> Unit = {},
     val onOpenProject: () -> Unit = {},
     val onClose: () -> Unit = {},
@@ -169,6 +171,7 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
                             vm.complete()
                         },
                         onNotDoing = vm::notDoing, onDelete = { vm.delete(); onClose() }, onReopen = vm::reopen,
+                        onTurnIntoProject = { vm.turnIntoProject { name -> onClose(); onOpenProject(name) } },
                         onOpenProject = { onOpenProject(ui.project) }, onClose = onClose,
                     ),
                 )
@@ -251,6 +254,7 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
         // slot: a done task keeps the Won't-do place (empty), so Copy never slides 48 dp right (round B checker #5).
         if (canStop) GlassIconButton(TabIcons.Ban, "Won't do, with the reason", on = stopping, size = 36.dp, label = "Won't do", onClick = onStop)
         else Spacer(Modifier.size(Space.touch))
+        a.onTurnIntoProject?.let { GlassIconButton(TabIcons.Folder, "Turn into project", size = 36.dp, label = "Turn into project", onClick = it) }
         GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Risk, size = 36.dp, label = "Delete", rim = Glass.Risk, onClick = a.onDelete)
         GlassIconButton(TabIcons.Close, "Close", size = 36.dp, label = "Close", onClick = a.onClose)
     }

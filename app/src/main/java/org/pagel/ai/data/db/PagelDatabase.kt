@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 /** The phone's copy of pagel.uz. Schema exported to app/schemas; each new version ships with a migration test. */
 @Database(
     entities = [ProjectEntity::class, TaskEntity::class, StepEntity::class, SyncStateEntity::class, TodayOrderEntity::class, OutboxEntity::class, InboxItemEntity::class, InboxStateEntity::class, HabitTickEntity::class, HabitReminderEntity::class, SweepEntity::class, RitualStateEntity::class, HabitPrefEntity::class, HabitFreezeEntity::class, InboxSortedEntity::class, QuickNoteEntity::class],
-    version = 9,
+    version = 10,
     exportSchema = true,
     // v2 (Today + tick): two new tables, nothing changed in v1's, so Room writes the migration itself.
     // v3 (the task panel): four added columns with defaults (tasks.phaseSort/phaseNow, outbox.body/waitsForServer).
@@ -17,7 +17,8 @@ import androidx.room.RoomDatabase
     // v7 (round B): tasks.times and habit_ticks.n with defaults.
     // v8 (round D, Habits 2.0): two new tables (habit_prefs, habit_freezes) and tasks.habitGroup with a NULL default.
     // v9 (round D item 2, Inbox "where did it go"): two new tables (inbox_sorted, quick_notes), nothing changed in v8's.
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9)],
+    // v10 (core round, projects): projects.icon/area/parent/archived/finishedAt/shipped/goals/hidden, tasks.milestone, defaults.
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8), AutoMigration(from = 8, to = 9), AutoMigration(from = 9, to = 10)],
 )
 abstract class PagelDatabase : RoomDatabase() {
     abstract fun dao(): PagelDao
@@ -29,6 +30,6 @@ abstract class PagelDatabase : RoomDatabase() {
     companion object {
         const val NAME = "pagel.db"
         /** The schema version the app opens (migration tests read it, so a new version is one edit). */
-        const val VERSION = 9
+        const val VERSION = 10
     }
 }

@@ -60,6 +60,14 @@ class TodayRepository(
             return
         }
         dao.addToOutbox(OutboxEntity(taskId = id, op = if (done) OutboxEntity.DONE else OutboxEntity.UNDONE, createdAt = now))
+        // KPI: the time from opening the app to the day's first tick (a plain number, no words).
+        if (done) {
+            val day = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneId.of("Asia/Tashkent")).toLocalDate().toString()
+            org.pagel.ai.data.projects.Kpi.firstTick(now, day)?.let { ms ->
+                dao.addToOutbox(OutboxEntity(taskId = "kpi", op = OutboxEntity.KPI, createdAt = now,
+                    body = """{"method":"POST","path":"/api/v1/kpi","body":{"day":"$day","first_tick_ms":$ms}}"""))
+            }
+        }
         scheduler.kick()
     }
 
@@ -134,6 +142,15 @@ class OutboxSender(
                     org.pagel.ai.data.rituals.RitualStep.LATER -> later = true
                     org.pagel.ai.data.rituals.RitualStep.SIGNED_OUT -> return SendResult.SIGNED_OUT
                     org.pagel.ai.data.rituals.RitualStep.TRY_LATER -> return SendResult.TRY_LATER
+                }
+                continue
+            }
+            if (op.op == OutboxEntity.PROJECT || op.op == OutboxEntity.KPI) {
+                when (sendRaw(account, op)) {
+                    Patch.SENT -> {}
+                    Patch.HOLD -> held += op.taskId
+                    Patch.SIGNED_OUT -> return SendResult.SIGNED_OUT
+                    Patch.TRY_LATER -> return SendResult.TRY_LATER
                 }
                 continue
             }
@@ -218,6 +235,29 @@ class OutboxSender(
                     dao.markRefused(op.id, e.message)
                     Patch.SENT
                 }
+                DataError.Unauthorized -> Patch.SIGNED_OUT
+                else -> Patch.TRY_LATER
+            }
+        }
+    }
+
+    /**
+     * A project change or a use count: `{"method", "path", "body", "hold"?}`. A delete or a merge holds for its Undo
+     * window. Refused → the row stays refused (the shell says why) and the next sync puts pagel.uz's copy back, since a
+     * refused op no longer pins the project (PagelDao.pendingProjects).
+     */
+    private suspend fun sendRaw(account: Account, op: OutboxEntity): Patch {
+        val o = op.body?.let { runCatching { kotlinx.serialization.json.Json.parseToJsonElement(it) as kotlinx.serialization.json.JsonObject }.getOrNull() }
+            ?: run { dao.removeFromOutbox(op.id); return Patch.SENT }
+        val hold = (o["hold"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+        if (hold && clock() - op.createdAt < UNDO_WINDOW_MS) return Patch.HOLD
+        val method = (o["method"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "POST"
+        val path = (o["path"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: run { dao.removeFromOutbox(op.id); return Patch.SENT }
+        dao.countAttempt(op.id)
+        return when (val out = api.send(account.serverUrl, account.token, method, path, (o["body"] ?: kotlinx.serialization.json.JsonObject(emptyMap())).toString())) {
+            is Outcome.Ok -> { dao.removeFromOutbox(op.id); Patch.SENT }
+            is Outcome.Failed -> when (val e = out.error) {
+                is DataError.Refused -> { dao.markRefused(op.id, e.message); Patch.SENT }
                 DataError.Unauthorized -> Patch.SIGNED_OUT
                 else -> Patch.TRY_LATER
             }

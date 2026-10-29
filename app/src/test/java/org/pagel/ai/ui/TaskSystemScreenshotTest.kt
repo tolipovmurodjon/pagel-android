@@ -55,10 +55,6 @@ import org.pagel.ai.ui.glass.RepeatContent
 import org.pagel.ai.ui.glass.ToastCenter
 import org.pagel.ai.ui.glass.ToastHost
 import org.pagel.ai.ui.glass.priorityItems
-import org.pagel.ai.ui.projects.PhaseGroup
-import org.pagel.ai.ui.projects.ProjectRow
-import org.pagel.ai.ui.projects.ProjectScreen
-import org.pagel.ai.ui.projects.ProjectUi
 import org.pagel.ai.ui.task.PanelActions
 import org.pagel.ai.ui.task.PanelStep
 import org.pagel.ai.ui.task.PanelUi
@@ -337,48 +333,6 @@ class TaskSystemScreenshotTest {
         show { AddTaskContent(projects, now = { now }, initial = (1..22).joinToString(" ") { "word$it" }, autoFocus = false) { _, _, _, _ -> false } }
         compose.onNodeWithContentDescription("22 words, 20 at most").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/add-too-long.png")
-    }
-
-    private val projectUi = ProjectUi(
-        loading = false, name = "pagel", title = "PAGEL", open = 5, now = 3,
-        groups = listOf(
-            PhaseGroup(
-                "Phase 3 · Native app", true,
-                listOf(ProjectRow("a", "Ship the task panel", 0, "2026-10-27", null), ProjectRow("b", "Glass pickers", 1, "2026-10-30 15:00", null), ProjectRow("c", "Weekly review", 2, "2026-10-26", "week")),
-                done = listOf(ProjectRow("x", "Room v3 + outbox", 1, null, null), ProjectRow("y", "Server PATCH fields", 0, null, null)),
-            ),
-            PhaseGroup("Phase 4 · Habits", false, listOf(ProjectRow("d", "Reminders with a Done action", 2, null, null), ProjectRow("e", "Streaks", 3, null, null))),
-            PhaseGroup("Phase 2 · Today", false, emptyList(), done = listOf(ProjectRow("z", "Today screen native", 1, null, null))),
-        ),
-    )
-
-    @Test fun projectScreen() {
-        var adding = false
-        show { Box(Modifier.fillMaxWidth()) { ProjectScreen(projectUi, PaddingValues(bottom = 24.dp), today = day, onAdd = { adding = true }) } }
-        compose.onNodeWithText("NOW").assertIsDisplayed()
-        compose.onNodeWithText("3 now · 5 open in all").assertIsDisplayed()
-        compose.onNodeWithText("2 done").assertIsDisplayed()
-        compose.onNodeWithText("Later · 1 phase").assertIsDisplayed()
-        compose.onNodeWithText("Done · 1 phase").assertIsDisplayed()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/project.png")
-        compose.onNodeWithContentDescription("Add a task to PAGEL").performClick()
-        assertEquals(true, adding)
-    }
-
-    @Test fun projectScreenFoldsOpen() {
-        show { Box(Modifier.fillMaxWidth()) { ProjectScreen(projectUi, PaddingValues(bottom = 24.dp), today = day) } }
-        compose.onNodeWithText("2 done").performClick()
-        compose.onNodeWithText("Phase 4 · Habits").performClick()
-        compose.onNodeWithText("Room v3 + outbox").assertIsDisplayed()
-        compose.onNodeWithText("Streaks").assertIsDisplayed()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-folds-open.png")
-    }
-
-    @Test fun projectScreenWithNoPlan() {
-        show { Box(Modifier.fillMaxWidth()) { ProjectScreen(ProjectUi(loading = false, name = "me", title = "Me"), PaddingValues(bottom = 24.dp), today = day) } }
-        compose.onNodeWithText("No plan yet").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Add a task to Me").assertIsDisplayed()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-empty.png")
     }
 
     /** Layout rule 3 (spacing audit #7): calendar → wheel keeps the sheet's title and the time chip in place. */

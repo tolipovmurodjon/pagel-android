@@ -126,7 +126,7 @@ class SyncEngine(
         val now = clock()
         dao.applySync(
             full = r.full,
-            projects = r.projects.map { ProjectEntity(it.name, it.title, it.color, it.sort, it.open) },
+            projects = r.projects.map { ProjectEntity(it.name, it.title, it.color, it.sort, it.open, it.icon, it.area, it.parent, it.archived, it.finishedAt, it.shipped, it.goals.toString()) },
             tasks = r.tasks.map { it.toEntity(now) },
             steps = r.tasks.flatMap { it.stepEntities() },
             removed = r.removed,
@@ -140,7 +140,7 @@ fun org.pagel.ai.data.api.SyncTaskDto.toEntity(now: Long) = TaskEntity(
     id = id, project = project, phase = phase, sort = sort, text = text, title = title,
     status = status, priority = priority, star = star, due = due, every = every,
     doneWhen = doneWhen, doneAt = doneAt, updatedAt = updatedAt, serverVersion = version, lastModified = now,
-    phaseSort = phaseSort, phaseNow = phaseNow, times = times.coerceIn(1, 12), habitGroup = group,
+    phaseSort = phaseSort, phaseNow = phaseNow, times = times.coerceIn(1, 12), habitGroup = group, milestone = milestone,
 )
 
 fun org.pagel.ai.data.api.SyncTaskDto.stepEntities() = steps.mapIndexed { i, s -> StepEntity(id, i, s.text, s.title, s.done) }

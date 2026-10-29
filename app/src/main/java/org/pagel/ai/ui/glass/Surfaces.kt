@@ -153,7 +153,7 @@ fun SkeletonRows(count: Int, modifier: Modifier = Modifier) {
 
 /** A project's lit gradient tile with its white line icon (brain rules/gradient-project-icons, colour theory #19). */
 @Composable
-fun ProjectTile(project: String, color: String?, title: String, size: Dp = 36.dp) {
+fun ProjectTile(project: String, color: String?, title: String, size: Dp = 36.dp, icon: String? = null) {
     val (a, b) = TileColors.stops(project, color)
     Box(
         Modifier
@@ -163,7 +163,9 @@ fun ProjectTile(project: String, color: String?, title: String, size: Dp = 36.dp
             .clearAndSetSemantics {},
         contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.material3.Icon(TabIcons.forProject(project), contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.6f))
+        val emoji = icon?.takeIf { it.startsWith("emoji:") }?.removePrefix("emoji:")
+        if (emoji != null) androidx.compose.material3.Text(emoji, fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.56f).toSp() }, maxLines = 1)
+        else androidx.compose.material3.Icon(icon?.removePrefix("lucide:")?.let(TabIcons::lucide) ?: TabIcons.forProject(project), contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.6f))
     }
 }
 
