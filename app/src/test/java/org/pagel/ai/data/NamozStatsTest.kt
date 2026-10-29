@@ -58,4 +58,11 @@ class NamozStatsTest {
         assertEquals(2, NamozStats.mosque(marks, YearMonth.of(2026, 11)))
         assertEquals(0, NamozStats.mosque(marks, YearMonth.of(2026, 10)))
     }
+
+    /** The grid swipes from November 2026 to this month; before the start it still has November (never empty). */
+    @Test fun monthsToSwipe() {
+        assertEquals(listOf(YearMonth.of(2026, 11)), NamozStats.months(LocalDate.of(2026, 10, 30)))
+        assertEquals(listOf(YearMonth.of(2026, 11)), NamozStats.months(LocalDate.of(2026, 11, 30)))
+        assertEquals((11..12).map { YearMonth.of(2026, it) } + YearMonth.of(2027, 1), NamozStats.months(LocalDate.of(2027, 1, 3)))
+    }
 }

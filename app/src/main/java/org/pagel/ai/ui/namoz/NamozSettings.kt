@@ -78,7 +78,10 @@ fun NamozSettingsSheet(ui: NamozUi, onSave: (NamozSettingsEntity) -> Unit, onRem
                 if (on) onPlace() else onSave(s.copy(autoLocation = false))
             }
         }
-        Group(null) { SwitchRow("Qaza counter", "memo", "My own number", s.qazaOn) { onSave(s.copy(qazaOn = it)) } }
+        Group(null) {
+            SwitchRow("Show on Today", "sunrise", "Next prayer", s.onToday) { onSave(s.copy(onToday = it)) }
+            SwitchRow("Qaza counter", "memo", "My own number", s.qazaOn) { onSave(s.copy(qazaOn = it)) }
+        }
         Spacer(Modifier.height(SheetBottom))
     }
 }

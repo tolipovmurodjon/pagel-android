@@ -32,13 +32,7 @@ class NamozViewModel @Inject constructor(
     private val dao: NamozDao,
 ) : ViewModel() {
     /** The clock, once a minute on the minute: the countdown never recomposes per second. */
-    private val minute = flow {
-        while (true) {
-            val now = LocalDateTime.now(ZONE).withSecond(0).withNano(0)
-            emit(now)
-            delay(60_000L - System.currentTimeMillis() % 60_000L)
-        }
-    }
+    private val minute = namozMinutes()
 
     private val from = LocalDate.parse(repo.today()).minusDays(400).toString()
 
@@ -82,4 +76,12 @@ class NamozViewModel @Inject constructor(
     fun deleteLearn(id: Long) = viewModelScope.launch { dao.deleteLearn(id) }
 
     companion object { val ZONE: ZoneId = ZoneId.of("Asia/Tashkent") }
+}
+
+/** The clock, once a minute on the minute (Tashkent): the countdown never recomposes per second. */
+internal fun namozMinutes() = flow {
+    while (true) {
+        emit(LocalDateTime.now(NamozViewModel.ZONE).withSecond(0).withNano(0))
+        delay(60_000L - System.currentTimeMillis() % 60_000L)
+    }
 }

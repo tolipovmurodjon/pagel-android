@@ -102,12 +102,13 @@ private val RingIdle = Color(0xFF9AA2BB)
 fun TodayRoute(
     contentPadding: PaddingValues, reselect: Int, links: org.pagel.ai.ui.rituals.RitualLinks = org.pagel.ai.ui.rituals.RitualLinks(),
     vm: TodayViewModel = hiltViewModel(), rituals: org.pagel.ai.ui.rituals.RitualPillsViewModel = hiltViewModel(),
-    compass: org.pagel.ai.ui.compass.CompassLineViewModel = hiltViewModel(),
+    compass: org.pagel.ai.ui.compass.CompassLineViewModel = hiltViewModel(), namoz: org.pagel.ai.ui.namoz.NamozLineViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val pills by rituals.pills.collectAsStateWithLifecycle()
     val line by compass.line.collectAsStateWithLifecycle()
-    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onSendNow = vm::sendNow, compassLine = line)
+    val prayer by namoz.line.collectAsStateWithLifecycle()
+    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onSendNow = vm::sendNow, compassLine = line, namozLine = prayer)
 }
 
 /** Today, native (NATIVE-PLAN Phase 2): the web's 3 at a time, a ring tick with ding, confetti and fold, undo. */
@@ -125,6 +126,8 @@ fun TodayScreen(
     onSendNow: () -> Unit = {},
     /** The Compass's quiet line (Phase 6a): his chosen goal's first words, only when he turned it on. */
     compassLine: String? = null,
+    /** The Namoz line: the next prayer and today's count, only after he started tracking and while Show on Today is on. */
+    namozLine: org.pagel.ai.ui.namoz.NamozLine? = null,
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -167,6 +170,7 @@ fun TodayScreen(
         // One gap between all blocks (spacing audit #19: 16 under the header, 12 under the bar, 8 under the pills).
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
             if (compassLine != null) item(key = "compass", contentType = "compass") { org.pagel.ai.ui.compass.CompassTodayLine(compassLine) }
+            if (namozLine != null) item(key = "namoz", contentType = "namoz") { org.pagel.ai.ui.namoz.NamozTodayLine(namozLine) }
             item(key = "head", contentType = "head") {
                 Header(ui, today, closed = closed, onSweep = if (pills != null) links.sweep else null) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
             }
