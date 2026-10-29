@@ -327,10 +327,13 @@ $T adb shell input keyevent 4; sleep 1
 tap Morning && sleep 1
 # The Namoz group (5 rows now) pushes Stretch's row down: scroll until it is on screen, then open its page, where the
 # reminder lives now (Boss 2026-10-29: no bell on the row).
-for k in 1 2 3; do
+# The row must sit above the glass tab bar (CI 40845716723: found under the bar, the tap hit Notebook): scroll until
+# its bottom edge is above y=480.
+for k in 1 2 3 4 5; do
   $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
-  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -qF 'text="Stretch for ten minutes"' && break
-  $T adb shell input swipe 160 500 160 300 400; sleep 1
+  SB=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n' | grep -F 'text="Stretch for ten minutes"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | sed -n 4p)
+  [ -n "$SB" ] && [ "$SB" -lt 480 ] && break
+  $T adb shell input swipe 160 460 160 300 400; sleep 1
 done
 tap "Stretch for ten minutes" && shot habit-page 2.5
 grep -q 'text="Reminder · off"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no Reminder row"; exit 1; }
