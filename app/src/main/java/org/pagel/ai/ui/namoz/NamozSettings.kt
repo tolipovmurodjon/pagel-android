@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.pagel.ai.data.db.NamozSettingsEntity
 import org.pagel.ai.data.habits.Namoz
@@ -120,8 +121,11 @@ private fun SwitchRow(label: String, emoji: String, meta: String, on: Boolean, o
     ) {
         Image(painterResource(Emoji.res(emoji)), null, Modifier.size(22.dp))
         Spacer(Modifier.width(Space.md))
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f))
-        Text(meta, style = Glass.NumberText, color = Glass.Muted, modifier = Modifier.padding(end = Space.md))
+        // The meta sits under the label: side by side they ran into each other at 360 dp ("Show on TodayNext prayer").
+        Column(Modifier.weight(1f).padding(end = Space.md)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(meta, style = MaterialTheme.typography.bodySmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         Switch(on)
     }
 }
