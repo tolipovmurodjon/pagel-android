@@ -305,6 +305,8 @@ val GUTTER = 36.dp
 val TIMELINE_END = 20.dp
 /** A strip dot: the slot is kept with or without dots. */
 private val DOT = 5.dp
+/** The held block's ghost is at least this tall, so its title and its new time both show. */
+private val GHOST_MIN = 38.dp
 /** A block is drawn at least this tall (a 15-minute task stays readable and grabbable). */
 private val MIN_BLOCK = 22.dp
 
@@ -644,11 +646,16 @@ private fun BlockView(b: Block, ui: UpcomingUi, hourH: Dp, colW: Int, held: Bool
             .padding(horizontal = Space.xs, vertical = Hair),
     ) {
         // A week column is ~40 dp: 10 sp on 12 sp lines gives a half-hour block two lines ("Record the"), not "Recor".
+        // At 1.5x a half-hour block holds one line: the words shrink to the block, never cut through at the bottom ("Gvm").
         val narrow = laneW < 60.dp
-        val lines = ((height.value - 2f) / (if (narrow) 12f else 15f)).toInt().coerceIn(1, 2)
-        val style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold)
-        Text(titleOf(b.task), style = if (narrow) style.copy(fontSize = 10.sp, lineHeight = 12.sp) else style, color = Glass.Ink,
-            maxLines = lines, overflow = TextOverflow.Clip)
+        val size = if (narrow) 10f else 12.5f
+        val lineSp = if (narrow) 12f else 15f
+        val room = height.value - 4f
+        val lineDp = lineSp * density.fontScale
+        val lines = (room / lineDp).toInt().coerceIn(1, 2)
+        val k = if (lines == 1 && lineDp > room) room / lineDp else 1f
+        val style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = (size * k).sp, lineHeight = (lineSp * k).sp)
+        Text(titleOf(b.task), style = style, color = Glass.Ink, maxLines = lines, overflow = TextOverflow.Clip)
         if (height > 40.dp && laneW > 56.dp) Text(time, style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false)
     }
 }
@@ -672,7 +679,8 @@ private fun Ghost(h: Held, hourPx: Float) {
     val shape = RoundedCornerShape(12.dp)
     Column(
         Modifier.offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
-            .width(with(density) { r.width.toDp() }).height(with(density) { r.height.toDp() })
+            // At least two lines tall: the new time is the point of the ghost (a half-hour block cut it in half).
+            .width(with(density) { r.width.toDp() }).height(maxOf(with(density) { r.height.toDp() }, GHOST_MIN))
             .graphicsLayer { scaleX = 1.04f; scaleY = 1.04f; shadowElevation = 14.dp.toPx(); this.shape = shape; clip = true }
             .background(Color.White.copy(alpha = 0.92f)).background(h.color.copy(alpha = 0.30f))
             .border(1.25.dp, PaneRim, shape)
