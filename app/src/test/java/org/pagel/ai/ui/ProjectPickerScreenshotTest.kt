@@ -83,7 +83,7 @@ class ProjectPickerScreenshotTest {
     }
 
     @Test fun pickerNormal() {
-        show { ProjectContent(projects, "pagel", {}, picker, onEdit = {}) }
+        show { ProjectContent(projects, "pagel", picker, onEdit = {}) {} }
         compose.onNodeWithText("New project").assertIsDisplayed()
         compose.onNodeWithText("No project").assertIsDisplayed()
         compose.onNodeWithContentDescription("Edit PAGEL").assertIsDisplayed()
@@ -92,7 +92,7 @@ class ProjectPickerScreenshotTest {
 
     @Test fun typingANewNameOffersCreateAndTheRowMakesItAndPicksIt() {
         var picked: String? = null
-        show { ProjectContent(projects, "pagel", { picked = it }, picker, onEdit = {}) }
+        show { ProjectContent(projects, "pagel", picker, onEdit = {}) { picked = it } }
         compose.onNodeWithContentDescription("Find a project").performTextInput("Gymnastics")
         compose.onNodeWithText("Create “Gymnastics”").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-picker-create-row.png")
@@ -103,7 +103,7 @@ class ProjectPickerScreenshotTest {
     }
 
     @Test fun theNewProjectRowOpensAFieldInPlace() {
-        show { ProjectContent(projects, "pagel", {}, picker, onEdit = {}) }
+        show { ProjectContent(projects, "pagel", picker, onEdit = {}) {} }
         compose.onNodeWithText("New project").performClick()
         compose.onNodeWithContentDescription("New project name").assertIsDisplayed()
         compose.onNodeWithContentDescription("New project name").performTextInput("CI Picker")
@@ -111,25 +111,25 @@ class ProjectPickerScreenshotTest {
     }
 
     @Test fun recentAndAllWhenThereAreMany() {
-        show { ProjectContent(many, "pagel", {}, picker, onEdit = {}) }
+        show { ProjectContent(many, "pagel", picker, onEdit = {}) {} }
         compose.onNodeWithText("Recent").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-picker-recent.png")
     }
 
     @Test fun pickerAtOnePointFiveFont() {
-        show(fontScale = 1.5f) { ProjectContent(projects, "gym", {}, picker, onEdit = {}) }
+        show(fontScale = 1.5f) { ProjectContent(projects, "gym", picker, onEdit = {}) {} }
         compose.onNodeWithText("New project").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-picker-font-1.5.png")
     }
 
     @Test @Config(sdk = [35], qualifiers = "w360dp-h780dp-xxhdpi") fun pickerOnANarrowPhoneAtOnePointFiveFont() {
-        show(fontScale = 1.5f) { ProjectContent(projects, "gym", {}, picker, onEdit = {}) }
+        show(fontScale = 1.5f) { ProjectContent(projects, "gym", picker, onEdit = {}) {} }
         compose.onNodeWithText("New project").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-picker-360-font-1.5.png")
     }
 
     @Test fun theOldReadOnlyPickerStillSaysNothingMatched() {
-        show { ProjectContent(projects, "pagel", {}) }
+        show { ProjectContent(projects, "pagel") {} }
         compose.onNodeWithContentDescription("Find a project").performTextInput("zz")
         compose.onNodeWithText("No project called “zz”").assertIsDisplayed()
     }

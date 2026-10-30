@@ -195,7 +195,7 @@ private fun SmallHeading(text: String) {
  * a ⋯ to edit it, a long press to move it. [picker] null → the old read-only list.
  */
 @Composable
-fun ProjectContent(projects: List<ProjectEntity>, value: String, onPick: (String) -> Unit, picker: ProjectPickerActions? = null, onEdit: ((String) -> Unit)? = null) {
+fun ProjectContent(projects: List<ProjectEntity>, value: String, picker: ProjectPickerActions? = null, onEdit: ((String) -> Unit)? = null, onPick: (String) -> Unit) {
     var q by rememberSaveable { mutableStateOf("") }
     var creating by rememberSaveable { mutableStateOf(false) }
     val rows = remember(projects, q, picker?.recent) { pickerRows(projects, q, picker?.recent.orEmpty(), picker != null) }
@@ -346,7 +346,7 @@ private fun NoProjectLine(chosen: Boolean, onPick: () -> Unit) {
 fun ProjectSheet(projects: List<ProjectEntity>, value: String, onPick: (String) -> Unit, onDismiss: () -> Unit, picker: ProjectPickerActions? = null) {
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
     GlassSheet(onDismiss) {
-        ProjectContent(projects, value, { onPick(it); onDismiss() }, picker, onEdit = if (picker != null) { n -> editing = n } else null)
+        ProjectContent(projects, value, picker, onEdit = if (picker != null) { n -> editing = n } else null) { onPick(it); onDismiss() }
         Spacer(Modifier.height(SheetBottom))
     }
     editing?.let { org.pagel.ai.ui.projects.ProjectSettingsRoute(it, onDismiss = { editing = null }, onGone = { editing = null }, calm = true) }
