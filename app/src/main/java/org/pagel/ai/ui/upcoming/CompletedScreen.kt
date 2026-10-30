@@ -24,6 +24,31 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.unit.Density
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import org.pagel.ai.ui.glass.Space
+import org.pagel.ai.ui.motion.blackhole.BlackHole
+import org.pagel.ai.ui.motion.blackhole.BlackHoleOverlay
+import org.pagel.ai.ui.motion.blackhole.BlackHolePrewarm
+import org.pagel.ai.ui.motion.blackhole.BlackHoleRun
+import org.pagel.ai.ui.motion.blackhole.BlackHoleTiming
+import org.pagel.ai.ui.motion.blackhole.PieceRect
+import kotlin.math.ceil
+import kotlin.math.max
+import kotlin.math.min
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -70,7 +95,7 @@ import org.pagel.ai.ui.today.headline
 @Composable
 fun CompletedRoute(contentPadding: PaddingValues, reselect: Int, vm: CompletedViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    CompletedScreen(ui, contentPadding, reselect, onReopen = vm::reopen)
+    CompletedScreen(ui, contentPadding, reselect, onReopen = vm::reopen, onClearDone = { vm.clearDone() })
 }
 
 /**
@@ -79,21 +104,65 @@ fun CompletedRoute(contentPadding: PaddingValues, reselect: Int, vm: CompletedVi
  * done task); the filled check opens it again (pagel.uz's undone), Room first, with Undo.
  */
 @Composable
-fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: Int = 0, onReopen: (String) -> Unit = {}) {
+fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: Int = 0, onReopen: (String) -> Unit = {}, onClearDone: () -> Unit = {}) {
     val list = rememberLazyListState()
     val openTask = LocalTaskOpener.current
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
-    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item(key = "head", contentType = "head") {
-            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp)) {
-                Text("The proof that the list moves", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
-                Text("Completed", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
-                Text(if (ui.count == 1) "1 task done" else "${ui.count} tasks done", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
-            }
+    // "Clear done" (black-hole brief): the list is recorded into a layer as it draws, so a tap can snapshot it before
+    // the rows leave Room; the black hole then plays over that snapshot while the data is already gone.
+    val layer = rememberGraphicsLayer()
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    var hole by remember { mutableStateOf<BlackHoleRun?>(null) }
+    // Undo mid-run: the effect fades out in 120 ms (never cut in one frame) while the rows come back underneath.
+    var holeStop by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.clearUndone) { if (ui.clearUndone > 0 && hole != null) holeStop = true }
+    val clear: () -> Unit = {
+        // Undispatched: the snapshot starts in the tap's own frame, before Room can redraw the list without the rows.
+        // The data never waits longer than SNAPSHOT_WAIT_MS for it; without a snapshot the rows just leave.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val info = list.layoutInfo
+            val pieces = donePieces(info, with(density) { STRIP.toPx() })
+            val centre = holeCentre(info, density)
+            val shot = withTimeoutOrNull(SNAPSHOT_WAIT_MS) { runCatching { layer.toImageBitmap().asAndroidBitmap() }.getOrNull() }
+            onClearDone()
+            holeStop = false
+            if (shot != null && pieces.isNotEmpty()) hole = BlackHoleRun(System.nanoTime(), shot, pieces, centre.x, centre.y, BlackHoleTiming.ClearAll)
         }
+    }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize().drawWithContent {
+                layer.record { this@drawWithContent.drawContent() }
+                drawLayer(layer)
+            },
+            state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item(key = "head", contentType = "head") {
+                Row(Modifier.fillMaxWidth().padding(start = Space.textEdge, end = Space.md, top = Space.md), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("The proof that the list moves", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                        Text("Completed", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
+                        Text(if (ui.count == 1) "1 task done" else "${ui.count} tasks done", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                    }
+                    if (!ui.loading && ui.groups.isNotEmpty()) ClearDoneButton(clear)
+                }
+            }
         when {
             ui.loading -> item(key = "loading", contentType = "note") {
                 Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
+            }
+            ui.allClear -> item(key = "clear", contentType = "note") {
+                Pane(Modifier.fillMaxWidth().padding(horizontal = Space.lg)) {
+                    Column(Modifier.padding(Space.xl)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("All clear", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
+                            Spacer(Modifier.width(Space.sm))
+                            Icon(TabIcons.Check, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(Space.xl))
+                        }
+                        Text("The finished tasks are cleared. Undo brings them back.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+                    }
+                }
             }
             ui.groups.isEmpty() -> item(key = "none", contentType = "note") {
                 Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
@@ -106,6 +175,54 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
             else -> for (g in ui.groups) item(key = "day-${g.day}", contentType = "day") {
                 DayPane(g, ui, onOpen = openTask, onReopen = onReopen, modifier = Modifier.animateItem())
             }
+        }
+        }
+        BlackHoleOverlay(hole, onEnd = { hole = null; holeStop = false }, Modifier.matchParentSize(), stop = holeStop)
+        // The ring shader is built and drawn once now, so the first Clear done opens without a compile hitch.
+        BlackHolePrewarm()
+    }
+}
+
+/** A day pane is cut into strips this tall: each strip flies as its own piece. */
+private val STRIP = 72.dp
+private const val SNAPSHOT_WAIT_MS = 150L
+
+/** The visible day panes, cut into strips, in the list's own px (the snapshot's coordinates). */
+internal fun donePieces(info: LazyListLayoutInfo, stripPx: Float): List<PieceRect> {
+    val shift = -info.viewportStartOffset
+    val height = info.viewportSize.height.toFloat()
+    val width = info.viewportSize.width.toFloat()
+    return info.visibleItemsInfo.filter { it.contentType == "day" }.flatMap { item ->
+        val top = max(0f, (item.offset + shift).toFloat())
+        val bottom = min(height, (item.offset + shift + item.size).toFloat())
+        if (bottom - top < 1f) return@flatMap emptyList()
+        val n = max(1, ceil((bottom - top) / stripPx).toInt())
+        val h = (bottom - top) / n
+        (0 until n).map { k -> PieceRect(0f, top + k * h, width, top + (k + 1) * h) }
+    }
+}
+
+/** The hole opens where "Clear done" sits (the button becomes the hole); scrolled away, at the list's top right. */
+private fun holeCentre(info: LazyListLayoutInfo, density: Density): Offset = with(density) {
+    val head = info.visibleItemsInfo.firstOrNull { it.key == "head" }
+    val x = info.viewportSize.width - (Space.textEdge + 56.dp).toPx()
+    val y = if (head != null) (head.offset - info.viewportStartOffset) + head.size / 2f + Space.sm.toPx() else -info.viewportStartOffset + BlackHole.RADIUS_DP.dp.toPx()
+    Offset(x, y)
+}
+
+/** "Clear done": a mint pill with the bin; the whole 48 dp is the touch box. */
+@Composable
+private fun ClearDoneButton(onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Box(
+        Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Clear done" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(Modifier.background(Glass.PrimarySoft, RoundedCornerShape(Space.lg)).padding(horizontal = Space.md, vertical = Space.sm), verticalAlignment = Alignment.CenterVertically) {
+            Icon(TabIcons.Trash, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(Space.lg))
+            Spacer(Modifier.width(Space.xs))
+            Text("Clear done", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
         }
     }
 }
