@@ -95,6 +95,7 @@ class GuideScreenshotTest {
         for ((i, c) in GuideCards.all.withIndex()) {
             compose.onNodeWithText(c.title).assertIsDisplayed()
             compose.onNodeWithContentDescription("Try it").assertIsDisplayed()
+            compose.mainClock.advanceTimeBy(200) // a frame must be drawn after the swipe, or the capture shows the page before
             compose.onRoot().captureRoboImage("build/outputs/roborazzi/guide-card-${i + 1}-360.png")
             compose.onNodeWithContentDescription("Try it").performClick()
             assertEquals(c.id, c.goes, tried)
@@ -111,6 +112,7 @@ class GuideScreenshotTest {
         for ((i, c) in GuideCards.all.withIndex()) {
             compose.onNodeWithText(c.title).assertIsDisplayed()
             compose.onNodeWithContentDescription("Try it").assertIsDisplayed()
+            compose.mainClock.advanceTimeBy(200)
             compose.onRoot().captureRoboImage("build/outputs/roborazzi/guide-card-${i + 1}-360-1.5x.png")
             if (i < GuideCards.all.lastIndex) { compose.onRoot().performTouchInput { swipeLeft() }; compose.waitForIdle() }
         }
