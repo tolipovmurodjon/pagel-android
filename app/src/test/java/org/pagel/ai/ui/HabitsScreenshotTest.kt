@@ -193,6 +193,8 @@ class HabitsScreenshotTest {
         val rows = compose.onAllNodesWithTag("habit-row", useUnmergedTree = true).fetchSemanticsNodes().map { it.boundsInRoot }.sortedBy { it.top }
             // A row cut by the screen's bottom edge reports clipped bounds: judge only whole rows.
             .filter { it.bottom < compose.onRoot().fetchSemanticsNode().boundsInRoot.bottom - 0.5f }
+            // A row on a pager page off screen is clipped to nothing (CI 40998124339: heights [0.0, 336.0, 336.0]).
+            .filter { it.height > 0.5f }
         assertTrue("at least $min rows on screen, got ${rows.size}", rows.size >= min)
         val h = rows.map { it.height }
         assertTrue("rows have one height: $h", h.all { kotlin.math.abs(it - h[0]) < 0.6f })

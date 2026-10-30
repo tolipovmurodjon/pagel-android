@@ -862,6 +862,21 @@ private fun NamozGroup(
     Pane(modifier.fillMaxWidth().padding(start = Space.sm + Space.touch, end = Space.gutter)) {
         Column(Modifier.fillMaxWidth().padding(Space.md)) {
             val started = Namoz.counts(board.selected.toString())
+            // A small tonal button, never the heaviest thing on screen (the namaz row weight). At a large font it sits
+            // under the title: beside it, it took the whole row and "Namoz" broke one letter per line (1.5x shot).
+            val bigFont = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+            val StartPill: @Composable (Modifier) -> Unit = { m ->
+                val press = remember { MutableInteractionSource() }
+                Box(
+                    m.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onStart),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Start tracking", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1, softWrap = false,
+                        modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = Space.md, vertical = Space.sm),
+                    )
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 EmojiTile("mosque", 40.dp)
                 Spacer(Modifier.width(Space.md))
@@ -870,24 +885,17 @@ private fun NamozGroup(
                     Text(if (prayers.isEmpty() || !started) "From 1 November" else "Five a day", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
                 }
                 if (prayers.isEmpty()) {
-                    // A small tonal button, never the heaviest thing on screen (the namaz row weight).
-                    val press = remember { MutableInteractionSource() }
-                    Box(
-                        Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onStart),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "Start tracking", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1, softWrap = false,
-                            modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = Space.md, vertical = Space.sm),
-                        )
-                    }
+                    if (!bigFont) StartPill(Modifier)
                 } else {
                     // No "0/5" before the first: nothing counts yet (checker 2026-10-30).
                     if (started) DayRing(board.namozDone, prayers.size, size = 40.dp)
                     GlassIconButton(TabIcons.More, "Namoz reminders", size = Space.touch, plain = true, onClick = onMenu)
                 }
             }
-            if (prayers.isEmpty()) return@Column
+            if (prayers.isEmpty()) {
+                if (bigFont) StartPill(Modifier.padding(start = 40.dp + Space.md))
+                return@Column
+            }
             Spacer(Modifier.height(Space.sm))
             val nowT = LocalTime.now(ZoneId.of("Asia/Tashkent"))
             for (c in prayers) key(c.task.id) {
