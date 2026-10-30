@@ -143,8 +143,9 @@ internal fun MonthChain(
                 if (onNext != null) GlassIconButton(TabIcons.ChevronRight, "Month after", size = Space.touch, plain = true, onClick = onNext) else Spacer(Modifier.width(Space.touch))
             }
             Row(Modifier.fillMaxWidth()) {
-                for (d in DayOfWeek.entries) Text(d.getDisplayName(TextStyle.SHORT, Locale.UK).uppercase(), style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f))
+                val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+                for (d in DayOfWeek.entries) Text(d.getDisplayName(if (big) TextStyle.NARROW else TextStyle.SHORT, Locale.UK).uppercase(), style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
+                    maxLines = 1, softWrap = false, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.height(Space.xs))
             // Week rows; the first starts at its weekday, so the chain runs Monday to Sunday on each row.

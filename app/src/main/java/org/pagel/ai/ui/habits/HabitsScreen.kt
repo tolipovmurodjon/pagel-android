@@ -409,13 +409,15 @@ internal fun ChainRow(
             // The chain goes on into last week / next week: the bar fades out at the edge, so it reads as "goes on", never
             // as a cut stub (PNG finding 5).
             val edge = Space.sm.toPx()
+            // The fade starts a few px inside the strip, so no pale stub shows at the very edge.
+            val inset = 6.dp.toPx()
             if (bleedIn && marks.firstOrNull() == Mark.DONE) {
                 val x = cell * (startSlot + 0.5f)
-                drawRect(Brush.horizontalGradient(listOf(CHAIN.copy(alpha = 0f), CHAIN), startX = -edge, endX = x), topLeft = Offset(-edge, y - h / 2), size = Size(x + edge, h))
+                drawRect(Brush.horizontalGradient(listOf(CHAIN.copy(alpha = 0f), CHAIN), startX = inset, endX = x), topLeft = Offset(inset, y - h / 2), size = Size(x - inset, h))
             }
             if (bleedOut && marks.lastOrNull() == Mark.DONE) {
                 val x = (startSlot + marks.size - 0.5f) * cell
-                drawRect(Brush.horizontalGradient(listOf(CHAIN, CHAIN.copy(alpha = 0f)), startX = x, endX = size.width + edge), topLeft = Offset(x, y - h / 2), size = Size(size.width - x + edge, h))
+                drawRect(Brush.horizontalGradient(listOf(CHAIN, CHAIN.copy(alpha = 0f)), startX = x, endX = size.width - inset), topLeft = Offset(x, y - h / 2), size = Size(size.width - inset - x, h))
             }
         }
         Row(Modifier.fillMaxWidth()) {
@@ -763,7 +765,7 @@ internal fun HabitCardRow(
                 Column(Modifier.weight(1f).heightIn(min = box), verticalArrangement = Arrangement.Center) {
                     Text(
                         c.title, style = titleStyle, color = if (done) Glass.Muted else Glass.Ink,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag(RowPart.TITLE),
+                        modifier = Modifier.testTag(RowPart.TITLE),
                     )
                     Spacer(Modifier.height(Space.xs))
                     Text(
@@ -779,7 +781,7 @@ internal fun HabitCardRow(
                     modifier = Modifier.padding(start = Space.sm).testTag(RowPart.STREAK).semantics(mergeDescendants = true) { contentDescription = "${c.streak} in a row" },
                 ) {
                     Text("🔥", style = Glass.NumberText, modifier = Modifier.clearAndSetSemantics {})
-                    Text("${c.streak}", style = Glass.NumberText, color = Color(0xFFC2410C), modifier = Modifier.clearAndSetSemantics {})
+                    Text("${c.streak}", style = Glass.NumberText, color = Glass.Ink, modifier = Modifier.clearAndSetSemantics {})
                 }
             }
         }
@@ -864,7 +866,7 @@ private fun NamozGroup(
             val started = Namoz.counts(board.selected.toString())
             // A small tonal button, never the heaviest thing on screen (the namaz row weight). At a large font it sits
             // under the title: beside it, it took the whole row and "Namoz" broke one letter per line (1.5x shot).
-            val bigFont = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+            val bigFont = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f || androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 400
             val StartPill: @Composable (Modifier) -> Unit = { m ->
                 val press = remember { MutableInteractionSource() }
                 Box(

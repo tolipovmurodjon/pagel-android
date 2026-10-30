@@ -13,6 +13,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -190,16 +193,97 @@ class HabitsScreenshotTest {
     }
 
     private fun assertOneRhythm(min: Int = 3) {
-        val rows = compose.onAllNodesWithTag("habit-row", useUnmergedTree = true).fetchSemanticsNodes().map { it.boundsInRoot }.sortedBy { it.top }
+        val rootBottom = compose.onRoot().fetchSemanticsNode().boundsInRoot.bottom
+        val rows = compose.onAllNodesWithTag("habit-row", useUnmergedTree = true).fetchSemanticsNodes()
             // A row cut by the screen's bottom edge reports clipped bounds: judge only whole rows.
-            .filter { it.bottom < compose.onRoot().fetchSemanticsNode().boundsInRoot.bottom - 0.5f }
+            .filter { it.boundsInRoot.bottom < rootBottom - 0.5f }
             // A row on a pager page off screen is clipped to nothing (CI 40998124339: heights [0.0, 336.0, 336.0]).
-            .filter { it.height > 0.5f }
+            .filter { it.boundsInRoot.height > 0.5f }.sortedBy { it.boundsInRoot.top }
         assertTrue("at least $min rows on screen, got ${rows.size}", rows.size >= min)
-        val h = rows.map { it.height }
-        assertTrue("rows have one height: $h", h.all { kotlin.math.abs(it - h[0]) < 0.6f })
-        val gaps = rows.zipWithNext { a, b -> b.top - a.bottom }
+        // Rows grow for a long title (never a cut one), so only rows of two lines or fewer share one height.
+        val plain = rows.filter { titleLines(it) <= 2 }.map { it.boundsInRoot.height }
+        assertTrue("rows of 1-2 title lines have one height: $plain", plain.all { kotlin.math.abs(it - plain[0]) < 0.6f })
+        val gaps = rows.zipWithNext { a, b -> b.boundsInRoot.top - a.boundsInRoot.bottom }
         assertTrue("rows have one gap: $gaps", gaps.all { kotlin.math.abs(it - gaps[0]) < 0.6f })
+    }
+
+    private fun layoutOf(n: androidx.compose.ui.semantics.SemanticsNode): androidx.compose.ui.text.TextLayoutResult? {
+        val out = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action?.invoke(out)
+        return out.firstOrNull()
+    }
+
+    private fun below(n: androidx.compose.ui.semantics.SemanticsNode): List<androidx.compose.ui.semantics.SemanticsNode> = listOf(n) + n.children.flatMap { below(it) }
+
+    private fun titleLines(row: androidx.compose.ui.semantics.SemanticsNode): Int =
+        below(row).firstOrNull { it.config.getOrNull(SemanticsProperties.TestTag) == "row-title" }?.let { layoutOf(it)?.lineCount } ?: 1
+
+    /** A text cut with "…", cut by its box, or broken inside a word is a finding (Boss note 6; checker 2026-10-30). */
+    private fun assertNoCutText(nodes: List<androidx.compose.ui.semantics.SemanticsNode>, what: String) {
+        var seen = 0
+        for (n in nodes) {
+            val l = layoutOf(n) ?: continue
+            seen++
+            val text = l.layoutInput.text.text
+            val at = "$what \"${text.take(40)}\""
+            assertTrue("$at has an ellipsis or overflows", !l.hasVisualOverflow && (0 until l.lineCount).none { l.isLineEllipsized(it) })
+            for (i in 0 until l.lineCount - 1) {
+                val e = l.getLineEnd(i)
+                assertTrue("$at breaks a word at line ${i + 1}", e >= text.length || text[e - 1].isWhitespace() || text[e].isWhitespace() || text[e - 1] == '-')
+            }
+        }
+        assertTrue("$what: some text was checked", seen > 0)
+    }
+
+    private fun allTexts() = below(compose.onRoot(useUnmergedTree = true).fetchSemanticsNode())
+
+    @Test fun noHabitTitleIsCutAtNormalSize() {
+        val long = habit("h7", "Log today's food and sugar, then shut down the kitchen for the night", "2026-10-28 08:00", times = 3)
+        show { HabitsScreen(ui(h = habits + long), pad) }
+        assertNoCutText(allTexts().filter { it.config.getOrNull(SemanticsProperties.TestTag) == "row-title" }, "title 1.0x")
+    }
+
+    @Test fun noHabitTitleIsCutAtLargeFont() {
+        val long = habit("h7", "Log today's food and sugar, then shut down the kitchen for the night", "2026-10-28 08:00", times = 3)
+        show(1.5f) { HabitsScreen(ui(h = habits + long), pad) }
+        assertNoCutText(allTexts().filter { it.config.getOrNull(SemanticsProperties.TestTag) == "row-title" }, "title 1.5x")
+    }
+
+    private fun namoz320(name: String, h: List<TaskEntity>) {
+        show { Box(Modifier.width(320.dp)) { HabitsScreen(ui(h = h), pad) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-320-$name.png")
+        assertNoCutText(allTexts().filter { n -> n.config.getOrNull(SemanticsProperties.Text)?.any { it.text in setOf("Namoz", "From 1 November", "Start tracking", "Five a day") } == true }, "namoz $name 320")
+    }
+
+    @Test fun namozCardNeverBreaksAWordAt320WithRows() = namoz320("rows", habits + prayers)
+
+    @Test fun namozCardNeverBreaksAWordAt320WithTheStartButton() = namoz320("start", habits)
+
+    @Test fun theHabitPageAtLargeFontCutsNothing() {
+        show(1.5f) { HabitDetail(habits[0], ui(), pad) }
+        compose.onNode(hasTestTag("habit-stats")).assertIsDisplayed()
+        assertNoCutText(allTexts(), "habit page 1.5x")
+        compose.onNodeWithText("October 2026").performScrollTo()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-page-font-1.5-calendar.png")
+        assertNoCutText(allTexts(), "habit page 1.5x calendar")
+    }
+
+    @Test fun twelveWeeksAtLargeFontKeepTwelveBarsAndNoCutText() {
+        val (h, t) = twelveWeeks
+        val w = org.pagel.ai.data.habits.habitWeeks(h, t, emptyList(), LocalDate.parse(today))
+        show(1.5f) { org.pagel.ai.ui.habits.StatsCard(w) }
+        assertNoCutText(allTexts(), "stats 1.5x")
+        val chart = compose.onNode(hasTestTag("habit-weeks")).fetchSemanticsNode().boundsInRoot
+        assertTrue("chart keeps a floor height: ${chart.height}", chart.height >= 80f)
+        assertTrue("chart spans the card: ${chart.width}", chart.width > 600f)
+    }
+
+    @Test fun theSettingsSheetOpensOnScheduleAndTheEmojiGridSitsBehindTheTile() {
+        show { androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) { org.pagel.ai.ui.habits.HabitSettings(habits[0], ui(), org.pagel.ai.ui.habits.SheetAt.TOP, reminder = {}) } }
+        compose.onNodeWithText("SCHEDULE").performScrollTo().assertExists()
+        compose.onAllNodesWithText("Find an emoji").assertCountEquals(0)
+        compose.onNodeWithTag("look-tile").performClick()
+        compose.onNodeWithText("Find an emoji").assertExists()
     }
 
     /** Boss 2026-10-29: "at most 5 things per row": the check, the emoji, the title, the progress, the streak. */

@@ -149,7 +149,8 @@ abstract class PagelDao {
     @Transaction
     open suspend fun adoptServerId(old: String, new: String) {
         val local = taskOnce(old) ?: return
-        AdoptedIds.record(old, new)
+        recordAdopted(AdoptedIdEntity(old, new, System.currentTimeMillis()))
+        pruneAdopted(System.currentTimeMillis() - 86_400_000L)
         renameInOutbox(old, new)
         deleteTasks(listOf(old))
         upsertTasks(listOf(local.copy(id = new)))
@@ -157,6 +158,18 @@ abstract class PagelDao {
         renameInToday(old, new)
         renameInSweeps(old, new)
     }
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun recordAdopted(row: AdoptedIdEntity)
+
+    @Query("DELETE FROM adopted_ids WHERE savedAt < :before")
+    abstract suspend fun pruneAdopted(before: Long)
+
+    @Query("SELECT newId FROM adopted_ids WHERE oldId = :id")
+    abstract suspend fun adoptedId(id: String): String?
+
+    /** The id a task answers to now: the server's, once pagel.uz renamed the phone's own. */
+    open suspend fun currentId(id: String): String = adoptedId(id) ?: id
 
     /** A dump's added tasks keep their ids once pagel.uz names them, so its Undo finds them (Phase 5). Ids are unique. */
     @Query("UPDATE sweeps SET addedIds = REPLACE(addedIds, :old, :new) WHERE addedIds LIKE '%' || :old || '%'")

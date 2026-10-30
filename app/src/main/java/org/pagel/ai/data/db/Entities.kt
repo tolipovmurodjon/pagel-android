@@ -9,14 +9,12 @@ import androidx.room.PrimaryKey
 const val LOCAL_ID = "local_"
 
 /**
- * The phone's own ids pagel.uz has renamed (adoptServerId). A toast's Undo holds the id from the moment of the add; the
- * add often reaches pagel.uz inside the toast's 5 s, and Undo then found no row and did nothing (smoke 41001104090).
+ * The phone's own ids pagel.uz has renamed (adoptServerId), kept in Room: a toast's Undo holds the id from the moment of
+ * the add, and the add often reaches pagel.uz inside the toast's 5 s. Every write path resolves the id first
+ * ([PagelDao.currentId]); a table, not memory, so process death inside the 5 s cannot lose the link.
  */
-object AdoptedIds {
-    private val renamed = java.util.concurrent.ConcurrentHashMap<String, String>()
-    fun record(old: String, new: String) { renamed[old] = new }
-    fun current(id: String): String = renamed[id] ?: id
-}
+@Entity(tableName = "adopted_ids")
+data class AdoptedIdEntity(@PrimaryKey val oldId: String, val newId: String, val savedAt: Long)
 
 /** How a row stands against the server. Phase 1 only reads (everything is SYNCED); local edits arrive with Today. */
 object SyncStatus {
