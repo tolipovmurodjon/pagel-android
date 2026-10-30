@@ -153,6 +153,8 @@ fun BlackHoleLab(padding: PaddingValues, jank: String?, still: LabStill? = null,
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Glass.Primary),
+                            // Material's 24 dp sides clipped "Delete one · 1.3 s" at 360 dp (frame series, CI 41070909739).
+                            contentPadding = PaddingValues(horizontal = Space.md),
                             modifier = Modifier.weight(1f),
                         ) { Text("$label · ${"%.1f".format(Locale.US, timing.total)} s", maxLines = 1) }
                     }

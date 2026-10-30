@@ -849,10 +849,15 @@ log "NAMOZ WALK DONE: $N steps (clock back to $(date -u +%FT%TZ))"
 
 log "-- Black hole (black-hole brief): More → Completed → Clear done; the rows leave at once, pagel.uz gets the removes after"
 log "   their 5 s hold; Undo after that sends restore + done and the rows come back"
+# CI 41070909739: right after the Namoz restart the tab bar was not up yet; Back then left PAGEL and a swipe pulled the
+# notification shade. Wait for the bar instead (no Back here), and swipe only inside the 640 px screen.
+$T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
 front hole-start
-for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
-sleep 1
-for k in 1 2 3; do tap Completed && break; $T adb shell input swipe 160 300 160 900 400; sleep 1; done
+for k in $(seq 1 20); do onscreen More && break; sleep 1; done
+shot hole-start 0.5
+tap More || { log "WALKTHROUGH: no More tab before the black hole step"; exit 1; }
+sleep 1.5
+for k in 1 2 3; do tap Completed && break; $T adb shell input swipe 160 200 160 500 400; sleep 1; done
 shot hole-completed 2.5
 grep -qE '(text|content-desc)="Clear done"' "$(last hole-completed)" || shot hole-completed 3
 grep -qE '(text|content-desc)="Clear done"' "$(last hole-completed)" || { log "WALKTHROUGH: Completed shows no Clear done (no done rows?)"; exit 1; }
