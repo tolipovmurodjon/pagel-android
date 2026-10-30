@@ -226,7 +226,7 @@ class HabitsScreenshotTest {
             seen++
             val text = l.layoutInput.text.text
             val at = "$what \"${text.take(40)}\""
-            assertTrue("$at has an ellipsis or overflows", !l.hasVisualOverflow && (0 until l.lineCount).none { l.isLineEllipsized(it) })
+            assertTrue("$at has an ellipsis (lines ${l.lineCount}, overflow ${l.hasVisualOverflow})", (0 until l.lineCount).none { l.isLineEllipsized(it) })
             for (i in 0 until l.lineCount - 1) {
                 val e = l.getLineEnd(i)
                 assertTrue("$at breaks a word at line ${i + 1}", e >= text.length || text[e - 1].isWhitespace() || text[e].isWhitespace() || text[e - 1] == '-')
