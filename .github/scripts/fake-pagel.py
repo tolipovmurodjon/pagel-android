@@ -54,7 +54,7 @@ QUIET = set()  # files pagel.uz took as quiet (bulk tidy-up) acts or drops
 SOMEDAY_ACTS = []  # (file, body) of each one-tap Someday: a P3 task in /sync, as pagel.uz's actionItem makes it
 
 def counted():
-    return 12 + sum(1 for f, _ in SORTS if f not in QUIET)
+    return sum(1 for f, _ in SORTS if f not in QUIET)
 SORTS = []  # (file, action) in the order pagel.uz took them
 LATER = set()
 TRIAGED = set()  # saves the AI has read since the phone asked (POST {action: "triage"})
@@ -147,7 +147,7 @@ def sync_body():
                          "priority": 2, "star": False, "due": habit_due(hid, at), "every": "day", "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": [],
                          "times": HABIT_TIMES.get(hid, 1)}
                         for k, (hid, text, at) in enumerate(HABITS)]
-                     + [{"id": uid, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 60 + k, "text": text, "status": "open",
+                     + [{"id": uid, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 60 + k, "text": text, "status": "done" if uid in DONE else "open",
                          "priority": pr, "star": False, "due": day_from_today(n), "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": [], **EDITS.get(uid, {})}
                         for k, (uid, p, text, pr, n) in enumerate(UPCOMING)]
                      + completed_rows(recent_only=True)
@@ -206,7 +206,7 @@ class H(BaseHTTPRequestHandler):
             SORTS.append((f, a))
             if b.get("quiet") is True and a in ("act", "drop"):
                 QUIET.add(f)
-            elif a == "act" and b.get("someday") is True:
+            elif a == "act" and (b.get("someday") is True or (b.get("sentence") or "").startswith("Waiting for")):
                 SOMEDAY_ACTS.append((f, b))
             if a == "later":
                 LATER.add(f)
@@ -594,9 +594,38 @@ _clarify_sync = sync_body
 def sync_body():
     s = _clarify_sync()
     s["tasks"] += [{"id": "t_" + f.split("/")[-1][:-3], "project": b.get("project") or "me", "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 300 + k,
-                    "text": b.get("sentence") or "", "status": "open", "priority": 3, "star": False, "due": None, "every": None,
+                    "text": b.get("sentence") or "", "status": "open", "priority": 3, "star": False, "due": b.get("due"), "every": None,
                     "updated_at": "2026-10-30T10:00:00Z", "version": 1, "steps": []}
                    for k, (f, b) in enumerate(SOMEDAY_ACTS)]
     return s
+
+# ── Black hole · Completed's "Clear done" (black-hole brief): PATCH {remove: true} on a finished task drops it from
+# /sync and /api/v1/completed; the Undo after it left sends {restore: true, done: true} and it is done again, as pagel.uz
+# does (task-api.ts: restore opens it, done then finishes it).
+_hole_patch, _hole_completed_rows = H.do_PATCH, completed_rows
+
+def completed_rows(recent_only):
+    return [r for r in _hole_completed_rows(recent_only) if r["id"] not in REMOVED]
+
+def _hole_patch_h(self):
+    tid = self.path.rsplit("/", 1)[-1]
+    raw = self.rfile.read(int(self.headers.get("content-length") or 0))
+    b = json.loads(raw or b"{}")
+    if tid not in DONE_AT or not ("remove" in b or "restore" in b):
+        self.rfile = io.BytesIO(raw)
+        return _hole_patch(self)
+    LOG.write(f"PATCH {self.path} {raw.decode()[:300]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    if b.get("remove") is True:
+        REMOVED.add(tid)
+    if b.get("restore") is True:
+        REMOVED.discard(tid)
+    if "done" in b:
+        (REOPENED.add if b["done"] is False else REOPENED.discard)(tid)
+    status = "dropped" if tid in REMOVED else ("open" if tid in REOPENED else "done")
+    return self.send(200, {"id": tid, "status": status, "applied": list(b.keys())})
+
+H.do_PATCH = _hole_patch_h
 
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()

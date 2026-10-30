@@ -189,7 +189,7 @@ private fun Step(step: Int, ui: ReviewUi, onStep: (String, String) -> Unit, onDr
                         ProjectTile(t.project, t.projectColor, t.projectTitle, size = 22.dp)
                         Spacer(Modifier.width(org.pagel.ai.ui.glass.Space.md))
                         Column(Modifier.weight(1f).padding(vertical = org.pagel.ai.ui.glass.Space.sm)) {
-                            Text(t.title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(if (org.pagel.ai.data.inbox.isWaiting(t.title)) org.pagel.ai.data.inbox.waitingRowText(t.title) else t.title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             // The check day: an overdue one says so, so a stale ball is chased.
                             t.due?.let { d ->
                                 val late = d.take(10) < today.toString()

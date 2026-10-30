@@ -46,6 +46,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.pagel.ai.data.inbox.isWaiting
+import org.pagel.ai.data.inbox.waitingRowText
 import org.pagel.ai.data.db.PagelDao
 import org.pagel.ai.data.db.ProjectEntity
 import org.pagel.ai.data.db.TaskEntity
@@ -189,7 +191,8 @@ private fun TaskRow(t: TaskEntity, project: ProjectEntity?, due: String?, today:
         Column(Modifier.weight(1f).padding(vertical = Space.sm)) {
             // Two lines at 1x; at a large font the title grows instead of being cut.
             val big = LocalDensity.current.fontScale >= 1.3f
-            Text(t.title?.takeIf(String::isNotBlank) ?: t.text, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = if (big) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+            val shown = t.title?.takeIf(String::isNotBlank) ?: t.text
+            Text(if (isWaiting(shown)) waitingRowText(shown) else shown, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = if (big) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
             val place = listOfNotNull(project?.let { shortName(it.name, it.title) } ?: t.project, due?.let { "check ${DatePick.dueText(it, today)}" }).joinToString(" · ")
             Text(place, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
         }

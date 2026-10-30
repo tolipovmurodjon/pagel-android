@@ -476,67 +476,6 @@ fun PrioritySheet(value: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
     }
 }
 
-// ── Project ─────────────────────────────────────────────────────────────────────────────────────────────────────
-
-/** The web's project picker: type to find one, every project as its gradient tile, a check on the chosen one. */
-@Composable
-fun ProjectContent(projects: List<ProjectEntity>, value: String, onPick: (String) -> Unit) {
-    var q by rememberSaveable { mutableStateOf("") }
-    val list = remember(projects, q) { projects.filter { shortName(it.name, it.title).contains(q.trim(), ignoreCase = true) || it.name.contains(q.trim(), ignoreCase = true) } }
-    val haptics = LocalHapticFeedback.current
-    Column(Modifier.fillMaxWidth()) {
-        SheetTitle("Project")
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(48.dp)
-                .background(Color.White.copy(alpha = 0.78f), RoundedCornerShape(24.dp))
-                .border(1.dp, SolidColor(Glass.Ink.copy(alpha = 0.10f)), RoundedCornerShape(24.dp))
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(TabIcons.Search, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(10.dp))
-            BasicTextField(
-                value = q, onValueChange = { q = it }, singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Glass.Ink), cursorBrush = SolidColor(Glass.Primary),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { list.firstOrNull()?.let { onPick(it.name) } }),
-                modifier = Modifier.weight(1f).semantics { contentDescription = "Find a project" },
-                decorationBox = { inner -> Box { if (q.isEmpty()) Text("Type a project name", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
-            )
-        }
-        Spacer(Modifier.height(12.dp))
-        Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            if (list.isEmpty()) {
-                Text("No project called “${q.trim()}”", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(20.dp))
-            } else LazyColumn(Modifier.heightIn(max = 420.dp).padding(vertical = 4.dp)) {
-                items(list, key = { it.name }, contentType = { "project" }) { p ->
-                    val press = remember { MutableInteractionSource() }
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 52.dp).pressScale(press)
-                            .clickable(press, indication = null, role = Role.Button) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick(p.name) }
-                            .semantics { selected = p.name == value }
-                            .padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ProjectTile(p.name, p.color, p.title, size = 28.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Text(shortName(p.name, p.title), style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                        if (p.name == value) Icon(TabIcons.Check, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ProjectSheet(projects: List<ProjectEntity>, value: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
-    GlassSheet(onDismiss) {
-        ProjectContent(projects, value) { onPick(it); onDismiss() }
-        Spacer(Modifier.height(SheetBottom))
-    }
-}
-
 /**
  * Lays out [content] at least as tall as [reserve], which is measured but never placed (so never drawn, touched or
  * read by TalkBack). A slot that swaps its body keeps one height.

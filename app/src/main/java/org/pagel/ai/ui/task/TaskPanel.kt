@@ -105,6 +105,12 @@ import org.pagel.ai.ui.glass.Pane
 import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.PriorityColors
 import org.pagel.ai.ui.glass.ProjectTile
+import org.pagel.ai.ui.glass.ProjectPickerActions
+import org.pagel.ai.ui.glass.ProjectSheet
+import org.pagel.ai.ui.glass.GlassMenu
+import org.pagel.ai.ui.glass.MenuItem
+import org.pagel.ai.data.db.ProjectEntity
+import androidx.compose.foundation.combinedClickable
 import org.pagel.ai.ui.glass.Repeat
 import org.pagel.ai.ui.glass.PrioritySheet
 import org.pagel.ai.ui.glass.RepeatSheet
@@ -136,6 +142,8 @@ data class PanelActions(
     val onTurnIntoProject: (() -> Unit)? = null,
     val onReopen: () -> Unit = {},
     val onOpenProject: () -> Unit = {},
+    /** Moves the task to another project (the project capsule opens the picker); null → the capsule only opens the project. */
+    val onMove: ((String) -> Unit)? = null,
     val onClose: () -> Unit = {},
 )
 
@@ -152,7 +160,11 @@ private val STOP = listOf(
 fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) -> Unit) {
     val vm: TaskPanelViewModel = hiltViewModel(key = "panel-$taskId")
     LaunchedEffect(taskId) { vm.bind(taskId) }
-    val ui by vm.ui.collectAsStateWithLifecycle()
+    val ui0 by vm.ui.collectAsStateWithLifecycle()
+    val lessons by vm.lessons.collectAsStateWithLifecycle()
+    val ui = ui0.copy(lessons = lessons)
+    val projects by vm.projects.collectAsStateWithLifecycle()
+    val pickerActions = org.pagel.ai.ui.glass.rememberProjectPickerActions()
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -167,7 +179,8 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
                 ui.project.isEmpty() -> Text("This task is gone from pagel.uz.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(24.dp))
                 else -> TaskPanelContent(
                     ui, vm.dayToday(),
-                    PanelActions(
+                    projects = projects, pickerActions = pickerActions,
+                    a = PanelActions(
                         onTitle = vm::title, onDoneWhen = vm::doneWhen, onText = vm::text, onDue = vm::due, onEvery = vm::every, onTimes = vm::times,
                         onPriority = vm::priority, onStar = vm::star, onSteps = vm::steps, onMakeTasks = vm::makeStepsTasks,
                         // The same finish as Today: Confirm haptic, ding, confetti from the ring, the toast; the panel stays.
@@ -181,7 +194,7 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
                         },
                         onNotDoing = vm::notDoing, onDelete = { vm.delete(); onClose() }, onReopen = vm::reopen,
                         onTurnIntoProject = { vm.turnIntoProject { name -> onClose(); onOpenProject(name) } },
-                        onOpenProject = { onOpenProject(ui.project) }, onClose = onClose,
+                        onOpenProject = { onOpenProject(ui.project) }, onMove = vm::moveTo, onClose = onClose,
                     ),
                 )
             }
@@ -196,7 +209,10 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
  * Priority / Today as grouped rows, and the full note the AI reads.
  */
 @Composable
-fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: Boolean = false, picker0: String = "") {
+fun TaskPanelContent(
+    ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: Boolean = false, picker0: String = "",
+    projects: List<ProjectEntity> = emptyList(), pickerActions: ProjectPickerActions? = null,
+) {
     // A finished task's fields are its record, not a form (Completed → tap): read only, with Reopen. Ticked here, the
     // panel stays open on that record and its ring draws the tick in.
     val openedOpen = remember(ui.id) { ui.open }
@@ -204,7 +220,7 @@ fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: 
     var stopping by rememberSaveable(ui.id) { mutableStateOf(stopFirst) }
     var picker by rememberSaveable(ui.id) { mutableStateOf(picker0) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
-        Header(ui, stopping, a, onStop = { stopping = !stopping })
+        Header(ui, stopping, a, onStop = { stopping = !stopping }, onProject = if (a.onMove != null) { { picker = "project" } } else null)
         AnimatedVisibility(stopping, enter = expandVertically(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(), exit = shrinkVertically(tween(160)) + fadeOut()) {
             StopForm(onCancel = { stopping = false }) { kind, reason ->
                 a.onNotDoing(kind, reason).also { if (it == null) { stopping = false; if (kind == "drop") a.onClose() } }
@@ -224,10 +240,13 @@ fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: 
     if (picker == "date") DateSheet(ui.due, today, onPick = a.onDue, onDismiss = { picker = "" })
     if (picker == "repeat") RepeatSheet(ui.every, onChange = a.onEvery, onDismiss = { picker = "" }, times = ui.times, onTimes = a.onTimes)
     if (picker == "priority") PrioritySheet(ui.priority, onPick = { if (it != ui.priority) a.onPriority(it) }, onDismiss = { picker = "" })
+    // The same picker as the Add sheet (find, make, drag, ⋯ edit); a pick moves the task, with Undo (checker 2026-10-30 #2).
+    if (picker == "project") ProjectSheet(projects, ui.project, onPick = { if (it != ui.project) a.onMove?.invoke(it) }, onDismiss = { picker = "" }, picker = pickerActions)
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -> Unit, canStop: Boolean = true) {
+private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -> Unit, canStop: Boolean = true, onProject: (() -> Unit)? = null) {
     val ctx = LocalContext.current
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) { if (copied) { delay(1600); copied = false } }
@@ -243,15 +262,20 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
             Modifier.weight(1f, fill = false).pressScale(press)
                 .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(18.dp))
                 .border(1.dp, SolidColor(Glass.Ink.copy(alpha = 0.08f)), RoundedCornerShape(18.dp))
-                .clickable(press, indication = null, role = Role.Button, onClick = a.onOpenProject)
-                .semantics { contentDescription = "Open ${ui.projectLabel}" }
+                // An open task: a tap moves it to another project (the picker), a long press opens its project. A done one: a
+                // tap opens its project.
+                .then(
+                    if (onProject != null) Modifier.combinedClickable(press, indication = null, role = Role.Button, onLongClickLabel = "Open ${ui.projectLabel}", onLongClick = a.onOpenProject, onClick = onProject)
+                        .semantics { contentDescription = "Project: ${ui.projectLabel}" }
+                    else Modifier.clickable(press, indication = null, role = Role.Button, onClick = a.onOpenProject).semantics { contentDescription = "Open ${ui.projectLabel}" },
+                )
                 .padding(start = 6.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             ProjectTile(ui.project, ui.projectColor, ui.projectLabel, size = 22.dp)
             Spacer(Modifier.width(7.dp))
             Text(ui.projectLabel, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-            if (!big) Icon(TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
+            if (!big) Icon(if (onProject != null) TabIcons.ChevronDown else TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
         }
             if (ui.held) Held()
         }
@@ -397,10 +421,26 @@ private fun Ring(priority: Int, done: Boolean, title: String, drawIn: Boolean = 
     }
 }
 
+/** The four steps a course lesson takes, in order; one tap adds those the task does not have yet. */
+val LESSON_STEPS = listOf("Open lesson", "Watch 10 min", "Rebuild it", "Note 1 thing")
+
+// A numbered lesson line ("Lesson 3 …", "Lecture 12: …", "Module 2 · …"); a task that only mentions a lesson ("Record the
+// fractions lesson" in Humopedia) is not one (CI 41086207276 shot 34 offered the chip there).
+private val LESSON_LINE = Regex("""^(lesson|lecture|module|chapter|episode|unit|part|section|video|class|day)\s*#?\d+""", RegexOption.IGNORE_CASE)
+
+/**
+ * A project of lessons: its name says course or lesson, or at least two of its tasks read like lessons ("Lesson 3 …",
+ * "Lecture 12 …"). Only there does the panel offer Lesson steps as a chip; elsewhere it waits in the ⋯.
+ */
+fun looksLikeLessons(projectTitle: String, taskTexts: List<String>): Boolean =
+    Regex("""course|lesson""", RegexOption.IGNORE_CASE).containsMatchIn(projectTitle) || taskTexts.count { LESSON_LINE.containsMatchIn(it.trim()) } >= 2
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Steps(ui: PanelUi, a: PanelActions) {
     val haptics = LocalHapticFeedback.current
     val texts = ui.steps.map { it.text }
+    val lessoned = LESSON_STEPS.all { it in texts }
     val ticked = ui.steps.mapIndexedNotNull { i, s -> if (s.done) i else null }
     var adding by rememberSaveable(ui.id) { mutableStateOf("") }
     var made by rememberSaveable(ui.id) { mutableStateOf(false) }
@@ -503,12 +543,29 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
                     modifier = Modifier.weight(1f).semantics { contentDescription = "Add a step" },
                     decorationBox = { inner -> Box { if (adding.isEmpty()) Text("Add a step", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
                 )
+                // Not a course: the lesson template waits in a quiet ⋯ instead of a chip on every task (checker #9).
+                if (!ui.lessons && !lessoned) Box {
+                    var menu by remember { mutableStateOf(false) }
+                    GlassIconButton(TabIcons.More, "Step templates", tint = Glass.Muted, size = 40.dp, plain = true) { menu = true }
+                    if (menu) GlassMenu(listOf(MenuItem(TabIcons.ListPlus, "Lesson steps", hint = LESSON_STEPS.joinToString(" · "))), onPick = {
+                        menu = false; a.onSteps(texts + LESSON_STEPS.filter { it !in texts }, ticked)
+                    }, onDismiss = { menu = false })
+                }
             }
             // slot: once made, the chip stays as a quiet "Made ✓" so the Props pane never jumps up 48 dp (spacing audit #9).
-            if (texts.isNotEmpty()) {
-                if (!made) GlassChip(TabIcons.ListPlus, "To tasks", set = false, description = "Make these steps tasks in ${ui.projectLabel}", modifier = Modifier.padding(start = Space.md)) {
-                    a.onMakeTasks(); made = true
-                } else GlassChip(TabIcons.Check, "Made", set = true, description = "Made into tasks", modifier = Modifier.padding(start = Space.md)) {}
+            FlowRow(Modifier.padding(start = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.chipGap)) {
+                // A course lesson in one tap (Boss, 2026-10-30): the four things every lesson takes; only where tasks are lessons.
+                if (ui.lessons) {
+                    if (lessoned) GlassChip(TabIcons.Check, "Lesson steps", set = true, description = "Lesson steps added") {}
+                    else GlassChip(TabIcons.ListPlus, "Lesson steps", set = false, description = "Add lesson steps") {
+                        a.onSteps(texts + LESSON_STEPS.filter { it !in texts }, ticked)
+                    }
+                }
+                if (texts.isNotEmpty()) {
+                    if (!made) GlassChip(TabIcons.ListPlus, "To tasks", set = false, description = "Make these steps tasks in ${ui.projectLabel}") {
+                        a.onMakeTasks(); made = true
+                    } else GlassChip(TabIcons.Check, "Made", set = true, description = "Made into tasks") {}
+                }
             }
         }
     }

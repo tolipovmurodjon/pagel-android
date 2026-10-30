@@ -47,6 +47,16 @@ fun waitingLine(who: String, thing: String): String {
     return if (w.isEmpty()) "$WAITING_PREFIX: ${thing.trim()}" else "$WAITING_PREFIX $w: ${thing.trim()}"
 }
 
+/** How a waiting row reads: "👤 Aziz · the grant form" (person first, no colon), or "👤 the grant form" with nobody named. */
+fun waitingRowText(text: String): String {
+    val rest = text.removePrefix(WAITING_PREFIX)
+    val colon = rest.indexOf(':')
+    if (colon < 0) return "👤 ${rest.trim()}"
+    val who = rest.substring(0, colon).trim()
+    val thing = rest.substring(colon + 1).trim()
+    return if (who.isEmpty()) "👤 $thing" else "👤 $who · $thing"
+}
+
 /** True for a task that is someone else's ball. */
 fun isWaiting(text: String) = text.startsWith("$WAITING_PREFIX ") || text.startsWith("$WAITING_PREFIX:")
 

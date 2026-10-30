@@ -158,6 +158,33 @@ class UpcomingRepositoryTest {
         assertEquals(listOf("""t_c {"done":false}"""), patches)
     }
 
+    /**
+     * Black-hole brief: "Clear done" empties Completed in Room at once; the removes reach pagel.uz after their hold, and
+     * an Undo after that sends restore + done (pagel.uz's restore alone opens a task), so each comes back done with its
+     * time. An Undo inside the hold takes them back and pagel.uz never hears of it.
+     */
+    @Test fun clearDoneEmptiesCompletedAtOnceAndUndoBringsEachBackDone() = runBlocking {
+        db.dao().upsertTasks(listOf(task("t_1", null, status = "done", doneAt = "2026-10-28T04:12:00.000Z"), task("t_2", null, status = "done", doneAt = "2026-10-27T09:00:00.000Z")))
+        val r = repo()
+        val cleared = r.clearDone(listOf("t_1", "t_2"))
+        assertEquals(listOf("t_1", "t_2"), cleared.map { it.id })
+        assertTrue(db.dao().completed().first().isEmpty())
+        assertEquals("dropped", db.dao().taskOnce("t_1")!!.status)
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(listOf("""t_1 {"remove":true}""", """t_2 {"remove":true}"""), patches)
+        r.undoClear(cleared)
+        assertEquals(setOf("t_1", "t_2"), db.dao().completed().first().map { it.id }.toSet())
+        assertEquals("2026-10-28T04:12:00.000Z", db.dao().taskOnce("t_1")!!.doneAt)
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(listOf("""t_2 {"restore":true,"done":true}""", """t_1 {"restore":true,"done":true}"""), patches.drop(2))
+        // Inside the hold: taken back on the phone, nothing more is sent.
+        val again = r.clearDone(listOf("t_1"))
+        r.undoClear(again)
+        assertEquals("done", db.dao().taskOnce("t_1")!!.status)
+        assertTrue(db.dao().waitingOutbox().isEmpty())
+        assertEquals(4, patches.size)
+    }
+
     @Test fun olderFinishedTasksComeFromCompletedButNeverOverAWaitingChange() = runBlocking {
         db.dao().upsertTasks(listOf(task("t_mine", null, status = "done", doneAt = "2026-10-20T04:00:00.000Z")))
         val r = repo()

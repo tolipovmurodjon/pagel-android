@@ -31,6 +31,8 @@ import org.pagel.ai.ui.glass.TabIcons
 @Serializable data object SomedayRoute : NavKey
 /** The projects' quick notes (round D item 2): a project's list, or all projects with notes when [project] is null. */
 @Serializable data class NotesRoute(val project: String? = null) : NavKey
+/** More → Lab: the black hole delete on sample rows, both lengths, with the janky % read on the phone. */
+@Serializable data object BlackHoleLabRoute : NavKey
 /** pagel.uz itself in the kept-alive WebView, until each native feature replaces its page. */
 @Serializable data class WebRoute(val path: String) : NavKey
 

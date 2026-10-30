@@ -95,11 +95,13 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -144,7 +146,7 @@ val Choice.look: ChoiceLook
             "It takes under 2 minutes. Do it right now, then it is gone.", "Follow an account, reply \"thanks\", star a repo.")
         Choice.LATER -> ChoiceLook(TabIcons.Clock, "Later", "once", Color(0xFF6B7280),
             "Not now, but not sure. Goes to the back once; next time you must decide.", "A long video you cannot watch tonight.")
-        Choice.DROP -> ChoiceLook(TabIcons.Trash, "Drop", "git keeps it", Color(0xFFD1453B),
+        Choice.DROP -> ChoiceLook(TabIcons.Trash, "Drop", "git keeps it", Color(0xFF1F2937),
             "Nothing to do, nothing to keep. Most saves end here, and that is fine. Undo for 5 s.", "Memes, jokes, ads, \"10 AI tools\" lists you will never open.")
         Choice.SOMEDAY -> ChoiceLook(TabIcons.Moon, "Someday", "maybe, with no date", Color(0xFF4F5FA8),
             "Not now, maybe never. One tap files it where the weekly review looks; it has no date and no count.", "\"Learn to weld\" → Someday. Bring it back when the time is right.")
@@ -152,7 +154,7 @@ val Choice.look: ChoiceLook
             "Someone else must act first. Say who, and PAGEL asks you again on the check day (3 days on).", "\"Aziz sends the invoice\" → Waiting for Aziz, check Thursday.")
         Choice.PROJECT -> ChoiceLook(TabIcons.Folder, "Project", "more than one step", Color(0xFF166534),
             "It takes more than one step. Name the project, then write its very first step.", "\"Launch the newsletter\" → project Newsletter, first step \"Pick the tool\".")
-        Choice.CALENDAR -> ChoiceLook(TabIcons.Calendar, "Calendar", "tied to a day or time", Color(0xFFA8326B),
+        Choice.CALENDAR -> ChoiceLook(TabIcons.Calendar, "Calendar", "tied to a day or time", Color(0xFF8A3FB0),
             "It must happen on a day or at a time. Pick the date, and the wheel for the hour.", "\"Grant round closes 15 Nov\" → 15 Nov, 09:00.")
     }
 
@@ -378,8 +380,9 @@ private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, so
             Column(Modifier.weight(1f)) {
                 // With no card here, a count would sit over "Inbox zero" (checker 2026-10-28 #8): the empty card says it.
                 // After the goal: done for today, never the pile ("900 more", checker 2026-10-30 #9).
-                if (ui.cards.isNotEmpty()) Text(if (ui.sorted < ui.goal) "Today's ${ui.goal}" else "Done today ✓", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Inbox", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
+                if (ui.cards.isNotEmpty()) FitText(headerNote(ui, LocalDensity.current.fontScale >= 1.3f), MaterialTheme.typography.labelSmall, Glass.Muted, minSize = 9.sp)
+                // Never "Inbo / x": a word that does not fit gets a smaller size, not a break.
+                FitText("Inbox", MaterialTheme.typography.headlineLarge, Glass.Ink, minSize = 18.sp, modifier = Modifier.semantics { heading() })
             }
             // At a large font the flame gives its room to the title: "Inbo / x" and a three-line "Done for today" at 1.5x
             // on the 320 dp screen (walk 59, run 41089220966).
@@ -404,6 +407,26 @@ private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, so
     }
 }
 
+/** The line over the title: "Today's 20", or "Done today ✓" after the goal; a short "Done ✓" at a large font so it stays one line. */
+private fun headerNote(ui: InboxUi, big: Boolean) = if (ui.sorted < ui.goal) "Today's ${ui.goal}" else if (big) "Done ✓" else "Done today ✓"
+
+/**
+ * One text that shrinks until it fits its box, so a word is never cut with "…" or broken across lines. It lays out at
+ * the style's size, then steps down 8 % at a time (down to [minSize]) while the layout still overflows.
+ */
+@Composable
+private fun FitText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier, maxLines: Int = 1, minSize: TextUnit = 10.sp) {
+    var size by remember(text, style) { mutableStateOf(style.fontSize) }
+    Text(
+        text, style = style.copy(fontSize = size), color = color, maxLines = maxLines, softWrap = maxLines > 1, overflow = TextOverflow.Clip,
+        onTextLayout = {
+            val wide = maxLines == 1 && it.multiParagraph.intrinsics.maxIntrinsicWidth > it.size.width + 1f
+            if ((it.hasVisualOverflow || wide) && size.value * 0.92f >= minSize.value) size = (size.value * 0.92f).sp
+        },
+        modifier = modifier,
+    )
+}
+
 /** "Old saves to Someday · 120 of 412" (or "dropping"), and "waiting for pagel.uz" while it cannot reach it. */
 fun bulkLine(b: Bulk): String {
     val nb = " "
@@ -425,7 +448,7 @@ private fun Streak(n: Int) {
     LaunchedEffect(n) { pop.snapTo(0.6f); pop.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = 600f)) }
     Row(
         Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value }
-            .background(Color(0xFFC2410C), CircleShape).padding(start = 7.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)
+            .background(Color(0xFFB45309), CircleShape).padding(start = 7.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)
             .semantics(mergeDescendants = true) { contentDescription = "$n sorted since you opened the Inbox" },
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -760,10 +783,10 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Text(card.claim, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, maxLines = if (room < 380.dp) 3 else 5, overflow = TextOverflow.Ellipsis)
+            FitText(card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = if (room < 380.dp) 4 else 6, minSize = 16.sp)
             card.why?.let {
                 Spacer(Modifier.height(4.dp))
-                Text(it, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), color = Glass.Primary, maxLines = if (tight) 1 else 3, overflow = TextOverflow.Ellipsis)
+                FitText(it, MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), Glass.Primary, maxLines = if (tight) 2 else 3, minSize = 11.sp)
             }
             if (showPicture) {
                 val bmp = pictures[card.file]
@@ -906,8 +929,8 @@ private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
         // beside it until Boss has used it.
         Row(Modifier.fillMaxWidth().heightIn(min = DOCK_LINK_ROW), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (tipUsed) "" else "Hold a choice to repeat it", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1,
-                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = Space.xs),
+                if (tipUsed) "" else "Hold = repeat", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 2,
+                modifier = Modifier.weight(1f).padding(start = Space.xs),
             )
             val press = remember { MutableInteractionSource() }
             val laterOff = card.putOff
@@ -990,7 +1013,7 @@ private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, onClick: ()
                 Spacer(Modifier.width(6.dp))
                 Icon(TabIcons.Sparkles, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
             }
-            Text(sub, style = MaterialTheme.typography.labelSmall, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            FitText(sub, MaterialTheme.typography.labelSmall, Color.White, maxLines = 2, minSize = 9.sp)
         }
     }
 }

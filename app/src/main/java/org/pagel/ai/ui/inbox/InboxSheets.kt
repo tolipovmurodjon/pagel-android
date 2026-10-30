@@ -369,11 +369,12 @@ fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onRetry: 
 /** "How sorting works": the five gestures as one picture, then each choice with when to use it and an example (the web's guide). */
 @Composable
 fun GuideSheet(onDismiss: () -> Unit) {
-    GlassSheet(onDismiss) { GuideContent(); Spacer(Modifier.height(SheetBottom)) }
+    val openGuide = org.pagel.ai.ui.guide.LocalGuideOpener.current
+    GlassSheet(onDismiss) { GuideContent(onGuide = { onDismiss(); openGuide(org.pagel.ai.ui.guide.GuideCards.CLARIFY) }); Spacer(Modifier.height(SheetBottom)) }
 }
 
 @Composable
-fun GuideContent() {
+fun GuideContent(onGuide: (() -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         Text("How sorting works", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
         SwipeMap(Modifier.fillMaxWidth().padding(bottom = 14.dp))
@@ -398,6 +399,8 @@ fun GuideContent() {
         }
         Text("GTD in one line: ask \"Can I do something about it?\". No → Drop, Someday, Note or Learn. Yes → Do now, Action, Project, Waiting or Calendar. Most saves are a Drop; that is the point.",
             style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
+        if (onGuide != null) Text("How it works →", style = MaterialTheme.typography.titleMedium, color = Glass.PrimaryInk,
+            modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onGuide).padding(horizontal = 4.dp, vertical = 12.dp))
     }
 }
 

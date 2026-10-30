@@ -10,10 +10,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -25,6 +27,13 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -125,6 +134,80 @@ class InboxClarifyScreenshotTest {
         val sizes = listOf("Drop", "Someday", "Note", "Learn", "Do now", "Action", "Project", "Waiting", "Calendar").map { fontSize(it) }.toSet()
         assertEquals("one word size in the grid: $sizes", 1, sizes.size)
         oneWholeLine("Calendar")
+    }
+
+    private val dockWords = listOf("Drop", "Someday", "Note", "Learn", "Do now", "Action", "Project", "Waiting", "Calendar", "Later", "Yes", "No",
+        "Hold = repeat", "Can I do something about it?", "Inbox", "Today's 20", "Done ✓")
+
+    private fun layoutOf(n: SemanticsNode): TextLayoutResult? {
+        val out = mutableListOf<TextLayoutResult>()
+        n.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(out)
+        return out.firstOrNull()
+    }
+
+    /** The dock's own words: none ends in "…", none is wider than its box, none breaks inside a word (Boss: nothing cut mid-word). */
+    private fun assertNoCutText(what: String) {
+        var seen = 0
+        for (w in dockWords) for (n in compose.onAllNodesWithText(w, useUnmergedTree = true).fetchSemanticsNodes()) {
+            val l = layoutOf(n) ?: continue
+            seen++
+            val text = l.layoutInput.text.text
+            val at = "$what \"${text.take(40)}\""
+            assertTrue("$at has an ellipsis", (0 until l.lineCount).none { l.isLineEllipsized(it) })
+            assertTrue("$at is cut by its box (words ${l.multiParagraph.intrinsics.maxIntrinsicWidth} px, box ${n.size.width} px)", !(l.lineCount == 1 && l.multiParagraph.intrinsics.maxIntrinsicWidth > n.size.width + 1f))
+            for (i in 0 until l.lineCount - 1) {
+                val e = l.getLineEnd(i)
+                assertTrue("$at breaks a word at line ${i + 1}", e >= text.length || text[e - 1].isWhitespace() || text[e].isWhitespace() || text[e - 1] == '-')
+            }
+        }
+        assertTrue("$what: some dock text was checked", seen >= 8)
+    }
+
+    @Test fun theDockCutsNothingAt15xFont() {
+        show(1.5f) { screen(ui(grant)) }
+        assertNoCutText("dock 1.5x")
+    }
+
+    @Test fun theDockCutsNothingAt320dpAnd15xFont() {
+        show(1.5f) { Box(Modifier.width(320.dp).height(640.dp)) { screen(ui(grant)) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-320-font-1.5.png")
+        assertNoCutText("dock 320 dp 1.5x")
+    }
+
+    @Test fun theDockCutsNothingAt1x() {
+        show { screen(ui(grant)) }
+        assertNoCutText("dock 1x")
+    }
+
+    /**
+     * Boss: never red. A pixel is red when its hue is within 15 degrees of 0 (345-360 or 0-15), saturation is at least 0.5
+     * and value at least 0.35; amber (hue about 28-35) and ink are not. Round 2 had a red trash (0xD1453B) and a red badge.
+     */
+    private fun redPixels(): Int {
+        val bmp = compose.onRoot().captureToImage().asAndroidBitmap()
+        val hsv = FloatArray(3)
+        var red = 0
+        for (y in 0 until bmp.height) for (x in 0 until bmp.width) {
+            android.graphics.Color.colorToHSV(bmp.getPixel(x, y), hsv)
+            if ((hsv[0] >= 345f || hsv[0] <= 15f) && hsv[1] >= 0.5f && hsv[2] >= 0.35f) red++
+        }
+        return red
+    }
+
+    @Test fun inboxIsNeverRedInTheDock() {
+        show { screen(ui(grant)) }
+        assertEquals("red pixels in the dock", 0, redPixels())
+    }
+
+    @Test fun inboxIsNeverRedInTheGroupsAtLargeFont() {
+        show(1.5f) { screen(ui(grant)) }
+        assertEquals("red pixels in the dock at 1.5x", 0, redPixels())
+    }
+
+    @Test fun inboxIsNeverRedInTheTidySheet() {
+        val t = Tidy(loading = false, items = old(23, "www.instagram"))
+        show { Column(Modifier.padding(top = 16.dp).testTag("tidy-sheet")) { TidyContent(t, {}, {}) } }
+        assertEquals("red pixels in the tidy sheet", 0, redPixels())
     }
 
     private fun fontSize(text: String): Float {
@@ -280,7 +363,8 @@ class InboxClarifyScreenshotTest {
         show { org.pagel.ai.ui.rituals.ReviewScreen(review, PaddingValues(top = 16.dp, bottom = 96.dp)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/review-waiting.png")
         compose.onNodeWithText("Waiting for").assertExists()
-        compose.onNodeWithText("Waiting for Aziz: the signed grant form").assertExists()
+        compose.onNodeWithText("👤 Aziz · the signed grant form").assertExists()
+        compose.onNodeWithText("👤 the drone parts from Uzum").assertExists()
         compose.onNodeWithText("check was Wed 28 Oct").assertExists()
     }
 
@@ -294,8 +378,8 @@ class InboxClarifyScreenshotTest {
 
     @Test fun tidySheetShowsTheCountBeforeAnythingMoves() {
         val t = Tidy(loading = false, items = old(23, "www.instagram") + old(9, "x") + old(5, "www.linkedin"))
-        show { Column(Modifier.padding(top = 16.dp)) { TidyContent(t, {}, {}) } }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-tidy.png")
+        show { Column(Modifier.padding(top = 16.dp).testTag("tidy-sheet")) { TidyContent(t, {}, {}) } }
+        compose.onNodeWithTag("tidy-sheet").captureRoboImage("build/outputs/roborazzi/inbox-tidy.png")
         compose.onNodeWithText("37 saves older than 60 days").assertIsDisplayed()
         compose.onNodeWithContentDescription("Move all 37 to Someday").assertIsDisplayed()
         compose.onNodeWithContentDescription("Drop all 37").assertIsDisplayed()
@@ -304,8 +388,8 @@ class InboxClarifyScreenshotTest {
     /** Checker 2026-10-30 #2: pagel.uz's whole count (412), not the first page of 60. */
     @Test fun tidySheetShowsTheWholeCount() {
         val t = Tidy(loading = false, items = old(60, "www.instagram"), total = 412, bySource = mapOf("instagram" to 700, "x" to 150, "note" to 55, "telegram" to 12))
-        show { Column(Modifier.padding(top = 16.dp)) { TidyContent(t, {}, {}) } }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-tidy-412.png")
+        show { Column(Modifier.padding(top = 16.dp).testTag("tidy-sheet")) { TidyContent(t, {}, {}) } }
+        compose.onNodeWithTag("tidy-sheet").captureRoboImage("build/outputs/roborazzi/inbox-tidy-412.png")
         compose.onNodeWithText("412 saves older than 60 days").assertIsDisplayed()
         compose.onNodeWithContentDescription("Move all 412 to Someday").assertIsDisplayed()
         compose.onNodeWithContentDescription("Drop all 412").assertIsDisplayed()
@@ -327,15 +411,15 @@ class InboxClarifyScreenshotTest {
 
     @Test fun tidySheetAt15xFont() {
         val t = Tidy(loading = false, items = old(12, "www.instagram"))
-        show(1.5f) { Column(Modifier.padding(top = 16.dp)) { TidyContent(t, {}, {}) } }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-tidy-font-1.5.png")
+        show(1.5f) { Column(Modifier.padding(top = 16.dp).testTag("tidy-sheet")) { TidyContent(t, {}, {}) } }
+        compose.onNodeWithTag("tidy-sheet").captureRoboImage("build/outputs/roborazzi/inbox-tidy-font-1.5.png")
         compose.onNodeWithContentDescription("Move all 12 to Someday").assertIsDisplayed()
     }
 
     @Test fun tidySheetOtherStates() {
-        show { Column(Modifier.padding(top = 16.dp)) { TidyContent(Tidy(loading = false, failed = true), {}, {}) } }
+        show { Column(Modifier.padding(top = 16.dp).testTag("tidy-sheet")) { TidyContent(Tidy(loading = false, failed = true), {}, {}) } }
         compose.onNodeWithText("Could not reach pagel.uz. Nothing moved.").assertIsDisplayed()
         compose.onNodeWithContentDescription("Retry").assertIsDisplayed()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-tidy-offline.png")
+        compose.onNodeWithTag("tidy-sheet").captureRoboImage("build/outputs/roborazzi/inbox-tidy-offline.png")
     }
 }
