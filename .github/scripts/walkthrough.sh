@@ -217,6 +217,10 @@ log "   pagel.uz got $DAY 09:00-10:00"
 grep -q 'content-desc="Date: [^"]*09:00–10:00"' "$OUT/$(printf '%02d' $N)-panel-range-done.xml" || log "   (WARN: the panel's Date row does not read 09:00–10:00)"
 log "-- the panel's ring (Boss 2026-10-28: \"no sound, no toast, not marking strike\"): the panel stays open on the done task with Reopen and a Done · Undo toast; pagel.uz gets done, then Reopen opens it again"
 $T adb logcat -c
+# The Priority step scrolled the panel down (core round 4 rows): back to its top, where the ring is.
+# One slow swipe back (Priority took one 200 px swipe): slow, so the full sheet never reads it as a fling to close.
+onscreen_r4() { r4_xml | grep -qE "(text|content-desc)=\"$1\""; }
+onscreen_r4 'Complete: Call the bank about the report' || $T adb shell input swipe 160 260 160 450 2500
 tap "Complete: Call the bank about the report" && shot panel-ticked 0.6
 X="$OUT/$(printf '%02d' $N)-panel-ticked.xml"
 grep -q 'content-desc="Reopen"' "$X" || { log "WALKTHROUGH: after its ring the panel did not stay open on the done task (no Reopen)"; exit 1; }
