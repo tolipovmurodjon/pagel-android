@@ -21,12 +21,13 @@ import org.pagel.ai.data.db.PagelDao
 import org.pagel.ai.data.db.StepEntity
 import org.pagel.ai.data.db.SyncStatus
 import org.pagel.ai.data.db.TaskEntity
+import org.pagel.ai.data.db.TodaySortEntity
 import org.pagel.ai.data.today.OutboxScheduler
 import java.time.Instant
 import java.time.ZoneId
 
 /** PATCH fields only the 2026-10-27 pagel.uz knows; it names what it understood in `applied` (task-api.ts). */
-val NEW_FIELDS = setOf("title", "every", "remove", "restore", "not_doing", "times", "project", "sort", "milestone")
+val NEW_FIELDS = setOf("title", "every", "remove", "restore", "not_doing", "times", "project", "sort", "milestone", "micro", "today_sort")
 
 /** How long a delete waits on the phone before it leaves, so Undo costs pagel.uz nothing (Gmail's "Undo send"). */
 const val UNDO_WINDOW_MS = 5_000L
@@ -141,6 +142,37 @@ class TaskRepository(
     /** Links a task to one of its project's milestones (null unlinks). */
     suspend fun milestone(id: String, milestone: String?): Long? = edit(id, buildJsonObject { put("milestone", milestone) }) { it.copy(milestone = milestone) }
 
+    /**
+     * The micro-steps "Make it tiny" wrote (core round 4): saved on the task as its `micro` list, apart from the GTD steps;
+     * `[]` clears them. Each is cut at 120 like a step.
+     */
+    suspend fun micro(id: String, steps: List<String>): Long? {
+        val clean = steps.map { it.replace(Regex("\\s+"), " ").trim().take(120) }.filter(String::isNotEmpty).take(8)
+        return edit(id, buildJsonObject { putJsonArray("micro") { clean.forEach { add(JsonPrimitive(it)) } } }) { it.copy(micro = org.pagel.ai.data.sync.microJson(clean)) }
+    }
+
+    /**
+     * A new place on [day]'s Today (a drag on the full list): one fractional sort between its new neighbours, so the drag
+     * is one PATCH of one row (`{today_sort, today_day}`). Returns the op, for Undo.
+     */
+    suspend fun todaySort(phoneId: String, day: String, sort: Double): Long? {
+        val id = dao.currentId(phoneId)
+        dao.pruneTodaySorts(day)
+        return edit(id, buildJsonObject { put("today_sort", sort); put("today_day", day) }, local = { dao.setTodaySort(TodaySortEntity(id, day, sort)) }) { it }
+    }
+
+    /**
+     * Undo of a reorder: taken back while it still waits on the phone, else the old place goes to pagel.uz as its own
+     * write (an inverse PATCH: the old sort, or `null` when the task had pagel.uz's place).
+     */
+    suspend fun undoTodaySort(phoneId: String, op: Long, day: String, old: Double?) {
+        if (takeBack(phoneId, op)) return
+        val id = dao.currentId(phoneId)
+        edit(id, buildJsonObject { put("today_sort", old); put("today_day", day) }, local = {
+            if (old == null) dao.deleteTodaySort(id) else dao.setTodaySort(TodaySortEntity(id, day, old))
+        }) { it }
+    }
+
     /** Delete: gone from the phone at once; the remove leaves after [UNDO_WINDOW_MS]. Returns the op, for Undo. */
     suspend fun delete(id: String): Long? =
         edit(id, buildJsonObject { put("remove", true) }, place = true) { it.copy(status = "dropped") }
@@ -202,6 +234,7 @@ class TaskRepository(
         // Read before building: the JSON builder is plain code, the reads are suspend calls.
         val oldSteps = if ("steps" in set || "ticked" in set) dao.stepsOnce(id) else emptyList()
         val wasToday = place && dao.onTodayCount(id) > 0
+        val oldSort = if ("today_sort" in set) (set["today_day"] as? JsonPrimitive)?.contentOrNull?.let { d -> dao.todaySortsOnce(d).firstOrNull { it.taskId == id }?.sort } else null
         val was = buildJsonObject {
             var stepsKept = false
             for (k in set.keys) when (k) {
@@ -219,6 +252,8 @@ class TaskRepository(
                 "project" -> put("project", before.project)
                 "sort" -> put("sort", before.sort)
                 "milestone" -> put("milestone", before.milestone)
+                "micro" -> put("micro", kotlinx.serialization.json.Json.parseToJsonElement(before.micro.ifBlank { "[]" }))
+                "today_sort" -> { put("today_sort", oldSort); put("today_day", set["today_day"] ?: JsonPrimitive(tashkentDay())) }
             }
             if (place) put("today", wasToday)
         }
@@ -285,6 +320,7 @@ suspend fun PagelDao.applyWas(taskId: String, was: JsonObject, at: Long = System
         "project" -> t.copy(project = v.str() ?: t.project)
         "sort" -> t.copy(sort = v.jsonPrimitive.doubleOrNull ?: t.sort)
         "milestone" -> t.copy(milestone = v.str())
+        "micro" -> t.copy(micro = (v as? JsonArray)?.toString() ?: "[]")
         else -> t
     }
     upsertTasks(listOf(t.copy(lastModified = at)))
@@ -300,6 +336,12 @@ suspend fun PagelDao.applyWas(taskId: String, was: JsonObject, at: Long = System
     (was["taps"] as? JsonObject)?.forEach { (day, n) ->
         val c = n.jsonPrimitive.intOrNull ?: 0
         if (c > 0) setHabitTick(org.pagel.ai.data.db.HabitTickEntity(day, taskId, c)) else deleteHabitTick(day, taskId)
+    }
+    // A reorder refused or taken back: the task goes back to its old place on that day's Today (none = pagel.uz's place).
+    if ("today_sort" in was) {
+        val day = (was["today_day"] as? JsonPrimitive)?.contentOrNull
+        val old = (was["today_sort"] as? JsonPrimitive)?.doubleOrNull
+        if (day == null || old == null) deleteTodaySort(taskId) else setTodaySort(org.pagel.ai.data.db.TodaySortEntity(taskId, day, old))
     }
     when ((was["today"] as? JsonPrimitive)?.booleanOrNull) {
         true -> ensureOnToday(taskId)

@@ -145,6 +145,10 @@ data class PanelActions(
     /** Moves the task to another project (the project capsule opens the picker); null → the capsule only opens the project. */
     val onMove: ((String) -> Unit)? = null,
     val onClose: () -> Unit = {},
+    /** "✨ Make it tiny" (core round 4): the spice sheet, then Focus mode. */
+    val onTiny: () -> Unit = {},
+    /** "I'm stuck": four plain reasons, each a fix in one tap. */
+    val onStuck: () -> Unit = {},
 )
 
 /** "Won't do": the three real kinds of no, each with an example of a real reason (the web's STOP list). */
@@ -157,7 +161,7 @@ private val STOP = listOf(
 
 /** The task panel in its glass sheet, opened from any task row (LocalTaskOpener). */
 @Composable
-fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) -> Unit) {
+fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) -> Unit, onFocus: (String) -> Unit = {}) {
     val vm: TaskPanelViewModel = hiltViewModel(key = "panel-$taskId")
     LaunchedEffect(taskId) { vm.bind(taskId) }
     val ui0 by vm.ui.collectAsStateWithLifecycle()
@@ -171,6 +175,8 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
     val bursts = remember { mutableStateListOf<Burst>() }
     var nextBurst by remember { mutableLongStateOf(0L) }
     var rootAt by remember { mutableStateOf(Offset.Zero) }
+    // The starting tools (core round 4): "tiny" or "stuck" open their own half sheet over the panel.
+    var tool by rememberSaveable(taskId) { mutableStateOf("") }
     // Room answers in a few ms: the sheet opens with the task already in it, never with a placeholder that then grows.
     if (ui.loading) return
     GlassSheet(onClose, full = true) {
@@ -195,12 +201,15 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
                         onNotDoing = vm::notDoing, onDelete = { vm.delete(); onClose() }, onReopen = vm::reopen,
                         onTurnIntoProject = { vm.turnIntoProject { name -> onClose(); onOpenProject(name) } },
                         onOpenProject = { onOpenProject(ui.project) }, onMove = vm::moveTo, onClose = onClose,
+                        onTiny = { tool = "tiny" }, onStuck = { tool = "stuck" },
                     ),
                 )
             }
             for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.matchParentSize()) }
         }
     }
+    if (tool == "tiny") TinySheet(taskId, onClose = { tool = "" }, onFocus = onFocus)
+    if (tool == "stuck") StuckSheet(taskId, onClose = { tool = "" }, onTiny = { tool = "tiny" }, onOpenProject = { name -> onClose(); onOpenProject(name) })
 }
 
 /**
@@ -231,6 +240,9 @@ fun TaskPanelContent(
         Steps(ui, a)
         Spacer(Modifier.height(12.dp))
         Props(ui, today, a, onPick = { picker = it })
+        // The starting tools sit under the props: on a 640 dp screen Priority stays above the fold (checker round 2 #6).
+        Spacer(Modifier.height(Space.md))
+        StartRows(ui.microCount, a.onTiny, a.onStuck)
         // The note only when it says more than the title (Boss 2026-10-28: the pane repeated the title word for word).
         if (ui.text.trim() != ui.title.trim()) {
             Spacer(Modifier.height(12.dp))
@@ -288,7 +300,8 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
         if (canStop) GlassIconButton(TabIcons.Ban, "Won't do, with the reason", on = stopping, size = 36.dp, label = "Won't do", onClick = onStop)
         else Spacer(Modifier.size(Space.touch))
         a.onTurnIntoProject?.let { GlassIconButton(TabIcons.Folder, "Turn into project", size = 36.dp, label = "Turn into project", onClick = it) }
-        GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Risk, size = 36.dp, label = "Delete", rim = Glass.Risk, onClick = a.onDelete)
+        // Ink with an amber rim, never red (Boss's rule); the Undo toast is the safety net.
+        GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Ink, size = 36.dp, label = "Delete", rim = Glass.Amber, onClick = a.onDelete)
         GlassIconButton(TabIcons.Close, "Close", size = 36.dp, label = "Close", onClick = a.onClose)
     }
 }
@@ -585,38 +598,71 @@ private fun Props(ui: PanelUi, today: LocalDate, a: PanelActions, onPick: (Strin
             PropRow(TabIcons.Flag, "Priority", "P${ui.priority + 1}", set = true, valueColor = PriorityColors.getOrNull(ui.priority)) { onPick("priority") }
             Line()
             PinRow(ui, today) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); a.onStar(!ui.star) }
-            // Round C: a task with a time rings at it; this adds a ring 10 minutes before.
-            if ((ui.due?.length ?: 0) >= 16 && ui.every.isNullOrBlank()) { Line(); EarlyRow(ui.id) }
+            // A task with a time rings: "🔔 Remind me" says when, in plain words (core round 4: no unexplained switch).
+            if ((ui.due?.length ?: 0) >= 16 && ui.every.isNullOrBlank()) { Line(); RemindRow(ui.id, ui.due) }
         }
     }
 }
 
-/** "Also 10 min before": kept on the phone (NotifyPrefs), planned at once; notifications asked for at first use. */
+/**
+ * "🔔 Remind me" (Boss 2026-10-29: "what is 'open task / 10 before'?"): the row says when it rings in plain words
+ * ("10 min early, 17:50"); a tap opens a small glass picker. Kept on the phone (NotifyPrefs), planned at once;
+ * notifications are asked for at first use.
+ */
 @Composable
-private fun EarlyRow(id: String) {
+private fun RemindRow(id: String, due: String?) {
     val ctx = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
-    var on by remember(id) { mutableStateOf(false) }
-    LaunchedEffect(id) { on = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { id in org.pagel.ai.reminders.NotifyPrefs.early(ctx) } }
+    var lead by remember(id) { mutableIntStateOf(0) }
+    var picking by remember { mutableStateOf(false) }
+    LaunchedEffect(id) { lead = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { org.pagel.ai.reminders.NotifyPrefs.leadOf(ctx, id) } }
     val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) {}
-    fun toggle() {
-        haptics.performHapticFeedback(if (on) HapticFeedbackType.ToggleOff else HapticFeedbackType.ToggleOn)
-        on = !on
-        val now = on
-        if (now && android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+    PropRow(TabIcons.BellRing, "Remind me", org.pagel.ai.reminders.RemindChoice.value(lead, due), set = lead != org.pagel.ai.reminders.NotifyPrefs.OFF) { picking = true }
+    if (picking) RemindSheet(lead, due, onDismiss = { picking = false }) { m ->
+        lead = m
+        picking = false
+        if (m != org.pagel.ai.reminders.NotifyPrefs.OFF && android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             runCatching { ask.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
         }
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            org.pagel.ai.reminders.NotifyPrefs.setEarly(ctx, id, now)
+            org.pagel.ai.reminders.NotifyPrefs.setLead(ctx, id, m)
             runCatching { dagger.hilt.android.EntryPointAccessors.fromApplication(ctx, org.pagel.ai.service.BootReceiver.Parts::class.java).reminders().replan() }
         }
     }
-    Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = Space.lg, end = Space.lg), verticalAlignment = Alignment.CenterVertically) {
-        Icon(TabIcons.BellRing, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
-        Spacer(Modifier.width(Space.md))
-        Text("Also 10 min before", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        GlassSwitch(on, said = "Remind 10 min before", state = if (on) "On" else "Off") { toggle() }
+}
+
+/** The Remind me picker: At the time · 10 min early · 30 min early · 1 h early · Off, each with its ring time. */
+@Composable
+internal fun RemindSheet(lead: Int, due: String?, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+    GlassSheet(onDismiss) { RemindChoices(lead, due, onPick) }
+}
+
+@Composable
+internal fun RemindChoices(lead: Int, due: String?, onPick: (Int) -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Column(Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.gutter, bottom = SheetBottom)) {
+        Text("Remind me", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(top = Space.sm, bottom = Space.md))
+        Pane(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(vertical = Space.xs)) {
+                org.pagel.ai.reminders.RemindChoice.ALL.forEachIndexed { i, m ->
+                    if (i > 0) Line()
+                    val press = remember { MutableInteractionSource() }
+                    val on = m == lead
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 52.dp).pressScale(press)
+                            .clickable(press, indication = null, role = Role.RadioButton) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick(m) }
+                            .semantics(mergeDescendants = true) { contentDescription = "Remind: " + org.pagel.ai.reminders.RemindChoice.label(m); selected = on }
+                            .padding(horizontal = Space.lg),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(if (m == org.pagel.ai.reminders.NotifyPrefs.OFF) TabIcons.BellOff else TabIcons.Bell, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.width(Space.md))
+                        Text(org.pagel.ai.reminders.RemindChoice.value(m, due), style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, modifier = Modifier.weight(1f))
+                        if (on) Icon(TabIcons.Check, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
     }
 }
 

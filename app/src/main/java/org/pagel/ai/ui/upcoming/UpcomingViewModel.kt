@@ -76,16 +76,23 @@ class UpcomingViewModel @Inject constructor(
     fun reschedule(id: String, day: LocalDate) {
         viewModelScope.launch {
             val m = repo.reschedule(id, day) ?: return@launch
+            repo.countMove()
             toasts.show("Moved to ${dayWord(day)}", action = "Undo") { viewModelScope.launch { repo.undoMoves(listOf(m)) } }
         }
     }
 
-    /** A calendar block dropped on a new time or day: Room first, the PATCH waits in the outbox; Undo puts it back. */
+    /**
+     * A calendar block dropped on a new time or day (or its end dragged): Room first, one PATCH waits in the outbox;
+     * Undo sends the old due back as its own PATCH (8 s to reach it: a drop is often checked with a look first).
+     */
     fun moveTo(id: String, due: String) {
         viewModelScope.launch {
             val m = repo.moveTo(id, due) ?: return@launch
+            repo.countMove()
             val day = LocalDate.parse(due.take(10))
-            toasts.show("Moved to ${dayWord(day)} ${due.drop(11).replace('-', '–')}".trim(), action = "Undo") { viewModelScope.launch { repo.undoMoves(listOf(m)) } }
+            toasts.show("Moved to ${dayWord(day)} ${due.drop(11).replace('-', '–')}".trim(), action = "Undo", millis = MOVE_UNDO_MS) {
+                viewModelScope.launch { repo.putBack(m) }
+            }
         }
     }
 
@@ -122,6 +129,7 @@ class UpcomingViewModel @Inject constructor(
 
     companion object {
         const val FOLD_MS = 1_250L
+        const val MOVE_UNDO_MS = 8_000L
     }
 }
 

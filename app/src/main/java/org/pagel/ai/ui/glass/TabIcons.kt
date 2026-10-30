@@ -44,6 +44,7 @@ object TabIcons {
     val ChevronLeft = icon("chevron-left", "m15 18-6-6 6-6")
     val ChevronRight = icon("chevron-right", "m9 18 6-6-6-6")
     val ChevronDown = icon("chevron-down", "m6 9 6 6 6-6")
+    val ChevronUp = icon("chevron-up", "m18 15-6-6-6 6")
     val Check = icon("check", "M20 6 9 17l-5-5")
     val Close = icon("x", "M18 6 6 18", "m6 6 12 12")
     val Plus = icon("plus", "M5 12h14", "M12 5v14")

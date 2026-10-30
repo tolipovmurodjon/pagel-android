@@ -139,8 +139,8 @@ object AppDataModule {
         HabitsRepository(dao, api, OutboxWorker.scheduler(ctx), reminders)
 
     @Provides @Singleton
-    fun provideUpcomingRepository(dao: PagelDao, api: PagelApi, tasks: TaskRepository): UpcomingRepository =
-        UpcomingRepository(dao, api, tasks)
+    fun provideUpcomingRepository(@ApplicationContext ctx: Context, dao: PagelDao, api: PagelApi, tasks: TaskRepository): UpcomingRepository =
+        UpcomingRepository(dao, api, tasks, scheduler = OutboxWorker.scheduler(ctx))
 
     @Provides @Singleton
     fun provideAccountStore(store: EncryptedAccountStore): AccountStore = store

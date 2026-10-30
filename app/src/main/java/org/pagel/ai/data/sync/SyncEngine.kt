@@ -132,6 +132,12 @@ class SyncEngine(
             removed = r.removed,
             state = SyncStateEntity(cursor = r.cursor, lastSyncAt = now),
         )
+        // Today's own order back from pagel.uz (core round 4): a fresh install or a second phone gets Boss's drags too.
+        dao.applyServerTodaySorts(r.tasks.mapNotNull { t ->
+            val sort = t.todaySort ?: return@mapNotNull null
+            val day = t.todayDay?.takeIf { it.length == 10 } ?: return@mapNotNull null
+            org.pagel.ai.data.db.TodaySortEntity(t.id, day, sort)
+        })
     }
 }
 
@@ -141,6 +147,17 @@ fun org.pagel.ai.data.api.SyncTaskDto.toEntity(now: Long) = TaskEntity(
     status = status, priority = priority, star = star, due = due, every = every,
     doneWhen = doneWhen, doneAt = doneAt, updatedAt = updatedAt, serverVersion = version, lastModified = now,
     phaseSort = phaseSort, phaseNow = phaseNow, times = times.coerceIn(1, 12), habitGroup = group, milestone = milestone,
+    micro = microJson(micro),
 )
 
 fun org.pagel.ai.data.api.SyncTaskDto.stepEntities() = steps.mapIndexed { i, s -> StepEntity(id, i, s.text, s.title, s.done) }
+
+/** Micro-steps as Room keeps them: a JSON list of strings ("[]" = none). */
+fun microJson(steps: List<String>): String =
+    kotlinx.serialization.json.JsonArray(steps.map { kotlinx.serialization.json.JsonPrimitive(it) }).toString()
+
+/** The micro-steps a task keeps (an unreadable value reads as none). */
+fun microOf(raw: String?): List<String> = runCatching {
+    (kotlinx.serialization.json.Json.parseToJsonElement(raw ?: "[]") as kotlinx.serialization.json.JsonArray)
+        .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+}.getOrDefault(emptyList())

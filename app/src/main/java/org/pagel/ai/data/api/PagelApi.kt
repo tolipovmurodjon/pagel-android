@@ -172,6 +172,12 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.parseToJsonElement(it.ifEmpty { "{}" }) as kotlinx.serialization.json.JsonObject } }
     }
 
+    /** `POST /api/v1/tiny`: 3-6 funny small steps for a task, in its own language (a proposal; PATCH {micro} saves it). */
+    suspend fun tiny(baseUrl: String, token: String, body: TinyBody): Outcome<TinyReply> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/tiny")).post(json.encodeToString(TinyBody.serializer(), body).toRequestBody(JSON)), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(TinyReply.serializer(), it) } }
+    }
+
     /** `GET /api/v1/kpi/week`: the last 7 days of real use, counts only. */
     suspend fun kpiWeek(baseUrl: String, token: String): Outcome<KpiWeekReply> = call {
         val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/kpi/week")), token).build()

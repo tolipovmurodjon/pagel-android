@@ -21,7 +21,18 @@ PROJECTS = [("humopedia", "Humopedia", 41), ("ababil", "ABABIL", 27), ("pagel", 
 TODAY = [("t_ci1", "pagel", "Ship the native app", 0, "2026-10-27 15:00"), ("t_ci2", "me", "Call the bank about the report", 1, None),
          ("t_ci3", "humopedia", "Record the fractions lesson", 2, None), ("t_ci4", "ababil", "Measure the drone's hover time", 1, None),
          ("t_ci5", "me", "Weigh in", 3, None)]
-DONE = set()
+class DoneSet(set):
+    """The finished stars, with when each was ticked: /sync sends done_at like pagel.uz (checker round 2 #11)."""
+    def __init__(self):
+        super().__init__()
+        self.at = {}
+    def add(self, x):
+        self.at.setdefault(x, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"))
+        super().add(x)
+    def discard(self, x):
+        self.at.pop(x, None)
+        super().discard(x)
+DONE = DoneSet()
 # Panel edits the app sent (Phase 1), applied like pagel.uz does, so the next sync shows them.
 STEPS = {"t_ci2": [["Find the account number", False], ["Call at 10", False]]}
 EDITS = {}
@@ -76,6 +87,15 @@ def day_from_today(n):
 # Upcoming (Phase 4): two overdue tasks and one for tomorrow, none starred (they are not on Today). The walkthrough drags
 # t_u3 onto the day after tomorrow and moves the overdue ones to today; PATCH {due} lands in EDITS like a panel edit.
 UPCOMING = [("t_u1", "humopedia", "Send the grant form", 1, -1), ("t_u2", "me", "Pay the internet bill", 0, -3), ("t_u3", "humopedia", "Review the lesson draft", 2, 1)]
+
+# Core round 4 · the calendar (Builder B): a 10:00 block on NEXT week's Sunday (Monday-first, Tashkent), so it is never
+# on Today, never in Upcoming's next 7 days and never overdue. The walk swipes the Week to it, drags it to that week's
+# Thursday 14:30 (PATCH due) and taps Undo (PATCH due back to 10:00).
+def next_week_day(dow):  # 0 = Monday
+    now = datetime.now(TASHKENT)
+    return (now - timedelta(days=now.weekday()) + timedelta(days=7 + dow)).strftime("%Y-%m-%d")
+UPCOMING.append(("t_cal1", "humopedia", "Plan the lesson week", 2, 7))
+EDITS["t_cal1"] = {"due": f"{next_week_day(6)} 10:00"}
 # Completed (Phase 4): finished tasks with done_at (UTC instants); /sync carries the last 14 days, /api/v1/completed all.
 # The walkthrough unticks t_c1 (PATCH {done: false}) and it opens again.
 def ago(hours):
@@ -140,7 +160,7 @@ def sync_body():
     return {"cursor": 10, "full": True,
             "projects": [{"name": n, "title": t, "color": None, "sort": i, "open": o} for i, (n, t, o) in enumerate(PROJECTS)],
             "tasks": [{"id": i, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": k, "text": text, "status": "done" if i in DONE else "open",
-                       "priority": pr, "star": True, "due": due, "updated_at": "2026-10-27T10:00:00Z", "version": 1,
+                       "done_at": DONE.at.get(i), "priority": pr, "star": True, "due": due, "updated_at": "2026-10-27T10:00:00Z", "version": 1,
                        "steps": [{"text": t, "done": d} for t, d in STEPS.get(i, [])], **EDITS.get(i, {})}
                       for k, (i, p, text, pr, due) in enumerate(TODAY)]
                      + [{"id": hid, "project": "me", "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 50 + k, "text": text, "status": "open",
@@ -516,7 +536,7 @@ def sync_body():
     s = _core_sync()
     known = {t["id"] for t in s["tasks"]}
     # Tasks the phone added into a project it made stay in /sync (a real server keeps them).
-    s["tasks"] += [{"id": tid, "project": b["project"], "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 200 + k, "text": b["text"], "status": "done" if tid in DONE else "open",
+    s["tasks"] += [{"id": tid, "project": b["project"], "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 200 + k, "text": b["text"], "status": "done" if tid in DONE else "open", "done_at": DONE.at.get(tid),
                     "priority": b.get("priority", 2), "star": False, "due": b.get("due"), "every": None, "updated_at": "2026-10-29T10:00:00Z", "version": 1, "steps": [], **EDITS.get(tid, {})}
                    for k, (tid, b) in enumerate(ADDED) if b.get("project") in MADE and tid not in known and tid not in REMOVED]
     for t in s["tasks"]:
@@ -599,6 +619,67 @@ def sync_body():
                    for k, (f, b) in enumerate(SOMEDAY_ACTS)]
     return s
 
+
+# ── Core round 4 · Today's starting machine. Two unstarred tasks join Today after the five stars (UzCosmos, so no other
+# walk meets them): the walk drags #5 to #1 (PATCH {today_sort, today_day}), What now starts and ticks one, and Make it
+# tiny writes 4 funny steps (POST /api/v1/tiny, a proposal), saved as PATCH {micro}, then ticked one by one in Focus.
+NOW = [("t_now1", "uzcosmos", "Clean the desk", 2), ("t_now2", "uzcosmos", "Write the release note", 2)]
+NOW_IDS = {i for i, *_ in NOW}
+TINY = ["Stand up. Yes, right now 🧍", "Open the release notes file 📄", "Write one ugly first line ✍️", "Read it out loud like a news anchor 🎙️"]
+_r4_post, _r4_patch, _r4_get, _r4_sync = H.do_POST, H.do_PATCH, H.do_GET, sync_body
+
+def sync_body():
+    s = _r4_sync()
+    s["tasks"] += [{"id": i, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 300 + k, "text": text, "status": "done" if i in DONE else "open",
+                    "done_at": DONE.at.get(i), "priority": pr, "star": False, "due": None, "updated_at": "2026-10-30T10:00:00Z", "version": 1, "steps": [], **EDITS.get(i, {})}
+                   for k, (i, p, text, pr) in enumerate(NOW) if i not in REMOVED]
+    return s
+
+def _r4_post_h(self):
+    if self.path != "/api/v1/tiny":
+        return _r4_post(self)
+    body = self.rfile.read(int(self.headers.get("content-length") or 0)).decode()
+    LOG.write(f"POST {self.path} {body[:300]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    b = json.loads(body or "{}")
+    if b.get("spice") not in (1, 2, 3) or not b.get("id"):
+        return self.send(400, {"error": "Send {id, spice: 1-3}."})
+    return self.send(200, {"steps": TINY})
+
+def _r4_patch_h(self):
+    raw = self.rfile.read(int(self.headers.get("content-length") or 0))
+    tid = self.path.rsplit("/", 1)[-1]
+    b = json.loads(raw or b"{}")
+    mine = {k: b[k] for k in ("micro", "today_sort", "today_day") if k in b}
+    if tid in NOW_IDS:
+        LOG.write(f"PATCH {self.path} {raw.decode()[:300]} auth={self.authed()}\n")
+        if not self.authed():
+            return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+        if "done" in b:
+            (DONE.add if b["done"] is True else DONE.discard)(tid)
+        for k in ("priority", "due", "title", "star", "text", "done_when", "micro", "today_sort", "today_day"):
+            if k in b:
+                EDITS.setdefault(tid, {})[k] = b[k]
+        return self.send(200, {"id": tid, "status": "done" if tid in DONE else "open", "applied": list(b.keys())})
+    if mine:
+        EDITS.setdefault(tid, {}).update(mine)
+    self.rfile = io.BytesIO(raw)
+    return _r4_patch(self)
+
+def _r4_get_h(self):
+    if self.path != "/api/v1/today":
+        return _r4_get(self)
+    LOG.write(f"GET {self.path} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    ids = [i for i, *_ in TODAY if i not in DONE] + [i for i, *_ in NOW if i not in DONE]
+    ids = [i for _, i in sorted(enumerate(sorted(ids, key=lambda x: ([t for t, *_ in TODAY] + [n for n, *_ in NOW]).index(x))),
+                                key=lambda e: (EDITS.get(e[1], {}).get("today_sort", e[0]), e[0]))]
+    return self.send(200, {"day": "2026-10-27", "shown_at_once": 3, "tasks": [{"id": i} for i in ids]})
+
+H.do_POST, H.do_PATCH, H.do_GET = _r4_post_h, _r4_patch_h, _r4_get_h
+
 # ── Black hole · Completed's "Clear done" (black-hole brief): PATCH {remove: true} on a finished task drops it from
 # /sync and /api/v1/completed; the Undo after it left sends {restore: true, done: true} and it is done again, as pagel.uz
 # does (task-api.ts: restore opens it, done then finishes it).
@@ -611,7 +692,8 @@ def _hole_patch_h(self):
     tid = self.path.rsplit("/", 1)[-1]
     raw = self.rfile.read(int(self.headers.get("content-length") or 0))
     b = json.loads(raw or b"{}")
-    if tid not in DONE_AT or not ("remove" in b or "restore" in b):
+    # Today's ticked stars come with done_at too (checker round 2 #11), so they are on Completed and Clear done takes them.
+    if (tid not in DONE_AT and tid not in DONE) or not ("remove" in b or "restore" in b):
         self.rfile = io.BytesIO(raw)
         return _hole_patch(self)
     LOG.write(f"PATCH {self.path} {raw.decode()[:300]} auth={self.authed()}\n")

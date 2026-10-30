@@ -4,11 +4,13 @@ import kotlinx.coroutines.flow.Flow
 import org.pagel.ai.data.Outcome
 import org.pagel.ai.data.account.Account
 import org.pagel.ai.data.api.PagelApi
+import org.pagel.ai.data.db.OutboxEntity
 import org.pagel.ai.data.db.PagelDao
 import org.pagel.ai.data.db.TaskEntity
 import org.pagel.ai.data.sync.stepEntities
 import org.pagel.ai.data.sync.toEntity
 import org.pagel.ai.data.tasks.TaskRepository
+import org.pagel.ai.data.today.OutboxScheduler
 import java.time.Instant
 import java.time.LocalDate
 
@@ -29,6 +31,7 @@ class UpcomingRepository(
     private val api: PagelApi,
     private val tasks: TaskRepository,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val scheduler: OutboxScheduler? = null,
 ) {
     val dated: Flow<List<TaskEntity>> = dao.datedOpen()
     val completed: Flow<List<TaskEntity>> = dao.completed()
@@ -59,6 +62,22 @@ class UpcomingRepository(
         val op = tasks.due(id, due) ?: return null
         return Moved(id, t.due, op)
     }
+
+    /**
+     * One calendar move (KPI `cal_move`, a count with no words): queued in the outbox like the other KPI counts and sent
+     * after the move's own PATCH. An Undo is not counted.
+     */
+    suspend fun countMove() {
+        dao.addToOutbox(OutboxEntity(taskId = "kpi", op = OutboxEntity.KPI, createdAt = clock(),
+            body = """{"method":"POST","path":"/api/v1/kpi","body":{"day":"${today()}","event":"cal_move"}}"""))
+        scheduler?.kick()
+    }
+
+    /**
+     * The calendar's Undo (core round 4: "Undo = a real inverse write"): the old due goes back through the outbox as its
+     * own PATCH, after the move, so pagel.uz ends where the task began whether or not the move had left the phone.
+     */
+    suspend fun putBack(m: Moved): Long? = tasks.due(m.id, m.was)
 
     /** Overdue → today, each keeping its time, in the order shown (oldest first). */
     suspend fun moveAllToToday(ids: List<String>): List<Moved> {
