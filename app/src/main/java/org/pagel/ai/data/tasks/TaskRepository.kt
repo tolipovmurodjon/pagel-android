@@ -182,7 +182,8 @@ class TaskRepository(
     /** The day in Tashkent, where pagel.uz counts its days. */
     fun tashkentDay(): String = Instant.ofEpochMilli(clock()).atZone(TASHKENT).toLocalDate().toString()
 
-    private suspend fun edit(id: String, set: JsonObject, place: Boolean = false, local: (suspend () -> Unit)? = null, change: (TaskEntity) -> TaskEntity): Long? {
+    private suspend fun edit(phoneId: String, set: JsonObject, place: Boolean = false, local: (suspend () -> Unit)? = null, change: (TaskEntity) -> TaskEntity): Long? {
+        val id = org.pagel.ai.data.db.AdoptedIds.current(phoneId)
         val before = dao.taskOnce(id) ?: return null
         val now = clock()
         // Read before building: the JSON builder is plain code, the reads are suspend calls.

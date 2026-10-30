@@ -149,6 +149,7 @@ abstract class PagelDao {
     @Transaction
     open suspend fun adoptServerId(old: String, new: String) {
         val local = taskOnce(old) ?: return
+        AdoptedIds.record(old, new)
         renameInOutbox(old, new)
         deleteTasks(listOf(old))
         upsertTasks(listOf(local.copy(id = new)))
