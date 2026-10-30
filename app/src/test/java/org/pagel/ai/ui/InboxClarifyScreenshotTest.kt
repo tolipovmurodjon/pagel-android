@@ -15,6 +15,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
@@ -98,7 +100,7 @@ class InboxClarifyScreenshotTest {
         show { screen(ui(grant)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-groups-360.png")
         compose.onNodeWithText("Can I do something about it?").assertIsDisplayed()
-        for (w in listOf("Drop", "Someday", "Note", "Learn", "Later", "Do now", "Action", "Project", "Waiting", "Calendar")) compose.onNodeWithText(w, useUnmergedTree = true).assertIsDisplayed()
+        for (w in listOf("Drop", "Someday", "Note", "Learn", "Later", "Do now", "Action", "Project", "Waiting", "Calendar")) compose.onAllNodesWithText(w, useUnmergedTree = true).onFirst().assertIsDisplayed()
         // Today's 20, not 905.
         compose.onNodeWithText("Today's 20").assertIsDisplayed()
         // All ten sit above the 96 dp the tab bar takes.

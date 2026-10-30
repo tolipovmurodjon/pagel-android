@@ -715,7 +715,7 @@ private fun ThrownCard(l: Leaving, pictures: Map<String, Bitmap?>, room: Dp, onE
 /**
  * One save: where it is from, the AI's one-line claim, why it matters, the picture, the post, its link. The card is at
  * most [room] tall (the space between the header and the dock); the picture takes what the words leave, up to 220 dp,
- * and hides below 72 dp rather than show a sliver. The caption leaves out the claim it starts with (LinkedIn's does).
+ * and hides below 56 dp rather than show a sliver. The caption leaves out the claim it starts with (LinkedIn's does).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -774,13 +774,13 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
 }
 
 /**
- * The picture's place: 12 dp under the words, as tall as the card has room for up to 220 dp, nothing below 72 dp (a
+ * The picture's place: 12 dp under the words, as tall as the card has room for up to 220 dp, nothing below 56 dp (a
  * strip of picture says nothing and pushes the words).
  */
 private fun Modifier.pictureSlot(): Modifier = layout { m, c ->
     val gap = 12.dp.roundToPx()
     val h = minOf(c.maxHeight, 220.dp.roundToPx() + gap)
-    if (c.maxHeight != Constraints.Infinity && h < 72.dp.roundToPx() + gap) {
+    if (c.maxHeight != Constraints.Infinity && h < 56.dp.roundToPx() + gap) {
         layout(0, 0) {}
     } else {
         val p = m.measure(Constraints.fixed(c.maxWidth, h - gap))
