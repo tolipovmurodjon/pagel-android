@@ -112,11 +112,14 @@ class CalendarScreenshotTest {
         assertTrue("no calendar title on screen", nodes.isNotEmpty())
         for (n in nodes) {
             val shown = n.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString("") { it.text }
-            assertTrue("\"$shown\" is not whole words of a title", shown.startsWith("+") || titles.any { it == shown || it.startsWith("$shown ") })
+            assertTrue("\"$shown\" is not whole words of a title", shown.isEmpty() || shown.startsWith("+") || titles.any { it == shown || it.startsWith("$shown ") })
             val results = mutableListOf<TextLayoutResult>()
             n.config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
             val r = results.single()
-            assertFalse("\"$shown\" spills out of its box", r.hasVisualOverflow)
+            if (shown.isEmpty()) continue
+            val why = "in ${n.boundsInRoot}, box ${r.layoutInput.constraints}, text ${r.size}, ${r.lineCount} lines, " +
+                "wide ${r.didOverflowWidth}, tall ${r.didOverflowHeight}, ${r.layoutInput.style.fontSize}"
+            assertFalse("\"$shown\" spills out of its box ($why)", r.hasVisualOverflow)
             for (i in 0 until r.lineCount) {
                 val end = r.getLineEnd(i)
                 assertTrue("\"$shown\" breaks inside a word on line ${i + 1}", end >= shown.length || shown[end - 1].isWhitespace() || shown[end].isWhitespace())
@@ -158,6 +161,8 @@ class CalendarScreenshotTest {
 
     @Test fun theWeekIsMondayToSundayAndClean() {
         show(CalView.WEEK)
+        compose.onNodeWithContentDescription("Record the fractions lesson, 15:00").performScrollTo()
+        compose.mainClock.advanceTimeBy(300)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-360x800.png")
         assertNoBrokenWord()
         assertNoAlarmRed("the Week")
@@ -174,6 +179,8 @@ class CalendarScreenshotTest {
 
     @Test fun theWeekAtLargeFont() {
         show(CalView.WEEK, 1.5f)
+        compose.onNodeWithContentDescription("Record the fractions lesson, 15:00").performScrollTo()
+        compose.mainClock.advanceTimeBy(300)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-360x800-font-1.5.png")
         assertNoBrokenWord()
         compose.onNodeWithContentDescription("Wednesday 28 October").assertIsDisplayed()
@@ -182,6 +189,8 @@ class CalendarScreenshotTest {
 
     @Test @Config(qualifiers = "w320dp-h640dp-mdpi") fun theWeekOnTheSmallScreen() {
         show(CalView.WEEK, 1.5f)
+        compose.onNodeWithContentDescription("Record the fractions lesson, 15:00").performScrollTo()
+        compose.mainClock.advanceTimeBy(300)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-320x640-font-1.5.png")
         assertNoBrokenWord()
         compose.onNodeWithContentDescription("Sunday 1 November").assertIsDisplayed()

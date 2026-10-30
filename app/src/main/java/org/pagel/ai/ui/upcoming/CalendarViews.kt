@@ -10,8 +10,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
@@ -201,7 +199,8 @@ private fun sized(style: TextStyle, sp: Float, ratio: Float) =
  */
 internal fun fitWords(m: TextMeasurer, text: String, style: TextStyle, w: Int, h: Int, maxSp: Float, minSp: Float, ratio: Float, maxLines: Int, d: Density): TitleFit {
     val words = text.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
-    if (words.isEmpty() || w <= 0) return TitleFit(text, maxSp, 1)
+    // A box not laid out yet (a column before its width is known) shows nothing rather than a word broken into letters.
+    if (words.isEmpty() || w <= 0 || h <= 0) return TitleFit("", maxSp, 1)
     fun measure(t: String, sp: Float) = m.measure(AnnotatedString(t), sized(style, sp, ratio), softWrap = true, constraints = Constraints(maxWidth = w), density = d)
     fun lines(t: String, sp: Float, last: Boolean): Int? {
         val lineH = with(d) { (sp * ratio).sp.toPx() }
@@ -223,8 +222,14 @@ internal fun fitWords(m: TextMeasurer, text: String, style: TextStyle, w: Int, h
     }
     // One word wider than the box even at [minSp]: that word, whole, as small as it must be (never under 6 dp).
     val first = words[0]
+    val floor = 6f / d.fontScale
     val wide = m.measure(AnnotatedString(first), sized(style, minSp, ratio), softWrap = false, maxLines = 1, density = d).size.width.coerceAtLeast(1)
-    val sp = maxOf(minSp * w / wide * 0.97f, 6f / d.fontScale)
+    var sp = maxOf(minSp * w / wide, floor)
+    while (sp > floor) {
+        val r = measure(first, sp)
+        if (r.lineCount == 1 && r.getLineRight(0) <= w && r.size.height <= h) break
+        sp = maxOf(sp - 0.25f, floor)
+    }
     return TitleFit(first, sp, 1)
 }
 
@@ -616,7 +621,7 @@ internal fun Timeline(
         if (hoursAt < 0) return@LaunchedEffect
         val now = LocalTime.now(TASHKENT).hour
         val hour = if (ui.today in timelineDays(view, ui.today, pager.currentPage - TL_BACK)) (now - 1).coerceIn(0, 20) else 6
-        scroll.scrollTo((hoursAt + (hourPx * hour).roundToInt() - topPx.roundToInt()).coerceAtLeast(0))
+        scroll.scrollTo((hoursAt + (hourPx * hour).roundToInt() - (topPx - clipPx).roundToInt()).coerceAtLeast(0))
     }
     // While a block is held: the grid scrolls when the finger nears the top or the bottom, and the week turns when the
     // finger rests beside the columns for 0.6 s; the ghost is placed again after each.
@@ -687,10 +692,10 @@ internal fun Timeline(
             }
         },
     ) {
-        // The grid is drawn only below the glass top: a block never peeks out above it, and today's mint column is not
-        // blurred into a dark band under the dates (checker round 2 #5).
-        Column(Modifier.fillMaxSize().drawWithContent { clipRect(top = clipPx) { this@drawWithContent.drawContent() } }.verticalScroll(scroll)) {
-            Spacer(Modifier.height(top))
+        // The grid scrolls only below the glass top: a block never peeks out above it, today's mint column is not blurred
+        // into a dark band under the dates, and a block brought into view lands where it can be seen (checker round 2 #5).
+        Column(Modifier.fillMaxSize().padding(top = clipTop).verticalScroll(scroll)) {
+            Spacer(Modifier.height(top - clipTop))
             Box(Modifier.fillMaxWidth().height(hourH * 24).onPlaced { hoursAt = it.positionInParent().y.toInt() }) {
                 // The hour lines, very faint, and nothing between the days (Boss: "keep it clean").
                 val line = Glass.Ink.copy(alpha = 0.05f)
@@ -701,7 +706,7 @@ internal fun Timeline(
                 // A label under the glass top is not drawn (checker #10: "02", "03" peeked, cut, beside it).
                 for (k in 1..23) Text("%02d".format(k), style = Glass.NumberText, color = Glass.Muted,
                     modifier = Modifier.offset(x = Space.sm, y = hourH * k - 8.dp).graphicsLayer {
-                        alpha = if (hoursAt + (hourH * k).toPx() - scroll.value < top.toPx() + 4.dp.toPx()) 0f else 1f
+                        alpha = if (clipTop.toPx() + hoursAt + (hourH * k).toPx() - scroll.value < top.toPx() + 4.dp.toPx()) 0f else 1f
                     })
                 HorizontalPager(
                     pager, Modifier.fillMaxSize().padding(start = GUTTER, end = TIMELINE_END).onPlaced { at[1] = it },
