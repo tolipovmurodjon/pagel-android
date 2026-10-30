@@ -270,6 +270,72 @@ grep -q 'POST /api/v1/inbox {"action":"triage","files":\[[^]]*"inbox/ib8.md"' "$
   || { log "WALKTHROUGH: the unread save ib8 never asked pagel.uz's AI to read it"; grep "/api/v1/inbox" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   the AI was asked to read ib8 after ~${i} s online"
 shot inbox-online 2
+
+log "-- Inbox clarify (Boss 2026-10-30): the two GTD groups, Someday in one tap, Waiting, Project + its first step, Calendar, and the bulk tidy-up of old saves with one Undo"
+# Wait up to 90 s for a POST (the sender holds a Drop or a Someday for 5 s, then WorkManager retries).
+wait_re() { for i in $(seq 1 90); do grep -qE "$1" "$FAKE_LOG" && return 0; sleep 1; done; return 1; }
+fail_inbox() { log "WALKTHROUGH: $1"; grep -E "/api/v1/(inbox|projects)" "$FAKE_LOG" | tail -8 | tee -a "$OUT/steps.txt"; exit 1; }
+shot inbox-groups 1.5
+for w in "Can I do something about it\?" Drop Someday Note Learn Later "Do now" Action Project Waiting Calendar; do
+  grep -qE "(text|content-desc)=\"$w\"" "$OUT/$(printf '%02d' $N)-inbox-groups.xml" || { log "WALKTHROUGH: the Inbox dock has no \"$w\""; exit 1; }
+done
+log "   the dock shows the question and all ten choices"
+# Someday: one tap, no sheet; it waits its 5 s Undo, then pagel.uz gets a P3 act (someday:true) in the card's project.
+onscreen "Buy a second battery for the A05s" || fail_inbox "ib7 is not the top card before the Someday step"
+tap Someday || fail_inbox "no Someday choice on the Inbox card"
+shot inbox-someday 1.5
+grep -q 'Someday ·' "$OUT/$(printf '%02d' $N)-inbox-someday.xml" || fail_inbox "Someday showed no toast that says where it went"
+wait_re 'POST /api/v1/inbox \{"action":"act","file":"inbox/ib7.md","sentence":"Order the battery on Uzum","project":"me","someday":true\}' || fail_inbox "Someday never reached pagel.uz as an act with someday:true"
+log "   Someday reached pagel.uz as an act with someday:true"
+# ib7 left: three newer saves arrive on top. Drop whatever older card is in the way (each Drop refreshes the deck).
+for k in 1 2 3 4; do onscreen "Chase the signed grant form from Aziz" && break; tap Drop; sleep 3; done
+onscreen "Chase the signed grant form from Aziz" || fail_inbox "the new saves never reached the top of the Inbox"
+# Waiting: who is optional; the check day is 3 days on.
+tap Waiting || fail_inbox "no Waiting choice"
+shot inbox-waiting-form 2
+tap "Add to waiting" || fail_inbox "the Waiting form has no Add to waiting button"
+shot inbox-waiting-sent 1.5
+CHECK=$(TZ=Asia/Tashkent date -d '+3 days' +%Y-%m-%d)
+wait_re "POST /api/v1/inbox \{\"action\":\"act\",\"file\":\"inbox/ib9.md\",\"sentence\":\"Waiting for reply: Chase the signed grant form from Aziz\",\"project\":\"humopedia\",\"someday\":false,\"due\":\"$CHECK\"\}" || fail_inbox "Waiting never reached pagel.uz with its words and check day $CHECK"
+log "   Waiting reached pagel.uz with its words and check day $CHECK"
+# Project: the name comes from the card, the first step from its next step; the project is made, then the step lands in it.
+onscreen "Launch a newsletter for parents" || fail_inbox "ib10 is not on top for the Project step"
+tap Project || fail_inbox "no Project choice"
+shot inbox-project-form 2
+tap "Start project" || fail_inbox "the Project form has no Start project button"
+shot inbox-project-sent 1.5
+wait_re 'POST /api/v1/projects \{"name":"[a-z0-9-]+","title":"Launch a newsletter for parents"' || fail_inbox "the new project never reached pagel.uz"
+wait_re 'POST /api/v1/inbox \{"action":"act","file":"inbox/ib10.md","sentence":"Pick the newsletter tool","project":"[a-z0-9-]+","someday":false\}' || fail_inbox "the first step never reached pagel.uz in the new project"
+log "   Project: the project and its first step reached pagel.uz"
+# Calendar: tomorrow by default; the date and wheel sheet is one tap away.
+onscreen "Grant round closes on Friday" || fail_inbox "ib11 is not on top for the Calendar step"
+tap Calendar || fail_inbox "no Calendar choice"
+shot inbox-calendar-form 2
+tap "Put on calendar" || fail_inbox "the Calendar form has no Put on calendar button"
+shot inbox-calendar-sent 1.5
+TOMORROW=$(TZ=Asia/Tashkent date -d '+1 day' +%Y-%m-%d)
+wait_re "POST /api/v1/inbox \{\"action\":\"act\",\"file\":\"inbox/ib11.md\",\"sentence\":\"Fill in the grant form\",\"project\":\"humopedia\",\"someday\":false,\"due\":\"$TOMORROW\"\}" || fail_inbox "Calendar never reached pagel.uz with its due $TOMORROW"
+log "   Calendar reached pagel.uz with due $TOMORROW"
+# The bulk tidy-up: the count first, "Move all" with one Undo that stops every one before pagel.uz hears of it.
+tap "Tidy old saves" || fail_inbox "no Tidy old saves button in the Inbox header"
+shot inbox-tidy 3
+grep -q '4 saves are older than 60 days' "$OUT/$(printf '%02d' $N)-inbox-tidy.xml" || fail_inbox "the tidy-up did not show the count before moving anything"
+tap "Move all 4 to Someday" || fail_inbox "no Move all 4 to Someday button"
+shot inbox-tidy-moved 1.5
+grep -q '4 moved to Someday' "$OUT/$(printf '%02d' $N)-inbox-tidy-moved.xml" || fail_inbox "the bulk move showed no toast with its count"
+tap Undo || fail_inbox "the bulk move showed no Undo"
+shot inbox-tidy-undone 1.5
+sleep 10
+[ "$(grep -c 'inbox/old[0-9].md' "$FAKE_LOG")" = "0" ] || fail_inbox "the Undo did not stop the bulk: pagel.uz heard of an old save"
+log "   one Undo stopped all 4 before pagel.uz heard of them"
+tap "Tidy old saves" || fail_inbox "no Tidy old saves button the second time"
+shot inbox-tidy-again 2
+tap "Move all 4 to Someday" || fail_inbox "no Move all 4 to Someday button the second time"
+for i in $(seq 1 90); do [ "$(grep -cE 'POST /api/v1/inbox \{"action":"act","file":"inbox/old[0-9].md","sentence":"An old save [0-9]","project":"me","someday":true\}' "$FAKE_LOG")" = "4" ] && break; sleep 1; done
+[ "$(grep -cE 'POST /api/v1/inbox \{"action":"act","file":"inbox/old[0-9].md","sentence":"An old save [0-9]","project":"me","someday":true\}' "$FAKE_LOG")" = "4" ] || fail_inbox "the bulk move did not reach pagel.uz as 4 acts with someday:true"
+log "   the bulk Someday reached pagel.uz: 4 acts"
+shot inbox-clarify-done 1.5
+
 log "-- Inbox: where did it go (round D item 2): Sorted today lists the day's choices by where they went; More -> Notes reads a project's notes"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 tap 'Sorted today \([0-9]+\)' && shot sorted-today 2

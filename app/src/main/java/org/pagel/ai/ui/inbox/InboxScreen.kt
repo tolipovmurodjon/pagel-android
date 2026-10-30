@@ -842,13 +842,13 @@ private fun SitePill(site: Site, name: String) {
  */
 @Composable
 private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = Space.xs)) {
         val guess = card.guess
         if (guess != null) GuessButton(card, guess, ui) { actions.choose(card, guess, Throw.None) }
         else AiReading(ui.reading)
         Text(
             "Can I do something about it?", style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth().padding(top = Space.xs, start = Space.xs).semantics { heading() },
+            modifier = Modifier.fillMaxWidth().padding(start = Space.xs).semantics { heading() },
         )
         // Two rows of icons, each with its word under it (checker #5: as chips, three of six sat under the tab bar).
         // slot: always in the same places; the AI's pick is marked where it stands (spacing audit #2: the icons moved
@@ -918,7 +918,7 @@ private fun ChoiceIcon(choice: Choice, enabled: Boolean, modifier: Modifier, pic
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(34.dp).background(if (picked) look.color.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f), CircleShape)
+            Modifier.size(32.dp).background(if (picked) look.color.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f), CircleShape)
                 .border(if (picked) 2.dp else 1.dp, if (picked) androidx.compose.ui.graphics.SolidColor(look.color) else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.45f))), CircleShape),
             contentAlignment = Alignment.Center,
         ) { Icon(look.icon, contentDescription = null, tint = look.color, modifier = Modifier.size(18.dp)) }

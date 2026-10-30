@@ -39,6 +39,15 @@ INBOX = [
     ("ib7", "", "Buy a second battery for the A05s", "", "me", "action", "Order the battery on Uzum", "", "", False),
     ("ib8", "https://x.com/a/status/8", "Unread save from last night", "", "all", "learn", "", "", "", False),
 ]
+# Inbox clarify (2026-10-30): once ib7 went to Someday, three newer saves arrive on top (Waiting, Project + first step, Calendar),
+# and a pagel.uz that knows `older_than` deals four saves from January for the bulk tidy-up.
+CLARIFY = [
+    ("ib9", "https://www.linkedin.com/posts/cl1", "Chase the signed grant form from Aziz", "", "humopedia", "action", "", "", "IT Park", False),
+    ("ib10", "https://www.linkedin.com/posts/cl2", "Launch a newsletter for parents", "", "humopedia", "action", "Pick the newsletter tool", "", "Newsletter", False),
+    ("ib11", "https://www.linkedin.com/posts/cl3", "Grant round closes on Friday", "", "humopedia", "action", "Fill in the grant form", "", "IT Park", False),
+]
+CLARIFY_DAY = "2026-10-28"
+OLD_IDS = ["old1", "old2", "old3", "old4"]
 SORTS = []  # (file, action) in the order pagel.uz took them
 LATER = set()
 TRIAGED = set()  # saves the AI has read since the phone asked (POST {action: "triage"})
@@ -78,12 +87,22 @@ def completed_rows(recent_only):
                      "day": datetime.fromisoformat(DONE_AT[cid].replace("Z", "+00:00")).astimezone(TASHKENT).strftime("%Y-%m-%d")})
     return rows
 
+def old_body():
+    sorted_files = {f for f, a in SORTS if a != "later"}
+    items = [{"file": f"inbox/{i}.md", "saved": "2026-01-05", "source": f"https://www.instagram.com/p/{i}/", "text": f"An old save {k}. It has sat here since January.", "claim": f"An old save {k}", "why": "",
+              "project": "all", "kind": "drop", "next": "", "note": "", "guessed": True, "author": "old.account", "posted": "2026-01-05", "later": None, "has_picture": False}
+             for k, i in enumerate(OLD_IDS, 1) if f"inbox/{i}.md" not in sorted_files]
+    return {"day": today(), "goal": 20, "sorted": 12 + len(SORTS), "kept_today": 2, "cap": 5, "min_words": 6, "total": 900 + len(items), "items": items}
+
 def inbox_body():
     sorted_files = {f for f, a in SORTS if a != "later"}
-    items = [{"file": f"inbox/{i}.md", "saved": "2026-10-27", "source": src, "text": f"Instagram post by @{au} posted 2026-10-27\n\n{claim}. The caption goes on for a while about it, with more words than the card shows." if "instagram" in src else f"{claim}. The post says more about it.",
-              "claim": claim, "why": why, "project": proj, "kind": kind, "next": nxt, "note": note, "guessed": i != "ib8" or f"inbox/{i}.md" in TRIAGED, "author": au, "posted": "2026-10-27" if au else "",
+    revealed = ("inbox/ib7.md", "act") in SORTS
+    items = [{"file": f"inbox/{i}.md", "saved": day, "source": src, "text": f"Instagram post by @{au} posted {day}\n\n{claim}. The caption goes on for a while about it, with more words than the card shows." if "instagram" in src else f"{claim}. The post says more about it.",
+              "claim": claim, "why": why, "project": proj, "kind": kind, "next": nxt, "note": note, "guessed": i != "ib8" or f"inbox/{i}.md" in TRIAGED, "author": au, "posted": day if au else "",
               "later": "2026-10-28" if f"inbox/{i}.md" in LATER else None, "has_picture": pic}
-             for i, src, claim, why, proj, kind, nxt, note, au, pic in INBOX if f"inbox/{i}.md" not in sorted_files]
+             for i, src, claim, why, proj, kind, nxt, note, au, pic, day in
+             [row + ("2026-10-27",) for row in INBOX] + ([row + (CLARIFY_DAY,) for row in CLARIFY] if revealed else [])
+             if f"inbox/{i}.md" not in sorted_files]
     items.sort(key=lambda x: x["later"] is not None)
     return {"day": today(), "goal": 20, "sorted": 12 + len(SORTS), "kept_today": 2 + sum(1 for _, a in SORTS if a == "keep"), "cap": 5, "min_words": 6,
             "total": len(items), "items": items}
@@ -249,6 +268,8 @@ class H(BaseHTTPRequestHandler):
                 return
             return self.send(404, {"error": "No picture."})
         if self.path.startswith("/api/v1/inbox"):
+            if "older_than=" in self.path:
+                return self.send(200, old_body())
             return self.send(200, inbox_body())
         if self.path.startswith("/api/v1/completed"):
             # total = every finished task, as the web counts them; 4 were finished before done_at was kept (no row).
