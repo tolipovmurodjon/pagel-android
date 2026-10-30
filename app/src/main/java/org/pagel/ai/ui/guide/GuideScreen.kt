@@ -39,7 +39,7 @@ import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.rituals.MintButton
 
 /** Opens the guide on one card; the shell provides it, so a screen's "?" is one line and carries no navigation. */
-val LocalGuideOpener = compositionLocalOf { { } }
+val LocalGuideOpener = compositionLocalOf<(Int) -> Unit> { { } }
 
 /** The small "?" in a screen's header: opens the guide on the card that explains that screen. */
 @Composable
