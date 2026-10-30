@@ -143,7 +143,7 @@ fun ShutdownScreen(
                 ui.done -> null
                 ui.shutTonight -> "Closed tonight ✓ · you can close it again"
                 else -> "Five minutes. Then nothing needs you tonight."
-            })
+            }, guideCard = org.pagel.ai.ui.guide.GuideCards.CLOSE_THE_DAY)
         }
         when {
             ui.loading -> item(key = "loading", contentType = "pane") { Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3) } }

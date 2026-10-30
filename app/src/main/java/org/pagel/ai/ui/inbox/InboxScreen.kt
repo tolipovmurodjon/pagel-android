@@ -357,6 +357,7 @@ private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, so
             }
             if (ui.streak > 0) Streak(ui.streak)
             GlassIconButton(TabIcons.CircleHelp, "How sorting works", plain = true, onClick = onHelp)
+            org.pagel.ai.ui.guide.GuideHelpButton(org.pagel.ai.ui.guide.GuideCards.CLARIFY)
             GoalRing(ui.sorted, ui.goal, Modifier.onGloballyPositioned { onRing(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) })
         }
         // The day's goal leads; the learned habit (5) follows (learn-client.tsx today-count). The counts get the whole

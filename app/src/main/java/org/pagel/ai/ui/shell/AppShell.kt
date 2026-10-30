@@ -98,6 +98,10 @@ import org.pagel.ai.ui.glass.GlassTheme
 import org.pagel.ai.ui.glass.LiquidBottomTab
 import org.pagel.ai.ui.glass.LiquidBottomTabs
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.guide.GuideDestination
+import org.pagel.ai.ui.guide.GuideRoute
+import org.pagel.ai.ui.guide.GuideScreen
+import org.pagel.ai.ui.guide.LocalGuideOpener
 import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.edgeFade
 import org.pagel.ai.ui.glass.TabIcons
@@ -240,7 +244,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     val inProject = top as? ProjectPageRoute
     val showFab = (onTop && selected == 0) || inProject != null
     val fabAt = if (onTop) fabBottom else Space.lg
-    androidx.compose.runtime.CompositionLocalProvider(LocalTaskOpener provides { id: String -> openTask = id }) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalTaskOpener provides { id: String -> openTask = id }, LocalGuideOpener provides { card: Int -> stack.add(GuideRoute(card)) }) {
     Box(Modifier.fillMaxSize()) {
         AuroraBackground(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -311,6 +315,15 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     }
                     entry<CompletedListRoute> { CompletedScreenRoute(padding, reselect) }
                     entry<org.pagel.ai.ui.compass.CompassRoute> { org.pagel.ai.ui.compass.CompassRouteScreen(padding) }
+                    entry<GuideRoute> { r ->
+                        GuideScreen(r.card, padding) { to ->
+                            when (to) {
+                                GuideDestination.AddSheet -> adding = ""
+                                is GuideDestination.OnTab -> selected = Tab.entries.indexOf(to.tab)
+                                is GuideDestination.Push -> stack.add(to.route)
+                            }
+                        }
+                    }
                     entry<ProjectListRoute> { ProjectsRoute(padding, reselect, onOpenProject = { stack.add(ProjectPageRoute(it)) }) }
                     entry<ProjectPageRoute> { r -> ProjectScreenRoute(r.name, padding, reselect, onOpenTask = { openTask = it }, onAdd = { adding = it },
                         onGone = { stack.removeLastOrNull() }, onOpenProject = { stack.add(ProjectPageRoute(it)) }) }
@@ -349,7 +362,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
         val pageTitle = when (top) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
-            org.pagel.ai.ui.compass.CompassRoute -> "Compass"
+            org.pagel.ai.ui.compass.CompassRoute -> "Compass"; is GuideRoute -> "How it works"
             is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"; NamozRoute -> "Namoz"; SortedTodayRoute -> "Sorted today"; is NotesRoute -> "Notes"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
@@ -526,6 +539,7 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
             Column(Modifier.padding(vertical = 6.dp)) {
                 // The Compass first: Boss's goals are the core every list below serves (Phase 6a).
                 MoreRow(org.pagel.ai.ui.compass.CompassIcons.Compass, "Compass", Glass.Primary) { onOpenRitual(org.pagel.ai.ui.compass.CompassRoute) }
+                MoreRow(TabIcons.BookOpen, "How it works", Color(0xFF246FE0)) { onOpenRitual(GuideRoute()) }
                 // The web's phone bar keeps Upcoming and Completed under More too (dashboard nav.tsx PHONE).
                 MoreRow(TabIcons.Calendar, "Upcoming", Color(0xFFD9620B), onOpenUpcoming)
                 MoreRow(TabIcons.Done, "Completed", Color(0xFF0E7490), onOpenCompleted)

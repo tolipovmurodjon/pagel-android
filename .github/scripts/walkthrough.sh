@@ -878,3 +878,25 @@ $T adb shell "date -u $(date -u +%m%d%H%M%Y.%S)" > /dev/null || { log "WALKTHROU
 $T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
 sleep 2
 log "NAMOZ WALK DONE: $N steps (clock back to $(date -u +%FT%TZ))"
+
+log "-- How it works (Boss 2026-10-30): More -> How it works; swipe through all 10 cards, each reads its title; Try it opens the real screen"
+front guide-start
+tap More && shot guide-more 1.5
+tap "How it works" || { log "WALKTHROUGH: no How it works row under More"; exit 1; }
+shot guide-card-1 2
+TITLES=("Capture" "Clarify" "Next step" "Projects" "Areas" "Calendar" "Waiting and Someday" "Today.*s 3" "Close the day" "Stuck")
+for i in $(seq 0 9); do
+  X="$(last guide-card-$((i + 1)))"
+  grep -qE "text=\"${TITLES[$i]}\"" "$X" || { log "WALKTHROUGH: How it works card $((i + 1)) does not read \"${TITLES[$i]}\""; exit 1; }
+  grep -qF "content-desc=\"Card $((i + 1)) of 10\"" "$X" || { log "WALKTHROUGH: card $((i + 1)) has no Card $((i + 1)) of 10 marker"; exit 1; }
+  grep -qF 'content-desc="Try it"' "$X" || { log "WALKTHROUGH: card $((i + 1)) has no Try it"; exit 1; }
+  [ "$i" -lt 9 ] && { $T adb shell input swipe 900 1100 150 1100 300; shot guide-card-$((i + 2)) 1.2; }
+done
+log "   all 10 cards read"
+# Try it on the Close the day card (the last card's neighbour): the real Close the day opens.
+$T adb shell input swipe 150 1100 900 1100 300; sleep 1
+tap "Try it" || { log "WALKTHROUGH: Try it was not on screen"; exit 1; }
+shot guide-try-close 2
+grep -q 'text="Close the day"' "$(last guide-try-close)" || { log "WALKTHROUGH: Try it on the Close the day card did not open Close the day"; exit 1; }
+$T adb shell input keyevent 4; sleep 1
+log "GUIDE WALK DONE: $N steps"
