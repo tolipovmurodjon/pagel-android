@@ -40,12 +40,18 @@ import javax.inject.Inject
 @HiltViewModel
 class NamozLineViewModel @Inject constructor(repo: HabitsRepository, dao: NamozDao) : ViewModel() {
     val line: StateFlow<NamozLine?> = combine(repo.habits, repo.ticks(), dao.settings(), namozMinutes()) { habits, ticks, s, now ->
-        val settings = s ?: NamozSettingsEntity()
-        val prayers = habits.filter(::isNamoz)
-        if (!settings.onToday || prayers.size < 5) return@combine null
-        val ui = NamozUi.of(now, prayers, ticks, emptyList(), emptyList(), settings, emptySet())
-        NamozLine(ui.next.prayer.emoji, Namoz.notice(ui.next) + " · " + ui.countdown + if (ui.started) " · ${ui.doneToday.size}/5" else "")
+        todayLine(now, habits.filter(::isNamoz), ticks, s ?: NamozSettingsEntity())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    companion object {
+        /** Nothing until he has started tracking (1 November, five prayers) AND turned "Show on Today" on. */
+        fun todayLine(now: java.time.LocalDateTime, prayers: List<org.pagel.ai.data.db.TaskEntity>, ticks: List<org.pagel.ai.data.db.HabitTickEntity>, settings: NamozSettingsEntity): NamozLine? {
+            if (!settings.onToday || prayers.size < 5) return null
+            val ui = NamozUi.of(now, prayers, ticks, emptyList(), emptyList(), settings, emptySet())
+            if (!ui.started) return null
+            return NamozLine(ui.next.prayer.emoji, Namoz.notice(ui.next) + " · " + ui.countdown + " · ${ui.doneToday.size}/5")
+        }
+    }
 }
 
 data class NamozLine(val emoji: String, val text: String)

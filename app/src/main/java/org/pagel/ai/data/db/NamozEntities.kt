@@ -52,7 +52,10 @@ data class NamozSettingsEntity(
     @ColumnInfo(defaultValue = "'0,0,0,0,0'") val offsets: String = "0,0,0,0,0",
     @ColumnInfo(defaultValue = "0") val qazaOn: Boolean = false,
     @ColumnInfo(defaultValue = "0") val qaza: Int = 0,
-    @ColumnInfo(defaultValue = "1") val onToday: Boolean = true,
+    /** Off until he turns it on, like everything else on the page (checker 2026-10-30). */
+    @ColumnInfo(defaultValue = "0") val onToday: Boolean = false,
+    /** A reminder rings this many minutes before the prayer's time: 0, 5, 10 or 15. The words stay "Asr · 15:42". */
+    @ColumnInfo(defaultValue = "0") val remindBefore: Int = 0,
     /** The last known place when [autoLocation] is on (0, 0 = none yet: Tashkent is used). */
     @ColumnInfo(defaultValue = "0") val lat: Double = 0.0,
     @ColumnInfo(defaultValue = "0") val lon: Double = 0.0,

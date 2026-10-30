@@ -106,6 +106,44 @@ class NamozTest {
         assertNull(Namoz.prayerOf("Shower"))
     }
 
+    private fun prayer(p: Namoz.Prayer) = org.pagel.ai.data.db.TaskEntity(
+        id = "n_${p.name}", project = "me", phase = "Now", sort = 1.0, text = p.uz, title = null, status = "open", priority = 2, star = false,
+        due = "2026-11-01 05:35", every = "day", doneWhen = null, doneAt = null, updatedAt = "2026-10-27T05:00:00Z", serverVersion = 1, lastModified = 0,
+        times = 1, habitGroup = Namoz.GROUP,
+    )
+
+    @Test fun theTodayLineWaitsForTheFirstAndForShowOnToday() {
+        val five = Namoz.Prayer.entries.map(::prayer)
+        val on = org.pagel.ai.data.db.NamozSettingsEntity(onToday = true)
+        val line = org.pagel.ai.ui.namoz.NamozLineViewModel.Companion::todayLine
+        // Before 1 November: nothing on Today, even with the switch on.
+        assertNull(line(java.time.LocalDateTime.of(2026, 10, 31, 15, 0), five, emptyList(), on))
+        // From the first, with the switch on: the line, with his count.
+        val first = line(java.time.LocalDateTime.of(2026, 11, 1, 15, 0), five, emptyList(), on)
+        assertTrue(first!!.text.endsWith(" · 0/5"))
+        // Switch off (the default), or fewer than five prayers: nothing.
+        assertNull(line(java.time.LocalDateTime.of(2026, 11, 1, 15, 0), five, emptyList(), org.pagel.ai.data.db.NamozSettingsEntity()))
+        assertNull(line(java.time.LocalDateTime.of(2026, 11, 1, 15, 0), five.take(4), emptyList(), on))
+    }
+
+    @Test fun showOnTodayAndMinutesBeforeStartOff() {
+        val d = org.pagel.ai.data.db.NamozSettingsEntity()
+        assertFalse(d.onToday)
+        assertEquals(0, d.remindBefore)
+        assertEquals(0, Namoz.setupOf(d).before)
+        assertEquals(0, Namoz.setupOf(d.copy(remindBefore = 7)).before) // not one of 0/5/10/15
+    }
+
+    @Test fun aReminderCanRingMinutesBeforeAndKeepsItsWords() {
+        val z = java.time.ZoneId.of("Asia/Tashkent")
+        val asked = java.time.ZonedDateTime.of(2026, 11, 1, 9, 0, 0, 0, z)
+        val at = Namoz.nextStart(Namoz.Prayer.PESHIN, asked)
+        val early = Namoz.nextStart(Namoz.Prayer.PESHIN, asked, Namoz.Setup(before = 15))
+        assertEquals(at.minusMinutes(15), early)
+        val w = Namoz.windows(LocalDate.of(2026, 11, 1)).first { it.prayer == Namoz.Prayer.PESHIN }
+        assertTrue(Namoz.notice(w).matches(Regex("Peshin · \\d\\d:\\d\\d")))
+    }
+
     @Test fun habitsGetTheirEmojiByTheirWords() {
         assertEquals("food", Emoji.keyFor("Log today's food and sugar, then shut down"))
         assertEquals("lotus", Emoji.keyFor("Do the five-minute floor routine"))

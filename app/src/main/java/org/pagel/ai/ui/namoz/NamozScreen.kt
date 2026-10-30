@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -93,7 +94,7 @@ fun NamozScreen(
                     Text("Namoz", style = MaterialTheme.typography.headlineMedium, color = Glass.Ink, maxLines = 1, modifier = Modifier.semantics { heading() })
                     // Today's date, the Hijri date under it (computed; may differ from the local calendar by a day).
                     Text("${ui.today.dayOfMonth} ${ui.today.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} · ${ui.hijri}",
-                        style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 GlassIconButton(TabIcons.More, "Namoz settings", size = Space.touch, plain = true, onClick = onSettings)
             }
@@ -131,6 +132,8 @@ private fun NextPane(ui: NamozUi) {
 private fun PrayerRows(ui: NamozUi, onTap: (Namoz.Prayer) -> Unit, onMark: (Namoz.Prayer, String?) -> Unit, onStart: () -> Unit) {
     var marking by remember { mutableStateOf<Namoz.Prayer?>(null) }
     val haptics = LocalHapticFeedback.current
+    // Above 1.3× font the time moves under the name: side by side, "In the mosque" had ~90 dp and wrapped to 3 lines.
+    val bigFont = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Column(Modifier.fillMaxWidth().padding(Space.sm)) {
             if (!ui.tracking) {
@@ -170,10 +173,12 @@ private fun PrayerRows(ui: NamozUi, onTap: (Namoz.Prayer) -> Unit, onMark: (Namo
                     Image(painterResource(Emoji.res(p.emoji)), null, Modifier.size(22.dp))
                     Spacer(Modifier.width(Space.sm))
                     Column(Modifier.weight(1f)) {
-                        Text(p.uz, style = MaterialTheme.typography.bodyLarge, color = if (done) Glass.Muted else Glass.Ink)
-                        if (how != null) Text(howLabel(how), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                        Text(p.uz, style = MaterialTheme.typography.bodyLarge, color = if (done) Glass.Muted else Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (how != null) Text(howLabel(how), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (bigFont) Text(w.label(), style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false)
                     }
-                    Text(w.label(), style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false)
+                    // The time keeps its own column with a gap, so a name never runs into it (1.5× font, checker 2026-10-30).
+                    if (!bigFont) Text(w.label(), style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = Space.sm))
                 }
             }
             if (!ui.started) Text(
@@ -234,7 +239,7 @@ private fun LearnPane(items: List<org.pagel.ai.data.db.NamozLearnEntity>, onAdd:
             androidx.compose.runtime.key(items.size) {
                 Row(Modifier.fillMaxWidth().heightIn(min = Space.touch), verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.Icon(TabIcons.Plus, null, tint = Glass.Muted, modifier = Modifier.padding(horizontal = Space.md).size(20.dp))
-                    org.pagel.ai.ui.glass.InlineField("", "Add a sura, a dua, a rule…", "Add to what I'm learning", MaterialTheme.typography.bodyLarge, Modifier.weight(1f), onSave = onAdd)
+                    org.pagel.ai.ui.glass.InlineField("", "Add a sura or a dua", "Add to what I'm learning", MaterialTheme.typography.bodyLarge, Modifier.weight(1f), onSave = onAdd)
                 }
             }
         }

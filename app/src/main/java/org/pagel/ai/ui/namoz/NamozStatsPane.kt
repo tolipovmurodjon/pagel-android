@@ -16,7 +16,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -50,13 +54,18 @@ internal fun StatsPane(ui: NamozUi) {
                 Text("$full/$of", style = Glass.NumberText.copy(fontSize = MaterialTheme.typography.headlineSmall.fontSize), color = Glass.Ink)
                 Text("full days this week", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, modifier = Modifier.padding(start = Space.sm))
             }
+            // The name column is as wide as the longest prayer name at this font size, so at 1.5× it never touches its bar.
+            val nameStyle = MaterialTheme.typography.bodyMedium
+            val measurer = rememberTextMeasurer()
+            val density = LocalDensity.current
+            val nameWidth = remember(nameStyle, density) { with(density) { Namoz.Prayer.entries.maxOf { measurer.measure(it.uz, nameStyle).size.width }.toDp() } }
             Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
                 Text("Last 30 days", style = MaterialTheme.typography.labelLarge, color = Glass.Muted, modifier = Modifier.semantics { heading() })
                 for ((p, n, days) in ui.perPrayer) Row(
                     Modifier.semantics(mergeDescendants = true) { contentDescription = "${p.uz}: $n of $days days" },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(p.uz, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 1, modifier = Modifier.width(88.dp))
+                    Text(p.uz, style = nameStyle, color = Glass.Ink, maxLines = 1, softWrap = false, modifier = Modifier.padding(end = Space.md).width(nameWidth))
                     Box(Modifier.weight(1f).height(8.dp).background(Glass.Ink.copy(alpha = 0.07f), CircleShape)) {
                         if (days > 0 && n > 0) Box(Modifier.fillMaxWidth(n / days.toFloat()).height(8.dp).background(Glass.Primary, CircleShape))
                     }
@@ -82,10 +91,11 @@ private fun MonthGrid(ui: NamozUi) {
             color = Glass.Ink, modifier = Modifier.weight(1f).semantics { heading() })
         val canBack = pager.currentPage > 0
         val canNext = pager.currentPage < months.lastIndex
-        GlassIconButton(TabIcons.ChevronLeft, "Previous month", size = Space.touch, plain = true, tint = Glass.Ink.copy(alpha = if (canBack) 0.78f else 0.2f)) {
+        // The app's secondary ink: readable even when there is no other month yet (checker 2026-10-30: "very faint").
+        GlassIconButton(TabIcons.ChevronLeft, "Previous month", size = Space.touch, plain = true, tint = if (canBack) Glass.Ink else Glass.Muted) {
             if (canBack) scope.launch { pager.animateScrollToPage(pager.currentPage - 1) }
         }
-        GlassIconButton(TabIcons.ChevronRight, "Next month", size = Space.touch, plain = true, tint = Glass.Ink.copy(alpha = if (canNext) 0.78f else 0.2f)) {
+        GlassIconButton(TabIcons.ChevronRight, "Next month", size = Space.touch, plain = true, tint = if (canNext) Glass.Ink else Glass.Muted) {
             if (canNext) scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
         }
     }
@@ -121,7 +131,8 @@ private fun DayCell(day: java.time.LocalDate, set: Set<Namoz.Prayer>, ui: NamozU
         Row(Modifier.fillMaxWidth().padding(horizontal = Space.xs, vertical = Space.xs), horizontalArrangement = Arrangement.SpaceEvenly) {
             for (p in Namoz.Prayer.entries) Box(
                 Modifier.size(4.dp).background(
-                    when { p in set -> Glass.Primary; counted -> Glass.Ink.copy(alpha = 0.12f); else -> Glass.Ink.copy(alpha = 0.05f) }, CircleShape,
+                    // A day still to come has no dots (kept transparent, so the grid never changes height).
+                    when { p in set -> Glass.Primary; counted -> Glass.Ink.copy(alpha = 0.12f); day > ui.today -> Color.Transparent; else -> Glass.Ink.copy(alpha = 0.05f) }, CircleShape,
                 ),
             )
         }

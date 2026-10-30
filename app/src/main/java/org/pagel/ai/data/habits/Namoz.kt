@@ -45,7 +45,12 @@ object Namoz {
         val method: String = UZBEKISTAN,
         val hanafi: Boolean = true,
         val offsets: List<Int> = listOf(0, 0, 0, 0, 0),
+        /** The reminder rings this many minutes before the time (0 = at the time). */
+        val before: Int = 0,
     )
+
+    /** The "minutes before" choices of the page's settings. */
+    val BEFORE = listOf(0, 5, 10, 15)
 
     const val UZBEKISTAN = "uzbekistan"
     /** The methods the page offers, by key; an unknown key falls back to Uzbekistan's. */
@@ -96,11 +101,11 @@ object Namoz {
         var day = maxOf(now.withZoneSameInstant(ZONE).toLocalDate(), LocalDate.parse(START))
         repeat(3) {
             val w = windows(day, s).first { it.prayer == prayer }
-            val at = java.time.ZonedDateTime.of(day, w.from, ZONE)
+            val at = java.time.ZonedDateTime.of(day, w.from, ZONE).minusMinutes(s.before.toLong())
             if (at.isAfter(now)) return at
             day = day.plusDays(1)
         }
-        return java.time.ZonedDateTime.of(day, windows(day, s).first { it.prayer == prayer }.from, ZONE)
+        return java.time.ZonedDateTime.of(day, windows(day, s).first { it.prayer == prayer }.from, ZONE).minusMinutes(s.before.toLong())
     }
 
     /** The whole of the reminder: "Asr · 15:42". Plain and respectful, nothing more (Boss, namoz brief). */
@@ -111,7 +116,7 @@ object Namoz {
         if (s == null) return Setup()
         val offsets = s.offsets.split(",").map { it.trim().toIntOrNull() ?: 0 }.let { it + List((5 - it.size).coerceAtLeast(0)) { 0 } }.take(5)
         val here = s.autoLocation && (s.lat != 0.0 || s.lon != 0.0)
-        return Setup(lat = if (here) s.lat else Setup().lat, lon = if (here) s.lon else Setup().lon, method = s.method, hanafi = s.hanafi, offsets = offsets)
+        return Setup(lat = if (here) s.lat else Setup().lat, lon = if (here) s.lon else Setup().lon, method = s.method, hanafi = s.hanafi, offsets = offsets, before = s.remindBefore.takeIf { it in BEFORE } ?: 0)
     }
 
     private val HIJRI_MONTHS = listOf(

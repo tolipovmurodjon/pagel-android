@@ -8,6 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
@@ -146,6 +148,17 @@ class NamozScreenshotTest {
         show { org.pagel.ai.ui.namoz.NamozSettingsSheet(dayUi(), onSave = {}, onRemind = { _, _ -> }, onPlace = {}) {} }
         compose.mainClock.advanceTimeBy(1_000)
         com.github.takahirom.roborazzi.captureScreenRoboImage("build/outputs/roborazzi/namoz-settings.png")
+    }
+
+    /** The whole sheet on a tall screen: minutes before (at the time by default), the methods as a checked list. */
+    @Test fun theWholeSettingsSheet() {
+        show { org.pagel.ai.ui.namoz.NamozSettingsSheet(dayUi(), onSave = {}, onRemind = { _, _ -> }, onPlace = {}) {} }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("At the time").assertIsSelected()
+        compose.onNodeWithText("15 minutes before").assertIsNotSelected()
+        compose.onNodeWithText("Muslim World League").assertExists()
+        compose.onNodeWithText("Hanafi").assertIsSelected()
+        com.github.takahirom.roborazzi.captureScreenRoboImage("build/outputs/roborazzi/namoz-settings-full.png")
     }
 
     /** The calm-words wall: none of these words is ever on the page. */

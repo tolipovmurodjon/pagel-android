@@ -678,16 +678,17 @@ private fun NamozGroup(
     val prayers = board.namoz
     Pane(modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Column(Modifier.fillMaxWidth().padding(Space.md)) {
+            val started = Namoz.counts(board.selected.toString())
             Row(verticalAlignment = Alignment.CenterVertically) {
                 EmojiTile("mosque", 40.dp)
                 Spacer(Modifier.width(Space.md))
                 Column(Modifier.weight(1f).heightIn(min = Space.touch).clickable(onClickLabel = "Open the Namoz page", onClick = onPage), verticalArrangement = Arrangement.Center) {
                     Text("Namoz", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Glass.Ink, modifier = Modifier.semantics { heading() })
-                    val started = Namoz.counts(board.selected.toString())
                     Text(if (prayers.isEmpty() || !started) "From 1 November" else "Five a day", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
                 }
                 if (prayers.isNotEmpty()) {
-                    DayRing(board.namozDone, prayers.size, size = 40.dp)
+                    // No "0/5" before the first: nothing counts yet (checker 2026-10-30).
+                    if (started) DayRing(board.namozDone, prayers.size, size = 40.dp)
                     GlassIconButton(TabIcons.More, "Namoz reminders", size = Space.touch, plain = true, onClick = onMenu)
                 }
             }
