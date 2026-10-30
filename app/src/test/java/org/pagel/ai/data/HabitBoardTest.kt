@@ -21,6 +21,7 @@ import org.pagel.ai.data.habits.links
 import org.pagel.ai.data.habits.markOf
 import org.pagel.ai.data.habits.minutesOf
 import org.pagel.ai.data.habits.neverMissTwice
+import java.io.File
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -202,7 +203,7 @@ class HabitBoardTest {
         assertFalse("red" in L.COLOURS)
         assertEquals("coral", L.colourOf("gym/red"))
         assertEquals("gym/coral", L.look("gym", L.colourOf("gym/red")))
-        val dirs = listOf("src/main/java/org/pagel/ai/ui/habits", "src/main/java/org/pagel/ai/ui/namoz").map(::java.io.File)
+        val dirs = listOf("src/main/java/org/pagel/ai/ui/habits", "src/main/java/org/pagel/ai/ui/namoz").map { File(it) }
         val files = dirs.flatMap { d -> d.walkTopDown().filter { it.extension == "kt" }.toList() }
         assertTrue("found the habits sources: ${dirs.map { it.absolutePath }}", files.size >= 5)
         for (f in files) {
