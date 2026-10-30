@@ -58,6 +58,10 @@ class UpcomingRepositoryTest {
                         patches += path.substringAfterLast('/') + " " + body
                         MockResponse().setBody("""{"id":"x","status":"open","applied":["due","done"]}""")
                     }
+                    request.method == "POST" && path == "/api/v1/kpi" -> {
+                        patches += "kpi " + request.body.readUtf8()
+                        MockResponse().setBody("""{"ok":true}""")
+                    }
                     request.method == "GET" && path.startsWith("/api/v1/completed") -> MockResponse().setBody(
                         """{"tasks":[{"id":"t_old","project":"me","text":"Renew the domain","status":"done","done_at":"2026-10-02T04:00:00.000Z","day":"2026-10-02","steps":[]},""" +
                             """{"id":"t_mine","project":"me","text":"Server copy","status":"done","done_at":"2026-10-20T04:00:00.000Z","day":"2026-10-20","steps":[]}],"before":null,"total":9}""",
@@ -105,6 +109,18 @@ class UpcomingRepositoryTest {
         // A habit never moves from the calendar.
         db.dao().upsertTasks(listOf(task("t_h", "2026-11-08 07:30", every = "day")))
         assertNull(r.moveTo("t_h", "2026-11-08 08:00"))
+    }
+
+    /** Calendar fix round 2 #3: a calendar move is counted (KPI cal_move), after the move's own PATCH, a count only. */
+    @Test fun aCalendarMoveIsCountedAfterItsPatch() = runBlocking {
+        db.dao().upsertTasks(listOf(task("t_c", "2026-11-08 10:00")))
+        var kicked = 0
+        val r = UpcomingRepository(db.dao(), api, tasks, clock = { now }, scheduler = { kicked++ })
+        r.moveTo("t_c", "2026-11-05 14:30")!!
+        r.countMove()
+        assertEquals(1, kicked)
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(listOf("""t_c {"due":"2026-11-05 14:30"}""", """kpi {"day":"2026-10-28","event":"cal_move"}"""), patches)
     }
 
     @Test fun aDropOnAnotherDayMovesItInRoomAtOnceAndSendsTheDueKeepingTheTime() = runBlocking {

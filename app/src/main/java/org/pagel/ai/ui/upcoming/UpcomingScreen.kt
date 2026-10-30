@@ -198,6 +198,7 @@ fun UpcomingScreen(
         androidx.compose.foundation.pager.rememberPagerState(initialPage = TL_BACK + org.pagel.ai.data.upcoming.timelinePageOf(timelineView, ui.today, focus)) { TL_PAGES }
     }
     val timelineScroll = rememberScrollState()
+    val holding = remember { mutableStateOf<Held?>(null) }
     var allDayOpen by rememberSaveable { mutableStateOf(false) }
     var firstTl by remember(tl) { mutableStateOf(true) }
     LaunchedEffect(tl, tl.settledPage) {
@@ -369,7 +370,7 @@ fun UpcomingScreen(
                         Spacer(Modifier.height(contentPadding.calculateBottomPadding() + Space.sm))
                     }
                     else -> Timeline(timelineView, tl, ui, timelineScroll, top = headDp + Space.sm, bottom = contentPadding.calculateBottomPadding() + Space.sm,
-                        onOpen = openTask, onMove = onMoveTo)
+                        onOpen = openTask, onMove = onMoveTo, holding = holding, clipTop = headDp)
                 }
             }
         }
@@ -402,6 +403,8 @@ fun UpcomingScreen(
             }
         }
         if (drag.shown) Ghost(drag, rootAt)
+        // The timeline's held block, on glass over the screen's layer (drawn here: a glass inside the layer it bends cannot be).
+        holding.value?.let { TimelineGhost(it, local, it.origin - rootAt) }
     }
 }
 

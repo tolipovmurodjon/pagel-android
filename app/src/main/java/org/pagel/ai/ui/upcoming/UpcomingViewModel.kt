@@ -76,6 +76,7 @@ class UpcomingViewModel @Inject constructor(
     fun reschedule(id: String, day: LocalDate) {
         viewModelScope.launch {
             val m = repo.reschedule(id, day) ?: return@launch
+            repo.countMove()
             toasts.show("Moved to ${dayWord(day)}", action = "Undo") { viewModelScope.launch { repo.undoMoves(listOf(m)) } }
         }
     }
@@ -87,6 +88,7 @@ class UpcomingViewModel @Inject constructor(
     fun moveTo(id: String, due: String) {
         viewModelScope.launch {
             val m = repo.moveTo(id, due) ?: return@launch
+            repo.countMove()
             val day = LocalDate.parse(due.take(10))
             toasts.show("Moved to ${dayWord(day)} ${due.drop(11).replace('-', '–')}".trim(), action = "Undo", millis = MOVE_UNDO_MS) {
                 viewModelScope.launch { repo.putBack(m) }

@@ -685,6 +685,10 @@ WANT="PATCH /api/v1/tasks/t_cal1 {\"due\":\"$NEXT_THU 14:30\"} auth=True"
 for i in $(seq 1 14); do grep -qF "$WANT" "$FAKE_LOG" && break; sleep 0.5; done
 grep -qF "$WANT" "$FAKE_LOG" || { log "WALKTHROUGH: the drop never reached pagel.uz as $WANT"; grep 't_cal1' "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; shot cal4-dropped 0.5; exit 1; }
 log "   pagel.uz got the drop: due $NEXT_THU 14:30"
+# Checker round 2 #3: a calendar move is counted (KPI cal_move), a count with no words.
+wait_cal() { for i in $(seq 1 "${2:-30}"); do grep -qF "$1" "$FAKE_LOG" && return 0; sleep 1; done; return 1; }
+wait_cal "POST /api/v1/kpi {\"day\":\"$TODAY_ISO\",\"event\":\"cal_move\"}" 30 || { log "WALKTHROUGH: the move was not counted (no cal_move KPI)"; grep 'api/v1/kpi' "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz counted the move: cal_move"
 tap Undo || { log "WALKTHROUGH: the move's toast has no Undo"; exit 1; }
 BACK="PATCH /api/v1/tasks/t_cal1 {\"due\":\"$NEXT_SUN 10:00\"} auth=True"
 for i in $(seq 1 30); do grep -qF "$BACK" "$FAKE_LOG" && break; sleep 1; done
@@ -692,6 +696,57 @@ grep -qF "$BACK" "$FAKE_LOG" || { log "WALKTHROUGH: Undo never sent the old due 
 shot cal4-undone 2
 grep -qF 'content-desc="Plan the lesson week, 10:00"' "$(cal_xml cal4-undone)" || log "   (WARN: the block is not back at 10:00 on screen)"
 log "   Undo sent the old due back: $NEXT_SUN 10:00"
+
+log "-- resize: drag the Sunday 10:00 block's bottom edge 30 min down; pagel.uz gets 10:00-11:00"
+sleep 8   # the Undo toast leaves first
+B=$(cal_bounds "Plan the lesson week, 10:00"); set -- $B
+[ -n "${4:-}" ] || { log "WALKTHROUGH: the Sunday 10:00 block is not on screen for the resize"; shot cal4-no-resize 0.5; exit 1; }
+# The block's node ends 2 dp above its drawn bottom; the bottom third (8 dp of a half-hour block) is the resize edge.
+RX=$(( ($1 + $3) / 2 )); RY=$(( $4 - $(dp 3) )); RTO=$(( RY + 26 * DPI / 160 ))
+log "   hold the bottom edge ($RX,$RY), carry it to $RTO"
+$T adb shell input motionevent DOWN "$RX" "$RY"
+sleep 1.2
+for k in 1 2 3 4 5 6; do $T adb shell input motionevent MOVE "$RX" $(( RY + (RTO - RY) * k / 6 )); done
+sleep 0.4; $T adb shell input motionevent MOVE "$RX" "$RTO"
+$T adb shell screencap -p /sdcard/drag.png; timeout 20 adb pull /sdcard/drag.png "$OUT/$(printf '%02d' $((N + 1)))-cal4-resizing.png" > /dev/null 2>&1; N=$((N + 1)); log "$(printf '%02d' $N)-cal4-resizing"
+$T adb shell input motionevent UP "$RX" "$RTO"
+WANT="PATCH /api/v1/tasks/t_cal1 {\"due\":\"$NEXT_SUN 10:00-11:00\"} auth=True"
+wait_cal "$WANT" 20 || { log "WALKTHROUGH: the resize never reached pagel.uz as $WANT"; grep 't_cal1' "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; shot cal4-resized 0.5; exit 1; }
+shot cal4-resized 2
+log "   pagel.uz got the new range: $NEXT_SUN 10:00-11:00"
+
+log "-- Month drop: Month -> tap Sunday $NEXT_SUN -> long-press Plan the lesson week -> drop it on Saturday; the time is kept"
+sleep 8
+pick_view Month 4 || { log "WALKTHROUGH: no Month in the view menu"; exit 1; }
+sleep 1
+NEXT_SUN_SPOKEN=$(LC_ALL=C date -d "$NEXT_SUN" '+%A %-d %B')
+NEXT_SAT=$(date -d "$MON +12 days" +%F); NEXT_SAT_SPOKEN=$(LC_ALL=C date -d "$NEXT_SAT" '+%A %-d %B')
+P=$(centre_desc "$NEXT_SUN_SPOKEN") || { log "WALKTHROUGH: Month has no $NEXT_SUN_SPOKEN"; shot cal4-month-nosun 0.5; exit 1; }
+set -- $P; $T adb shell input tap "$1" "$2"
+shot cal4-month-sunday 1.5
+row_of() { tr '>' '\n' < "$(cal_xml "$1")" | grep -F 'text="Plan the lesson week"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' '; }
+ROW=$(row_of cal4-month-sunday); set -- $ROW
+# The day's list sits under the six weeks: on a short screen it is brought up above the tab bar first.
+if [ -z "${4:-}" ] || [ "$(( ($2 + $4) / 2 ))" -gt "$(( H - $(dp 120) ))" ]; then
+  cal_drag "$(( W / 2 ))" "$(( H * 70 / 100 ))" "$(( W / 2 ))" "$(( H * 70 / 100 - $(dp 160) ))"; sleep 1
+  shot cal4-month-list-up 1.5; ROW=$(row_of cal4-month-list-up); set -- $ROW
+fi
+[ -n "${4:-}" ] || { log "WALKTHROUGH: the Sunday's list has no Plan the lesson week"; exit 1; }
+CX=$(( ($1 + $3) / 2 )); CY=$(( ($2 + $4) / 2 ))
+P=$(centre_desc "$NEXT_SAT_SPOKEN") || { log "WALKTHROUGH: Month has no $NEXT_SAT_SPOKEN"; exit 1; }
+set -- $P; SX=$1; SY=$2
+log "   drag the row ($CX,$CY) onto $NEXT_SAT_SPOKEN ($SX,$SY)"
+$T adb shell input motionevent DOWN "$CX" "$CY"
+sleep 1.2
+for k in 1 2 3 4 5 6 7 8; do $T adb shell input motionevent MOVE $(( CX + (SX - CX) * k / 8 )) $(( CY + (SY - CY) * k / 8 )); done
+sleep 0.4; $T adb shell input motionevent MOVE "$SX" "$SY"
+$T adb shell screencap -p /sdcard/drag.png; timeout 20 adb pull /sdcard/drag.png "$OUT/$(printf '%02d' $((N + 1)))-cal4-month-dragging.png" > /dev/null 2>&1; N=$((N + 1)); log "$(printf '%02d' $N)-cal4-month-dragging"
+$T adb shell input motionevent UP "$SX" "$SY"
+WANT="PATCH /api/v1/tasks/t_cal1 {\"due\":\"$NEXT_SAT 10:00-11:00\"} auth=True"
+wait_cal "$WANT" 20 || { log "WALKTHROUGH: the Month drop never reached pagel.uz as $WANT"; grep 't_cal1' "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; shot cal4-month-dropped 0.5; exit 1; }
+shot cal4-month-dropped 2
+[ "$(grep -cF '"event":"cal_move"' "$FAKE_LOG")" -ge 3 ] || log "   (WARN: fewer than 3 cal_move counts: $(grep -cF '"event":"cal_move"' "$FAKE_LOG"))"
+log "   pagel.uz got the Month drop with its time kept: $NEXT_SAT 10:00-11:00"
 $T adb logcat -d > "$OUT/logcat-cal4.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-cal4.txt" && { log "WALKTHROUGH: CRASH in the calendar drag (see logcat-cal4.txt)"; exit 1; }
 pick_view List 0 && shot calendar-list 1.5
@@ -1073,7 +1128,7 @@ log "   finished: pagel.uz has finished=true and the shipped line"
 log "-- KPI: the app counted opens and the first tick; Your week shows in More"
 wait_log 'POST /api/v1/kpi {"day":"' 10 || { log "WALKTHROUGH: no app-open count reached pagel.uz"; exit 1; }
 wait_log '"first_tick_ms":' 10 || { log "WALKTHROUGH: no open-to-first-tick count reached pagel.uz"; exit 1; }
-grep -E 'POST /api/v1/kpi' "$FAKE_LOG" | grep -vqE '\{"day":"[0-9-]+","(open":true|first_tick_ms":[0-9]+)\}' && { log "WALKTHROUGH: a KPI post carries more than counts"; exit 1; }
+grep -E 'POST /api/v1/kpi' "$FAKE_LOG" | grep -vqE '\{"day":"[0-9-]+","(open":true|first_tick_ms":[0-9]+|event":"cal_move")\}' && { log "WALKTHROUGH: a KPI post carries more than counts"; exit 1; }
 for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
 for k in 1 2 3; do $T adb shell input swipe 160 450 160 120 400; sleep 1; done
 shot core-week 2

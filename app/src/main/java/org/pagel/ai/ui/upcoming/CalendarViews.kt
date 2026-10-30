@@ -1,6 +1,17 @@
 package org.pagel.ai.ui.upcoming
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
@@ -39,6 +50,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -143,10 +155,94 @@ private val SPOKEN = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
 private val TASHKENT: ZoneId = ZoneId.of("Asia/Tashkent")
 private val Hair = 2.dp
 
-/** A project's own colour (its gradient tile's first stop, rules/gradient-project-icons). */
-fun projectColor(ui: UpcomingUi, project: String): Color = TileColors.stops(project, ui.projects[project]?.color).first
+/**
+ * A project's own colour (its gradient tile's first stop, rules/gradient-project-icons), as the calendar paints it: a
+ * warm red (ABABIL's "red", Me's coral) read as an alarm in Month's bars, so here only it is softened (see [calendarSafe]).
+ */
+fun projectColor(ui: UpcomingUi, project: String): Color = calendarSafe(TileColors.stops(project, ui.projects[project]?.color).first)
+
+/** OKLCH hues the calendar never paints at full strength: red, from pink (340°) round to coral (40°). */
+internal fun isWarmRed(hue: Double): Boolean = hue < 40.0 || hue > 340.0
+
+/**
+ * Checker round 2 #2 (never alarm red): a warm-red fill keeps its hue but its chroma drops to 0.07 and its lightness
+ * rises to 0.80, so it reads rose or peach. Every other colour is kept; the saved colour itself never changes.
+ */
+internal fun calendarSafe(c: Color): Color {
+    fun lin(v: Float) = if (v <= 0.04045f) v / 12.92 else Math.pow((v + 0.055) / 1.055, 2.4)
+    val r = lin(c.red); val g = lin(c.green); val b = lin(c.blue)
+    val l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+    val m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+    val s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+    val ll = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
+    val aa = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+    val bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    val chroma = Math.hypot(aa, bb)
+    val hue = (Math.toDegrees(Math.atan2(bb, aa)) + 360.0) % 360.0
+    if (chroma < 0.02 || !isWarmRed(hue)) return c
+    return TileColors.oklch(maxOf(ll, 0.80), minOf(chroma, 0.07), hue).copy(alpha = c.alpha)
+}
 
 private fun titleOf(t: TaskEntity) = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
+
+/** The test tag on every word-safe calendar title (a block's, the ghost's, an all-day chip's). */
+const val CAL_TITLE = "cal-title"
+
+/** What a title shows in its box: whole words only, at [sp], on [lines] lines. */
+internal data class TitleFit(val text: String, val sp: Float, val lines: Int)
+
+private fun sized(style: TextStyle, sp: Float, ratio: Float) =
+    style.copy(fontSize = sp.sp, lineHeight = (sp * ratio).sp, hyphens = Hyphens.None)
+
+/**
+ * Checker round 2 #1 ("Recor", "Gy"): a calendar title breaks only between words. The whole title first, shrinking from
+ * [maxSp] to [minSp]; then fewer words (the first ones, whole); last, the first word alone, made small enough to fit.
+ * Never a word cut through. [w], [h] are the box in px.
+ */
+internal fun fitWords(m: TextMeasurer, text: String, style: TextStyle, w: Int, h: Int, maxSp: Float, minSp: Float, ratio: Float, maxLines: Int, d: Density): TitleFit {
+    val words = text.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
+    if (words.isEmpty() || w <= 0) return TitleFit(text, maxSp, 1)
+    fun measure(t: String, sp: Float) = m.measure(AnnotatedString(t), sized(style, sp, ratio), softWrap = true, constraints = Constraints(maxWidth = w), density = d)
+    fun lines(t: String, sp: Float, last: Boolean): Int? {
+        val lineH = with(d) { (sp * ratio).sp.toPx() }
+        if (lineH > h && !last) return null
+        val room = minOf(maxLines, (h / lineH).toInt()).coerceAtLeast(1)
+        val r = measure(t, sp)
+        if (r.lineCount > room || (r.size.height > h && !last)) return null
+        for (i in 0 until r.lineCount) {
+            if (r.getLineRight(i) > w + 0.5f) return null
+            val end = r.getLineEnd(i)
+            if (end in 1 until t.length && !t[end - 1].isWhitespace() && !t[end].isWhitespace()) return null
+        }
+        return r.lineCount
+    }
+    val sizes = generateSequence(maxSp) { it - 0.5f }.takeWhile { it >= minSp - 0.01f }.toList()
+    for (n in words.size downTo 1) {
+        val t = words.take(n).joinToString(" ")
+        for ((k, sp) in sizes.withIndex()) lines(t, sp, last = k == sizes.lastIndex)?.let { return TitleFit(t, sp, it) }
+    }
+    // One word wider than the box even at [minSp]: that word, whole, as small as it must be (never under 6 dp).
+    val first = words[0]
+    val wide = m.measure(AnnotatedString(first), sized(style, minSp, ratio), softWrap = false, maxLines = 1, density = d).size.width.coerceAtLeast(1)
+    val sp = maxOf(minSp * w / wide * 0.97f, 6f / d.fontScale)
+    return TitleFit(first, sp, 1)
+}
+
+/**
+ * A calendar title in the box it is given: whole words only ([fitWords]), clipped never with "…". Tagged [CAL_TITLE] so
+ * the screenshot tests can read every line of it.
+ */
+@Composable
+internal fun WordSafeTitle(text: String, style: TextStyle, maxSp: Float, maxLines: Int, modifier: Modifier = Modifier, ratio: Float = 1.2f, minSp: Float = 8f, alignment: Alignment = Alignment.TopStart) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier, contentAlignment = alignment) {
+        val w = constraints.maxWidth - 1
+        val h = if (constraints.hasBoundedHeight) constraints.maxHeight else Int.MAX_VALUE
+        val fit = remember(text, w, h, density, maxSp, maxLines, style) { fitWords(measurer, text, style, w, h, maxSp, minSp, ratio, maxLines, density) }
+        Text(fit.text, style = sized(style, fit.sp, ratio), maxLines = fit.lines, overflow = TextOverflow.Clip, modifier = Modifier.testTag(CAL_TITLE))
+    }
+}
 
 /**
  * The pinned top, liquid glass as the tab bar: vibrancy, an 8 dp blur and a lens over the screen's own layer, a rim light
@@ -388,8 +484,8 @@ fun AllDayLine(pager: PagerState, view: CalView, ui: UpcomingUi, open: Boolean, 
                             open || tasks.size == 1 -> { for (t in tasks) key(t.id) { AllDayChip(titleOf(t), projectColor(ui, t.project), titleOf(t)) { onOpen(t.id) } } }
                             else -> AllDayChip(
                                 // "+N" says a count, not a project: mint, never a project's warm tint read as an alarm.
-                                if (wide) "${titleOf(tasks[0])} +${tasks.size - 1}" else "+${tasks.size}", if (wide) projectColor(ui, tasks[0].project) else Glass.Primary,
-                                "${tasks.size} all-day tasks on ${d.format(SPOKEN)}, show all", onClick = onToggle,
+                                if (wide) titleOf(tasks[0]) else "+${tasks.size}", if (wide) projectColor(ui, tasks[0].project) else Glass.Primary,
+                                "${tasks.size} all-day tasks on ${d.format(SPOKEN)}, show all", count = if (wide) "+${tasks.size - 1}" else null, onClick = onToggle,
                             )
                         }
                     }
@@ -408,7 +504,7 @@ fun AllDayLine(pager: PagerState, view: CalView, ui: UpcomingUi, open: Boolean, 
 }
 
 @Composable
-private fun AllDayChip(title: String, color: Color, spoken: String, onClick: () -> Unit) {
+private fun AllDayChip(title: String, color: Color, spoken: String, count: String? = null, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(Space.sm)
     Box(
@@ -419,14 +515,23 @@ private fun AllDayChip(title: String, color: Color, spoken: String, onClick: () 
             .padding(horizontal = Space.xs),
         contentAlignment = Alignment.CenterStart,
     ) {
-        // Clipped, never "…": in a 40 dp column "Pick" says more than "P…".
-        Text(title, style = MaterialTheme.typography.labelSmall, color = Glass.Ink, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+        // Whole words only (checker round 2 #4: "Revie"): it shrinks, then keeps the first words; a count stays whole beside it.
+        val small = MaterialTheme.typography.labelSmall
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            WordSafeTitle(title, small.copy(color = Glass.Ink), maxSp = small.fontSize.value, maxLines = 1, modifier = Modifier.weight(1f).fillMaxHeight(),
+                alignment = Alignment.CenterStart)
+            if (count != null) Text(count, style = small, color = Glass.Ink, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = Hair))
+        }
     }
 }
 
-/** A block held on the timeline: the lift (pure, [BlockDrag]), the finger, and where the ghost is drawn now. */
+/**
+ * A block held on the timeline: the lift (pure, [BlockDrag]), the finger, and where the ghost is drawn now ([ghost] in
+ * the timeline's space, [origin] = the timeline's place on screen: the ghost is drawn by the screen, over its glass layer).
+ */
 @Stable
-private class Held(val drag: BlockDrag, val color: Color, val title: String, val liftY: Float) {
+internal class Held(val drag: BlockDrag, val color: Color, val title: String, val liftY: Float) {
+    var origin = Offset.Zero
     var finger = Offset.Zero
     var slot by mutableStateOf<Slot?>(null)
     var ghost by mutableStateOf(Rect.Zero)
@@ -444,9 +549,13 @@ private class Held(val drag: BlockDrag, val color: Color, val title: String, val
  * where the grid is at that moment, then Room first, one PATCH, Undo. Habits and Namoz stay where they are.
  */
 @Composable
-fun Timeline(
+internal fun Timeline(
     view: CalView, pager: PagerState, ui: UpcomingUi, scroll: ScrollState, top: Dp, bottom: Dp,
     onOpen: (String) -> Unit, onMove: (String, String) -> Unit,
+    /** The held block, read by the screen, which draws its glass ghost ([TimelineGhost]) outside the backdrop's layer. */
+    holding: MutableState<Held?> = remember { mutableStateOf<Held?>(null) },
+    /** Where the glass top ends: nothing of the grid is drawn above it (checker round 2 #5). */
+    clipTop: Dp = 0.dp,
 ) {
     val dayView = view == CalView.DAY
     val hourH = hourHeight(view)
@@ -463,7 +572,8 @@ fun Timeline(
     val move by rememberUpdatedState(onMove)
     // [0] this box, [1] the columns (the pager): read at the moment of need, never kept from the lift.
     val at = remember { arrayOfNulls<LayoutCoordinates>(2) }
-    var held by remember { mutableStateOf<Held?>(null) }
+    var held by holding
+    val clipPx = with(density) { clipTop.toPx() }
     var hoursAt by remember { mutableIntStateOf(-1) }
 
     fun grid(): Grid? {
@@ -476,6 +586,7 @@ fun Timeline(
 
     fun place(h: Held) {
         val g = grid() ?: return
+        at[0]?.takeIf { it.isAttached }?.let { h.origin = it.positionInRoot() }
         val s = h.drag.slot(g, h.finger.x, h.finger.y) ?: return
         if (s != h.slot) { if (h.slot != null) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); h.slot = s }
         val colW = g.width / g.days.size
@@ -540,6 +651,8 @@ fun Timeline(
                 val long = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
                 val g = grid() ?: return@awaitEachGesture
                 val p = long.position
+                // A block under the glass top is not drawn there, so it is not lifted there either.
+                if (p.y < clipPx) return@awaitEachGesture
                 val colW = g.width / g.days.size
                 val ci = ((p.x - g.left) / colW).toInt()
                 if (p.x < g.left || ci !in g.days.indices) return@awaitEachGesture
@@ -574,7 +687,9 @@ fun Timeline(
             }
         },
     ) {
-        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+        // The grid is drawn only below the glass top: a block never peeks out above it, and today's mint column is not
+        // blurred into a dark band under the dates (checker round 2 #5).
+        Column(Modifier.fillMaxSize().drawWithContent { clipRect(top = clipPx) { this@drawWithContent.drawContent() } }.verticalScroll(scroll)) {
             Spacer(Modifier.height(top))
             Box(Modifier.fillMaxWidth().height(hourH * 24).onPlaced { hoursAt = it.positionInParent().y.toInt() }) {
                 // The hour lines, very faint, and nothing between the days (Boss: "keep it clean").
@@ -603,7 +718,6 @@ fun Timeline(
             }
             Spacer(Modifier.height(bottom))
         }
-        held?.let { Ghost(it, hourPx) }
     }
 }
 
@@ -646,26 +760,24 @@ private fun BlockView(b: Block, ui: UpcomingUi, hourH: Dp, colW: Int, held: Bool
             .semantics(mergeDescendants = true) { contentDescription = "${titleOf(b.task)}, $time" }
             .padding(horizontal = Space.xs, vertical = Hair),
     ) {
-        // A week column is ~40 dp: 10 sp on 12 sp lines gives a half-hour block two lines ("Record the"), not "Recor".
-        // At 1.5x a half-hour block holds one line: the words shrink to the block, never cut through at the bottom ("Gvm").
+        // A week column is ~40 dp: 10 sp on 12 sp lines gives a half-hour block "Record the", and a word that does not
+        // fit shrinks (to 8 sp) or waits for the next line, never cut through ("Recor", checker round 2 #1).
         val narrow = laneW < 60.dp
-        val size = if (narrow) 10f else 12.5f
-        val lineSp = if (narrow) 12f else 15f
-        val room = height.value - 4f
-        val lineDp = lineSp * density.fontScale
-        val lines = (room / lineDp).toInt().coerceIn(1, 2)
-        val k = if (lines == 1 && lineDp > room) room / lineDp else 1f
-        val style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = (size * k).sp, lineHeight = (lineSp * k).sp)
-        Text(titleOf(b.task), style = style, color = Glass.Ink, maxLines = lines, overflow = TextOverflow.Clip)
+        val style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, color = Glass.Ink)
+        WordSafeTitle(titleOf(b.task), style, maxSp = if (narrow) 10f else 12.5f, maxLines = 2, modifier = Modifier.fillMaxWidth().weight(1f, fill = false))
         if (height > 40.dp && laneW > 56.dp) Text(time, style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false)
     }
 }
 
 private fun timeText(b: Block): String = if (b.task.due?.drop(11)?.contains('-') == true) "${hhmm(b.start)}–${hhmm(b.end)}" else hhmm(b.start)
 
-/** The held block, lifted on glass: on the slot it will land on, its new time said in it. */
+/**
+ * The held block, lifted on liquid glass as the tab bar's (checker round 2 #5: it was white 92 % and a shadow): the
+ * screen's own layer bent by a small lens and blurred, a rim light, the project's tint, on the slot it will land on,
+ * its new time said in it. [shift] = the timeline's place in the screen box that draws it.
+ */
 @Composable
-private fun Ghost(h: Held, hourPx: Float) {
+internal fun TimelineGhost(h: Held, backdrop: Backdrop, shift: Offset) {
     val density = LocalDensity.current
     val r = h.ghost
     if (r == Rect.Zero) return
@@ -678,19 +790,30 @@ private fun Ghost(h: Held, hourPx: Float) {
         else -> hhmm(s.minute)
     }
     val shape = RoundedCornerShape(12.dp)
+    val tint = h.color
+    val surface = if (!GlassStage.on) Modifier.background(Color.White.copy(alpha = 0.92f), shape).background(tint.copy(alpha = 0.30f), shape) else Modifier.drawBackdrop(
+        backdrop = backdrop,
+        shape = { RoundedRectangle(12.dp) },
+        effects = { vibrancy(); blur(4f.dp.toPx()); lens(8f.dp.toPx(), 12f.dp.toPx()) },
+        highlight = { Highlight.Default },
+        shadow = { Shadow(alpha = 0.5f) },
+        onDrawSurface = { drawRect(Color.White.copy(alpha = 0.45f)); drawRect(tint.copy(alpha = 0.26f)) },
+    )
     Column(
-        Modifier.offset { IntOffset(r.left.roundToInt(), r.top.roundToInt()) }
+        Modifier.offset { IntOffset((r.left + shift.x).roundToInt(), (r.top + shift.y).roundToInt()) }
             // At least two lines tall: the new time is the point of the ghost (a half-hour block cut it in half).
             .width(with(density) { r.width.toDp() }).height(maxOf(with(density) { r.height.toDp() }, GHOST_MIN))
-            .graphicsLayer { scaleX = 1.04f; scaleY = 1.04f; shadowElevation = 14.dp.toPx(); this.shape = shape; clip = true }
-            .background(Color.White.copy(alpha = 0.92f)).background(h.color.copy(alpha = 0.30f))
+            .then(surface)
             .border(1.25.dp, PaneRim, shape)
-            .clearAndSetSemantics { contentDescription = "Moving ${h.title} to $time" }
+            // Merged, not cleared: the title inside keeps its own node, so the tests can read that it is whole words.
+            .semantics(mergeDescendants = true) { contentDescription = "Moving ${h.title} to $time" }
             .padding(horizontal = Space.xs, vertical = Hair),
     ) {
-        Text(h.title, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Clip)
+        val narrow = r.width < with(density) { 56.dp.toPx() }
+        WordSafeTitle(h.title, MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, color = Glass.Ink),
+            maxSp = MaterialTheme.typography.labelSmall.fontSize.value, maxLines = 2, modifier = Modifier.fillMaxWidth().weight(1f, fill = false))
         // "14:30" whole in a 37 dp week column (CI walk 82: "14:3").
-        Text(time, style = if (r.width < with(density) { 56.dp.toPx() }) Glass.NumberText.copy(fontSize = 9.sp) else Glass.NumberText,
+        Text(time, style = if (narrow) Glass.NumberText.copy(fontSize = 9.sp) else Glass.NumberText,
             color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
     }
 }

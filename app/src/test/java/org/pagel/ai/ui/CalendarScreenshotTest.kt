@@ -12,7 +12,14 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -24,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -34,6 +43,7 @@ import org.pagel.ai.data.upcoming.CalView
 import org.pagel.ai.data.upcoming.upcomingView
 import org.pagel.ai.ui.glass.AuroraBackground
 import org.pagel.ai.ui.glass.GlassTheme
+import org.pagel.ai.ui.upcoming.CAL_TITLE
 import org.pagel.ai.ui.upcoming.UpcomingScreen
 import org.pagel.ai.ui.upcoming.UpcomingUi
 import org.robolectric.annotation.Config
@@ -92,6 +102,48 @@ class CalendarScreenshotTest {
         onMoveTo = { id, due -> moved = id to due }, onMove = { id, day -> movedDay = id to day },
     )
 
+    /**
+     * Checker round 2 #1: every calendar title on screen (blocks, the ghost, all-day chips) is whole words of its task's
+     * title, every line ends between two words, and nothing spills out of its box ("Recor", "Gy", "Revie" were cut).
+     */
+    private fun assertNoBrokenWord() {
+        val titles = open.map { it.text }
+        val nodes = compose.onAllNodesWithTag(CAL_TITLE, useUnmergedTree = true).fetchSemanticsNodes()
+        assertTrue("no calendar title on screen", nodes.isNotEmpty())
+        for (n in nodes) {
+            val shown = n.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString("") { it.text }
+            assertTrue("\"$shown\" is not whole words of a title", shown.startsWith("+") || titles.any { it == shown || it.startsWith("$shown ") })
+            val results = mutableListOf<TextLayoutResult>()
+            n.config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+            val r = results.single()
+            assertFalse("\"$shown\" spills out of its box", r.hasVisualOverflow)
+            for (i in 0 until r.lineCount) {
+                val end = r.getLineEnd(i)
+                assertTrue("\"$shown\" breaks inside a word on line ${i + 1}", end >= shown.length || shown[end - 1].isWhitespace() || shown[end].isWhitespace())
+            }
+        }
+    }
+
+    /**
+     * Checker round 2 #2 (never alarm red): no pixel is a saturated warm red. Alarm red = HSV hue at most 20° or at least
+     * 340°, saturation at least 0.40, value at least 0.55 (ABABIL's bar was #FF7E76: hue 3°, saturation 0.54).
+     */
+    private fun assertNoAlarmRed(what: String) {
+        val map = compose.onRoot().captureToImage().toPixelMap()
+        var red = 0
+        for (y in 0 until map.height) for (x in 0 until map.width) {
+            val c = map[x, y]
+            val max = maxOf(c.red, c.green, c.blue)
+            val min = minOf(c.red, c.green, c.blue)
+            val d = max - min
+            if (max < 0.55f || d / max < 0.40f || max != c.red) continue
+            var hue = 60f * ((c.green - c.blue) / d)
+            if (hue < 0f) hue += 360f
+            if (hue <= 20f || hue >= 340f) red++
+        }
+        assertEquals("alarm-red pixels in $what", 0, red)
+    }
+
     private fun px(dp: Float) = dp * compose.onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
     private fun centre(desc: String) = compose.onNodeWithContentDescription(desc).fetchSemanticsNode().boundsInRoot.center
 
@@ -107,6 +159,8 @@ class CalendarScreenshotTest {
     @Test fun theWeekIsMondayToSundayAndClean() {
         show(CalView.WEEK)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-360x800.png")
+        assertNoBrokenWord()
+        assertNoAlarmRed("the Week")
         // The dates once, on the columns: Monday 26 October to Sunday 1 November (the next week waits off screen), no strip with dots.
         compose.onNodeWithContentDescription("Monday 26 October").assertIsDisplayed()
         compose.onNodeWithContentDescription("Sunday 1 November").assertIsDisplayed()
@@ -121,6 +175,7 @@ class CalendarScreenshotTest {
     @Test fun theWeekAtLargeFont() {
         show(CalView.WEEK, 1.5f)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-360x800-font-1.5.png")
+        assertNoBrokenWord()
         compose.onNodeWithContentDescription("Wednesday 28 October").assertIsDisplayed()
         compose.onNodeWithContentDescription("Change view").assertIsDisplayed()
     }
@@ -128,6 +183,7 @@ class CalendarScreenshotTest {
     @Test @Config(qualifiers = "w320dp-h640dp-mdpi") fun theWeekOnTheSmallScreen() {
         show(CalView.WEEK, 1.5f)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-320x640-font-1.5.png")
+        assertNoBrokenWord()
         compose.onNodeWithContentDescription("Sunday 1 November").assertIsDisplayed()
     }
 
@@ -140,6 +196,7 @@ class CalendarScreenshotTest {
         block.hold(Offset(dx, px(52f)), lift = false)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-mid-drag-ghost.png")
         compose.onNodeWithContentDescription("Moving Record the fractions lesson to 16:00").assertIsDisplayed()
+        assertNoBrokenWord()
         block.performTouchInput { up() }
         compose.waitForIdle()
         assertEquals("u3" to "2026-10-30 16:00", moved)
@@ -190,6 +247,7 @@ class CalendarScreenshotTest {
     @Test fun aRowDroppedOnADayOfTheMonthMovesThere() {
         show(CalView.MONTH)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-month-360x800.png")
+        assertNoAlarmRed("the Month")
         val row = compose.onAllNodesWithText("Record the fractions lesson")[0]
         val from = row.fetchSemanticsNode().boundsInRoot.center
         val to = centre("Saturday 31 October, 1 task")
@@ -201,6 +259,7 @@ class CalendarScreenshotTest {
     @Test fun theMonthAtLargeFont() {
         show(CalView.MONTH, 1.5f)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-month-360x800-font-1.5.png")
+        assertNoAlarmRed("the Month at 1.5x")
         compose.onNodeWithContentDescription("Next month").assertIsDisplayed()
     }
 }
