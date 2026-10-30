@@ -13,6 +13,12 @@ import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.and
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.junit4.ComposeContentTestRule
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.toPixelMap
@@ -49,6 +55,21 @@ import org.pagel.ai.ui.upcoming.UpcomingUi
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.LocalDate
+
+/**
+ * The timeline scrolled so the node [desc] sits 60 dp under the grid's top. performScrollTo only scrolls the nearest
+ * scroll parent (the sideways pager), so the hours stayed where the clock put them: at Tashkent's midnight the 15:00
+ * block was off screen and every drag test pressed on nothing (CI 41112608488).
+ */
+internal fun ComposeContentTestRule.bringTimelineTo(desc: String) {
+    val scroller = onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and hasAnyDescendant(hasContentDescription(desc)))
+    val top = scroller.fetchSemanticsNode().boundsInRoot.top
+    val y = onNodeWithContentDescription(desc).fetchSemanticsNode().boundsInRoot.top
+    val margin = 60f * onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
+    scroller.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, y - top - margin) }
+    mainClock.advanceTimeBy(1_000)
+    waitForIdle()
+}
 
 /**
  * Core round 4 · Builder B: the calendar Monday to Sunday, Google-clean (hour lines only, no day lines, soft blocks),
@@ -119,7 +140,10 @@ class CalendarScreenshotTest {
             if (shown.isEmpty()) continue
             val why = "in ${n.boundsInRoot}, box ${r.layoutInput.constraints}, text ${r.size}, ${r.lineCount} lines, " +
                 "wide ${r.didOverflowWidth}, tall ${r.didOverflowHeight}, ${r.layoutInput.style.fontSize}"
-            assertFalse("\"$shown\" spills out of its box ($why)", r.hasVisualOverflow)
+            // Its own checks, not hasVisualOverflow: a node's layout read through semantics says "too wide" for a
+            // 69 px word in a 100 px box (CI 41114492909).
+            assertFalse("\"$shown\" is taller than its box ($why)", r.didOverflowHeight)
+            for (i in 0 until r.lineCount) assertTrue("\"$shown\" is wider than its box ($why)", r.getLineRight(i) <= r.layoutInput.constraints.maxWidth + 0.5f)
             for (i in 0 until r.lineCount) {
                 val end = r.getLineEnd(i)
                 assertTrue("\"$shown\" breaks inside a word on line ${i + 1}", end >= shown.length || shown[end - 1].isWhitespace() || shown[end].isWhitespace())
@@ -161,8 +185,7 @@ class CalendarScreenshotTest {
 
     @Test fun theWeekIsMondayToSundayAndClean() {
         show(CalView.WEEK)
-        compose.onNodeWithContentDescription("Record the fractions lesson, 15:00").performScrollTo()
-        compose.mainClock.advanceTimeBy(300)
+        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-360x800.png")
         assertNoBrokenWord()
         assertNoAlarmRed("the Week")
@@ -179,8 +202,7 @@ class CalendarScreenshotTest {
 
     @Test fun theWeekAtLargeFont() {
         show(CalView.WEEK, 1.5f)
-        compose.onNodeWithContentDescription("Record the fractions lesson, 15:00").performScrollTo()
-        compose.mainClock.advanceTimeBy(300)
+        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-360x800-font-1.5.png")
         assertNoBrokenWord()
         compose.onNodeWithContentDescription("Wednesday 28 October").assertIsDisplayed()
@@ -189,8 +211,7 @@ class CalendarScreenshotTest {
 
     @Test @Config(qualifiers = "w320dp-h640dp-mdpi") fun theWeekOnTheSmallScreen() {
         show(CalView.WEEK, 1.5f)
-        compose.onNodeWithContentDescription("Record the fractions lesson, 15:00").performScrollTo()
-        compose.mainClock.advanceTimeBy(300)
+        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-320x640-font-1.5.png")
         assertNoBrokenWord()
         compose.onNodeWithContentDescription("Sunday 1 November").assertIsDisplayed()
@@ -199,8 +220,8 @@ class CalendarScreenshotTest {
     /** Wednesday 15:00 long-pressed and carried two columns right and an hour down: Friday 16:00, read at the drop. */
     @Test fun aBlockDraggedToAnotherDayAndTimeMovesThere() {
         show(CalView.WEEK)
+        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         val block = compose.onNodeWithContentDescription("Record the fractions lesson, 15:00")
-        block.performScrollTo()
         val dx = centre("Column Friday 30 October").x - centre("Column Wednesday 28 October").x
         block.hold(Offset(dx, px(52f)), lift = false)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-mid-drag-ghost.png")
@@ -216,7 +237,7 @@ class CalendarScreenshotTest {
         show(CalView.DAY)
         compose.onNodeWithContentDescription("Change view").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-day-360x800.png")
-        compose.onNodeWithContentDescription("Record the fractions lesson, 15:00").performScrollTo()
+        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         val block = compose.onNodeWithContentDescription("Record the fractions lesson, 15:00")
         val h = block.fetchSemanticsNode().boundsInRoot.height
         block.hold(Offset(0f, px(60f)), at = Offset(block.fetchSemanticsNode().size.width / 2f, h - px(4f)))

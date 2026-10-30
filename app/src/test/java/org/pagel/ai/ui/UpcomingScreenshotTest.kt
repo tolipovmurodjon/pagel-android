@@ -18,7 +18,6 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.performClick
@@ -280,8 +279,8 @@ class UpcomingScreenshotTest {
         var moved: Pair<String, String>? = null
         show { UpcomingScreen(upcoming(), pad, initialView = org.pagel.ai.data.upcoming.CalView.DAY, onMoveTo = { id, due -> moved = id to due }) }
         compose.mainClock.advanceTimeBy(500)
+        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         val block = compose.onNodeWithContentDescription("Record the fractions lesson, 15:00")
-        block.performScrollTo()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/calendar-day-before-drag.png")
         val hour = 60f * compose.onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
         block.performTouchInput {
