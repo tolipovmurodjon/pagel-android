@@ -314,6 +314,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         }
                     }
                     entry<CompletedListRoute> { CompletedScreenRoute(padding, reselect) }
+                    entry<BlackHoleLabRoute> { org.pagel.ai.ui.motion.blackhole.BlackHoleLabScreen(padding) }
                     entry<org.pagel.ai.ui.compass.CompassRoute> { org.pagel.ai.ui.compass.CompassRouteScreen(padding) }
                     entry<GuideRoute> { r ->
                         GuideScreen(r.card, padding) { to ->
@@ -366,7 +367,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             }
         }
         val pageTitle = when (top) {
-            ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
+            ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"; BlackHoleLabRoute -> "Lab"
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
             org.pagel.ai.ui.compass.CompassRoute -> "Compass"; is GuideRoute -> "How it works"
             is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"; NamozRoute -> "Namoz"; SortedTodayRoute -> "Sorted today"; is NotesRoute -> "Notes"
@@ -559,6 +560,7 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 MoreRow(TabIcons.Folder, "Projects", Glass.Primary, onOpenProjects)
                 MoreRow(TabIcons.Globe, "pagel.uz", Color(0xFF246FE0), onOpenWeb)
                 MoreRow(TabIcons.Phone, "Phone", Color(0xFF692FC2), onOpenPhone)
+                MoreRow(TabIcons.Zap, "Lab", Color(0xFF3F3D56)) { onOpenRitual(BlackHoleLabRoute) }
                 MoreRow(TabIcons.LogOut, "Disconnect", Glass.Risk, onDisconnect)
             }
         }

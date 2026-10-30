@@ -5,6 +5,8 @@
 [versions]
 # Jetpack Glance stable (Google Maven, 2026-10-27): the "Today's 3" home-screen widget.
 glance = "1.2.0"
+# JankStats (Google Maven, 1.0.0 stable 2025-10): the black-hole lab counts its janky frames on the phone.
+metricsPerformance = "1.0.0"
 agp = "9.3.3"
 kotlin = "2.4.21"
 ksp = "2.3.12"
@@ -48,6 +50,7 @@ androidxTestCore = "1.7.0"
 [libraries]
 androidx-glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
 androidx-glance-material3 = { group = "androidx.glance", name = "glance-material3", version.ref = "glance" }
+androidx-metrics-performance = { group = "androidx.metrics", name = "metrics-performance", version.ref = "metricsPerformance" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }

@@ -1,0 +1,138 @@
+package org.pagel.ai.ui.motion.blackhole
+
+import kotlin.math.PI
+import kotlin.math.exp
+import kotlin.math.max
+import kotlin.math.sin
+
+/*
+ * The black hole delete, our own Kotlin. The numbers (phases, pull, bulge) were learned from riveauxmia's
+ * telegram-black-hole-delete (iOS, no licence: read, never copied; D:\Brain\inbox\2026-10-30-telegram-designers.md).
+ * Everything in this file is plain maths: no Android, so the unit tests check it on the JVM.
+ */
+
+/** The effect's sizes, in one place so Boss can tune them on his A05s. */
+object BlackHole {
+    /** The hole's radius when fully open (90 dp across). */
+    const val RADIUS_DP = 45f
+    /** The mesh cell: a 72 x 360 dp row is 6 x 30 cells (iOS uses 6 pt; 12 dp is a quarter of the cells). */
+    const val CELL_DP = 12f
+    /** A list snapshot is kept at 0.75x: it blurs near the hole anyway. */
+    const val SNAPSHOT_SCALE = 0.75f
+    /** The blurred copy is a quarter of the snapshot; the GPU's bilinear upscale is the blur. */
+    const val BLUR_SCALE = 0.25f
+    /** Rows heat and fade from 1.6 r down to the horizon at 1.03 r. */
+    const val HEAT_FROM = 1.6f
+    const val VANISH = 1.03f
+    /** The AGSL ring runs only in a box this many radii wide around the hole, at half resolution. */
+    const val RING_BOX = 6f
+    /** Reduced motion, or the phone could not keep up: the rows fade out in this long instead. */
+    const val FADE_MS = 120L
+    /** How long the swallow takes to engage once it starts (rows near the hole do not start half faded). */
+    const val ENGAGE_S = 0.12f
+}
+
+/**
+ * One length of the effect. Phases: the hole opens (capsule → circle); the swallow starts at 10 % of the opening;
+ * the close starts [closeLead] before the last row is gone; a damped outward bulge; a short tail where the glow fades.
+ */
+data class BlackHoleTiming(
+    val open: Float,
+    val swallow: Float,
+    val closeLead: Float,
+    val close: Float,
+    val bulge: Float,
+    val tail: Float,
+    val swallowStartFraction: Float = 0.10f,
+) {
+    val swallowStart: Float get() = open * swallowStartFraction
+    val swallowEnd: Float get() = swallowStart + swallow
+    val closeStart: Float get() = swallowEnd - closeLead
+    val closeEnd: Float get() = closeStart + close
+    val bulgeEnd: Float get() = closeEnd + bulge
+    val total: Float get() = bulgeEnd + tail
+
+    companion object {
+        /** One task deleted: 1.3 s, short enough to survive a to-do app's many deletes. */
+        val Single = BlackHoleTiming(open = 0.5f, swallow = 0.75f, closeLead = 0.06f, close = 0.22f, bulge = 0.26f, tail = 0.08f)
+        /** "Clear done" / clear all: the full show, ~1.9 s (the source's 0.8 / 1.15 / 0.3 / 0.34 s). */
+        val ClearAll = BlackHoleTiming(open = 0.8f, swallow = 1.15f, closeLead = 0.09f, close = 0.30f, bulge = 0.34f, tail = 0.10f)
+    }
+}
+
+object HoleEase {
+    fun smoothstep(x: Float): Float {
+        val t = x.coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
+    }
+
+    fun outQuint(x: Float): Float {
+        val u = 1f - x.coerceIn(0f, 1f)
+        return 1f - u * u * u * u * u
+    }
+
+    fun outCubic(x: Float): Float {
+        val u = 1f - x.coerceIn(0f, 1f)
+        return 1f - u * u * u
+    }
+
+    /** No jerk at the start, a long tail: the opening's curve. */
+    fun soft(x: Float): Float = outQuint(smoothstep(x)) * 0.6f + smoothstep(smoothstep(x)) * 0.4f
+
+    /** The damped bulge after the close: 0.35 · sin(πu) · e^(−2.2u), outward only. */
+    fun bulge(u: Float): Float = max(0f, 0.35f * sin(PI.toFloat() * u.coerceIn(0f, 1f)) * exp(-2.2f * u.coerceIn(0f, 1f)))
+}
+
+/** The hole at one moment: a capsule [width] x [height] px, its opacity, and how bright the ring is (0..1). */
+data class HoleShape(val width: Float, val height: Float, val alpha: Float, val ring: Float) {
+    /** The radius the ring circles at: the capsule's mean half size. */
+    val ringRadius: Float get() = (width + height) / 4f
+}
+
+private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
+
+/** The hole at time [t] s for radius [r] px: opens as a capsule growing into a circle, closes back, bulges, fades. */
+fun holeAt(t: Float, timing: BlackHoleTiming, r: Float): HoleShape {
+    val o = HoleEase.soft(t / timing.open)
+    val c = if (t <= timing.closeStart) 0f else HoleEase.outCubic((t - timing.closeStart) / timing.close)
+    var w = 2f * r * lerp(0.55f, 1f, o)
+    var h = 2f * r * lerp(0.12f, 1f, o)
+    w = lerp(w, 2f * r * 0.42f, c)
+    h = lerp(h, 2f * r * 0.10f, c)
+    if (t > timing.closeEnd && timing.bulge > 0f) {
+        val b = 1f + HoleEase.bulge((t - timing.closeEnd) / timing.bulge)
+        w *= b
+        h *= b
+    }
+    val fadeIn = HoleEase.smoothstep(t / (timing.open * 0.25f))
+    val fadeOut = if (timing.tail > 0f) 1f - HoleEase.smoothstep((t - timing.bulgeEnd) / timing.tail) else if (t >= timing.bulgeEnd) 0f else 1f
+    return HoleShape(w, h, fadeIn * fadeOut, o * (1f - c))
+}
+
+/** The frame clock's step: a dropped frame continues (at most 1/30 s), it never jumps. */
+object FrameStep {
+    const val MAX = 1f / 30f
+    fun step(rawSeconds: Float): Float = rawSeconds.coerceIn(0f, MAX)
+}
+
+/** Full effect, or the 120 ms fade (reduced motion: the system's animator scale is 0). */
+enum class HoleMode { Full, Fade }
+
+fun chooseMode(animatorScale: Float): HoleMode = if (animatorScale == 0f) HoleMode.Fade else HoleMode.Full
+
+/**
+ * Two missed frame budgets in a row and the effect gives up for the fade (never stutter). The first [warmup] frames
+ * do not count: they carry the shader compile.
+ */
+class BudgetWatch(private val warmup: Int = 2, private val missSeconds: Float = 0.025f) {
+    private var frames = 0
+    private var misses = 0
+
+    /** One frame took [rawSeconds]; true = give up now. */
+    fun frame(rawSeconds: Float): Boolean {
+        frames++
+        if (frames <= warmup) return false
+        misses = if (rawSeconds > missSeconds) misses + 1 else 0
+        return misses >= 2
+    }
+}
