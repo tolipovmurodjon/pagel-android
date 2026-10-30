@@ -52,7 +52,7 @@ class InboxDayTest {
         val op = d.choose("inbox/a.md", "drop", """{"action":"drop","file":"inbox/a.md"}""", "2026-10-28", keep = false, at = now, dayStart = dayStart)
         val getLeft = now + 1_000
         // The choice lands at +2 s: pagel.uz counts 13.
-        d.sent(op, "inbox/a.md", "drop", 13, 2, at = now + 2_000)
+        d.sent(op, "inbox/a.md", "drop", 13, 2, at = now + 2_000, quiet = false)
         assertEquals(13, d.stateOnce()!!.sorted)
         // The GET that left at +1 s comes back with 12: the ring stays at 13.
         val fresh = InboxStateEntity(day = "2026-10-28", goal = 20, sorted = 12, keptToday = 2, cap = 5, minWords = 6, total = 1, fetchedAt = now + 3_000)

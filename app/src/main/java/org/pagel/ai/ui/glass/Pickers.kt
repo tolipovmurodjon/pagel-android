@@ -144,7 +144,7 @@ private fun Divider(start: Int = 50) = HorizontalDivider(Modifier.padding(start 
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DateContent(value: String?, today: LocalDate, onDone: (() -> Unit)? = null, onPick: (String?, Boolean) -> Unit) {
+fun DateContent(value: String?, today: LocalDate, onDone: (() -> Unit)? = null, startMode: String = "", onPick: (String?, Boolean) -> Unit) {
     val haptics = LocalHapticFeedback.current
     val chosenDay = value?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     var month by remember(value?.take(10)) { mutableStateOf(YearMonth.from(chosenDay ?: today)) }
@@ -152,7 +152,7 @@ fun DateContent(value: String?, today: LocalDate, onDone: (() -> Unit)? = null, 
     // A range "10:00-12:00" (round B, Boss: "date deadline like 10:00-12:00, 24 hour"): the wheel sets the start or the end.
     val start = DatePick.startOf(time)
     val end = DatePick.endOf(time)
-    var timeMode by rememberSaveable { mutableStateOf("") } // "" calendar · "wheel" (start) · "end" · "type"
+    var timeMode by rememberSaveable { mutableStateOf(startMode) } // "" calendar · "wheel" (start) · "end" · "type"
     fun pickDay(d: LocalDate) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onPick(DatePick.due(d, time), true) }
     // The end moves with the start, so a range keeps its length and never loses its end silently (round B checker #6).
     fun setTime(t: String?) = onPick(DatePick.due(chosenDay ?: today, DatePick.range(t, if (t != null && end != null && start.isNotEmpty()) DatePick.shiftEnd(start, end, t) else end)), false)
@@ -313,12 +313,12 @@ private fun TypedTime(onPick: (String) -> Unit) {
     }
 }
 
-/** The date picker in its own glass sheet. */
+/** The date picker in its own glass sheet; [startMode] "wheel" opens on the time wheel (the Inbox's Calendar choice). */
 @Composable
-fun DateSheet(value: String?, today: LocalDate, onPick: (String?) -> Unit, onDismiss: () -> Unit) {
+fun DateSheet(value: String?, today: LocalDate, onPick: (String?) -> Unit, onDismiss: () -> Unit, startMode: String = "") {
     GlassSheet(onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            DateContent(value, today, onDone = onDismiss) { due, close -> onPick(due); if (close) onDismiss() }
+            DateContent(value, today, onDone = onDismiss, startMode = startMode) { due, close -> onPick(due); if (close) onDismiss() }
             Spacer(Modifier.height(SheetBottom))
         }
     }

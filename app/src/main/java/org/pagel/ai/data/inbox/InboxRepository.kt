@@ -115,13 +115,19 @@ class InboxRepository(
     suspend fun undo(opId: Long, file: String, choice: Choice): Boolean = dao.undo(opId, file, choice == Choice.KEEP)
 
     /**
-     * The saves older than [days] that pagel.uz holds, for the tidy-up. An older pagel.uz ignores `older_than` and deals
-     * its newest cards, so every card is checked by its own date here and only the really old ones are returned.
+     * One page (at most [OLDER_PAGE]) of the saves older than [days] that pagel.uz holds, for the tidy-up, with its count
+     * of all of them and the whole deck by source. An older pagel.uz ignores `older_than` and deals its newest cards, so
+     * every card is checked by its own date here and only the really old ones are returned.
      */
-    suspend fun older(account: Account, days: Int = OLD_DAYS): Outcome<List<InboxItemEntity>> =
+    suspend fun older(account: Account, days: Int = OLD_DAYS): Outcome<OlderPage> =
         when (val r = api.inbox(account.serverUrl, account.token, OLDER_PAGE, seed = 0, olderThan = days)) {
             is Outcome.Failed -> r
-            is Outcome.Ok -> Outcome.Ok(olderThan(r.value.items.map(::entity), days, tashkentDay(clock())))
+            is Outcome.Ok -> {
+                val items = olderThan(r.value.items.map(::entity), days, tashkentDay(clock()))
+                // older_than_60 counts 60+ days only; for any other cut the page is all that is known.
+                val total = r.value.olderThan60?.takeIf { days == OLD_DAYS } ?: items.size
+                Outcome.Ok(OlderPage(items, maxOf(total, items.size), r.value.bySource))
+            }
         }
 
     /**
@@ -133,12 +139,15 @@ class InboxRepository(
         val rows = items.map { i ->
             val someday = choice == Choice.SOMEDAY
             val line = if (someday) somedayLine(i) else null
-            val body = wire.encodeToString(SortBody.serializer(), SortBody(choice.wire, i.file, line, if (someday) project else null, if (someday) true else null))
+            val body = wire.encodeToString(SortBody.serializer(), SortBody(choice.wire, i.file, line, if (someday) project else null, if (someday) true else null, quiet = true))
             dao.chooseQuiet(i.file, choice.wire, body, now) to i.file
         }
         scheduler.kick()
         return rows
     }
+
+    /** Wakes the outbox now (a bulk's Undo window just ended: its held parts may go). */
+    fun sendNow() = scheduler.kick()
 
     /** Takes the bulk back: how many had not left the phone (all of them inside the Undo window). */
     suspend fun undoMany(rows: List<Pair<Long, String>>): Int = rows.count { (id, file) -> dao.undoQuiet(id, file) }
@@ -158,8 +167,14 @@ class InboxRepository(
     }
 }
 
-/** A Drop and a Someday wait out the 5 s Undo before they leave the phone: both have an Undo toast. */
-internal fun SortBody.holdsForUndo() = action == Choice.DROP.wire || someday == true
+/**
+ * A Drop and every act (Action, Someday, Waiting, Calendar, Project; checker 2026-10-30 #5) wait out the 5 s Undo before
+ * they leave the phone: each has an Undo toast. Note, Learn, Do now and Later go at once.
+ */
+internal fun SortBody.holdsForUndo() = action == Choice.DROP.wire || action == Choice.ACT.wire
+
+/** One page of the old saves for the tidy-up: the cards, how many old saves pagel.uz holds in all, the deck by source. */
+data class OlderPage(val items: List<InboxItemEntity>, val total: Int, val bySource: Map<String, Int> = emptyMap())
 
 /** What sending one Inbox choice ended with. */
 enum class SortStep { SENT, HOLD, SIGNED_OUT, TRY_LATER }
@@ -175,7 +190,7 @@ class InboxSender(private val api: PagelApi, private val dao: InboxDao, private 
         if (body.holdsForUndo() && clock() - op.createdAt < UNDO_WINDOW_MS) return SortStep.HOLD
         dao.countAttempt(op.id)
         return when (val out = api.sort(account.serverUrl, account.token, body)) {
-            is Outcome.Ok -> { dao.sent(op.id, body.file, body.action, out.value.sorted, out.value.keptToday, clock()); SortStep.SENT }
+            is Outcome.Ok -> { dao.sent(op.id, body.file, body.action, out.value.sorted, out.value.keptToday, clock(), body.quiet == true); SortStep.SENT }
             is Outcome.Failed -> when (val e = out.error) {
                 is DataError.Refused -> { dao.refused(op.id, body.file, body.action, e.message); SortStep.SENT }
                 DataError.Unauthorized -> SortStep.SIGNED_OUT

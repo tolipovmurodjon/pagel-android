@@ -79,9 +79,9 @@ class NotesViewModel @Inject constructor(private val where: WhereItWent, private
 }
 
 private val ACTION_WORDS = mapOf(
-    "act" to ("✅" to "Tasks"), "note" to ("📝" to "Notes"), "keep" to ("🧠" to "Kept to learn"), "later" to ("⏳" to "Later"),
+    "act" to ("✅" to "Tasks"), "note" to ("📝" to "Notes"), "keep" to ("🧠" to "Kept to learn"), "later" to ("🕒" to "Later"),
     "drop" to ("🗑️" to "Dropped"), "now" to ("⚡" to "Done now"),
-    "someday" to ("🌙" to "Someday"), "waiting" to ("⏳" to "Waiting for"), "project" to ("📁" to "New projects"), "calendar" to ("📅" to "On the calendar"),
+    "someday" to ("🌙" to "Someday"), "waiting" to ("👤" to "Waiting for"), "project" to ("📁" to "New projects"), "calendar" to ("📅" to "On the calendar"),
 )
 
 /** The choices that land as a task in a project: their row opens that project. */

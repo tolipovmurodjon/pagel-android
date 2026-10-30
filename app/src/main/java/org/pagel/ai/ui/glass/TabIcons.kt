@@ -56,6 +56,9 @@ object TabIcons {
     val Trash = icon("trash-2", "M10 11v6", "M14 11v6", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M3 6h18", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2")
     val Ban = icon("ban", "M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0", "M4.929 4.929 19.07 19.071")
     val Hourglass = icon("hourglass", "M5 22h14", "M5 2h14", "M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22", "M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2")
+    // Waiting for: a person with a clock (someone else has the ball, and a day to check). Drawn from Lucide's user-round
+    // head and shoulders with a small clock in the corner.
+    val UserClock = icon("user-clock", "M5 8a5 5 0 1 0 10 0a5 5 0 1 0 -10 0", "M2 21a8 8 0 0 1 10.4-7.6", "M14 18a4 4 0 1 0 8 0a4 4 0 1 0 -8 0", "M18 16.3V18l1.2 0.8")
     val Moon = icon("moon", "M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401")
     val ArrowUp = icon("arrow-up", "m5 12 7-7 7 7", "M12 19V5")
     // The Inbox's swipe map (2026-10-28): lucide arrow-down/left/right and shuffle, same source as above.

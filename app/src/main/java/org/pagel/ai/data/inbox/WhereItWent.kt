@@ -40,6 +40,9 @@ class WhereItWent(
         return true
     }
 
+    /** A toast's Undo took the choice back: it leaves "Sorted today" too. */
+    suspend fun forget(file: String) = log.unlog(file)
+
     fun notes(project: String): Flow<List<QuickNoteEntity>> = log.notes(project)
     fun noteCounts(): Flow<List<NoteCount>> = log.noteCounts()
 

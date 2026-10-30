@@ -533,7 +533,7 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 MoreRow(TabIcons.Calendar, "Upcoming", Color(0xFFD9620B), onOpenUpcoming)
                 MoreRow(TabIcons.Done, "Completed", Color(0xFF0E7490), onOpenCompleted)
                 MoreRow(TabIcons.StickyNote, "Notes", Color(0xFF0B7A5E)) { onOpenRitual(NotesRoute()) }
-                MoreRow(TabIcons.Hourglass, "Someday", Color(0xFF4F5FA8)) { onOpenRitual(SomedayRoute) }
+                MoreRow(TabIcons.Moon, "Someday", Color(0xFF4F5FA8)) { onOpenRitual(SomedayRoute) }
                 // The rituals sit beside the lists, as the web's sidebar (nav.tsx: Empty head, Close day, Review).
                 MoreRow(TabIcons.Sparkles, "Empty your head", Color(0xFF7C4DDB)) { onOpenRitual(SweepRoute) }
                 MoreRow(TabIcons.Moon, "Close the day", Color(0xFF5B4BC4)) { onOpenRitual(ShutdownRoute) }

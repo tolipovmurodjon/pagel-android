@@ -40,14 +40,21 @@ INBOX = [
     ("ib8", "https://x.com/a/status/8", "Unread save from last night", "", "all", "learn", "", "", "", False),
 ]
 # Inbox clarify (2026-10-30): once ib7 went to Someday, three newer saves arrive on top (Waiting, Project + first step, Calendar),
-# and a pagel.uz that knows `older_than` deals four saves from January for the bulk tidy-up.
+# and a pagel.uz that knows `older_than` deals 64 saves from January for the bulk tidy-up, 60 a page, oldest first, with
+# older_than_60 and by_source counted over the whole pile (inbox-api.ts). A bulk part comes with "quiet": true and never
+# counts toward the day's sorted (checker 2026-10-30 #1: the ring read 27/20 after a tidy-up).
 CLARIFY = [
     ("ib9", "https://www.linkedin.com/posts/cl1", "Chase the signed grant form from Aziz", "", "humopedia", "action", "", "", "IT Park", False),
     ("ib10", "https://www.linkedin.com/posts/cl2", "Launch a newsletter for parents", "", "humopedia", "action", "Pick the newsletter tool", "", "Newsletter", False),
     ("ib11", "https://www.linkedin.com/posts/cl3", "Grant round closes on Friday", "", "humopedia", "action", "Fill in the grant form", "", "IT Park", False),
 ]
 CLARIFY_DAY = "2026-10-28"
-OLD_IDS = ["old1", "old2", "old3", "old4"]
+OLD_IDS = [f"old{k}" for k in range(1, 65)]
+QUIET = set()  # files pagel.uz took as quiet (bulk tidy-up) acts or drops
+SOMEDAY_ACTS = []  # (file, body) of each one-tap Someday: a P3 task in /sync, as pagel.uz's actionItem makes it
+
+def counted():
+    return 12 + sum(1 for f, _ in SORTS if f not in QUIET)
 SORTS = []  # (file, action) in the order pagel.uz took them
 LATER = set()
 TRIAGED = set()  # saves the AI has read since the phone asked (POST {action: "triage"})
@@ -87,12 +94,26 @@ def completed_rows(recent_only):
                      "day": datetime.fromisoformat(DONE_AT[cid].replace("Z", "+00:00")).astimezone(TASHKENT).strftime("%Y-%m-%d")})
     return rows
 
-def old_body():
+def old_left():
     sorted_files = {f for f, a in SORTS if a != "later"}
+    return [i for i in OLD_IDS if f"inbox/{i}.md" not in sorted_files]
+
+def by_source(items):
+    out = {}
+    for it in items:
+        src = it["source"]
+        k = "instagram" if "instagram" in src else "x" if "x.com" in src else "linkedin" if "linkedin" in src else "note" if not src else "web"
+        out[k] = out.get(k, 0) + 1
+    return out
+
+def old_body(limit=60):
+    left = old_left()
     items = [{"file": f"inbox/{i}.md", "saved": "2026-01-05", "source": f"https://www.instagram.com/p/{i}/", "text": f"An old save {k}. It has sat here since January.", "claim": f"An old save {k}", "why": "",
               "project": "all", "kind": "drop", "next": "", "note": "", "guessed": True, "author": "old.account", "posted": "2026-01-05", "later": None, "has_picture": False}
-             for k, i in enumerate(OLD_IDS, 1) if f"inbox/{i}.md" not in sorted_files]
-    return {"day": today(), "goal": 20, "sorted": 12 + len(SORTS), "kept_today": 2, "cap": 5, "min_words": 6, "total": 900 + len(items), "items": items}
+             for k, i in enumerate(OLD_IDS, 1) if i in left]
+    items.sort(key=lambda x: x["file"])
+    return {"day": today(), "goal": 20, "sorted": counted(), "kept_today": 2, "cap": 5, "min_words": 6, "total": 900 + len(items),
+            "by_source": {"instagram": 700 + len(items), "x": 150, "note": 50}, "older_than_60": len(items), "items": items[:limit]}
 
 def inbox_body():
     sorted_files = {f for f, a in SORTS if a != "later"}
@@ -104,7 +125,8 @@ def inbox_body():
              [row + ("2026-10-27",) for row in INBOX] + ([row + (CLARIFY_DAY,) for row in CLARIFY] if revealed else [])
              if f"inbox/{i}.md" not in sorted_files]
     items.sort(key=lambda x: x["later"] is not None)
-    return {"day": today(), "goal": 20, "sorted": 12 + len(SORTS), "kept_today": 2 + sum(1 for _, a in SORTS if a == "keep"), "cap": 5, "min_words": 6,
+    return {"day": today(), "goal": 20, "sorted": counted(), "kept_today": 2 + sum(1 for _, a in SORTS if a == "keep"), "cap": 5, "min_words": 6,
+            "by_source": by_source(items), "older_than_60": len(old_left()),
             "total": len(items), "items": items}
 
 def png(w=360, h=240):
@@ -180,11 +202,15 @@ class H(BaseHTTPRequestHandler):
             if a == "keep" and len((b.get("sentence") or "").split()) < 6:
                 return self.send(400, {"error": "Write it in your words: 6+ words."})
             if (f, a) in SORTS:
-                return self.send(200, {"ok": True, "applied": a, "already": True, "sorted": 12 + len(SORTS)})
+                return self.send(200, {"ok": True, "applied": a, "already": True, "sorted": counted()})
             SORTS.append((f, a))
+            if b.get("quiet") is True and a in ("act", "drop"):
+                QUIET.add(f)
+            elif a == "act" and b.get("someday") is True:
+                SOMEDAY_ACTS.append((f, b))
             if a == "later":
                 LATER.add(f)
-            return self.send(200, {"ok": True, "applied": a, "sorted": 12 + len(SORTS), "kept_today": 2 + sum(1 for _, x in SORTS if x == "keep")})
+            return self.send(200, {"ok": True, "applied": a, "sorted": counted(), "kept_today": 2 + sum(1 for _, x in SORTS if x == "keep")})
         if self.path == "/api/v1/app/crash":
             return self.send(201, {"ok": True}) if self.authed() else self.send(401, {"error": "Send Authorization: Bearer <token>."})
         self.send(404, {"error": "Unknown path."})
@@ -269,7 +295,8 @@ class H(BaseHTTPRequestHandler):
             return self.send(404, {"error": "No picture."})
         if self.path.startswith("/api/v1/inbox"):
             if "older_than=" in self.path:
-                return self.send(200, old_body())
+                lim = parse_qs(urlparse(self.path).query).get("limit", ["60"])[0]
+                return self.send(200, old_body(min(int(lim) if lim.isdigit() else 60, 60)))
             return self.send(200, inbox_body())
         if self.path.startswith("/api/v1/completed"):
             # total = every finished task, as the web counts them; 4 were finished before done_at was kept (no row).
@@ -559,5 +586,17 @@ def _core_get_h(self):
     return self.send(200, {"days": days, "projects_finished": 1, "days_opened": 3, "done": 28})
 
 H.do_POST, H.do_PATCH, H.do_GET = _core_post_h, _core_patch_h, _core_get_h
+
+# ── Inbox clarify fix 2: a one-tap Someday is a P3 task with no date in /sync, so More -> Someday and the weekly
+# review show it on the phone (the bulk's quiet ones are left out to keep /sync small).
+_clarify_sync = sync_body
+
+def sync_body():
+    s = _clarify_sync()
+    s["tasks"] += [{"id": "t_" + f.split("/")[-1][:-3], "project": b.get("project") or "me", "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 300 + k,
+                    "text": b.get("sentence") or "", "status": "open", "priority": 3, "star": False, "due": None, "every": None,
+                    "updated_at": "2026-10-30T10:00:00Z", "version": 1, "steps": []}
+                   for k, (f, b) in enumerate(SOMEDAY_ACTS)]
+    return s
 
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()

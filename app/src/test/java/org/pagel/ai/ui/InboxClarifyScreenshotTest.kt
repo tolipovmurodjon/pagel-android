@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.text.TextLayoutResult
@@ -109,10 +110,40 @@ class InboxClarifyScreenshotTest {
         assertTrue("the choices end at ${last.bottom} px of ${root.bottom}", last.bottom <= root.bottom - 96 * 3f)
     }
 
+    /** Checker 2026-10-30 #3: "Yes" was cut at 1.5x and Someday/Calendar shrank alone. Every word whole, one size. */
     @Test fun theTwoGroupsUnderTheCardAt15xFont() {
         show(1.5f) { screen(ui(grant)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-groups-360-font-1.5.png")
-        for (w in listOf("Someday", "Project", "Waiting", "Calendar", "Later")) oneWholeLine(w)
+        // (Action is also the AI pick's own word above, so it is read as the grid's last node below.)
+        for (w in listOf("No", "Yes", "Drop", "Someday", "Note", "Learn", "Do now", "Project", "Waiting", "Calendar", "Later")) oneWholeLine(w)
+        val sizes = listOf("Drop", "Someday", "Note", "Learn", "Do now", "Action", "Project", "Waiting", "Calendar").map { fontSize(it) }.toSet()
+        assertEquals("one word size in the grid: $sizes", 1, sizes.size)
+    }
+
+    @Test fun oneWordSizeInTheGridAt1x() {
+        show { screen(ui(grant)) }
+        val sizes = listOf("Drop", "Someday", "Note", "Learn", "Do now", "Action", "Project", "Waiting", "Calendar").map { fontSize(it) }.toSet()
+        assertEquals("one word size in the grid: $sizes", 1, sizes.size)
+        oneWholeLine("Calendar")
+    }
+
+    private fun fontSize(text: String): Float {
+        // The last node with the word: the grid's (the AI pick's own word comes first in the tree).
+        val node = compose.onAllNodesWithText(text, useUnmergedTree = true).onLast().fetchSemanticsNode()
+        val layout = mutableListOf<TextLayoutResult>()
+        node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+        return layout.single().layoutInput.style.fontSize.value
+    }
+
+    /** Later is a small text link under the two rows (checker 2026-10-30 #9), not a sixth disc in the No row. */
+    @Test fun laterIsALinkUnderTheRows() {
+        var chosen: Choice? = null
+        show { screen(ui(grant), onChoose = { chosen = it }) }
+        val later = compose.onNodeWithText("Later", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val calendar = compose.onNodeWithText("Calendar", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("Later (top ${later.top}) sits under the Yes row (bottom ${calendar.bottom})", later.top >= calendar.bottom - 1f)
+        compose.onNodeWithText("Later", useUnmergedTree = true).performClick()
+        assertEquals(Choice.LATER, chosen)
     }
 
     /** A card with an AI pick and one with none: the question line and the groups stay at the same y (no layout jump). */
@@ -154,12 +185,36 @@ class InboxClarifyScreenshotTest {
         compose.onNodeWithContentDescription("Add to waiting").assertIsDisplayed()
     }
 
+    /** Checker 2026-10-30 #7 and #9: Project asks for an Area, and each field keeps its name when filled. */
     @Test fun projectForm() {
         val u = ui(grant)
-        show { Column(Modifier.padding(top = 16.dp)) { ChoiceFormContent(Form(u.cards[0], Choice.PROJECT, "Open the grant form", "humopedia", false, name = "IT Park grant"), u, {}, {}, {}) } }
+        var edited: Form? = null
+        show { Column(Modifier.padding(top = 16.dp)) { ChoiceFormContent(Form(u.cards[0], Choice.PROJECT, "Open the grant form", "humopedia", false, name = "IT Park grant", area = "Work"), u, { edited = it }, {}, {}) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-form-project.png")
         compose.onNodeWithContentDescription("Start project").assertIsDisplayed()
         compose.onNodeWithContentDescription("Project name").assertIsDisplayed()
+        compose.onNodeWithText("Project name").assertIsDisplayed()
+        compose.onNodeWithText("First step").assertIsDisplayed()
+        compose.onNodeWithText("Area").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Area: None").performClick()
+        assertTrue("picking an area edits the form", edited != null)
+        assertEquals(null, edited!!.area)
+    }
+
+    @Test fun projectFormAt15xFont() {
+        val u = ui(grant)
+        show(1.5f) { Column(Modifier.padding(top = 16.dp)) { ChoiceFormContent(Form(u.cards[0], Choice.PROJECT, "Open the grant form", "humopedia", false, name = "IT Park grant", area = "Work"), u, {}, {}, {}) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-form-project-font-1.5.png")
+        compose.onNodeWithContentDescription("Start project").assertIsDisplayed()
+    }
+
+    /** Checker 2026-10-30 #6: Calendar asks for the time; the sheet opens on the wheel at 09:00 on the save's day. */
+    @Test fun calendarOpensOnTheWheel() {
+        val today = java.time.LocalDate.parse("2026-10-30")
+        show { Column(Modifier.padding(top = 16.dp)) { org.pagel.ai.ui.glass.DateContent("2026-10-30 09:00", today, onDone = {}, startMode = "wheel") { _, _ -> } } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-calendar-wheel.png")
+        compose.onNodeWithContentDescription("Time 09:00").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Done").assertIsDisplayed()
     }
 
     @Test fun calendarFormAt15xFont() {
@@ -190,7 +245,43 @@ class InboxClarifyScreenshotTest {
         val u = SomedayUi(someday = listOf(task("t1", "me", "Learn to weld")), projects = projects.associateBy { it.name })
         show(1.5f) { Someday(u, PaddingValues(top = 16.dp, bottom = 96.dp)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/someday-list-font-1.5.png")
-        compose.onNodeWithContentDescription("Bring back: Learn to weld").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Bring back").assertIsDisplayed()
+        // Checker 2026-10-30 #4: "Learn to weld" broke one word a line beside a chip that took 40 % of the row.
+        oneWholeLine("Learn to weld")
+    }
+
+    /** Titles wrap: two lines at 1x, all of it at 1.5x; Bring back offers the Inbox or an Action. */
+    @Test fun somedayLongTitlesWrapAndBringBackOffersTwoWays() {
+        val long = "Try a cooperative maths game for grade 6 with the whole class and write down what the children say"
+        val u = SomedayUi(someday = listOf(task("t2", "humopedia", long)), projects = projects.associateBy { it.name })
+        show(1.5f) { Someday(u, PaddingValues(top = 16.dp, bottom = 96.dp)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/someday-long-font-1.5.png")
+        val node = compose.onNodeWithText(long, useUnmergedTree = true).fetchSemanticsNode()
+        val layout = mutableListOf<TextLayoutResult>()
+        node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layout)
+        assertFalse("the title is cut at 1.5x", layout.single().hasVisualOverflow)
+    }
+
+    @Test fun bringBackSheet() {
+        var picked: Boolean? = null
+        show { Column(Modifier.padding(top = 16.dp)) { org.pagel.ai.ui.inbox.BringBackContent(task("t1", "me", "Learn to weld")) { picked = it } } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/someday-bring-back.png")
+        compose.onNodeWithContentDescription("To the Inbox").performClick()
+        assertEquals(true, picked)
+    }
+
+    /** Checker 2026-10-30 #8: Waiting for in the weekly review, with data and each check day. */
+    @Test fun waitingInTheWeeklyReview() {
+        val waiting = listOf(
+            org.pagel.ai.ui.rituals.RitualTask("w1", "Waiting for Aziz: the signed grant form", "humopedia", "Humopedia", null, 2, due = "2026-10-28"),
+            org.pagel.ai.ui.rituals.RitualTask("w2", "Waiting for: the drone parts from Uzum", "me", "Me", null, 2, due = "2026-11-02"),
+        )
+        val review = org.pagel.ai.ui.rituals.ReviewUi(loading = false, step = 3, inbox = 14, someday = listOf(org.pagel.ai.ui.rituals.RitualTask("p1", "Learn to weld", "me", "Me", null, 3)), waiting = waiting)
+        show { org.pagel.ai.ui.rituals.ReviewScreen(review, PaddingValues(top = 16.dp, bottom = 96.dp)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/review-waiting.png")
+        compose.onNodeWithText("Waiting for").assertExists()
+        compose.onNodeWithText("Waiting for Aziz: the signed grant form").assertExists()
+        compose.onNodeWithText("check was Wed 28 Oct").assertExists()
     }
 
     @Test fun somedayEmpty() {
@@ -205,9 +296,33 @@ class InboxClarifyScreenshotTest {
         val t = Tidy(loading = false, items = old(23, "www.instagram") + old(9, "x") + old(5, "www.linkedin"))
         show { Column(Modifier.padding(top = 16.dp)) { TidyContent(t, {}, {}) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-tidy.png")
-        compose.onNodeWithText("37 saves are older than 60 days").assertIsDisplayed()
+        compose.onNodeWithText("37 saves older than 60 days").assertIsDisplayed()
         compose.onNodeWithContentDescription("Move all 37 to Someday").assertIsDisplayed()
         compose.onNodeWithContentDescription("Drop all 37").assertIsDisplayed()
+    }
+
+    /** Checker 2026-10-30 #2: pagel.uz's whole count (412), not the first page of 60. */
+    @Test fun tidySheetShowsTheWholeCount() {
+        val t = Tidy(loading = false, items = old(60, "www.instagram"), total = 412, bySource = mapOf("instagram" to 700, "x" to 150, "note" to 55, "telegram" to 12))
+        show { Column(Modifier.padding(top = 16.dp)) { TidyContent(t, {}, {}) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-tidy-412.png")
+        compose.onNodeWithText("412 saves older than 60 days").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Move all 412 to Someday").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Drop all 412").assertIsDisplayed()
+        compose.onNodeWithText("Telegram").assertIsDisplayed()
+    }
+
+    /** The quiet progress line while a bulk pages through: "120 of 412", in the counts' place, no spinner. */
+    @Test fun bulkProgressLine() {
+        show { InboxScreen(ui(grant), leaving = null, pictures = emptyMap(), contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp), bulk = org.pagel.ai.ui.inbox.Bulk(Choice.SOMEDAY, 120, 412)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-bulk-progress.png")
+        compose.onNodeWithText("Old saves to Someday · 120\u00A0of\u00A0412").assertIsDisplayed()
+    }
+
+    /** After the day's goal: done for today, never the pile ("900 more"). */
+    @Test fun afterTheGoalItSaysDoneForToday() {
+        show { screen(ui(grant, sorted = 20)) }
+        compose.onNodeWithText("Done for today ✓").assertIsDisplayed()
     }
 
     @Test fun tidySheetAt15xFont() {
@@ -219,7 +334,8 @@ class InboxClarifyScreenshotTest {
 
     @Test fun tidySheetOtherStates() {
         show { Column(Modifier.padding(top = 16.dp)) { TidyContent(Tidy(loading = false, failed = true), {}, {}) } }
-        compose.onNodeWithText("Could not reach pagel.uz. Try again when you are online.").assertIsDisplayed()
+        compose.onNodeWithText("Could not reach pagel.uz. Nothing moved.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Retry").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-tidy-offline.png")
     }
 }

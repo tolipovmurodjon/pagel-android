@@ -148,18 +148,19 @@ abstract class InboxDao {
 
     /**
      * pagel.uz took the choice. A Later stays in the deck (at the back); any other choice ends the card. The counts
-     * follow the server's, plus the choices still waiting behind this one.
+     * follow the server's, plus the choices still waiting behind this one. A [quiet] one (a bulk tidy-up part) keeps the
+     * phone's counts: it never counted, and the reply's count is not a reason to move the ring (checker 2026-10-30 #1).
      */
     @Transaction
-    open suspend fun sent(opId: Long, file: String, action: String, sorted: Int?, keptToday: Int?, at: Long) {
+    open suspend fun sent(opId: Long, file: String, action: String, sorted: Int?, keptToday: Int?, at: Long, quiet: Boolean) {
         removeFromOutbox(opId)
         if (action != LATER) delete(file)
         val s = stateOnce() ?: return
-        val waiting = waitingBodies()
+        val waiting = counted(waitingBodies())
         val waitingKeeps = waiting.count { it?.contains("\"action\":\"keep\"") == true }
         saveState(s.copy(
-            sorted = sorted?.let { it + waiting.size } ?: s.sorted,
-            keptToday = keptToday?.let { it + waitingKeeps } ?: s.keptToday,
+            sorted = if (quiet) s.sorted else sorted?.let { it + waiting.size } ?: s.sorted,
+            keptToday = if (quiet) s.keptToday else keptToday?.let { it + waitingKeeps } ?: s.keptToday,
             total = if (action != LATER) (s.total - 1).coerceAtLeast(0) else s.total,
             sentAt = at,
         ))
@@ -195,7 +196,7 @@ abstract class InboxDao {
         // A Later still on its way keeps its place at the back.
         var at = fresh.size + 1
         for (f in waiting) item(f)?.takeIf { it.sortedAs == null }?.let { putBack(it.file, it.later, at++) }
-        val bodies = waitingBodies()
+        val bodies = counted(waitingBodies())
         var sorted = state.sorted + bodies.size
         var kept = state.keptToday + bodies.count { it?.contains("\"action\":\"keep\"") == true }
         // A choice reached pagel.uz after this GET left: the GET's counts are from before it, so they may only raise
@@ -210,6 +211,9 @@ abstract class InboxDao {
 }
 
 private const val LATER = "later"
+
+/** The waiting choices that count toward the day's 20: a quiet bulk tidy-up part never does. */
+private fun counted(bodies: List<String?>) = bodies.filter { it?.contains("\"quiet\":true") != true }
 private const val KEEP = "keep"
 
 /** A choice taken back or refused: the day's counts step back by one. */

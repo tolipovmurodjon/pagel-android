@@ -41,10 +41,10 @@ import org.pagel.ai.ui.today.headline
 import javax.inject.Inject
 
 /** A task as the rituals draw it: its words, its project's tile, its flag. */
-data class RitualTask(val id: String, val title: String, val project: String, val projectTitle: String, val projectColor: String?, val priority: Int)
+data class RitualTask(val id: String, val title: String, val project: String, val projectTitle: String, val projectColor: String?, val priority: Int, val due: String? = null)
 
 internal fun TaskEntity.ritualTask(projects: Map<String, ProjectEntity>) = RitualTask(
-    id, title?.takeIf(String::isNotBlank) ?: headline(text), project, projects[project]?.title ?: project, projects[project]?.color, priority,
+    id, title?.takeIf(String::isNotBlank) ?: headline(text), project, projects[project]?.title ?: project, projects[project]?.color, priority, due,
 )
 
 /** pagel.uz's view of the rituals, shared by Today's pills, Close the day and the review: refreshed when one opens. */

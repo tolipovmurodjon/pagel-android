@@ -130,6 +130,10 @@ data class InboxResponse(
     @SerialName("min_words") val minWords: Int = 6,
     val total: Int = 0,
     val items: List<InboxItemDto> = emptyList(),
+    /** The whole deck by where each save came from (Instagram, X, typed…); an older pagel.uz sends none. */
+    @SerialName("by_source") val bySource: Map<String, Int> = emptyMap(),
+    /** How many saves in the whole deck are 60+ days old (the tidy-up's real count; a page holds at most 60). */
+    @SerialName("older_than_60") val olderThan60: Int? = null,
 )
 
 /** `POST /api/v1/inbox`: one choice on one save. null fields are left out. */
@@ -142,6 +146,8 @@ data class SortBody(
     val someday: Boolean? = null,
     /** An Act's date (round D item 2: When? Today · Tomorrow); an older pagel.uz ignores it. */
     val due: String? = null,
+    /** A bulk tidy-up part (Inbox clarify fix 2): pagel.uz commits it as "(tidy)" and it never counts toward the day's 20. */
+    val quiet: Boolean? = null,
 )
 
 /** `GET /api/v1/notes?project=` (round D item 2): one project's quick notes, newest first. */

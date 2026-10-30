@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -107,13 +108,16 @@ private fun Choice.button() = when (this) {
 @Composable
 fun ChoiceFormSheet(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: () -> Unit, onDismiss: () -> Unit, withPicture: Boolean = false) {
     var picking by remember { mutableStateOf(false) }
-    var dating by remember { mutableStateOf(false) }
+    // Calendar asks for the time at once (checker 2026-10-30 #6): the date sheet opens on the wheel, on the day the save
+    // names (or tomorrow) at 09:00; Done comes back to the form.
+    var dating by remember { mutableStateOf(form.choice == Choice.CALENDAR) }
     GlassSheet(onDismiss) {
-        ChoiceFormContent(form, ui, onEdit, onSubmit, onProject = { picking = true }, onDate = { dating = true }, focus = true, withPicture = withPicture)
+        ChoiceFormContent(form, ui, onEdit, onSubmit, onProject = { picking = true }, onDate = { dating = true }, focus = form.choice != Choice.CALENDAR, withPicture = withPicture)
         Spacer(Modifier.height(SheetBottom))
     }
     if (picking) ProjectSheet(ui.projects, form.project, onPick = { onEdit(form.copy(project = it)) }, onDismiss = { picking = false })
-    if (dating) DateSheet(form.due, java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent")), onPick = { onEdit(form.copy(due = it)) }, onDismiss = { dating = false })
+    if (dating) DateSheet(form.due, java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent")), onPick = { onEdit(form.copy(due = it)) }, onDismiss = { dating = false },
+        startMode = if (form.choice == Choice.CALENDAR && (form.due?.length ?: 0) > 10) "wheel" else "")
 }
 
 /**
@@ -141,12 +145,16 @@ fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit:
             Text(form.choice.question(), style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
         }
         if (form.choice == Choice.PROJECT) {
-            FormField(form.name, { onEdit(form.copy(name = it.replace('\n', ' '))) }, "Project name", "Project name")
+            FormField(form.name, { onEdit(form.copy(name = it.replace('\n', ' '))) }, "Newsletter for parents", "Project name")
             Spacer(Modifier.height(Space.sm))
+            AreaChips(ui, form.area) { onEdit(form.copy(area = it)) }
+            Spacer(Modifier.height(Space.sm))
+            FieldLabel("First step")
         }
         if (form.choice == Choice.WAITING) {
-            FormField(form.who, { onEdit(form.copy(who = it.replace('\n', ' '))) }, "Who? (optional)", "Waiting for who")
+            FormField(form.who, { onEdit(form.copy(who = it.replace('\n', ' '))) }, "Aziz", "Waiting for who (optional)")
             Spacer(Modifier.height(Space.sm))
+            FieldLabel("What you wait for")
         }
         if (form.choice != Choice.NOW) {
             val shape = RoundedCornerShape(16.dp)
@@ -206,11 +214,34 @@ fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit:
     }
 }
 
-/** A one-line field under the sheet's question (the project's name, who is waited on): the main line's look, one row tall. */
+/** A field's name over it, kept when the field is filled (checker 2026-10-30 #9: the placeholder was the only label). */
+@Composable
+private fun FieldLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1, modifier = Modifier.padding(start = Space.xs, bottom = Space.xs))
+}
+
+/**
+ * The new project's life Area (checker 2026-10-30 #7): None or one of the Areas Boss uses, in one scrolling row; it
+ * starts on the area of the project the AI guessed for the card.
+ */
+@Composable
+private fun AreaChips(ui: InboxUi, area: String?, onPick: (String?) -> Unit) {
+    val areas = (ui.projects.mapNotNull { it.area } + listOf("Work", "Health", "Mind", "Faith", "Money", "People", "Games")).distinct()
+    FieldLabel("Area")
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.chipGap)) {
+        for (a in listOf<String?>(null) + areas) {
+            val on = a == area
+            GlassChip(TabIcons.Folder, a ?: "None", set = on, checked = on, description = "Area: ${a ?: "None"}", modifier = Modifier.semantics { selected = on }) { onPick(a) }
+        }
+    }
+}
+
+/** A one-line field under the sheet's question (the project's name, who is waited on): its name over it, one row tall. */
 @Composable
 private fun FormField(value: String, onChange: (String) -> Unit, placeholder: String, label: String) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(16.dp)
+    FieldLabel(label)
     BasicTextField(
         value = value,
         onValueChange = onChange,
@@ -246,6 +277,25 @@ private fun PrimaryButton(label: String, icon: ImageVector, enabled: Boolean, co
     }
 }
 
+/** The second action of a sheet: tonal ink on soft glass, never red (Boss's rule; checker 2026-10-30 #9). */
+@Composable
+private fun QuietButton(label: String, icon: ImageVector, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    val haptics = LocalHapticFeedback.current
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).pressScale(press)
+            .background(Glass.Ink.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+            .clickable(press, indication = null, role = Role.Button) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onClick() }
+            .semantics(mergeDescendants = true) { contentDescription = label },
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(Space.sm))
+        Text(label, style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
+    }
+}
+
 /** Two-way switch (This week / Someday): Apple's segmented control, the chosen half white and raised. */
 @Composable
 private fun Segmented(options: List<String>, chosen: Int, onPick: (Int) -> Unit) {
@@ -272,22 +322,31 @@ private fun Segmented(options: List<String>, chosen: Int, onPick: (Int) -> Unit)
  * takes every one back.
  */
 @Composable
-fun TidySheet(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onDismiss: () -> Unit) {
-    GlassSheet(onDismiss) { TidyContent(tidy, onSomeday, onDrop); Spacer(Modifier.height(SheetBottom)) }
+fun TidySheet(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onDismiss: () -> Unit, onRetry: () -> Unit = {}) {
+    GlassSheet(onDismiss) { TidyContent(tidy, onSomeday, onDrop, onRetry); Spacer(Modifier.height(SheetBottom)) }
 }
 
+/**
+ * pagel.uz's whole count of old saves (checker 2026-10-30 #2: it said 60 when there were 412), the whole Inbox by source,
+ * then the two moves. Offline: say so and offer Retry. Drop all is the quiet ink button, never red.
+ */
 @Composable
-fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit) {
-    val n = tidy.items.size
+fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onRetry: () -> Unit = {}) {
+    val n = tidy.count
     Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Text("Old saves", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs, bottom = Space.sm))
         when {
             tidy.loading -> Text("Looking for saves older than ${OLD_DAYS} days…", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
-            tidy.failed -> Text("Could not reach pagel.uz. Try again when you are online.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
+            tidy.failed -> {
+                Text("Could not reach pagel.uz. Nothing moved.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, bottom = Space.md))
+                QuietButton("Retry", TabIcons.Refresh, onRetry)
+            }
             n == 0 -> Text("Nothing older than ${OLD_DAYS} days. The Inbox is fresh.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
             else -> {
-                Text("$n saves are older than ${OLD_DAYS} days", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs))
-                Pane(Modifier.fillMaxWidth().padding(vertical = Space.md)) {
+                Text("$n saves older than ${OLD_DAYS} days", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs))
+                Text(if (tidy.bySource.isNotEmpty()) "Your whole Inbox, by where it came from:" else "By where they came from:", style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
+                    modifier = Modifier.padding(start = Space.xs, top = Space.sm))
+                Pane(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
                     Column(Modifier.padding(vertical = Space.xs)) {
                         tidy.sources.forEachIndexed { i, (name, count) ->
                             if (i > 0) HorizontalDivider(Modifier.padding(start = Space.lg), color = Glass.Ink.copy(alpha = 0.07f))
@@ -298,10 +357,10 @@ fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit) {
                         }
                     }
                 }
-                Text("Nothing is sent for 5 seconds. One Undo takes all $n back.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, bottom = Space.md))
+                Text("Nothing is sent for 5 seconds; one Undo stops all $n. None of it counts toward today's 20.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, bottom = Space.md))
                 PrimaryButton("Move all $n to Someday", TabIcons.Moon, enabled = true, color = Choice.SOMEDAY.look.color, onClick = onSomeday)
                 Spacer(Modifier.height(Space.sm))
-                PrimaryButton("Drop all $n", TabIcons.Trash, enabled = true, color = Choice.DROP.look.color, onClick = onDrop)
+                QuietButton("Drop all $n", TabIcons.Trash, onDrop)
             }
         }
     }
@@ -320,7 +379,7 @@ fun GuideContent() {
         SwipeMap(Modifier.fillMaxWidth().padding(bottom = 14.dp))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 4.dp)) {
-                (NO_GROUP + YES_GROUP).forEachIndexed { i, c ->
+                (NO_GROUP + YES_GROUP + Choice.LATER).forEachIndexed { i, c ->
                     if (i > 0) HorizontalDivider(Modifier.padding(start = 60.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
                     val look = c.look
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {

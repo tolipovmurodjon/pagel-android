@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -177,12 +178,25 @@ private fun Step(step: Int, ui: ReviewUi, onStep: (String, String) -> Unit, onDr
             }
             // The ones waiting on someone else: read here so a stale ball is chased, not forgotten (Inbox clarify, 2026-10-30).
             if (ui.waiting.isNotEmpty()) {
-                Text("Waiting for", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(top = org.pagel.ai.ui.glass.Space.lg).semantics { heading() })
+                Row(Modifier.padding(top = org.pagel.ai.ui.glass.Space.lg), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(TabIcons.UserClock, contentDescription = null, tint = androidx.compose.ui.graphics.Color(0xFF0E7490), modifier = Modifier.size(org.pagel.ai.ui.glass.Space.lg))
+                    Spacer(Modifier.width(org.pagel.ai.ui.glass.Space.sm))
+                    Text("Waiting for", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.semantics { heading() })
+                }
+                val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent"))
                 ui.waiting.forEach { t ->
                     Row(Modifier.fillMaxWidth().heightIn(min = org.pagel.ai.ui.glass.Space.row), verticalAlignment = Alignment.CenterVertically) {
                         ProjectTile(t.project, t.projectColor, t.projectTitle, size = 22.dp)
                         Spacer(Modifier.width(org.pagel.ai.ui.glass.Space.md))
-                        Text(t.title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(vertical = org.pagel.ai.ui.glass.Space.sm))
+                        Column(Modifier.weight(1f).padding(vertical = org.pagel.ai.ui.glass.Space.sm)) {
+                            Text(t.title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            // The check day: an overdue one says so, so a stale ball is chased.
+                            t.due?.let { d ->
+                                val late = d.take(10) < today.toString()
+                                Text((if (late) "check was " else "check ") + org.pagel.ai.data.inbox.plainDay(d.take(10)), style = MaterialTheme.typography.labelSmall,
+                                    color = if (late) Glass.Ink else Glass.Muted, maxLines = 1)
+                            }
+                        }
                     }
                 }
             }

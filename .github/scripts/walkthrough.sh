@@ -293,47 +293,88 @@ onscreen "Chase the signed grant form from Aziz" || fail_inbox "the new saves ne
 # Waiting: who is optional; the check day is 3 days on.
 tap Waiting || fail_inbox "no Waiting choice"
 shot inbox-waiting-form 2
+# The form grew labels (checker 2026-10-30 #9): the keyboard may cover its button; Back hides it only while it is up.
+$T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
 tap "Add to waiting" || fail_inbox "the Waiting form has no Add to waiting button"
 shot inbox-waiting-sent 1.5
 CHECK=$(TZ=Asia/Tashkent date -d '+3 days' +%Y-%m-%d)
-wait_re "POST /api/v1/inbox \{\"action\":\"act\",\"file\":\"inbox/ib9.md\",\"sentence\":\"Waiting for reply: Chase the signed grant form from Aziz\",\"project\":\"humopedia\",\"someday\":false,\"due\":\"$CHECK\"\}" || fail_inbox "Waiting never reached pagel.uz with its words and check day $CHECK"
+wait_re "POST /api/v1/inbox \{\"action\":\"act\",\"file\":\"inbox/ib9.md\",\"sentence\":\"Waiting for: Chase the signed grant form from Aziz\",\"project\":\"humopedia\",\"someday\":false,\"due\":\"$CHECK\"\}" || fail_inbox "Waiting never reached pagel.uz with its words and check day $CHECK"
 log "   Waiting reached pagel.uz with its words and check day $CHECK"
 # Project: the name comes from the card, the first step from its next step; the project is made, then the step lands in it.
 onscreen "Launch a newsletter for parents" || fail_inbox "ib10 is not on top for the Project step"
 tap Project || fail_inbox "no Project choice"
 shot inbox-project-form 2
+$T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
 tap "Start project" || fail_inbox "the Project form has no Start project button"
 shot inbox-project-sent 1.5
 wait_re 'POST /api/v1/projects \{"name":"[a-z0-9-]+","title":"Launch a newsletter for parents"' || fail_inbox "the new project never reached pagel.uz"
 wait_re 'POST /api/v1/inbox \{"action":"act","file":"inbox/ib10.md","sentence":"Pick the newsletter tool","project":"[a-z0-9-]+","someday":false\}' || fail_inbox "the first step never reached pagel.uz in the new project"
 log "   Project: the project and its first step reached pagel.uz"
-# Calendar: tomorrow by default; the date and wheel sheet is one tap away.
+# Calendar asks for the time at once (checker 2026-10-30 #6): the date sheet opens on the wheel, on the day the save names
+# ("closes on Friday" -> the coming Friday, today included) at 09:00; Done goes back to the form.
 onscreen "Grant round closes on Friday" || fail_inbox "ib11 is not on top for the Calendar step"
 tap Calendar || fail_inbox "no Calendar choice"
+shot inbox-calendar-wheel 2.5
+grep -qE '(text|content-desc)="Time 09:00"' "$OUT/$(printf '%02d' $N)-inbox-calendar-wheel.xml" || fail_inbox "Calendar did not open the date sheet on the 09:00 wheel"
+tap Done || fail_inbox "the Calendar's date sheet has no Done"
 shot inbox-calendar-form 2
 tap "Put on calendar" || fail_inbox "the Calendar form has no Put on calendar button"
 shot inbox-calendar-sent 1.5
-TOMORROW=$(TZ=Asia/Tashkent date -d '+1 day' +%Y-%m-%d)
-wait_re "POST /api/v1/inbox \{\"action\":\"act\",\"file\":\"inbox/ib11.md\",\"sentence\":\"Fill in the grant form\",\"project\":\"humopedia\",\"someday\":false,\"due\":\"$TOMORROW\"\}" || fail_inbox "Calendar never reached pagel.uz with its due $TOMORROW"
-log "   Calendar reached pagel.uz with due $TOMORROW"
+FRIDAY=$(TZ=Asia/Tashkent date -d 'friday' +%Y-%m-%d)
+wait_re "POST /api/v1/inbox \{\"action\":\"act\",\"file\":\"inbox/ib11.md\",\"sentence\":\"Fill in the grant form\",\"project\":\"humopedia\",\"someday\":false,\"due\":\"$FRIDAY 09:00\"\}" || fail_inbox "Calendar never reached pagel.uz with its due $FRIDAY 09:00"
+log "   Calendar reached pagel.uz with due $FRIDAY 09:00 (the day the save named, the wheel's hour)"
 # The bulk tidy-up: the count first, "Move all" with one Undo that stops every one before pagel.uz hears of it.
+# pagel.uz holds 64 old saves and deals 60 a page: the sheet shows its whole count (checker 2026-10-30 #2), "Move all"
+# pages through all 64 with one Undo, every part is quiet, and the ring does not move (checker 2026-10-30 #1).
 tap "Tidy old saves" || fail_inbox "no Tidy old saves button in the Inbox header"
 shot inbox-tidy 3
-grep -q '4 saves are older than 60 days' "$OUT/$(printf '%02d' $N)-inbox-tidy.xml" || fail_inbox "the tidy-up did not show the count before moving anything"
-tap "Move all 4 to Someday" || fail_inbox "no Move all 4 to Someday button"
+grep -q '64 saves older than 60 days' "$OUT/$(printf '%02d' $N)-inbox-tidy.xml" || fail_inbox "the tidy-up did not show pagel.uz's whole count (64) before moving anything"
+tap "Move all 64 to Someday" || fail_inbox "no Move all 64 to Someday button"
 # No dump between the move and the Undo: the Undo window is 5 s and a UI dump on this emulator takes 2-3 s.
 tap Undo || fail_inbox "the bulk move showed no Undo"
 shot inbox-tidy-undone 1.5
 sleep 10
-[ "$(grep -c 'inbox/old[0-9].md' "$FAKE_LOG")" = "0" ] || fail_inbox "the Undo did not stop the bulk: pagel.uz heard of an old save"
-log "   one Undo stopped all 4 before pagel.uz heard of them"
+[ "$(grep -cE 'inbox/old[0-9]+.md' "$FAKE_LOG")" = "0" ] || fail_inbox "the Undo did not stop the bulk: pagel.uz heard of an old save"
+log "   one Undo stopped all 64 before pagel.uz heard of them"
+shot inbox-before-bulk 1
+RING_B=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-before-bulk.xml" | grep -oE '[0-9]+' | head -1)
+[ -n "$RING_B" ] || fail_inbox "the ring says nothing before the bulk"
 tap "Tidy old saves" || fail_inbox "no Tidy old saves button the second time"
 shot inbox-tidy-again 2
-tap "Move all 4 to Someday" || fail_inbox "no Move all 4 to Someday button the second time"
-for i in $(seq 1 90); do [ "$(grep -cE 'POST /api/v1/inbox \{"action":"act","file":"inbox/old[0-9].md","sentence":"An old save [0-9]","project":"me","someday":true\}' "$FAKE_LOG")" = "4" ] && break; sleep 1; done
-[ "$(grep -cE 'POST /api/v1/inbox \{"action":"act","file":"inbox/old[0-9].md","sentence":"An old save [0-9]","project":"me","someday":true\}' "$FAKE_LOG")" = "4" ] || fail_inbox "the bulk move did not reach pagel.uz as 4 acts with someday:true"
-log "   the bulk Someday reached pagel.uz: 4 acts"
-shot inbox-clarify-done 1.5
+tap "Move all 64 to Someday" || fail_inbox "no Move all 64 to Someday button the second time"
+shot inbox-bulk-progress 2
+BULK_RE='POST /api/v1/inbox \{"action":"act","file":"inbox/old[0-9]+.md","sentence":"An old save [0-9]+","project":"me","someday":true,"quiet":true\}'
+for i in $(seq 1 180); do [ "$(grep -cE "$BULK_RE" "$FAKE_LOG")" = "64" ] && break; sleep 1; done
+[ "$(grep -cE "$BULK_RE" "$FAKE_LOG")" = "64" ] || fail_inbox "the bulk move did not reach pagel.uz as 64 quiet acts with someday:true (got $(grep -cE "$BULK_RE" "$FAKE_LOG"))"
+log "   the bulk Someday reached pagel.uz: 64 quiet acts over two pages, after ~${i} s"
+shot inbox-clarify-done 3
+RING_A=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-clarify-done.xml" | grep -oE '[0-9]+' | head -1)
+[ "$RING_A" = "$RING_B" ] || fail_inbox "the bulk moved the ring: $RING_B before, $RING_A after (a tidy-up never counts toward the day's 20)"
+log "   the ring stayed at $RING_A/20 through the bulk move"
+# The dock at 1.5x on the real phone, glass bar and all (checker 2026-10-30 #8): every choice ends above the bar.
+$T adb shell settings put system font_scale 1.5; sleep 3; front inbox-dock-font-1.5; shot inbox-dock-font-1.5 1.5
+XML="$OUT/$(printf '%02d' $N)-inbox-dock-font-1.5.xml"
+if grep -q 'text="Can I do something about it?"' "$XML"; then
+  BAR=$(y_of Today 2)
+  for c in Drop Someday Note Learn "Do now" Action Project Waiting Calendar Later; do
+    B=$(y_of "$c" 4); [ -n "$B" ] || { $T adb shell settings put system font_scale 1.0; fail_inbox "no \"$c\" in the dock at 1.5x"; }
+    [ "$B" -le "$BAR" ] || { $T adb shell settings put system font_scale 1.0; fail_inbox "at 1.5x \"$c\" ends at y=$B, under the tab bar's top y=$BAR"; }
+  done
+  log "   at 1.5x every choice and Later end above the bar (top y=$BAR)"
+else
+  log "   (no card left for the 1.5x dock look; the screenshot shows the empty Inbox)"
+fi
+$T adb shell settings put system font_scale 1.0; sleep 3; front inbox-font-back
+# More -> Someday on the phone (checker 2026-10-30 #8): the maybes and Waiting for, and Bring back's two ways.
+tap More && sleep 1
+$T adb shell input swipe 160 200 160 600 400; sleep 1
+for k in 1 2 3; do onscreen Someday && break; $T adb shell input swipe 160 500 160 300 400; sleep 1; done
+tap Someday || fail_inbox "More has no Someday row"
+shot someday-on-phone 3
+grep -q 'text="Someday"' "$OUT/$(printf '%02d' $N)-someday-on-phone.xml" || fail_inbox "More -> Someday did not open the Someday list"
+if tap "Bring back"; then shot someday-bring-back 2; $T adb shell input keyevent 4; sleep 1; else log "   (the Someday list is empty on the phone until the next sync brings the tasks)"; fi
+$T adb shell input keyevent 4; sleep 1
+tap Inbox && sleep 2
 
 log "-- Inbox: where did it go (round D item 2): Sorted today lists the day's choices by where they went; More -> Notes reads a project's notes"
 $T adb shell input swipe 160 200 160 600 400; sleep 1

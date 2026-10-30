@@ -17,6 +17,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -146,7 +148,7 @@ val Choice.look: ChoiceLook
             "Nothing to do, nothing to keep. Most saves end here, and that is fine. Undo for 5 s.", "Memes, jokes, ads, \"10 AI tools\" lists you will never open.")
         Choice.SOMEDAY -> ChoiceLook(TabIcons.Moon, "Someday", "maybe, with no date", Color(0xFF4F5FA8),
             "Not now, maybe never. One tap files it where the weekly review looks; it has no date and no count.", "\"Learn to weld\" → Someday. Bring it back when the time is right.")
-        Choice.WAITING -> ChoiceLook(TabIcons.Hourglass, "Waiting", "someone else has the ball", Color(0xFF0E7490),
+        Choice.WAITING -> ChoiceLook(TabIcons.UserClock, "Waiting", "someone else has the ball", Color(0xFF0E7490),
             "Someone else must act first. Say who, and PAGEL asks you again on the check day (3 days on).", "\"Aziz sends the invoice\" → Waiting for Aziz, check Thursday.")
         Choice.PROJECT -> ChoiceLook(TabIcons.Folder, "Project", "more than one step", Color(0xFF166534),
             "It takes more than one step. Name the project, then write its very first step.", "\"Launch the newsletter\" → project Newsletter, first step \"Pick the tool\".")
@@ -155,11 +157,11 @@ val Choice.look: ChoiceLook
     }
 
 /**
- * The GTD question's two groups (Boss 2026-10-30): "Can I do something about it?" No → Drop · Someday · Note · Learn
- * (Later, the put-off, ends the row); Yes → Do now · Action · Project · Waiting · Calendar. Five slots a row, so the
- * chips sit in a grid and a card never shifts them.
+ * The GTD question's two groups (Boss 2026-10-30): "Can I do something about it?" No → Drop · Someday · Note · Learn;
+ * Yes → Do now · Action · Project · Waiting · Calendar. Five slots a row (No's fifth stays empty), so the choices sit
+ * in a grid and a card never shifts them. Later, the put-off, is a small text link under the rows.
  */
-val NO_GROUP = listOf(Choice.DROP, Choice.SOMEDAY, Choice.NOTE, Choice.KEEP, Choice.LATER)
+val NO_GROUP = listOf(Choice.DROP, Choice.SOMEDAY, Choice.NOTE, Choice.KEEP)
 val YES_GROUP = listOf(Choice.NOW, Choice.ACT, Choice.PROJECT, Choice.WAITING, Choice.CALENDAR)
 
 /** Each choice's own feel under the finger (Apple HIG playing haptics: one per action, matched to its meaning). */
@@ -261,6 +263,8 @@ data class InboxActions(
     val sorted: () -> Unit = {},
     /** The bulk tidy-up of the old saves (Inbox clarify). */
     val tidy: () -> Unit = {},
+    /** Long-press a choice: the same choice, with last time's settings, on this card. */
+    val repeat: (InboxCard, Choice) -> Unit = { _, _ -> },
 )
 
 @Composable
@@ -275,6 +279,7 @@ fun InboxRoute(
     val pictures by vm.picturesShown.collectAsStateWithLifecycle()
     val cheer by vm.cheer.collectAsStateWithLifecycle()
     val tidy by vm.tidy.collectAsStateWithLifecycle()
+    val bulk by vm.bulk.collectAsStateWithLifecycle()
     var guide by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf<InboxCard?>(null) }
     androidx.lifecycle.compose.LifecycleStartEffect(Unit) {
@@ -282,10 +287,10 @@ fun InboxRoute(
         onStopOrDispose { vm.onScreen(false) }
     }
     InboxScreen(
-        ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer, sortedCount = sortedToday.size,
-        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy),
+        ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer, sortedCount = sortedToday.size, bulk = bulk,
+        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy, repeat = vm::repeat),
     )
-    tidy?.let { t -> TidySheet(t, onSomeday = { vm.tidyAll(Choice.SOMEDAY) }, onDrop = { vm.tidyAll(Choice.DROP) }, onDismiss = vm::closeTidy) }
+    tidy?.let { t -> TidySheet(t, onSomeday = { vm.tidyAll(Choice.SOMEDAY) }, onDrop = { vm.tidyAll(Choice.DROP) }, onDismiss = vm::closeTidy, onRetry = vm::openTidy) }
     form?.let { f -> ChoiceFormSheet(f, ui, onEdit = vm::editForm, onSubmit = vm::submit, onDismiss = vm::closeForm, withPicture = pictures[f.card.file] != null) }
     if (guide) GuideSheet { guide = false }
     reading?.let { c -> ReadAllSheet(c) { reading = null } }
@@ -311,6 +316,8 @@ fun InboxScreen(
     /** Where the top card starts (screenshot tests draw it mid-swipe). */
     peek: Offset = Offset.Zero,
     sortedCount: Int = 0,
+    /** A bulk tidy-up on its way: its quiet "120 of 412" line takes the counts' place. */
+    bulk: Bulk? = null,
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -342,7 +349,7 @@ fun InboxScreen(
     // drew the choice buttons behind the bar, only their tops showing).
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize().then(if (tall) Modifier else Modifier.verticalScroll(scroll)).padding(contentPadding).padding(bottom = if (tall) DockGap else 12.dp)) {
-            Header(ui, onHelp = actions.help, onRing = { ringAt = it }, sortedCount = sortedCount, onSorted = actions.sorted, onTidy = actions.tidy)
+            Header(ui, onHelp = actions.help, onRing = { ringAt = it }, sortedCount = sortedCount, onSorted = actions.sorted, onTidy = actions.tidy, bulk = bulk)
             // Tall: the middle takes what the header and the dock leave, and the card sits centred in it.
             val middle = if (tall) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth()
             when {
@@ -352,7 +359,8 @@ fun InboxScreen(
                 ui.cards.isEmpty() && leaving == null -> Box(middle, contentAlignment = Alignment.Center) { Empty(ui) }
                 else -> {
                     androidx.compose.foundation.layout.BoxWithConstraints(middle, contentAlignment = Alignment.Center) {
-                        val room = if (tall && constraints.hasBoundedHeight) maxHeight - 16.dp else 560.dp
+                        // 12 dp of air round the card (was 16: the Later line under the grid took 4 of the card's room).
+                        val room = if (tall && constraints.hasBoundedHeight) maxHeight - Space.md else 560.dp
                         Deck(ui, leaving, pictures, actions, reduce, peek, room, Modifier.fillMaxSize())
                     }
                     ui.cards.firstOrNull()?.let { Dock(it, ui, actions) }
@@ -364,12 +372,13 @@ fun InboxScreen(
 }
 
 @Composable
-private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, sortedCount: Int = 0, onSorted: () -> Unit = {}, onTidy: () -> Unit = {}) {
+private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, sortedCount: Int = 0, onSorted: () -> Unit = {}, onTidy: () -> Unit = {}, bulk: Bulk? = null) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                // With no card here, "N left" would sit over "Inbox zero" (checker 2026-10-28 #8): the empty card says it.
-                if (ui.cards.isNotEmpty()) Text(if (ui.sorted < ui.goal) "Today's ${ui.goal}" else "${ui.left} more", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                // With no card here, a count would sit over "Inbox zero" (checker 2026-10-28 #8): the empty card says it.
+                // After the goal: done for today, never the pile ("900 more", checker 2026-10-30 #9).
+                if (ui.cards.isNotEmpty()) Text(if (ui.sorted < ui.goal) "Today's ${ui.goal}" else "Done for today ✓", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
                 Text("Inbox", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
             }
             if (ui.streak > 0) Streak(ui.streak)
@@ -380,7 +389,8 @@ private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, so
         // The day's goal leads; the learned habit (5) follows (learn-client.tsx today-count). The counts get the whole
         // width and keep their words together, so "2/5 learned" never breaks after the number (checker #7).
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(countsLine(ui), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
+            // A bulk tidy-up on its way says how far it is in the same place, quietly (no spinner).
+            Text(bulk?.let(::bulkLine) ?: countsLine(ui), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
             // Always there, so the deck never moves when the first decision lands (RULES.md Layout 1).
             val press = remember { MutableInteractionSource() }
             Text(
@@ -390,6 +400,13 @@ private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, so
             )
         }
     }
+}
+
+/** "Old saves to Someday · 120 of 412" (or "dropping"), and "waiting for pagel.uz" while it cannot reach it. */
+fun bulkLine(b: Bulk): String {
+    val nb = " "
+    val what = if (b.choice == Choice.SOMEDAY) "Old saves to Someday" else "Dropping old saves"
+    return "$what · ${b.done}${nb}of${nb}${b.total}" + if (b.stalled) " · waiting for pagel.uz" else ""
 }
 
 /** "7/20 sorted today · 2/5 learned", with no-break spaces inside each count. */
@@ -838,11 +855,22 @@ private fun SitePill(site: Site, name: String) {
 
 /**
  * The dock, pinned just above the tab bar (Boss 2026-10-28, the thumb zone): the AI's pick as the big button, the
- * other choices in one row under it. One thumb reaches all of it without moving the hand.
+ * GTD question, its two rows of choices, and under them the Later link. One thumb reaches all of it without moving the
+ * hand. A long-press on a choice repeats it with last time's settings (checker 2026-10-30 #7); one line says so until
+ * Boss has used it once.
  */
 @Composable
 private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = Space.xs)) {
+    val ctx = LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences(DOCK_PREFS, android.content.Context.MODE_PRIVATE) }
+    var tipUsed by remember { mutableStateOf(runCatching { prefs.getBoolean(HOLD_TIP_USED, false) }.getOrDefault(false)) }
+    val repeat = { c: Choice ->
+        if (!tipUsed) { tipUsed = true; runCatching { prefs.edit().putBoolean(HOLD_TIP_USED, true).apply() } }
+        actions.repeat(card, c)
+    }
+    // The Later row under the grid is paid for by the grid itself (no top gap, no padding round each choice), so the
+    // card keeps the room its picture needs at 360x780.
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         val guess = card.guess
         if (guess != null) GuessButton(card, guess, ui) { actions.choose(card, guess, Throw.None) }
         else AiReading(ui.reading)
@@ -852,17 +880,82 @@ private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
         )
         // Two rows of icons, each with its word under it (checker #5: as chips, three of six sat under the tab bar).
         // slot: always in the same places; the AI's pick is marked where it stands (spacing audit #2: the icons moved
-        // from card to card when the pick was taken out of the row).
-        for ((answer, group) in listOf("No" to NO_GROUP, "Yes" to YES_GROUP)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(answer, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, softWrap = false,
-                    modifier = Modifier.width(Space.xxl + Space.xs).semantics { contentDescription = "If $answer" })
-                for (c in group) {
-                    val off = (c == Choice.KEEP && ui.full) || (c == Choice.LATER && card.putOff)
-                    ChoiceIcon(c, enabled = !off, picked = c == guess, modifier = Modifier.weight(1f)) { actions.choose(card, c, Throw.None) }
+        // from card to card when the pick was taken out of the row). The No/Yes column is as wide as its words need
+        // (checker 2026-10-30 #3: a fixed 28 dp cut "Yes" at 1.5x), and every word in the grid has one size: the largest
+        // that lets the longest fit its slot, so Someday and Calendar never shrink alone.
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val (answerWidth, labelSize) = dockSizes(maxWidth)
+            Column(Modifier.fillMaxWidth()) {
+                for ((answer, group) in listOf("No" to NO_GROUP, "Yes" to YES_GROUP)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(answer, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, softWrap = false,
+                            modifier = Modifier.widthIn(min = answerWidth).semantics { contentDescription = "If $answer" })
+                        for (slot in 0 until DOCK_SLOTS) {
+                            val c = group.getOrNull(slot)
+                            if (c == null) Spacer(Modifier.weight(1f))
+                            else ChoiceIcon(c, enabled = !(c == Choice.KEEP && ui.full), picked = c == guess, labelSize = labelSize, modifier = Modifier.weight(1f),
+                                onLongClick = { repeat(c) }) { actions.choose(card, c, Throw.None) }
+                        }
+                    }
                 }
             }
         }
+        // Later, the put-off once: a small text link under the rows (checker 2026-10-30 #9), with the long-press tip
+        // beside it until Boss has used it.
+        Row(Modifier.fillMaxWidth().heightIn(min = DOCK_LINK_ROW), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (tipUsed) "" else "Hold a choice to repeat it", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = Space.xs),
+            )
+            val press = remember { MutableInteractionSource() }
+            val laterOff = card.putOff
+            Row(
+                Modifier.heightIn(min = DOCK_LINK_ROW).pressScale(press).graphicsLayer { alpha = if (laterOff) 0.4f else 1f }
+                    .clickable(press, indication = null, enabled = !laterOff, role = Role.Button) { actions.choose(card, Choice.LATER, Throw.None) }
+                    .padding(horizontal = Space.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(TabIcons.Clock, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(Space.xs))
+                Text(
+                    Choice.LATER.look.label, style = MaterialTheme.typography.labelSmall.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                    color = Glass.Muted, maxLines = 1, softWrap = false,
+                )
+            }
+        }
+    }
+}
+
+/** The dock's grid: five slots a row, No's fifth left empty. */
+private const val DOCK_SLOTS = 5
+/**
+ * The Later link's row: one small line. Compose widens a small target's touch area to 48 dp where nothing else is under
+ * the finger (the dock's bottom edge), so it stays a fair thumb target without taking the card's room.
+ */
+private val DOCK_LINK_ROW = 20.dp
+private const val DOCK_PREFS = "pagel-inbox"
+private const val HOLD_TIP_USED = "hold_tip_used"
+
+/**
+ * The No/Yes column's width (the wider word, measured) and the one word size for the whole grid: the largest step from
+ * 12.5 sp (growing to 1.2x with the font) down to 8 sp at which every choice's word fits its slot.
+ */
+@Composable
+private fun dockSizes(width: Dp): Pair<Dp, androidx.compose.ui.unit.TextUnit> {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = LocalDensity.current
+    val small = MaterialTheme.typography.labelSmall
+    return remember(width, density) {
+        val scale = density.fontScale
+        val answerPx = listOf("No", "Yes").maxOf { measurer.measure(it, small, maxLines = 1, softWrap = false).size.width }
+        val answer = with(density) { maxOf(Space.xxl, answerPx.toDp() + Space.xs) }
+        val slotPx = with(density) { ((width - answer) / DOCK_SLOTS).toPx() } - with(density) { Space.xs.toPx() }
+        val words = (NO_GROUP + YES_GROUP).map { it.look.label }
+        val max = 12.5f * minOf(scale, 1.2f) / scale
+        val min = 8f / scale
+        var size = max
+        while (size > min && words.any { measurer.measure(it, small.copy(fontSize = size.sp), maxLines = 1, softWrap = false).size.width > slotPx }) size -= 0.25f / scale
+        answer to size.coerceAtLeast(min).sp
     }
 }
 
@@ -903,32 +996,36 @@ private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, onClick: ()
 private fun lerp(a: Color, b: Color, t: Float) = Color(a.red + (b.red - a.red) * t, a.green + (b.green - a.green) * t, a.blue + (b.blue - a.blue) * t, 1f)
 
 /**
- * One of the other choices: a white glass disc with the choice's icon in its colour and its word under it (it shrinks
- * to fit at large font, never cut); the whole column is one target of at least 48 dp.
+ * One of the other choices: a white glass disc with the choice's icon in its colour and its word under it, at the
+ * grid's one word size (never cut); the whole column is one target of at least 48 dp. A long-press repeats it.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun ChoiceIcon(choice: Choice, enabled: Boolean, modifier: Modifier, picked: Boolean = false, onClick: () -> Unit) {
+private fun ChoiceIcon(
+    choice: Choice, enabled: Boolean, modifier: Modifier, picked: Boolean = false, labelSize: androidx.compose.ui.unit.TextUnit = 12.5.sp,
+    onLongClick: () -> Unit = {}, onClick: () -> Unit,
+) {
     val look = choice.look
     val press = remember { MutableInteractionSource() }
-    val scale = LocalDensity.current.fontScale
     Column(
+        // combinedClickable gives the long-press its own haptic.
         modifier.heightIn(min = TouchMin).pressScale(press).graphicsLayer { alpha = if (enabled) 1f else 0.4f }
-            .clickable(press, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
-            .padding(vertical = 2.dp),
+            .combinedClickable(press, indication = null, enabled = enabled, role = Role.Button, onLongClickLabel = "Repeat ${look.label} as last time",
+                onLongClick = onLongClick, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // 30 dp discs (were 32): with no padding round each choice, the grid pays for the Later line under it.
         Box(
-            Modifier.size(32.dp).background(if (picked) look.color.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f), CircleShape)
+            Modifier.size(30.dp).background(if (picked) look.color.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f), CircleShape)
                 .border(if (picked) 2.dp else 1.dp, if (picked) androidx.compose.ui.graphics.SolidColor(look.color) else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.45f))), CircleShape),
             contentAlignment = Alignment.Center,
         ) { Icon(look.icon, contentDescription = null, tint = look.color, modifier = Modifier.size(18.dp)) }
-        Spacer(Modifier.height(3.dp))
+        Spacer(Modifier.height(2.dp))
         androidx.compose.foundation.text.BasicText(
             look.label,
-            style = MaterialTheme.typography.labelSmall.copy(color = Glass.Ink.copy(alpha = 0.86f), textAlign = androidx.compose.ui.text.style.TextAlign.Center),
+            style = MaterialTheme.typography.labelSmall.copy(color = Glass.Ink.copy(alpha = 0.86f), fontSize = labelSize, textAlign = androidx.compose.ui.text.style.TextAlign.Center),
             maxLines = 1,
             softWrap = false,
-            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = (8f / scale).sp, maxFontSize = (12.5f * minOf(scale, 1.2f) / scale).sp, stepSize = (0.25f / scale).sp),
         )
     }
 }
