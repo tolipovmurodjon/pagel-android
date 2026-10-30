@@ -248,7 +248,8 @@ class UpcomingScreenshotTest {
         show(scale) { UpcomingScreen(upcoming(), pad, initialView = view) }
         compose.mainClock.advanceTimeBy(500)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/calendar-$name.png")
-        compose.onNodeWithContentDescription("View: ${view.label}").assertIsDisplayed()
+        // One header row: the view is a small button that says it (core round 4), not a five-way switch.
+        compose.onNodeWithContentDescription("Change view").assertIsDisplayed()
     }
 
     @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun calendarList360() = calendar(org.pagel.ai.data.upcoming.CalView.SCHEDULE, 1f, "list-360x800")

@@ -130,13 +130,13 @@ fun UpcomingRoute(contentPadding: PaddingValues, reselect: Int, vm: UpcomingView
     UpcomingScreen(ui, contentPadding, reselect, onMove = vm::reschedule, onMoveAll = vm::moveAllToToday, onFinish = vm::finish, onMoveTo = vm::moveTo)
 }
 
-/** A row being dragged to another day: where the finger holds it, where it started, the strip day under the finger. */
+/** A row being dragged to another day: where the finger holds it, where it started, the day under the finger (strip or month). */
 @Stable
 private class Drag {
     var id by mutableStateOf<String?>(null)
     var title by mutableStateOf("")
     var shown by mutableStateOf(false)
-    var hovered by mutableStateOf<Int?>(null)
+    var hovered by mutableStateOf<LocalDate?>(null)
     var grab = Offset.Zero
     var origin = Offset.Zero
     var finger = Offset.Zero
@@ -180,7 +180,6 @@ fun UpcomingScreen(
     val pager = androidx.compose.foundation.pager.rememberPagerState(initialPage = STRIP_BACK) { STRIP_PAGES }
     val page = pager.currentPage - STRIP_BACK
     val stripStart = org.pagel.ai.data.upcoming.pageStart(ui.today, page)
-    val stripDays = remember(stripStart) { (0 until 7).map { stripStart.plusDays(it.toLong()) } }
     var focusText by rememberSaveable { mutableStateOf("") }
     val focus = focusText.takeIf(String::isNotEmpty)?.let(LocalDate::parse) ?: ui.today
     var monthText by rememberSaveable { mutableStateOf("") }
@@ -193,6 +192,20 @@ fun UpcomingScreen(
         val start = org.pagel.ai.data.upcoming.pageStart(ui.today, pager.settledPage - STRIP_BACK)
         if (focus < start || focus > start.plusDays(6)) focusText = start.toString()
     }
+    // The timeline's own pages (Day, 3 days, Week: Week is Monday to Sunday), opened on the focused day; one per view.
+    val timelineView = view.takeIf { it == CalView.DAY || it == CalView.THREE } ?: CalView.WEEK
+    val tl = key(timelineView) {
+        androidx.compose.foundation.pager.rememberPagerState(initialPage = TL_BACK + org.pagel.ai.data.upcoming.timelinePageOf(timelineView, ui.today, focus)) { TL_PAGES }
+    }
+    val timelineScroll = rememberScrollState()
+    var allDayOpen by rememberSaveable { mutableStateOf(false) }
+    var firstTl by remember(tl) { mutableStateOf(true) }
+    LaunchedEffect(tl, tl.settledPage) {
+        if (firstTl) { firstTl = false; return@LaunchedEffect }
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        val shownDays = org.pagel.ai.data.upcoming.timelineDays(timelineView, ui.today, tl.settledPage - TL_BACK)
+        if (focus !in shownDays) focusText = shownDays.first().toString()
+    }
     val local = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
     var headH by remember { mutableIntStateOf(0) }
     val topPad = contentPadding.calculateTopPadding()
@@ -202,8 +215,9 @@ fun UpcomingScreen(
     val list = rememberLazyListState()
     val drag = remember { Drag() }
     var rootAt by remember { mutableStateOf(Offset.Zero) }
-    // The strip's place on screen, read when a drag needs it (one node, outside the list).
+    // The strip's (List) and the month grid's (Month) place on screen, read when a drag needs it, at that moment.
     val strip = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val monthAt = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val slop = with(LocalDensity.current) { 28.dp.toPx() }
     // Page 0 is Upcoming as before (Overdue + today and the next 6); another week is its 7 days, no Overdue.
     val shownView = if (page == 0) ui.view else remember(ui.tasks, stripStart) {
@@ -211,6 +225,8 @@ fun UpcomingScreen(
     }
     val days by rememberUpdatedState(shownView.days)
     val moveTo by rememberUpdatedState(onMove)
+    val viewNow by rememberUpdatedState(view)
+    val monthNow by rememberUpdatedState(month)
     val overdueFirst = if (shownView.overdue.isNotEmpty()) 1 else 0
 
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
@@ -218,12 +234,29 @@ fun UpcomingScreen(
     LaunchedEffect(drag.hovered) { if (drag.hovered != null) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
     val over = drag.hovered != null
     LaunchedEffect(over) { drag.lift.animateTo(if (over) 1f else 0f, spring(dampingRatio = 1f, stiffness = 600f)) }
-    fun dayUnder(finger: Offset): Int? {
+    // The day under the finger, read where the strip or the month grid is now (Month: the day's list drags onto it).
+    fun dayUnder(finger: Offset): LocalDate? {
+        if (viewNow == CalView.MONTH) {
+            val c = monthAt[0]?.takeIf { it.isAttached } ?: return null
+            val at = c.positionInRoot()
+            return org.pagel.ai.data.upcoming.monthDayAt(finger.x - at.x, finger.y - at.y, c.size.width.toFloat(), c.size.height.toFloat(),
+                org.pagel.ai.data.upcoming.monthWeeks(monthNow))
+        }
         val c = strip[0]?.takeIf { it.isAttached } ?: return null
         val at = c.positionInRoot()
-        return stripDayAt(finger.x - at.x, finger.y - at.y, c.size.width.toFloat(), c.size.height.toFloat(), days.size, slop)
+        return stripDayAt(finger.x - at.x, finger.y - at.y, c.size.width.toFloat(), c.size.height.toFloat(), days.size, slop)?.let { days.getOrNull(it)?.day }
     }
-    fun cellCentre(i: Int): Offset? {
+    fun cellCentre(d: LocalDate): Offset? {
+        if (viewNow == CalView.MONTH) {
+            val c = monthAt[0]?.takeIf { it.isAttached } ?: return null
+            val weeks = org.pagel.ai.data.upcoming.monthWeeks(monthNow)
+            val row = weeks.indexOfFirst { d in it }.takeIf { it >= 0 } ?: return null
+            val at = c.positionInRoot()
+            val w = c.size.width / 7f
+            val h = c.size.height / weeks.size.toFloat()
+            return Offset(at.x + w * (weeks[row].indexOf(d) + 0.5f), at.y + h * (row + 0.5f))
+        }
+        val i = days.indexOfFirst { it.day == d }.takeIf { it >= 0 } ?: return null
         val c = strip[0]?.takeIf { it.isAttached } ?: return null
         val at = c.positionInRoot()
         val w = c.size.width.toFloat() / days.size.coerceAtLeast(1)
@@ -247,12 +280,13 @@ fun UpcomingScreen(
             },
             end = { cancelled ->
                 val id = drag.id
-                val i = if (cancelled) null else drag.hovered
+                // The day under the finger as the screen is now, at the release (round 0.3.33's lesson), not the last hover.
+                val day = if (cancelled) null else dayUnder(drag.finger)
                 drag.hovered = null
-                val target = i?.let(::cellCentre)
-                if (id != null && i != null && target != null && i in days.indices) {
+                val target = day?.let(::cellCentre)
+                if (id != null && day != null && target != null) {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    moveTo(id, days[i].day)
+                    moveTo(id, day)
                     drag.id = null
                     // The spring drop: the held point flies into the day's cell and the card shrinks into it.
                     scope.launch {
@@ -271,7 +305,6 @@ fun UpcomingScreen(
         )
     }
 
-    val shown = when (view) { CalView.DAY -> listOf(focus); CalView.THREE -> (0 until 3).map { focus.plusDays(it.toLong()) }; else -> stripDays }
     fun tapDay(d: LocalDate) {
         focusText = d.toString()
         if (view == CalView.SCHEDULE) {
@@ -279,6 +312,23 @@ fun UpcomingScreen(
             if (i >= 0) scope.launch { list.animateScrollToItem(if (i == 0 && page == 0) 0 else 1 + overdueFirst + i) }
         }
     }
+    fun pick(v: CalView) {
+        view = v
+        scope.launch(Dispatchers.IO) { CalendarPrefs.setView(ctx, v) }
+    }
+    val tlDays = org.pagel.ai.data.upcoming.timelineDays(timelineView, ui.today, tl.currentPage - TL_BACK)
+    // The header says the month once (Google): the shown days' month, or both when a week crosses one.
+    val title = when (view) {
+        CalView.MONTH -> month.atDay(1).format(MONTH_YEAR)
+        CalView.SCHEDULE -> stripStart.format(MONTH_YEAR)
+        else -> monthsOf(tlDays.first(), tlDays.last())
+    }
+    val away = when (view) {
+        CalView.SCHEDULE -> page != 0 || focus != ui.today
+        CalView.MONTH -> month != java.time.YearMonth.from(ui.today) || focus != ui.today
+        else -> ui.today !in tlDays
+    }
+    val anyAllDay = remember(ui.tasks) { hasAllDay(ui.tasks) }
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot(); drag.screenWidth = it.size.width.toFloat() }) {
         // The screen's own layer: the glass top bends and blurs what scrolls under it (round C: "not liquid glass").
@@ -311,38 +361,41 @@ fun UpcomingScreen(
                     }
                     CalView.MONTH -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                         Spacer(Modifier.height(headDp + Space.sm))
-                        MonthGrid(month, ui, focus) { d -> haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); focusText = d.toString() }
+                        MonthGrid(month, ui, focus, drag.hovered, onGrid = { monthAt[0] = it }) { d -> haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); focusText = d.toString() }
                         Spacer(Modifier.height(Space.paneGap))
-                        DayList(focus, ui, openTask)
+                        DayList(focus, ui, drag.id, handlers, openTask)
                         Spacer(Modifier.height(contentPadding.calculateBottomPadding() + Space.sm))
                     }
-                    else -> {
-                        Timeline(shown, ui, rememberScrollState(), top = headDp + Space.sm, bottom = contentPadding.calculateBottomPadding() + Space.sm,
-                            onOpen = openTask, onMove = onMoveTo)
-                    }
+                    else -> Timeline(timelineView, tl, ui, timelineScroll, top = headDp + Space.sm, bottom = contentPadding.calculateBottomPadding() + Space.sm,
+                        onOpen = openTask, onMove = onMoveTo)
                 }
             }
         }
-        // The pinned glass top: the view switch, then the week strip (or the month's title), the drop target of a drag.
+        // The pinned glass top: one header row, then the List's week strip or the timeline's dates (and its All-day line).
         GlassTop(local, Modifier.padding(start = Space.gutter, end = Space.gutter, top = topPad + Space.sm).onSizeChanged { headH = it.height }) {
             Column(Modifier.padding(Space.xs)) {
-                ViewSwitch(view, Modifier.padding(horizontal = Space.xs)) { v ->
-                    view = v
-                    scope.launch(Dispatchers.IO) { CalendarPrefs.setView(ctx, v) }
-                }
-                if (view == CalView.MONTH) MonthBar(month) { monthText = it.toString() }
-                else {
-                    Row(Modifier.fillMaxWidth().padding(start = Space.md), verticalAlignment = Alignment.CenterVertically) {
-                        // Day says its day, 3 days its three (checker #6: Day still said the week's range).
-                        Text(when (view) { CalView.DAY -> focus.format(DAY_HEAD); CalView.THREE -> rangeText(focus, 2); else -> rangeText(stripStart) }, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, modifier = Modifier.weight(1f))
-                        TodayPill(shown = page != 0 || focus != ui.today) {
-                            focusText = ""
-                            scope.launch { pager.animateScrollToPage(STRIP_BACK); if (view == CalView.SCHEDULE) list.animateScrollToItem(0) }
+                CalHeader(
+                    title, view, showToday = away, onView = ::pick,
+                    onToday = {
+                        focusText = ""; monthText = ""
+                        scope.launch {
+                            if (view == CalView.SCHEDULE) { pager.animateScrollToPage(STRIP_BACK); list.animateScrollToItem(0) }
+                            else if (view != CalView.MONTH) tl.animateScrollToPage(TL_BACK)
                         }
+                    },
+                    onMonth = if (view == CalView.MONTH) { k -> monthText = month.plusMonths(k).toString() } else null,
+                )
+                when (view) {
+                    CalView.SCHEDULE -> WeekPager(pager, ui, focus, drag.hovered, Modifier.padding(bottom = Space.xs).onGloballyPositioned { strip[0] = it }) { d -> tapDay(d) }
+                    CalView.MONTH -> Unit
+                    else -> {
+                        TimelineHeads(tl, timelineView, ui.today, Modifier.padding(start = GUTTER - Space.xl)) { d ->
+                            focusText = d.toString()
+                            if (view != CalView.DAY) pick(CalView.DAY)
+                        }
+                        if (anyAllDay) AllDayLine(tl, timelineView, ui, allDayOpen, Modifier.padding(start = GUTTER - Space.xl, bottom = Space.xs),
+                            onToggle = { allDayOpen = !allDayOpen }, onOpen = openTask)
                     }
-                    WeekPager(pager, ui, focus, drag.hovered, Modifier.padding(bottom = Space.xs).onGloballyPositioned { strip[0] = it }) { d -> tapDay(d) }
-                    // The timeline's own day heads, on its columns (checker #6: the strip's days sat ~15 dp off them).
-                    if (view != CalView.SCHEDULE) DayHeads(shown, ui.today, Modifier.padding(start = GUTTER - Space.xl, bottom = Space.xs))
                 }
             }
         }
@@ -352,10 +405,15 @@ fun UpcomingScreen(
 
 private val RANGE_DAY = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
 
-private val DAY_HEAD = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
+private val MONTH_YEAR = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)
+private val MONTH_ONLY = DateTimeFormatter.ofPattern("MMM", Locale.UK)
 
-/** "28 Oct – 3 Nov": the strip's week (or [days] after [start]). */
-private fun rangeText(start: LocalDate, days: Long = 6): String = "${start.format(RANGE_DAY)} – ${start.plusDays(days).format(RANGE_DAY)}"
+/** "October 2026", or "Oct – Nov 2026" for a week that crosses a month ("Dec 2026 – Jan 2027" across a year). */
+internal fun monthsOf(first: LocalDate, last: LocalDate): String = when {
+    first.month == last.month -> first.format(MONTH_YEAR)
+    first.year == last.year -> "${first.format(MONTH_ONLY)} – ${last.format(MONTH_ONLY)} ${last.year}"
+    else -> "${first.format(MONTH_ONLY)} ${first.year} – ${last.format(MONTH_ONLY)} ${last.year}"
+}
 
 /** The view Boss chose last, kept on the phone (read and written off Main). */
 internal object CalendarPrefs {
@@ -367,7 +425,7 @@ internal object CalendarPrefs {
 }
 
 /** What a row needs to start, move and end a drag; the screen owns the state. */
-private class DragHandlers(
+internal class DragHandlers(
     val start: (TaskEntity, Offset, Offset, IntSize) -> Unit,
     val move: (Offset) -> Unit,
     val end: (cancelled: Boolean) -> Unit,

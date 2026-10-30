@@ -57,6 +57,12 @@ class UpcomingRepository(
         return Moved(id, t.due, op)
     }
 
+    /**
+     * The calendar's Undo (core round 4: "Undo = a real inverse write"): the old due goes back through the outbox as its
+     * own PATCH, after the move, so pagel.uz ends where the task began whether or not the move had left the phone.
+     */
+    suspend fun putBack(m: Moved): Long? = tasks.due(m.id, m.was)
+
     /** Overdue → today, each keeping its time, in the order shown (oldest first). */
     suspend fun moveAllToToday(ids: List<String>): List<Moved> {
         val today = today()

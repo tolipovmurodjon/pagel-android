@@ -85,6 +85,28 @@ class UpcomingRepositoryTest {
         due = due, every = every, doneWhen = null, doneAt = doneAt, updatedAt = "2026-10-27T05:00:00Z", serverVersion = 1, lastModified = 0,
     )
 
+    /** Core round 4: a calendar move's Undo is a real inverse write (the old due goes to pagel.uz), sent or not. */
+    @Test fun aCalendarMovesUndoSendsTheOldDueBackAfterTheMove() = runBlocking {
+        db.dao().upsertTasks(listOf(task("t_c", "2026-11-08 10:00"), task("t_d", "2026-11-08 09:00-10:30")))
+        val r = repo()
+        val sent = r.moveTo("t_c", "2026-11-05 14:30")!!
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        r.putBack(sent)
+        // Still waiting on the phone when Undo comes: both go, in order, and pagel.uz ends where it began.
+        val waiting = r.moveTo("t_d", "2026-11-08 09:00-12:00")!!
+        r.putBack(waiting)
+        assertEquals("2026-11-08 10:00", db.dao().taskOnce("t_c")!!.due)
+        assertEquals("2026-11-08 09:00-10:30", db.dao().taskOnce("t_d")!!.due)
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(listOf(
+            """t_c {"due":"2026-11-05 14:30"}""", """t_c {"due":"2026-11-08 10:00"}""",
+            """t_d {"due":"2026-11-08 09:00-12:00"}""", """t_d {"due":"2026-11-08 09:00-10:30"}""",
+        ), patches)
+        // A habit never moves from the calendar.
+        db.dao().upsertTasks(listOf(task("t_h", "2026-11-08 07:30", every = "day")))
+        assertNull(r.moveTo("t_h", "2026-11-08 08:00"))
+    }
+
     @Test fun aDropOnAnotherDayMovesItInRoomAtOnceAndSendsTheDueKeepingTheTime() = runBlocking {
         db.dao().upsertTasks(listOf(task("t_a", "2026-10-29 10:00"), task("t_b", "2026-10-29")))
         val r = repo()

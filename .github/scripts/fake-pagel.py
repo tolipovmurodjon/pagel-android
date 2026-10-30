@@ -60,6 +60,15 @@ def day_from_today(n):
 # Upcoming (Phase 4): two overdue tasks and one for tomorrow, none starred (they are not on Today). The walkthrough drags
 # t_u3 onto the day after tomorrow and moves the overdue ones to today; PATCH {due} lands in EDITS like a panel edit.
 UPCOMING = [("t_u1", "humopedia", "Send the grant form", 1, -1), ("t_u2", "me", "Pay the internet bill", 0, -3), ("t_u3", "humopedia", "Review the lesson draft", 2, 1)]
+
+# Core round 4 · the calendar (Builder B): a 10:00 block on NEXT week's Sunday (Monday-first, Tashkent), so it is never
+# on Today, never in Upcoming's next 7 days and never overdue. The walk swipes the Week to it, drags it to that week's
+# Thursday 14:30 (PATCH due) and taps Undo (PATCH due back to 10:00).
+def next_week_day(dow):  # 0 = Monday
+    now = datetime.now(TASHKENT)
+    return (now - timedelta(days=now.weekday()) + timedelta(days=7 + dow)).strftime("%Y-%m-%d")
+UPCOMING.append(("t_cal1", "humopedia", "Plan the lesson week", 2, 7))
+EDITS["t_cal1"] = {"due": f"{next_week_day(6)} 10:00"}
 # Completed (Phase 4): finished tasks with done_at (UTC instants); /sync carries the last 14 days, /api/v1/completed all.
 # The walkthrough unticks t_c1 (PATCH {done: false}) and it opens again.
 def ago(hours):

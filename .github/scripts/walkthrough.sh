@@ -474,11 +474,96 @@ tap "Back to today" && shot calendar-back-to-today 1.5
 grep -qF "content-desc=\"$TODAY_SPOKEN" "$OUT/$(printf '%02d' $N)-calendar-back-to-today.xml" || { log "WALKTHROUGH: Today did not bring this week back"; exit 1; }
 P=$(centre_desc "$TOMORROW_SPOKEN") || exit 1; set -- $P
 $T adb shell input tap "$1" "$2"; sleep 1
-for v in Day Week Month; do
-  tap "View: $v" && shot "calendar-$(echo $v | tr 'A-Z' 'a-z')" 2 || { log "WALKTHROUGH: no \"View: $v\""; exit 1; }
+# Core round 4: the view is a small button that opens a glass menu (the five-way switch took a third of the top).
+cal_xml() { echo "$OUT/$(printf '%02d' $N)-$1.xml"; }
+DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
+dp() { echo $(( $1 * DPI / 160 )); }
+# The bounds of the first node whose content-desc is exactly $1, as "x1 y1 x2 y2" (nothing when it is not there).
+cal_bounds() {
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n' | grep -F "content-desc=\"$1\"" | head -1 \
+    | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' '
+}
+# Change view → the menu's row; if the popup is not in the dump, its row by place (List 0, Day 1, 3 days 2, Week 3, Month 4).
+pick_view() {
+  local b; b=$(cal_bounds "Change view"); set -- "$1" "$2" $b
+  [ -n "${6:-}" ] || { log "   (no Change view on screen)"; return 1; }
+  $T adb shell input tap $(( ($3 + $5) / 2 )) $(( ($4 + $6) / 2 )); sleep 1
+  tap "$1" && return 0
+  log "   (the menu's \"$1\" is not in the dump: its row by place)"
+  $T adb shell input tap $(( $3 + $(dp 60) )) $(( $6 + $(dp 36) + $(dp 48) * $2 ))
+}
+# A finger held still before it lifts: the grid stops where it was put (no fling).
+cal_drag() { # x1 y1 x2 y2
+  $T adb shell input motionevent DOWN "$1" "$2"
+  for k in 1 2 3 4 5 6 7 8; do $T adb shell input motionevent MOVE $(( $1 + ($3 - $1) * k / 8 )) $(( $2 + ($4 - $2) * k / 8 )); done
+  sleep 0.5; $T adb shell input motionevent MOVE "$3" "$4"; $T adb shell input motionevent UP "$3" "$4"
+}
+pick_view Day 1 && shot calendar-day 2 || { log "WALKTHROUGH: no Day in the view menu"; exit 1; }
+pick_view Week 3 && shot calendar-week 2 || { log "WALKTHROUGH: no Week in the view menu"; exit 1; }
+pick_view Month 4 && shot calendar-month 2 || { log "WALKTHROUGH: no Month in the view menu"; exit 1; }
+grep -q 'content-desc="Previous month"' "$(cal_xml calendar-month)" || { log "WALKTHROUGH: the Month view has no month arrows"; exit 1; }
+
+log "-- Core round 4 calendar (Builder B): Week = Monday to Sunday; swipe to next week; drag its Sunday 10:00 block to Thursday 14:30; Undo sends 10:00 back"
+TODAY_ISO=$(TZ=Asia/Tashkent date +%F)
+MON=$(date -d "$TODAY_ISO -$(( $(TZ=Asia/Tashkent date +%u) - 1 )) days" +%F)
+MON_SPOKEN=$(LC_ALL=C date -d "$MON" '+%A %-d %B'); SUN_SPOKEN=$(LC_ALL=C date -d "$MON +6 days" '+%A %-d %B')
+NEXT_THU=$(date -d "$MON +10 days" +%F); NEXT_THU_SPOKEN=$(LC_ALL=C date -d "$NEXT_THU" '+%A %-d %B')
+NEXT_SUN=$(date -d "$MON +13 days" +%F); NEXT_MON_SPOKEN=$(LC_ALL=C date -d "$MON +7 days" '+%A %-d %B')
+pick_view Week 3 || { log "WALKTHROUGH: no Week in the view menu"; exit 1; }
+shot cal4-week 2
+grep -qF "content-desc=\"$MON_SPOKEN\"" "$(cal_xml cal4-week)" && grep -qF "content-desc=\"$SUN_SPOKEN\"" "$(cal_xml cal4-week)" \
+  || { log "WALKTHROUGH: the Week is not Monday to Sunday ($MON_SPOKEN to $SUN_SPOKEN)"; exit 1; }
+# One header row: no five-way switch in the Week (the dates live once, on the columns).
+grep -q 'content-desc="View: ' "$(cal_xml cal4-week)" && { log "WALKTHROUGH: the Week still shows the five-way view switch"; exit 1; }
+W=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f1); H=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2)
+# Swipe the grid sideways (not from an edge: gesture navigation takes that as Back), well under the glass top.
+$T adb shell input swipe "$(( W * 85 / 100 ))" "$(( H / 2 ))" "$(( W * 12 / 100 ))" "$(( H / 2 ))" 300
+shot cal4-next-week 2
+grep -qF "content-desc=\"$NEXT_MON_SPOKEN\"" "$(cal_xml cal4-next-week)" || { log "WALKTHROUGH: the swipe did not turn the Week to $NEXT_MON_SPOKEN"; exit 1; }
+# Next Sunday's 10:00 block: the grid to its top through the hour column (no block there), then 10:00 under the dates.
+GX=$(dp 26)
+for k in 1 2 3; do $T adb shell input swipe "$GX" "$(( H * 35 / 100 ))" "$GX" "$(( H * 80 / 100 ))" 120; sleep 0.4; done
+sleep 1
+HEAD=$(cal_bounds "$NEXT_THU_SPOKEN"); set -- $HEAD; [ -n "${4:-}" ] || { log "WALKTHROUGH: no head for $NEXT_THU_SPOKEN"; exit 1; }
+THU_X=$(( ($1 + $3) / 2 )); TOPLINE=$(( $4 + $(dp 40) ))
+BLOCK=""; B=""
+for k in 1 2 3 4 5 6 7 8; do
+  B=$(cal_bounds "Plan the lesson week, 10:00"); set -- $B
+  if [ -n "${4:-}" ]; then
+    D=$(( $2 - TOPLINE - $(dp 15) ))
+    if [ "$D" -ge "-$(dp 15)" ] && [ "$D" -le "$(dp 25)" ]; then BLOCK="$B"; break; fi
+    [ "$D" -gt "$(dp 200)" ] && D=$(dp 200); [ "$D" -lt "-$(dp 200)" ] && D=-$(dp 200)
+    S=$(dp 8); [ "$D" -lt 0 ] && S=$(( -S ))
+    cal_drag "$GX" "$(( H * 55 / 100 ))" "$GX" "$(( H * 55 / 100 - D - S ))"
+  else cal_drag "$GX" "$(( H * 75 / 100 ))" "$GX" "$(( H * 75 / 100 - $(dp 150) ))"; fi
+  sleep 0.8
 done
-grep -q 'content-desc="Previous month"' "$OUT/$(printf '%02d' $N)-calendar-month.xml" || { log "WALKTHROUGH: the Month view has no month bar"; exit 1; }
-tap "View: List" && shot calendar-list 1.5
+[ -n "$BLOCK" ] || { log "WALKTHROUGH: the Sunday 10:00 block never came under the dates (last bounds: $B, line $TOPLINE)"; shot cal4-no-block 0.5; exit 1; }
+set -- $BLOCK; FX=$(( ($1 + $3) / 2 )); FY=$(( ($2 + $4) / 2 ))
+# 10:00 → 14:30 is 4.5 hours of 52 dp.
+TX=$THU_X; TY=$(( FY + 234 * DPI / 160 ))
+log "   drag the block ($FX,$FY) to Thursday 14:30 ($TX,$TY)"
+$T adb shell input motionevent DOWN "$FX" "$FY"
+sleep 1.2
+for k in 1 2 3 4 5 6 7 8; do $T adb shell input motionevent MOVE $(( FX + (TX - FX) * k / 8 )) $(( FY + (TY - FY) * k / 8 )); done
+sleep 0.4; $T adb shell input motionevent MOVE "$TX" "$TY"
+$T adb shell screencap -p /sdcard/drag.png; timeout 20 adb pull /sdcard/drag.png "$OUT/$(printf '%02d' $((N + 1)))-cal4-dragging.png" > /dev/null 2>&1; N=$((N + 1)); log "$(printf '%02d' $N)-cal4-dragging"
+$T adb shell input motionevent UP "$TX" "$TY"
+WANT="PATCH /api/v1/tasks/t_cal1 {\"due\":\"$NEXT_THU 14:30\"} auth=True"
+for i in $(seq 1 14); do grep -qF "$WANT" "$FAKE_LOG" && break; sleep 0.5; done
+grep -qF "$WANT" "$FAKE_LOG" || { log "WALKTHROUGH: the drop never reached pagel.uz as $WANT"; grep 't_cal1' "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; shot cal4-dropped 0.5; exit 1; }
+log "   pagel.uz got the drop: due $NEXT_THU 14:30"
+tap Undo || { log "WALKTHROUGH: the move's toast has no Undo"; exit 1; }
+BACK="PATCH /api/v1/tasks/t_cal1 {\"due\":\"$NEXT_SUN 10:00\"} auth=True"
+for i in $(seq 1 30); do grep -qF "$BACK" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$BACK" "$FAKE_LOG" || { log "WALKTHROUGH: Undo never sent the old due back as $BACK"; grep 't_cal1' "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+shot cal4-undone 2
+grep -qF 'content-desc="Plan the lesson week, 10:00"' "$(cal_xml cal4-undone)" || log "   (WARN: the block is not back at 10:00 on screen)"
+log "   Undo sent the old due back: $NEXT_SUN 10:00"
+$T adb logcat -d > "$OUT/logcat-cal4.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-cal4.txt" && { log "WALKTHROUGH: CRASH in the calendar drag (see logcat-cal4.txt)"; exit 1; }
+pick_view List 0 && shot calendar-list 1.5
 log "-- Round C notifications: the task, morning-plan alarms are on AlarmManager; a reminder's Done ticks offline"
 sleep 3
 $T adb shell dumpsys alarm > "$OUT/alarm-dump-tasks.txt"
