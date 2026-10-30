@@ -170,9 +170,9 @@ class HabitBoardTest {
         assertEquals(listOf("b"), L.anchorChoices("a", listOf(a, b, w, prayer), emptyMap()).map { it.id })
         // b already follows a: a after b would be a loop.
         assertEquals(emptyList<String>(), L.anchorChoices("a", listOf(a, b, w), prefs).map { it.id })
-        assertEquals(L.Anchor.Moment("☕ Coffee"), L.anchorOf(L.store(L.Anchor.Moment("☕ Coffee"))))
-        assertEquals(L.Anchor.Habit("a"), L.anchorOf("a"))
-        assertEquals("After ☕ coffee → 🧘 Floor routine", L.recipe(L.Anchor.Moment("☕ Coffee"), null, "🧘", "Floor routine"))
+        assertEquals(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"), L.anchorOf(L.store(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"))))
+        assertEquals(org.pagel.ai.data.habits.HabitLook.Anchor.Habit("a"), L.anchorOf("a"))
+        assertEquals("After ☕ coffee → 🧘 Floor routine", L.recipe(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"), null, "🧘", "Floor routine"))
     }
 
     @Test fun aHabitsLookKeepsEmojiAndColourTogether() {
