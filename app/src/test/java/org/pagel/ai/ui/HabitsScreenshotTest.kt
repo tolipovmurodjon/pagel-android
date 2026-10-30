@@ -228,9 +228,11 @@ class HabitsScreenshotTest {
             val text = l.layoutInput.text.text
             val at = "$what \"${text.take(40)}\""
             assertTrue("$at has an ellipsis (lines ${l.lineCount}, overflow ${l.hasVisualOverflow})", (0 until l.lineCount).none { l.isLineEllipsized(it) })
-            // A one-line text wider than its box is cut without an ellipsis ("Mornin", checker 3 #3). Only the width is
-            // read: a text in a clipped pane can overflow its height and still show whole.
-            assertTrue("$at is cut by its box (one line, ${l.size.width} px drawn, overflow ${l.didOverflowWidth})", !(l.lineCount == 1 && l.didOverflowWidth))
+            // A one-line text narrower than its own words is cut without an ellipsis ("Mornin", checker 3 #3). Read from the
+            // words' width against the node's laid-out width: didOverflowWidth failed all 7 cut-text tests in CI 41077490646
+            // (as hasVisualOverflow did before f780e6e), and boundsInRoot is clipped by a pane.
+            val needs = l.multiParagraph.intrinsics.maxIntrinsicWidth
+            assertTrue("$at is cut by its box (one line, words $needs px, box ${n.size.width} px)", !(l.lineCount == 1 && needs > n.size.width + 1f))
             for (i in 0 until l.lineCount - 1) {
                 val e = l.getLineEnd(i)
                 assertTrue("$at breaks a word at line ${i + 1}", e >= text.length || text[e - 1].isWhitespace() || text[e].isWhitespace() || text[e - 1] == '-')
