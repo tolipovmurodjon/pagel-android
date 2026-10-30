@@ -881,7 +881,14 @@ log "NAMOZ WALK DONE: $N steps (clock back to $(date -u +%FT%TZ))"
 
 log "-- How it works (Boss 2026-10-30): More -> How it works; swipe through all 10 cards, each reads its title; Try it opens the real screen"
 front guide-start
-for k in 1 2 3 4 5 6; do tap More && break; $T adb shell input keyevent 4; sleep 2; front guide-more; done
+# After the Namoz restart something may sit over the tab bar: wait, then Back once, then bring PAGEL to the front again.
+for k in 1 2 3 4 5 6; do
+  tap More && break
+  [ "$k" -ge 3 ] && { $T adb shell input keyevent 4; sleep 1; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null; }
+  sleep 3
+done
+shot guide-before-more 0.5
+front guide-more
 shot guide-more 1.5
 tap "How it works" || { log "WALKTHROUGH: no How it works row under More"; exit 1; }
 shot guide-card-1 2
