@@ -23,7 +23,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,7 +39,7 @@ import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.rituals.MintButton
 
 /** Opens the guide on one card; the shell provides it, so a screen's "?" is one line and carries no navigation. */
-val LocalGuideOpener: CompositionLocal<(Int) -> Unit> = compositionLocalOf { { } }
+val LocalGuideOpener = compositionLocalOf { { } }
 
 /** The small "?" in a screen's header: opens the guide on the card that explains that screen. */
 @Composable
