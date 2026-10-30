@@ -106,7 +106,7 @@ def sync_body():
                          "priority": 2, "star": False, "due": habit_due(hid, at), "every": "day", "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": [],
                          "times": HABIT_TIMES.get(hid, 1)}
                         for k, (hid, text, at) in enumerate(HABITS)]
-                     + [{"id": uid, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 60 + k, "text": text, "status": "open",
+                     + [{"id": uid, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 60 + k, "text": text, "status": "done" if uid in DONE else "open",
                          "priority": pr, "star": False, "due": day_from_today(n), "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": [], **EDITS.get(uid, {})}
                         for k, (uid, p, text, pr, n) in enumerate(UPCOMING)]
                      + completed_rows(recent_only=True)
