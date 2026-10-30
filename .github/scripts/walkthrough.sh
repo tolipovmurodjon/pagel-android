@@ -183,7 +183,10 @@ shot picker-dragged 1.5
 wait_picker 'PATCH /api/v1/projects/me \{"sort": ?-?[0-9]+\}' || { log "WALKTHROUGH: the drag never reached pagel.uz as a sort for Me"; grep "PATCH /api/v1/projects" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 [ "$(grep -cE 'PATCH /api/v1/projects/[a-z0-9-]+ \{"sort"' "$FAKE_LOG")" -eq 1 ] || { log "WALKTHROUGH: one drag sent more than one sort"; grep 'PATCH /api/v1/projects' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   one drag = one PATCH of one row"
-$T adb shell input keyevent 4; $T adb shell input keyevent 4; front picker-closed
+pp_on() { $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1; timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -qE "content-desc=\"($1)\""; }
+for k in 1 2 3 4; do pp_on 'Add task|Find a project' || break; $T adb shell input keyevent 4; sleep 1; done
+front picker-closed
+tap Today; sleep 1
 
 log "-- the Inbox (Phase 2): sort 5 saves with no network, come back online, pagel.uz gets all 5 in the order made"
 tap Inbox && shot inbox 3
