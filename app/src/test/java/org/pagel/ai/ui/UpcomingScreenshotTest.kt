@@ -227,8 +227,19 @@ class UpcomingScreenshotTest {
 
     @Test fun reminderSheetWhenNotificationsAreOff() {
         show(1.5f) { Column(Modifier.padding(top = 16.dp)) { ReminderContent(habit, on = true, exact = false, onToggle = {}, onTime = {}, notify = false) } }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-reminder-notifications-off.png")
+        val file = "build/outputs/roborazzi/habits-reminder-notifications-off.png"
+        compose.onRoot().captureRoboImage(file)
         compose.onNodeWithContentDescription("Notifications off · Turn on").assertIsDisplayed()
+        // Checker 3 #1: ink words and an amber bell, no red pixel (a saturated hue within 15 degrees of red). Only when
+        // the run records PNGs (CI's -Proborazzi.test.record=true).
+        val bmp = android.graphics.BitmapFactory.decodeFile(file) ?: return
+        val hsv = FloatArray(3)
+        var red = 0
+        for (y in 0 until bmp.height step 2) for (x in 0 until bmp.width step 2) {
+            android.graphics.Color.colorToHSV(bmp.getPixel(x, y), hsv)
+            if ((hsv[0] < 15f || hsv[0] > 345f) && hsv[1] > 0.5f && hsv[2] > 0.3f) red++
+        }
+        org.junit.Assert.assertEquals("red pixels on the notifications-off sheet", 0, red)
     }
 
     // ── Round C: the calendar's views (Boss: "week calendar view like Google's, many view formats, colouring") ──

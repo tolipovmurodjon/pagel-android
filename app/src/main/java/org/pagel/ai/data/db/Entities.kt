@@ -8,6 +8,14 @@ import androidx.room.PrimaryKey
 /** The id prefix of a task made on the phone and not yet on pagel.uz (it gets the server's id once sent). */
 const val LOCAL_ID = "local_"
 
+/**
+ * The phone's own ids pagel.uz has renamed (adoptServerId), kept in Room: a toast's Undo holds the id from the moment of
+ * the add, and the add often reaches pagel.uz inside the toast's 5 s. Every write path resolves the id first
+ * ([PagelDao.currentId]); a table, not memory, so process death inside the 5 s cannot lose the link.
+ */
+@Entity(tableName = "adopted_ids")
+data class AdoptedIdEntity(@PrimaryKey val oldId: String, val newId: String, val savedAt: Long)
+
 /** How a row stands against the server. Phase 1 only reads (everything is SYNCED); local edits arrive with Today. */
 object SyncStatus {
     const val SYNCED = "synced"

@@ -70,7 +70,9 @@ object Emoji {
 
     /** The habit's emoji key: Boss's own pick, else the first keyword its title holds, else a seedling (a new habit). */
     fun keyFor(title: String, chosen: String? = null): String {
-        if (chosen != null && chosen in all) return chosen
+        // A chosen look may carry its tile colour too ("coffee/amber", HabitLook): the emoji is the part before "/".
+        val pick = chosen?.substringBefore('/')
+        if (pick != null && pick in all) return pick
         val t = " ${title.lowercase()} "
         return KEYWORDS.firstOrNull { (_, words) -> words.any { it in t } }?.first ?: "seedling"
     }
@@ -87,6 +89,12 @@ object Emoji {
 
     /** The glyph a habit's notification text starts with (the bundled picture's own Unicode twin). */
     fun glyph(key: String): String = GLYPHS[key] ?: "🌱"
+
+    /**
+     * The bundled picture for a Unicode emoji ("🪥" → "toothbrush"), with or without its U+FE0F; null if none is bundled.
+     * A moment's words are drawn with the picture, not the font: an older font draws 🪥 as an empty box (checker 3 #11).
+     */
+    fun keyOfGlyph(glyph: String): String? = glyph.replace("\uFE0F", "").let { g -> GLYPHS.entries.firstOrNull { it.value.replace("\uFE0F", "") == g }?.key }
 
     private val GLYPHS = mapOf(
         "coffee" to "☕", "water" to "💧", "food" to "🍽️", "salad" to "🥗", "chicken" to "🍗", "apple" to "🍎", "milk" to "🥛",

@@ -30,6 +30,10 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
@@ -442,12 +446,39 @@ class TaskSystemScreenshotTest {
     @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun theFullTaskPanelRunsEdgeToEdge() = sheetEdges(true, "sheet-full-panel-360x800")
     @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun aHalfSheetEndsOnTheAuroraNotABand() = sheetEdges(false, "sheet-half-date-360x800")
 
-    /** Boss 2026-10-28: "What's new" after an update, a try-this list that opens each screen. */
+    /** Boss 2026-10-28: "What's new" after an update; 2026-10-29: newest first, this version open, older versions folded. */
     @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun whatsNewListsWhatToTry() {
         var opened = ""
-        show { org.pagel.ai.ui.shell.WhatsNewContent { opened = it } }
+        show { org.pagel.ai.ui.shell.WhatsNewContent({ opened = it }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/whats-new-360x800.png")
-        compose.onNodeWithContentDescription("Try: Calendar: switch List · Day · 3 days · Week · Month").performClick()
-        assertEquals("upcoming", opened)
+        // The counter is this version's only; its lines are open, the older versions are folded rows.
+        compose.onNodeWithText("0/7").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Try: Swipe the week: it follows your finger").performClick()
+        assertEquals("habits", opened)
+        compose.onAllNodesWithContentDescription("Try: 🧭 Compass: goals only you can read").assertCountEquals(0)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("0.3.30 · Compass"))
+        compose.onNodeWithText("0.3.30 · Compass").performClick()
+        compose.onNodeWithContentDescription("Try: 🧭 Compass: goals only you can read").assertExists()
+    }
+
+    private val manyLines = listOf("#0.3.40 · A long round") + (1..23).map { "Line $it: something to try in the app|today" }
+
+    /** Boss 2026-10-29: 23 lines were cut at the bottom and the sheet did not scroll. The last line must be reachable. */
+    private fun whatsNewReachesItsLastLine(name: String, fontScale: Float) {
+        show(fontScale) { org.pagel.ai.ui.shell.WhatsNewContent({}, items = manyLines) }
+        compose.onNodeWithText("0/23").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("Try: Line 23: something to try in the app"))
+        compose.onNodeWithContentDescription("Try: Line 23: something to try in the app").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/$name.png")
+    }
+
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun whatsNewScrollsToItsLastLine() = whatsNewReachesItsLastLine("whats-new-23-lines-end", 1f)
+    @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun whatsNewScrollsToItsLastLineAtLargeFont() = whatsNewReachesItsLastLine("whats-new-23-lines-end-font-1.5", 1.5f)
+
+    @Test fun whatsNewGroupsNewestFirst() {
+        val g = org.pagel.ai.ui.shell.whatsNewGroups(listOf("#0.3.33 · Habits, fixed", "A|habits", "B|more", "#0.3.30 · Compass", "C|compass"))
+        assertEquals(listOf("0.3.33", "0.3.30"), g.map { it.version })
+        assertEquals(listOf("A" to "habits", "B" to "more"), g[0].lines)
+        assertEquals("Compass", g[1].title)
     }
 }

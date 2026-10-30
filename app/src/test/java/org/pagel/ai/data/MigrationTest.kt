@@ -340,4 +340,36 @@ class MigrationTest {
             db.close()
         }
     }
+
+    /** v11 → v12: the adopted-ids table appears empty and takes a row; Namoz marks stay. */
+    @Test fun elevenToTwelveAddsTheAdoptedIdsTable() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/11.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(11, schema["version"]!!.jsonPrimitive.content.toInt())
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("INSERT INTO projects (name, title, color, sort, openCount) VALUES ('ababil', 'ABABIL', 'red', 1, 4)")
+            old.execSQL("INSERT INTO namoz_marks (day, prayer, how) VALUES ('2026-11-01', 'ASR', 'mosque')")
+            old.version = 11
+        }
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            assertEquals("red", db.dao().projectOnce("ababil")!!.color)
+            assertEquals("mosque", db.namoz().marks("2026-11-01").first().single().how)
+            assertNull(db.dao().adoptedId("local_1"))
+            db.dao().recordAdopted(org.pagel.ai.data.db.AdoptedIdEntity("local_1", "t_9", 1L))
+            assertEquals("t_9", db.dao().currentId("local_1"))
+            assertEquals(PagelDatabase.VERSION, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
 }

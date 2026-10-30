@@ -38,6 +38,23 @@ fun repeatsOn(t: TaskEntity, d: LocalDate): Boolean {
     }
 }
 
+/**
+ * The first day a habit counts in the all-habits chain (checker 2026-10-29 #1: a habit added today turned every past
+ * full day into a partial one). Its first tick or its own date, whichever is earlier; a habit with neither starts today.
+ */
+fun startsOf(habits: List<TaskEntity>, ticks: List<HabitTickEntity>, today: LocalDate): Map<String, LocalDate> {
+    val first = ticks.groupBy { it.taskId }.mapValues { (_, l) -> l.minOf { it.day } }
+    return habits.associate { t ->
+        val dated = t.due?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        val ticked = first[t.id]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        t.id to (listOfNotNull(dated, ticked).minOrNull() ?: today)
+    }
+}
+
+/** Due on [d] and already started then (no start known = always). */
+fun dueOn(t: TaskEntity, d: LocalDate, starts: Map<String, LocalDate>): Boolean =
+    repeatsOn(t, d) && starts[t.id]?.let { !d.isBefore(it) } != false
+
 fun isNamoz(t: TaskEntity) = t.habitGroup == Namoz.GROUP || (Namoz.prayerOf(t.title ?: t.text) != null && t.every == "day")
 
 /** One habit on [day], from its taps that day and whether that day was frozen. */
@@ -47,8 +64,8 @@ fun markOf(t: TaskEntity, day: LocalDate, today: LocalDate, taps: Int, frozen: B
         isNamoz(t) && !Namoz.counts(ymd) -> Mark.BEFORE
         !repeatsOn(t, day) -> Mark.OFF
         taps >= t.times.coerceAtLeast(1) -> Mark.DONE
-        frozen -> Mark.FROZEN
         day.isAfter(today) -> Mark.FUTURE
+        frozen -> Mark.FROZEN
         taps > 0 -> Mark.PARTIAL
         day == today -> Mark.TODAY
         else -> Mark.MISSED
@@ -178,8 +195,8 @@ data class HabitCard(
     val time: String?,
     val window: Namoz.Window? = null,
     val identity: String? = null,
-    /** Last 7 days, oldest first, for the card's tiny chain. */
-    val week: List<Mark> = emptyList(),
+    /** The tile colour Boss picked (one of HabitLook.COLOURS), else null = by what it is about. */
+    val colour: String? = null,
 ) {
     val times: Int get() = task.times.coerceAtLeast(1)
     val done: Boolean get() = mark == Mark.DONE
@@ -200,6 +217,10 @@ data class HabitBoard(
     val cards: List<HabitCard>,
     val namoz: List<HabitCard>,
     val freezesLeft: Int,
+    /** The Sunday before this week was full too: the bar runs in from the strip's left edge. */
+    val chainIn: Boolean = false,
+    /** The next Monday is full too: the bar runs out at the right edge. */
+    val chainOut: Boolean = false,
 ) {
     fun inPart(p: Part) = cards.filter { it.part == p || it.part == Part.ANYTIME }
     val doneCount get() = cards.count { it.done }
@@ -231,7 +252,7 @@ fun habitBoard(
     val doneOf = ticks.filter { it.n >= (byId[it.taskId]?.times ?: 1).coerceAtLeast(1) }.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
     val (prayers, others) = habits.partition(::isNamoz)
     val windows by lazy { namozWindows(selected) }
-    val last7 = (6 downTo 0).map { selected.minusDays(it.toLong()) }
+    val starts by lazy { startsOf(habits.filterNot(::isNamoz), ticks, today) }
 
     fun card(t: TaskEntity): HabitCard {
         val title = titleOf(t)
@@ -253,7 +274,7 @@ fun habitBoard(
             minutes = if (window != null) null else minutesOf(title, p?.minutes),
             neverMissTwice = selected == today && neverMissTwice(t, done, frozen, today),
             after = p?.after?.let { byId[it] }?.let(::titleOf), time = time, window = window, identity = p?.identity,
-            week = last7.map { d -> markOf(t, d, today, taps["$d ${t.id}"] ?: 0, d.toString() in frozen) },
+            colour = HabitLook.colourOf(p?.emoji),
         )
     }
 
@@ -264,11 +285,15 @@ fun habitBoard(
     val namoz = prayers.map(::card).sortedBy { it.window?.prayer?.ordinal ?: 9 }
 
     val monday = selected.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-    val week = (0L..6L).map { i -> monday.plusDays(i) }.map { d ->
-        val (held, due) = heldOf(others, taps, frozenOf, d)
-        StripDay(d, clearOf(others, taps, frozenOf, d, today), others.any { d.toString() in frozenOf[it.id].orEmpty() }, held, due)
+    fun stripDay(d: LocalDate): StripDay {
+        val (held, due) = heldOf(others, taps, frozenOf, d, starts)
+        return StripDay(d, clearOf(others, taps, frozenOf, d, today, starts), others.any { d.toString() in frozenOf[it.id].orEmpty() }, held, due)
     }
-    return HabitBoard(today, selected, week, cards, namoz, freezesLeft(freezes, YearMonth.from(today)))
+    val week = (0L..6L).map { i -> stripDay(monday.plusDays(i)) }
+    // The chain runs off the strip's edge when it goes on into the week before or after (checker #9, the ref's 26).
+    val chainIn = week.first().clear == Clear.ALL && stripDay(monday.minusDays(1)).clear == Clear.ALL
+    val chainOut = week.last().clear == Clear.ALL && stripDay(monday.plusDays(7)).clear == Clear.ALL
+    return HabitBoard(today, selected, week, cards, namoz, freezesLeft(freezes, YearMonth.from(today)), chainIn, chainOut)
 }
 
 /** Puts each habit with an `after` right under the habit it follows (one level; a loop keeps the plain order). */
@@ -284,15 +309,20 @@ private fun stack(cards: List<HabitCard>): List<HabitCard> {
 }
 
 /** How many of the habits due on [d] were held (done or frozen), and how many were due. */
-fun heldOf(habits: List<TaskEntity>, taps: Map<String, Int>, frozen: Map<String, Set<String>>, d: LocalDate): Pair<Int, Int> {
-    val due = habits.filter { repeatsOn(it, d) }
+fun heldOf(
+    habits: List<TaskEntity>, taps: Map<String, Int>, frozen: Map<String, Set<String>>, d: LocalDate, starts: Map<String, LocalDate> = emptyMap(),
+): Pair<Int, Int> {
+    val due = habits.filter { dueOn(it, d, starts) }
     return due.count { (taps["$d ${it.id}"] ?: 0) >= it.times.coerceAtLeast(1) || d.toString() in frozen[it.id].orEmpty() } to due.size
 }
 
 /** A day across [habits]: every due one held = ALL; some = SOME; none = NONE; nothing due = EMPTY; ahead = FUTURE. */
-fun clearOf(habits: List<TaskEntity>, taps: Map<String, Int>, frozen: Map<String, Set<String>>, d: LocalDate, today: LocalDate): Clear {
+fun clearOf(
+    habits: List<TaskEntity>, taps: Map<String, Int>, frozen: Map<String, Set<String>>, d: LocalDate, today: LocalDate,
+    starts: Map<String, LocalDate> = emptyMap(),
+): Clear {
     if (d.isAfter(today)) return Clear.FUTURE
-    val due = habits.filter { repeatsOn(it, d) }
+    val due = habits.filter { dueOn(it, d, starts) }
     if (due.isEmpty()) return Clear.EMPTY
     val held = due.count { (taps["$d ${it.id}"] ?: 0) >= it.times.coerceAtLeast(1) || d.toString() in frozen[it.id].orEmpty() }
     return when {
@@ -308,9 +338,13 @@ fun monthMarks(
 ): List<Pair<LocalDate, Mark>> {
     val taps = ticksByDay(ticks)
     val frozen = freezes.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
+    val starts = startsOf(habit?.let { listOf(it) } ?: habits, ticks, today)
     return (1..month.lengthOfMonth()).map { month.atDay(it) }.map { d ->
-        d to if (habit != null) markOf(habit, d, today, taps["$d ${habit.id}"] ?: 0, d.toString() in frozen[habit.id].orEmpty())
-        else when (clearOf(habits, taps, frozen, d, today)) {
+        d to if (habit != null) {
+            val m = markOf(habit, d, today, taps["$d ${habit.id}"] ?: 0, d.toString() in frozen[habit.id].orEmpty())
+            if (m != Mark.DONE && starts[habit.id]?.let { d.isBefore(it) } == true) Mark.BEFORE else m
+        }
+        else when (clearOf(habits, taps, frozen, d, today, starts)) {
             Clear.ALL -> Mark.DONE
             Clear.SOME -> Mark.PARTIAL
             Clear.NONE -> if (d == today) Mark.TODAY else Mark.MISSED
@@ -332,7 +366,8 @@ fun achievements(habits: List<TaskEntity>, ticks: List<HabitTickEntity>, freezes
     val best = habits.maxOfOrNull { chainBest(it, doneOf[it.id].orEmpty(), frozen[it.id].orEmpty(), today) } ?: 0
     val taps = ticksByDay(ticks)
     val others = habits.filterNot(::isNamoz)
-    val clearedDays = (0L..400L).map { today.minusDays(it) }.filter { clearOf(others, taps, frozen, it, today) == Clear.ALL }.map { it.toString() }.toSet()
+    val starts = startsOf(others, ticks, today)
+    val clearedDays = (0L..400L).map { today.minusDays(it) }.filter { clearOf(others, taps, frozen, it, today, starts) == Clear.ALL }.map { it.toString() }.toSet()
     val clearedWeek = (0L..400L).map { today.minusDays(it) }.any { end -> (0L..6L).all { (end.minusDays(it)).toString() in clearedDays } }
     val namozDays = habits.filter(::isNamoz).let { p -> if (p.size < 5) emptySet() else (0L..60L).map { today.minusDays(it) }.filter { d -> p.all { d.toString() in doneOf[it.id].orEmpty() } }.toSet() }
     return listOf(

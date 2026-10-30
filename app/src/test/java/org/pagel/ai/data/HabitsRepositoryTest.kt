@@ -308,4 +308,44 @@ class HabitsRepositoryTest {
         sender().sendAll(account)
         assertEquals("""t_h {"due":"2026-10-28 07:30","undo":true,"day":"2026-10-28"}""", patches.last())
     }
+
+    /**
+     * Checker 3 #5: a habit made on the phone, ticked, then renamed by pagel.uz (adoptServerId). Its tick, look, freeze,
+     * bell and the habit that follows it move to the server's id; a second tap with the phone's old id is still "ticked
+     * today" and sends nothing; every later write with the old id lands on the server's row.
+     */
+    @Test fun tickANewHabitAdoptTheTickCountIsKeptAndASecondTapSendsNoDuplicate() = runBlocking {
+        db.dao().upsertTasks(listOf(habit("local_1", "Floss at night", "2026-10-28 21:00")))
+        val prefs = org.pagel.ai.data.habits.HabitPrefsRepository(db.habitPrefs())
+        val r = repo()
+        assertNotNull(r.tick("local_1"))
+        prefs.emoji("local_1", "toothbrush/teal")
+        assertTrue(prefs.freeze("local_1", "2026-10-27"))
+        r.setReminder("local_1", true)
+        db.dao().upsertTasks(listOf(habit("t_h", "Stretch for ten minutes", "2026-10-28 07:30")))
+        prefs.after("t_h", "local_1")
+        db.dao().adoptServerId("local_1", "t_srv")
+
+        assertEquals(listOf(HabitTickEntity("2026-10-28", "t_srv")), db.dao().habitTicksOf("t_srv"))
+        assertTrue(db.dao().habitTicksOf("local_1").isEmpty())
+        assertEquals("toothbrush/teal", db.habitPrefs().prefOnce("t_srv")?.emoji)
+        assertEquals("t_srv", db.habitPrefs().prefOnce("t_h")?.after)
+        assertEquals(listOf("t_srv"), db.habitPrefs().freezesOnce().map { it.taskId })
+        assertEquals(listOf("t_srv" to true), db.dao().remindersOnce().map { it.taskId to it.enabled })
+
+        // The second tap (an old row on screen, a notification's Done) holds the phone's id: refused, nothing queued.
+        assertNull(r.tick("local_1"))
+        assertEquals(1, r.tapsToday("local_1"))
+        assertEquals(1, db.dao().waitingOutbox().size)
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(1, patches.size)
+        assertTrue(patches.single().startsWith("t_srv "))
+
+        // Writes with the old id land on the server's row, never on a ghost row of the phone's id.
+        prefs.identity("local_1", "I keep my teeth")
+        assertEquals("I keep my teeth", db.habitPrefs().prefOnce("t_srv")?.identity)
+        assertNull(db.habitPrefs().prefOnce("local_1"))
+        r.setReminder("local_1", false)
+        assertEquals(listOf("t_srv" to false), db.dao().remindersOnce().map { it.taskId to it.enabled })
+    }
 }

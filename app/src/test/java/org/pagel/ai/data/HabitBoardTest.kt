@@ -21,6 +21,7 @@ import org.pagel.ai.data.habits.links
 import org.pagel.ai.data.habits.markOf
 import org.pagel.ai.data.habits.minutesOf
 import org.pagel.ai.data.habits.neverMissTwice
+import java.io.File
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -99,13 +100,126 @@ class HabitBoardTest {
         assertEquals(Part.ANYTIME, b.cards.last().part)
         assertEquals(listOf("Stretch for ten minutes", "Inbox saves", "Drink water"), b.inPart(Part.MORNING).map { it.title })
         assertEquals(Clear.ALL, b.week[1].clear)   // Tuesday 27: all four held
-        assertEquals(Clear.SOME, b.week[0].clear)  // Monday 26: one of four
+        // Monday 26: only Stretch had started (the other three were first ticked on the 27th), and it was done.
+        assertEquals(Clear.ALL, b.week[0].clear)
+        assertEquals(1 to 1, b.week[0].held to b.week[0].due)
         assertEquals(Clear.NONE, b.week[2].clear)  // today, none yet
         assertEquals(Clear.FUTURE, b.week[3].clear)
         assertEquals(10, b.cards.first().minutes)
-        // The all-habits chain (Boss 2026-10-29): a day fills only at 4 of 4; Monday's thin ring is 1 of 4.
         assertEquals(4 to 4, b.week[1].held to b.week[1].due)
-        assertEquals(1 to 4, b.week[0].held to b.week[0].due)
-        assertEquals(0.25f, b.week[0].progress, 0.001f)
+    }
+
+    /** Checker 2026-10-29 #1, built from real ticks through habitBoard: a habit added today never breaks past full days. */
+    @Test fun addingAHabitTodayKeepsLastWeeksFullDaysFull() {
+        val old = listOf(t("a", text = "Stretch", due = "2026-10-20 07:30"), t("b", text = "Water", due = "2026-10-20"))
+        val ticks = listOf("2026-10-26", "2026-10-27").flatMap { d -> listOf(HabitTickEntity(d, "a"), HabitTickEntity(d, "b")) }
+        val before = habitBoard(old, ticks, emptyList(), emptyList(), wed)
+        assertEquals(listOf(Clear.ALL, Clear.ALL), before.week.take(2).map { it.clear })
+        // Boss adds "Read" today (dated today, never ticked): Monday and Tuesday stay full.
+        val after = habitBoard(old + t("c", text = "Read", due = "2026-10-28 21:00"), ticks, emptyList(), emptyList(), wed)
+        assertEquals(listOf(Clear.ALL, Clear.ALL), after.week.take(2).map { it.clear })
+        assertEquals(2 to 2, after.week[1].held to after.week[1].due)
+        // Today it counts: 0 of 3.
+        assertEquals(0 to 3, after.week[2].held to after.week[2].due)
+        // A habit with no date and no tick starts today too.
+        val undated = habitBoard(old + t("d", text = "Walk", due = null), ticks, emptyList(), emptyList(), wed)
+        assertEquals(Clear.ALL, undated.week[1].clear)
+    }
+
+    /** Checker #2: a partial day where one habit is frozen is not held; only a whole day holds (ice when frozen). */
+    @Test fun aFreezeOnAPartialDayDoesNotLinkTheChain() {
+        val h = listOf(t("a", text = "Stretch", due = "2026-10-20 07:30"), t("b", text = "Water", due = "2026-10-20"))
+        val ticks = listOf(HabitTickEntity("2026-10-26", "a"), HabitTickEntity("2026-10-26", "b"), HabitTickEntity("2026-10-27", "a"))
+        val b = habitBoard(h, ticks, emptyList(), listOf(HabitFreezeEntity("2026-10-27", "a")), wed)
+        assertEquals(Clear.SOME, b.week[1].clear)  // Tuesday: a done (and frozen), b not
+        assertTrue(b.week[1].frozen)
+        // Water frozen on Tuesday too: now the whole day holds.
+        val held = habitBoard(h, ticks, emptyList(), listOf(HabitFreezeEntity("2026-10-27", "b")), wed)
+        assertEquals(Clear.ALL, held.week[1].clear)
+    }
+
+    /** Checker data safety: a future day's freeze never counts as held. */
+    @Test fun aFutureDayIsNeverFrozen() {
+        assertEquals(Mark.FUTURE, markOf(t(), LocalDate.parse("2026-10-30"), wed, 0, frozen = true))
+    }
+
+    /** Checker #9: the bar runs off the strip's left edge when last Sunday was full and this Monday is full. */
+    @Test fun theChainRunsInFromLastWeek() {
+        val h = listOf(t("a", text = "Stretch", due = "2026-10-20 07:30"))
+        val ticks = listOf("2026-10-25", "2026-10-26").map { HabitTickEntity(it, "a") }
+        assertTrue(habitBoard(h, ticks, emptyList(), emptyList(), wed).chainIn)
+        assertFalse(habitBoard(h, ticks.drop(1), emptyList(), emptyList(), wed).chainIn)
+    }
+
+    /** Checker #3: a running clock is saved on the phone with the day it was started for, and comes back the same. */
+    @Test fun aRunningClockSurvivesTheAppBeingKilled() {
+        val m = mapOf(
+            "h1" to org.pagel.ai.ui.habits.HabitTimer(startedAt = 1_000L, spentMs = 5_000L, day = "2026-10-28", minutes = 10),
+            "h2" to org.pagel.ai.ui.habits.HabitTimer(startedAt = null, spentMs = 60_000L, day = "2026-10-27", minutes = 5),
+        )
+        val back = org.pagel.ai.ui.habits.HabitClocks.decode(org.pagel.ai.ui.habits.HabitClocks.encode(m))
+        assertEquals(m, back)
+        assertEquals(emptyMap<String, org.pagel.ai.ui.habits.HabitTimer>(), org.pagel.ai.ui.habits.HabitClocks.decode("broken|line"))
+    }
+
+    /** Boss 2026-10-29: stacking offers only real habits, never itself, never a loop; a moment is kept as words. */
+    @Test fun theAnchorPickerOffersOnlyHabitsAndNoLoops() {
+        val L = org.pagel.ai.data.habits.HabitLook
+        val a = t("a", text = "Workout"); val b = t("b", text = "Floor routine"); val w = t("w", text = "Weekly review", every = "week")
+        val prayer = t("p", text = "Bomdod", group = "namoz")
+        val prefs = mapOf("b" to HabitPrefEntity("b", after = "a"))
+        assertEquals(listOf("b"), L.anchorChoices("a", listOf(a, b, w, prayer), emptyMap()).map { it.id })
+        // b already follows a: a after b would be a loop.
+        assertEquals(emptyList<String>(), L.anchorChoices("a", listOf(a, b, w), prefs).map { it.id })
+        assertEquals(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"), L.anchorOf(L.store(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"))))
+        assertEquals(org.pagel.ai.data.habits.HabitLook.Anchor.Habit("a"), L.anchorOf("a"))
+        assertEquals("After ☕ coffee → 🧘 Floor routine", L.recipe(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"), null, "🧘", "Floor routine"))
+    }
+
+    @Test fun stackedHabitsSitUnderTheirAnchor() {
+        val L = org.pagel.ai.data.habits.HabitLook
+        // c follows a, d follows c; e follows a habit on another page, so it stays a plain row.
+        val prefs = mapOf("c" to HabitPrefEntity("c", after = "a"), "d" to HabitPrefEntity("d", after = "c"), "e" to HabitPrefEntity("e", after = "zz"))
+        assertEquals(listOf("a" to 0, "c" to 1, "d" to 2, "b" to 0, "e" to 0), L.stackOrder(listOf("a", "b", "c", "d", "e"), { it }, prefs))
+        // A loop that slipped in (a after b, b after a) still shows each row once.
+        val loop = mapOf("a" to HabitPrefEntity("a", after = "b"), "b" to HabitPrefEntity("b", after = "a"))
+        assertEquals(setOf("a", "b"), L.stackOrder(listOf("a", "b"), { it }, loop).map { it.first }.toSet())
+    }
+
+    @Test fun aHabitsLookKeepsEmojiAndColourTogether() {
+        val L = org.pagel.ai.data.habits.HabitLook
+        assertEquals("coffee/amber", L.look("coffee", "amber"))
+        assertEquals("coffee", L.emojiOf("coffee/amber")); assertEquals("amber", L.colourOf("coffee/amber"))
+        assertEquals("/teal", L.look(null, "teal")); assertNull(L.emojiOf("/teal"))
+        assertEquals("coffee", L.look("coffee", "purple"))  // not one of the ten: dropped
+    }
+
+    /**
+     * Checker 3 #1-#2: a habit is never red. No red swatch to pick, a habit saved red shows as coral, and no habits or
+     * Namoz composable paints with Glass.Risk or the 🔕 emoji (its slash is red). Reads the sources, as a lint would.
+     */
+    @Test fun habitsAreNeverRed() {
+        val L = org.pagel.ai.data.habits.HabitLook
+        assertFalse("red" in L.COLOURS)
+        assertEquals("coral", L.colourOf("gym/red"))
+        assertEquals("gym/coral", L.look("gym", L.colourOf("gym/red")))
+        val dirs = listOf("src/main/java/org/pagel/ai/ui/habits", "src/main/java/org/pagel/ai/ui/namoz").map { File(it) }
+        val files = dirs.flatMap { d -> d.walkTopDown().filter { it.extension == "kt" }.toList() }
+        assertTrue("found the habits sources: ${dirs.map { it.absolutePath }}", files.size >= 5)
+        for (f in files) {
+            val text = f.readText()
+            assertFalse("${f.name} paints with Glass.Risk", "Glass.Risk" in text)
+            assertFalse("${f.name} shows the 🔕 emoji", "🔕" in text)
+        }
+    }
+
+    /** Boss 2026-10-29: never a week before the habit started; a 3-day-old habit has one bar and is "too new". */
+    @Test fun weeksStartWithTheHabit() {
+        val h = t("n", text = "Read", due = "2026-10-26 21:00")
+        val w = org.pagel.ai.data.habits.habitWeeks(h, listOf(HabitTickEntity("2026-10-27", "n")), emptyList(), wed)
+        assertEquals(1, w.bars.size)
+        assertTrue(w.tooNew)
+        assertEquals(3, w.daysTracked)
+        assertEquals(1 to 7, w.bars[0].done to w.bars[0].target)
     }
 }

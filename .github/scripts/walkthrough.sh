@@ -158,6 +158,15 @@ grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbo
 $T adb reverse --remove tcp:8799
 log "   offline (adb reverse removed)"
 BEFORE=$(grep -c "POST /api/v1/inbox" "$FAKE_LOG")
+# Is the node labelled $2 selected in dump $1? Compose's selectable puts "selected" on the outer node and the label on
+# its first child with the same bounds, never both on one line (smoke 40999222896, dump 51), so accept either shape.
+pill_selected() {
+  awk -v want="content-desc=\"$2\"" 'BEGIN{RS=">"} {
+    b=""; if (match($0, /bounds="[^"]*"/)) b=substr($0, RSTART, RLENGTH)
+    if (index($0, want) && (index($0, "selected=\"true\"") || (prev && b == pb))) { found=1; exit }
+    prev = index($0, "selected=\"true\"") > 0; pb = b
+  } END { exit !found }' "$1"
+}
 # The centre of the first node whose text is $1, as "x y".
 centre() {
   $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
@@ -289,6 +298,32 @@ done
 grep -q 'content-desc="Namoz"\|text="Namoz"' "$OUT/$(printf '%02d' $N)-habits-morning.xml" || log "   (WARN: no Namoz group on screen)"
 tap Evening && shot habits-evening 1.5
 grep -q 'text="Read 10 pages"' "$OUT/$(printf '%02d' $N)-habits-evening.xml" || { log "WALKTHROUGH: Habits' Evening has no \"Read 10 pages\""; exit 1; }
+log "-- the parts are pages (Boss's note 5): a swipe right on Evening's habits brings Afternoon, its pill selected"
+# Checker 3 #13: shots 49 -> 50 showed the page 27 px higher. That was this walk's own scroll (a vertical swipe here
+# before the sideways one, and 27 px is all the page could scroll), so it is gone: the row is on screen already. The
+# sideways swipe must leave the page where it was: the + button's top is read before and after.
+plus_top() { tr '>' '\n' < "$1" | grep -F 'content-desc="New habit"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | sed -n 2p; }
+TOP_BEFORE=$(plus_top "$OUT/$(printf '%02d' $N)-habits-evening.xml")
+XY=$(centre "Read 10 pages") || { log "WALKTHROUGH: Evening's row went missing before the swipe"; exit 1; }
+set -- $XY; $T adb shell input swipe 50 "$2" 290 "$2" 300
+shot habits-swiped 1.5
+TOP_AFTER=$(plus_top "$OUT/$(printf '%02d' $N)-habits-swiped.xml")
+log "   the header's top before / after the sideways swipe: ${TOP_BEFORE:-?} / ${TOP_AFTER:-?}"
+[ -n "$TOP_BEFORE" ] && [ "$TOP_BEFORE" = "$TOP_AFTER" ] || { log "WALKTHROUGH: the sideways swipe moved the page (header top ${TOP_BEFORE:-none} -> ${TOP_AFTER:-none})"; exit 1; }
+$T adb shell input swipe 160 200 160 600 400; sleep 1
+shot habits-swiped-top 1
+pill_selected "$OUT/$(printf '%02d' $N)-habits-swiped-top.xml" Afternoon || { log "WALKTHROUGH: a swipe on the habits did not bring Afternoon"; exit 1; }
+log "-- a new habit in two taps (note 8): + → name → Add reaches pagel.uz; the toast's Undo takes it back"
+REMOVES=$(grep -c '"remove":true' "$FAKE_LOG")
+tap "New habit" && shot new-habit-sheet 1.5 || { log "WALKTHROUGH: Habits has no + New habit"; exit 1; }
+$T adb shell "input text 'Floss%sat%snight'"; sleep 0.5
+tap "Add habit" || { log "WALKTHROUGH: the New habit sheet has no Add habit"; exit 1; }
+for i in $(seq 1 8); do grep -q 'POST /api/v1/tasks .*Floss at night' "$FAKE_LOG" && break; sleep 0.5; done
+grep -q 'POST /api/v1/tasks .*Floss at night' "$FAKE_LOG" || { log "WALKTHROUGH: the new habit never reached pagel.uz"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tail -3 | tee -a "$OUT/steps.txt"; exit 1; }
+tap Undo && shot new-habit-undone 1.5 || { log "WALKTHROUGH: the Habit added toast had no Undo"; exit 1; }
+for i in $(seq 1 30); do [ "$(grep -c '"remove":true' "$FAKE_LOG")" -gt "$REMOVES" ] && break; sleep 1; done
+[ "$(grep -c '"remove":true' "$FAKE_LOG")" -gt "$REMOVES" ] || { log "WALKTHROUGH: Undo of the new habit never reached pagel.uz"; exit 1; }
+log "   new habit added and taken back"
 tap Morning && sleep 1
 # The cards sit under the strip, the pills and the Namoz group: scroll the list up first.
 $T adb shell input swipe 160 460 160 260 400; sleep 1
@@ -336,11 +371,15 @@ for k in 1 2 3 4 5; do
   $T adb shell input swipe 160 460 160 300 400; sleep 1
 done
 tap "Stretch for ten minutes" && shot habit-page 2.5
-grep -q 'text="Reminder · off"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no Reminder row"; exit 1; }
+# The page is mainly stats (Boss 2026-10-29); every setting sits behind ⋮.
+grep -q 'content-desc="Habit settings"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no ⋮ settings"; exit 1; }
+grep -q 'text="Reminder · off"' "$OUT/$(printf '%02d' $N)-habit-page.xml" && { log "WALKTHROUGH: the reminder card is still on the page body"; exit 1; }
 # Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
 ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")
-tap "Reminder · off" && shot reminder-sheet 2.5
+tap "Habit settings" && shot reminder-sheet 2.5
+# The Reminder block sits under Look and Schedule in the sheet: scroll until its switch is on screen.
+for k in 1 2 3 4 5; do onscreen "Remind me" && break; $T adb shell input swipe 160 500 160 220 400; sleep 1; done
 tap "Remind me" && shot reminder-on 1.5
 front reminder-on
 # The sheet reads the grant when it opens (checker #7): the walk granted it, so no "Exact time · Allow" row.

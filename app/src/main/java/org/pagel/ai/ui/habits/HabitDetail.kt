@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -143,8 +145,9 @@ internal fun MonthChain(
                 if (onNext != null) GlassIconButton(TabIcons.ChevronRight, "Month after", size = Space.touch, plain = true, onClick = onNext) else Spacer(Modifier.width(Space.touch))
             }
             Row(Modifier.fillMaxWidth()) {
-                for (d in DayOfWeek.entries) Text(d.getDisplayName(TextStyle.SHORT, Locale.UK).uppercase(), style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f))
+                val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+                for (d in DayOfWeek.entries) Text(d.getDisplayName(if (big) TextStyle.NARROW else TextStyle.SHORT, Locale.UK).uppercase(), style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
+                    maxLines = 1, softWrap = false, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.height(Space.xs))
             // Week rows; the first starts at its weekday, so the chain runs Monday to Sunday on each row.
@@ -162,212 +165,34 @@ internal fun MonthChain(
     }
 }
 
-/**
- * One habit (round D; Boss's reference, in our own look): back, edit, share; the big title; chips for its part,
- * repeat, time and length; three stat cards; the month's chain; the last weeks as rows; his identity line; the emoji
- * he picks; the habit it follows.
- */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun HabitDetailRoute(id: String, contentPadding: PaddingValues, onBack: () -> Unit, vm: HabitsViewModel = hiltViewModel()) {
-    val ui by vm.ui.collectAsStateWithLifecycle()
-    val t = ui.byId[id]
-    val ctx = LocalContext.current
-    val openTask = LocalTaskOpener.current
-    var bell by remember { mutableStateOf(false) }
-    val grants = rememberReminderGrants(vm)
-    if (t == null) { Box(Modifier.fillMaxSize().padding(contentPadding)); return }
-    HabitDetail(
-        t, ui, contentPadding, onBack = onBack, onEdit = { openTask(id) },
-        onShare = {
-            val s = statsOf(listOf(t), ui.ticks, ui.freezes, LocalDate.parse(ui.today))
-            val text = "${titleOf(t)}: ${s.streak} in a row (best ${s.best}), ${s.rate}% of the last 30 days."
-            runCatching { ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null)) }
-        },
-        onEmoji = { vm.setEmoji(id, it) }, onAfter = { vm.setAfter(id, it) }, onIdentity = { vm.setIdentity(id, it) },
-        onReminder = { bell = true }, onTick = vm::tick, onUntick = vm::untick, onTimer = vm::toggleTimer, onResetTimer = vm::resetTimer,
-        onFreeze = vm::freeze, onUnfreeze = vm::unfreeze,
-    )
-    if (bell) ReminderSheet(
-        t, on = id in ui.reminders, exact = grants.exact, notify = grants.notify, onToggle = { grants.remind(id, it) }, onTime = { vm.setTime(id, it) },
-        onFixNotify = grants.fixNotify, onFixExact = grants.fixExact,
-    ) { bell = false }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun HabitDetail(
-    t: TaskEntity, ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit = {}, onEdit: () -> Unit = {}, onShare: () -> Unit = {},
-    onEmoji: (String?) -> Unit = {}, onAfter: (String?) -> Unit = {}, onIdentity: (String?) -> Unit = {},
-    onReminder: () -> Unit = {}, onTick: (String) -> Unit = {}, onUntick: (String) -> Unit = {}, onTimer: (String, Int) -> Unit = { _, _ -> },
-    onResetTimer: (String) -> Unit = {}, onFreeze: (String) -> Unit = {}, onUnfreeze: (String) -> Unit = {},
+internal fun Chip(
+    text: String, on: Boolean = false, modifier: Modifier = Modifier, icon: ImageVector? = null, iconTint: Color = Glass.Muted,
+    description: String? = null, onClick: (() -> Unit)? = null,
 ) {
-    val today = runCatching { LocalDate.parse(ui.today) }.getOrElse { LocalDate.now() }
-    var month by remember { mutableStateOf(YearMonth.from(today)) }
-    var identityOpen by remember { mutableStateOf(false) }
-    val pref = ui.prefs[t.id]
-    val title = titleOf(t)
-    val emoji = Namoz.prayerOf(title)?.emoji ?: Emoji.keyFor(title, pref?.emoji)
-    val stats = statsOf(listOf(t), ui.ticks, ui.freezes, today)
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding).padding(bottom = Space.xxl), verticalArrangement = Arrangement.spacedBy(Space.paneGap)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
-            GlassIconButton(TabIcons.ArrowLeft, "Back", size = Space.touch, plain = true, onClick = onBack)
-            Spacer(Modifier.weight(1f))
-            GlassIconButton(TabIcons.StickyNote, "Edit", size = Space.touch, plain = true, onClick = onEdit)
-            GlassIconButton(TabIcons.ArrowUpRight, "Share", size = Space.touch, plain = true, onClick = onShare)
-        }
-        Row(Modifier.padding(horizontal = Space.textEdge), verticalAlignment = Alignment.CenterVertically) {
-            EmojiTile(emoji, 56.dp)
-            Spacer(Modifier.width(Space.md))
-            Text(title, style = MaterialTheme.typography.headlineMedium, color = Glass.Ink, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() })
-        }
-        FlowRow(Modifier.padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-            val time = t.due?.drop(11)?.trim()?.take(5)?.takeIf(String::isNotEmpty)
-            val part = time?.let { runCatching { org.pagel.ai.data.habits.partAt(java.time.LocalTime.parse(it)).label }.getOrNull() } ?: "Anytime"
-            Chip(part)
-            Chip(Repeat.label(t.every.orEmpty()))
-            if (time != null) Chip("🔔 $time")
-            minutesOf(title, pref?.minutes)?.let { Chip("$it min") }
-            if (t.times > 1) Chip("${t.times}× a day")
-        }
-        // The identity line (Atomic Habits): who Boss is becoming, in his own words.
-        val press = remember { MutableInteractionSource() }
-        Text(
-            pref?.identity?.let { "“$it”" } ?: "Write who you are becoming…", style = MaterialTheme.typography.bodyLarge,
-            color = if (pref?.identity != null) Glass.Ink else Glass.Muted,
-            modifier = Modifier.padding(horizontal = Space.textEdge).heightIn(min = Space.touch).pressScale(press)
-                .clickable(press, indication = null, role = Role.Button) { identityOpen = true },
-        )
-        TodayActions(t, ui, onReminder, onTick, onUntick, onTimer, onResetTimer, onFreeze, onUnfreeze)
-        StatCards(stats)
-        // This habit's own chain (the Habits tab's top bar is the all-habits one): a count habit's partial day shows taps / times.
-        val marks = monthMarks(emptyList(), ui.ticks, ui.freezes, month, today, t)
-        val taps = ui.ticks.filter { it.taskId == t.id }.associate { it.day to it.n }
-        MonthChain(month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)), marks, today, onPrev = { month = month.minusMonths(1) },
-            onNext = if (month < YearMonth.from(today)) ({ month = month.plusMonths(1) }) else null,
-            counts = marks.map { (d, _) -> (taps[d.toString()] ?: 0) to t.times.coerceAtLeast(1) })
-        WeekRows(t, ui, today)
-        if (!isNamoz(t)) {
-            Section("Emoji")
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                for (k in Emoji.all.keys) {
-                    val on = k == emoji
-                    val p = remember { MutableInteractionSource() }
-                    Box(
-                        Modifier.size(Space.touch).clip(RoundedCornerShape(14.dp)).background(if (on) Glass.PrimarySoft else Color.White.copy(alpha = 0.5f))
-                            .border(if (on) 1.5.dp else 0.dp, if (on) Glass.Primary else Color.Transparent, RoundedCornerShape(14.dp))
-                            .pressScale(p).clickable(p, indication = null, role = Role.RadioButton) { onEmoji(k) }
-                            .semantics { contentDescription = "Emoji $k"; selected = on },
-                        contentAlignment = Alignment.Center,
-                    ) { Image(painterResource(Emoji.res(k)), null, Modifier.size(32.dp)) }
-                }
-            }
-            val others = ui.byId.values.filter { it.id != t.id && !isNamoz(it) }
-            if (others.isNotEmpty()) {
-                Section("After (habit stacking)")
-                FlowRow(Modifier.padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    Chip("None", on = pref?.after == null) { onAfter(null) }
-                    for (o in others) Chip(titleOf(o).take(28), on = pref?.after == o.id) { onAfter(o.id) }
-                }
-            }
-        }
-    }
-    if (identityOpen) IdentitySheet(pref?.identity.orEmpty(), onSave = { onIdentity(it); identityOpen = false }) { identityOpen = false }
-}
-
-/**
- * What used to crowd the row (Boss 2026-10-29: "move the reminder thing etc. to the habit's own page"): the reminder,
- * the clock of a habit with minutes, a streak freeze for today, taking today's tick back. One quiet glass list.
- */
-@Composable
-private fun TodayActions(
-    t: TaskEntity, ui: HabitsUi, onReminder: () -> Unit, onTick: (String) -> Unit, onUntick: (String) -> Unit, onTimer: (String, Int) -> Unit,
-    onResetTimer: (String) -> Unit, onFreeze: (String) -> Unit, onUnfreeze: (String) -> Unit,
-) {
-    val card = ui.board?.let { it.cards + it.namoz }?.firstOrNull { it.task.id == t.id }
-    val time = t.due?.drop(11)?.trim()?.take(5)?.takeIf(String::isNotEmpty)
-    val on = t.id in ui.reminders
-    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
-        Column {
-            MenuRow(if (on) TabIcons.BellRing else TabIcons.Bell, "Reminder · " + if (on) "${time ?: "on"}" else "off", onReminder)
-            if (card != null && card.minutes != null && !card.done && card.mark != Mark.FROZEN) {
-                val timer = ui.timers[t.id]
-                val label = when {
-                    timer?.running == true -> "Pause the clock · " + progressText(card, timer, ui.now)
-                    timer != null -> "Go on · " + progressText(card, timer, ui.now)
-                    else -> "Start ${card.minutes} min"
-                }
-                MenuRow(TabIcons.Clock, label) { onTimer(t.id, card.minutes) }
-                if (timer != null) MenuRow(TabIcons.Refresh, "Reset the clock") { onResetTimer(t.id) }
-                MenuRow(TabIcons.Check, "Done without the clock") { onTick(t.id) }
-            }
-            if (card != null && !card.done && !isNamoz(t)) {
-                val left = ui.board?.freezesLeft ?: 0
-                if (card.mark == Mark.FROZEN) MenuRow(TabIcons.Undo, "Unfreeze today") { onUnfreeze(t.id) }
-                else MenuRow(TabIcons.Sparkles, "Freeze today · $left left this month") { onFreeze(t.id) }
-            }
-            if (card != null && (card.done || card.taps > 0)) MenuRow(TabIcons.Undo, "Take back today's tick") { onUntick(t.id) }
-        }
-    }
-}
-
-@Composable
-private fun Section(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.textEdge, top = Space.sm).semantics { heading() })
-}
-
-@Composable
-internal fun Chip(text: String, on: Boolean = false, onClick: (() -> Unit)? = null) {
     val press = remember { MutableInteractionSource() }
-    // A Box centres the word in the 48 dp target (a Text with heightIn sat on its top edge).
-    Box(
-        Modifier.heightIn(min = if (onClick != null) Space.touch else 32.dp).clip(CircleShape)
+    // One pill height for every chip, tappable or not (checker 3 #10: the bell chip stood taller than its row): the pill
+    // is 36 dp, and the 48 dp touch target is layout space around it, the same for every chip in a row.
+    Row(
+        modifier.minimumInteractiveComponentSize().heightIn(min = 36.dp).clip(CircleShape)
             .background(if (on) Glass.PrimarySoft else Color.White.copy(alpha = 0.7f))
             .border(1.dp, if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.08f), CircleShape)
-            .then(if (onClick != null) Modifier.pressScale(press).clickable(press, indication = null, role = Role.RadioButton, onClick = onClick).semantics { selected = on } else Modifier)
+            .then(
+                when {
+                    onClick != null -> Modifier.pressScale(press).clickable(press, indication = null, role = Role.RadioButton, onClick = onClick)
+                        .semantics { selected = on; if (description != null) contentDescription = description }
+                    description != null -> Modifier.semantics(mergeDescendants = true) { contentDescription = description }
+                    else -> Modifier
+                },
+            )
             .padding(horizontal = Space.md, vertical = Space.xs),
-        contentAlignment = Alignment.Center,
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = if (on) Glass.PrimaryInk else Glass.Ink, maxLines = 1)
-    }
-}
-
-/** The last 6 weeks as rows: the dates, a bar of done days, and "4 / 7". */
-@Composable
-private fun WeekRows(t: TaskEntity, ui: HabitsUi, today: LocalDate) {
-    val done = ui.ticks.filter { it.taskId == t.id && it.n >= t.times.coerceAtLeast(1) }.map { it.day }.toSet()
-    val frozen = ui.freezes.filter { it.taskId == t.id }.map { it.day }.toSet()
-    val fmt = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
-    Section("Statistics")
-    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
-        Column(Modifier.padding(vertical = Space.sm)) {
-            val monday = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-            for (w in 0L until 6L) {
-                val from = monday.minusWeeks(w)
-                val to = minOf(from.plusDays(6), today)
-                val (n, of) = completion(t, done, frozen, from, to)
-                Row(Modifier.fillMaxWidth().heightIn(min = Space.touch).padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${from.format(fmt)} – ${from.plusDays(6).format(fmt)}", style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, modifier = Modifier.width(132.dp), maxLines = 1)
-                    Box(Modifier.weight(1f).height(6.dp).background(Glass.Ink.copy(alpha = 0.07f), CircleShape)) {
-                        if (of > 0) Box(Modifier.fillMaxWidth(n.toFloat() / of).height(6.dp).background(Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)), CircleShape))
-                    }
-                    Text("$n / $of", style = Glass.NumberText, color = Glass.Muted, modifier = Modifier.padding(start = Space.md).width(44.dp))
-                }
-            }
+        if (icon != null) {
+            androidx.compose.material3.Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(Space.xs))
         }
-    }
-}
-
-@Composable
-private fun IdentitySheet(now: String, onSave: (String?) -> Unit, onDismiss: () -> Unit) {
-    var text by remember { mutableStateOf(now) }
-    org.pagel.ai.ui.glass.GlassSheet(onDismiss) {
-        org.pagel.ai.ui.glass.SheetTitle("Who you are becoming", null) { onSave(text) }
-        androidx.compose.material3.OutlinedTextField(
-            text, { text = it.take(120) }, Modifier.fillMaxWidth().padding(horizontal = Space.gutter),
-            placeholder = { Text("I'm someone who trains 3× a week") }, singleLine = false, maxLines = 3,
-        )
-        Spacer(Modifier.height(org.pagel.ai.ui.glass.SheetBottom))
+        Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = if (on) Glass.PrimaryInk else Glass.Ink, maxLines = 1)
     }
 }
 
@@ -394,7 +219,7 @@ fun HabitHistory(ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit
             Text("History", style = MaterialTheme.typography.headlineMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs).semantics { heading() })
         }
         Row(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            for ((i, name) in listOf("Calendar", "All habits", "Achievements").withIndex()) Chip(name, on = tab == i) { tab = i }
+            for ((i, name) in listOf("Calendar", "All habits", "Badges").withIndex()) Chip(name, on = tab == i, modifier = Modifier.weight(1f)) { tab = i }
         }
         StatCards(statsOf(habits, ui.ticks, ui.freezes, today))
         when (tab) {
@@ -411,7 +236,10 @@ fun HabitHistory(ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit
                 val frozen = ui.freezes.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
                 MonthChain(month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)), marks, today, onPrev = { month = month.minusMonths(1) },
                     onNext = if (month < YearMonth.from(today)) ({ month = month.plusMonths(1) }) else null,
-                    counts = marks.map { (d, _) -> org.pagel.ai.data.habits.heldOf(if (namoz) prayers else habits, taps, frozen, d) })
+                    counts = (if (namoz) prayers else habits).let { list ->
+                        val starts = org.pagel.ai.data.habits.startsOf(list, ui.ticks, today)
+                        marks.map { (d, _) -> org.pagel.ai.data.habits.heldOf(list, taps, frozen, d, starts) }
+                    })
             }
             1 -> Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
                 Column(Modifier.padding(vertical = Space.sm)) {
