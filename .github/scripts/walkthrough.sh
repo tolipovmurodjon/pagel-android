@@ -158,6 +158,15 @@ grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbo
 $T adb reverse --remove tcp:8799
 log "   offline (adb reverse removed)"
 BEFORE=$(grep -c "POST /api/v1/inbox" "$FAKE_LOG")
+# Is the node labelled $2 selected in dump $1? Compose's selectable puts "selected" on the outer node and the label on
+# its first child with the same bounds, never both on one line (smoke 40999222896, dump 51), so accept either shape.
+pill_selected() {
+  awk -v want="content-desc=\"$2\"" 'BEGIN{RS=">"} {
+    b=""; if (match($0, /bounds="[^"]*"/)) b=substr($0, RSTART, RLENGTH)
+    if (index($0, want) && (index($0, "selected=\"true\"") || (prev && b == pb))) { found=1; exit }
+    prev = index($0, "selected=\"true\"") > 0; pb = b
+  } END { exit !found }' "$1"
+}
 # The centre of the first node whose text is $1, as "x y".
 centre() {
   $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
@@ -296,7 +305,7 @@ set -- $XY; $T adb shell input swipe 50 "$2" 290 "$2" 300
 shot habits-swiped 1.5
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 shot habits-swiped-top 1
-tr '>' '\n' < "$OUT/$(printf '%02d' $N)-habits-swiped-top.xml" | grep -F 'content-desc="Afternoon"' | grep -q 'selected="true"' || { log "WALKTHROUGH: a swipe on the habits did not bring Afternoon"; exit 1; }
+pill_selected "$OUT/$(printf '%02d' $N)-habits-swiped-top.xml" Afternoon || { log "WALKTHROUGH: a swipe on the habits did not bring Afternoon"; exit 1; }
 log "-- a new habit in two taps (note 8): + → name → Add reaches pagel.uz; the toast's Undo takes it back"
 REMOVES=$(grep -c '"remove":true' "$FAKE_LOG")
 tap "New habit" && shot new-habit-sheet 1.5 || { log "WALKTHROUGH: Habits has no + New habit"; exit 1; }
