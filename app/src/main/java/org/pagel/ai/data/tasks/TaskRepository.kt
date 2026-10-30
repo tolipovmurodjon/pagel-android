@@ -155,6 +155,15 @@ class TaskRepository(
     }
 
     /**
+     * Undo of a delete made from Completed ("Clear done"): inside its 5 s the op is taken back; after, pagel.uz gets
+     * restore + done in one PATCH, because its restore alone opens the task (task-store.ts `restore`).
+     */
+    suspend fun undoDeleteDone(id: String, op: Long) {
+        if (takeBack(id, op)) return
+        edit(id, buildJsonObject { put("restore", true); put("done", true) }) { it.copy(status = "done") }
+    }
+
+    /**
      * Done from a list that is not Today (Upcoming): `PATCH {done: true}` through the same outbox as the panel's edits,
      * so its Undo ([takeBack], else [reopen]) never puts the task on Today the way Today's own tick Undo does.
      */

@@ -539,4 +539,33 @@ def _core_get_h(self):
 
 H.do_POST, H.do_PATCH, H.do_GET = _core_post_h, _core_patch_h, _core_get_h
 
+# ── Black hole · Completed's "Clear done" (black-hole brief): PATCH {remove: true} on a finished task drops it from
+# /sync and /api/v1/completed; the Undo after it left sends {restore: true, done: true} and it is done again, as pagel.uz
+# does (task-api.ts: restore opens it, done then finishes it).
+_hole_patch, _hole_completed_rows = H.do_PATCH, completed_rows
+
+def completed_rows(recent_only):
+    return [r for r in _hole_completed_rows(recent_only) if r["id"] not in REMOVED]
+
+def _hole_patch_h(self):
+    tid = self.path.rsplit("/", 1)[-1]
+    raw = self.rfile.read(int(self.headers.get("content-length") or 0))
+    b = json.loads(raw or b"{}")
+    if tid not in DONE_AT or not ("remove" in b or "restore" in b):
+        self.rfile = io.BytesIO(raw)
+        return _hole_patch(self)
+    LOG.write(f"PATCH {self.path} {raw.decode()[:300]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    if b.get("remove") is True:
+        REMOVED.add(tid)
+    if b.get("restore") is True:
+        REMOVED.discard(tid)
+    if "done" in b:
+        (REOPENED.add if b["done"] is False else REOPENED.discard)(tid)
+    status = "dropped" if tid in REMOVED else ("open" if tid in REOPENED else "done")
+    return self.send(200, {"id": tid, "status": status, "applied": list(b.keys())})
+
+H.do_PATCH = _hole_patch_h
+
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()

@@ -846,3 +846,28 @@ $T adb shell "date -u $(date -u +%m%d%H%M%Y.%S)" > /dev/null || { log "WALKTHROU
 $T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
 sleep 2
 log "NAMOZ WALK DONE: $N steps (clock back to $(date -u +%FT%TZ))"
+
+log "-- Black hole (black-hole brief): More → Completed → Clear done; the rows leave at once, pagel.uz gets the removes after"
+log "   their 5 s hold; Undo after that sends restore + done and the rows come back"
+front hole-start
+for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
+sleep 1
+for k in 1 2 3; do tap Completed && break; $T adb shell input swipe 160 300 160 900 400; sleep 1; done
+shot hole-completed 2.5
+grep -qE '(text|content-desc)="Clear done"' "$(last hole-completed)" || shot hole-completed 3
+grep -qE '(text|content-desc)="Clear done"' "$(last hole-completed)" || { log "WALKTHROUGH: Completed shows no Clear done (no done rows?)"; exit 1; }
+tap "Clear done" || { log "WALKTHROUGH: Completed has no Clear done"; exit 1; }
+shot hole-cleared 1.5
+grep -qE '(text|content-desc)="Clear done"|text="Write the IT Park report"' "$(last hole-cleared)" && { log "WALKTHROUGH: the done rows are still on screen after Clear done"; exit 1; }
+grep -qE 'text="Cleared [0-9]+ done tasks?"' "$(last hole-cleared)" || { log "WALKTHROUGH: Clear done shows no Cleared toast"; exit 1; }
+log "   $(grep -oE 'Cleared [0-9]+ done tasks?' "$(last hole-cleared)" | head -1), the list is empty at once"
+wait_log 'PATCH /api/v1/tasks/t_c2 {"remove":true} auth=True' 25 || { log "WALKTHROUGH: the remove never reached pagel.uz"; grep -E 'PATCH /api/v1/tasks/t_c' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got the removes ($(grep -c '{"remove":true}' "$FAKE_LOG") in all)"
+tap Undo || { log "WALKTHROUGH: the Clear done toast lost its Undo before the removes left"; exit 1; }
+wait_log 'PATCH /api/v1/tasks/t_c2 {"restore":true,"done":true} auth=True' 30 || { log "WALKTHROUGH: the Undo never reached pagel.uz as restore + done"; grep -E 'PATCH /api/v1/tasks/t_c' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+shot hole-undone 2.5
+grep -qE '(text|content-desc)="Clear done"' "$(last hole-undone)" || shot hole-undone 3
+grep -qE '(text|content-desc)="Clear done"' "$(last hole-undone)" || { log "WALKTHROUGH: Undo did not bring the done rows back"; exit 1; }
+$T adb logcat -d > "$OUT/logcat-hole.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-hole.txt" && { log "WALKTHROUGH: CRASH in the black hole (see logcat-hole.txt)"; exit 1; }
+log "BLACK HOLE WALK DONE: $N steps"
