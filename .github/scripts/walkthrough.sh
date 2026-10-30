@@ -841,4 +841,8 @@ grep -q 'content-desc="Shom: 1 of 12 days"' "$(last namoz-counts)" || { log "WAL
 wait_log '"day":"2026-11-12"' 30 && log "   the prayer ticks reached pagel.uz" || log "   (WARN: no tick for 2026-11-12 reached pagel.uz)"
 $T adb logcat -d > "$OUT/logcat-namoz.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-namoz.txt" && { log "WALKTHROUGH: CRASH on the Namoz page (see logcat-namoz.txt)"; exit 1; }
-log "NAMOZ WALK DONE: $N steps"
+# Put the real clock back: the next walks (Phase 5 Close the day) compare the app's today with the runner's date.
+$T adb shell "date -u $(date -u +%m%d%H%M%Y.%S)" > /dev/null || { log "WALKTHROUGH: could not put the emulator's clock back"; exit 1; }
+$T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+sleep 2
+log "NAMOZ WALK DONE: $N steps (clock back to $(date -u +%FT%TZ))"
