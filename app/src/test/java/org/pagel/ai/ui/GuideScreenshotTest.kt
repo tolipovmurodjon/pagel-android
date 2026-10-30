@@ -95,8 +95,6 @@ class GuideScreenshotTest {
         for ((i, c) in GuideCards.all.withIndex()) {
             compose.onNodeWithText(c.title).assertIsDisplayed()
             compose.onNodeWithContentDescription("Try it").assertIsDisplayed()
-            compose.mainClock.advanceTimeBy(200) // a frame must be drawn after the swipe, or the capture shows the page before
-            compose.onRoot().captureRoboImage("build/outputs/roborazzi/guide-card-${i + 1}-360.png")
             compose.onNodeWithContentDescription("Try it").performClick()
             assertEquals(c.id, c.goes, tried)
             tried = null
@@ -107,16 +105,33 @@ class GuideScreenshotTest {
         }
     }
 
-    @Test fun cardsAt15xFontStillShowTheTitleAndTryIt() {
-        show(fontScale = 1.5f)
-        for ((i, c) in GuideCards.all.withIndex()) {
-            compose.onNodeWithText(c.title).assertIsDisplayed()
-            compose.onNodeWithContentDescription("Try it").assertIsDisplayed()
-            compose.mainClock.advanceTimeBy(200)
-            compose.onRoot().captureRoboImage("build/outputs/roborazzi/guide-card-${i + 1}-360-1.5x.png")
-            if (i < GuideCards.all.lastIndex) { compose.onRoot().performTouchInput { swipeLeft() }; compose.waitForIdle() }
-        }
+    // One composition per card: a swipe in Robolectric leaves the next page undrawn in the capture (the device draws it).
+    private fun shoot(i: Int, scale: Float) {
+        show(card = i, fontScale = scale)
+        compose.onNodeWithText(GuideCards.all[i].title).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Try it").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/guide-card-${i + 1}-360" + (if (scale > 1f) "-1.5x" else "") + ".png")
     }
+    @Test fun card1At1x() = shoot(0, 1f)
+    @Test fun card1At15x() = shoot(0, 1.5f)
+    @Test fun card2At1x() = shoot(1, 1f)
+    @Test fun card2At15x() = shoot(1, 1.5f)
+    @Test fun card3At1x() = shoot(2, 1f)
+    @Test fun card3At15x() = shoot(2, 1.5f)
+    @Test fun card4At1x() = shoot(3, 1f)
+    @Test fun card4At15x() = shoot(3, 1.5f)
+    @Test fun card5At1x() = shoot(4, 1f)
+    @Test fun card5At15x() = shoot(4, 1.5f)
+    @Test fun card6At1x() = shoot(5, 1f)
+    @Test fun card6At15x() = shoot(5, 1.5f)
+    @Test fun card7At1x() = shoot(6, 1f)
+    @Test fun card7At15x() = shoot(6, 1.5f)
+    @Test fun card8At1x() = shoot(7, 1f)
+    @Test fun card8At15x() = shoot(7, 1.5f)
+    @Test fun card9At1x() = shoot(8, 1f)
+    @Test fun card9At15x() = shoot(8, 1.5f)
+    @Test fun card10At1x() = shoot(9, 1f)
+    @Test fun card10At15x() = shoot(9, 1.5f)
 
     @Test fun theCardOpensOnTheCardAScreenAsksFor() {
         show(card = GuideCards.CLOSE_THE_DAY)
