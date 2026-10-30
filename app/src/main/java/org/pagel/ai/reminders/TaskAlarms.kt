@@ -70,6 +70,7 @@ object TaskAlarms {
 
     suspend fun plan(ctx: Context, dao: PagelDao, rituals: org.pagel.ai.data.db.RitualsDao?, am: AlarmManager, now: ZonedDateTime) {
         val early = NotifyPrefs.early(ctx)
+        val leads = NotifyPrefs.leads(ctx)
         val horizon = now.plusDays(HORIZON_DAYS)
         val planned = HashSet<String>()
         // A repeating timed task rings too (round C checker), unless its own habit reminder (the bell) already does.
@@ -77,9 +78,14 @@ object TaskAlarms {
         for (t in dao.datedOpen().first()) {
             if (t.status != "open" || t.id in belled) continue
             val at = (if (t.every.isNullOrBlank()) startOf(t.due) else ReminderMath.nextFire(t.due, t.every, now)) ?: continue
-            if (at.isAfter(now) && at.isBefore(horizon)) { set(am, at, fireIntent(ctx, t.id, false)); planned += t.id }
-            val before = at.minusMinutes(10)
-            if (t.id in early && before.isAfter(now) && before.isBefore(horizon)) { set(am, before, fireIntent(ctx, t.id, true)); planned += "${t.id}!" }
+            // "Remind me" (core round 4): at the time or N minutes early; Off = none (RemindChoice.rings).
+            for (lead in RemindChoice.rings(leads[t.id], t.id in early)) {
+                val ring = at.minusMinutes(lead.toLong())
+                if (ring.isAfter(now) && ring.isBefore(horizon)) {
+                    set(am, ring, fireIntent(ctx, t.id, lead > 0))
+                    planned += if (lead > 0) "${t.id}!" else t.id
+                }
+            }
         }
         for (old in NotifyPrefs.planned(ctx) - planned) am.cancel(fireIntent(ctx, old.removeSuffix("!"), old.endsWith("!")))
         NotifyPrefs.setPlanned(ctx, planned)
@@ -206,11 +212,12 @@ class TaskAlarmReceiver : BroadcastReceiver() {
         val now = ZonedDateTime.now(HabitsRepository.TASHKENT)
         // A repeating task is on time by its hour (its date moves when it is ticked: a ticked one is not due today).
         val at = TaskAlarms.startOf(t.due)?.let { if (t.every.isNullOrBlank()) it else now.with(it.toLocalTime()).takeIf { _ -> t.due!!.take(10) <= now.toLocalDate().toString() } }
-        val onTime = at != null && kotlin.math.abs(java.time.Duration.between(if (early) at.minusMinutes(10) else at, now).toMinutes()) <= 15
+        val lead = NotifyPrefs.leadOf(ctx, id).coerceAtLeast(1).toLong()
+        val onTime = at != null && kotlin.math.abs(java.time.Duration.between(if (early) at.minusMinutes(lead) else at, now).toMinutes()) <= 15
         if (t.status == "open" && (snoozed || onTime)) {
             val title = NotifyCopy.keywordLine(titleOf(t)) ?: TaskAlarms.line(ctx, "task", TaskAlarms.taskLines(ctx), System.currentTimeMillis())
             val time = t.due?.drop(11)?.trim()?.replace('-', '–').orEmpty()
-            post(ctx, id, if (early) "in 10 min · $title" else title, titleOf(t), time, now.toLocalDate().toString(), quiet = NotifyCopy.quiet(now.toLocalTime()), actions = true)
+            post(ctx, id, if (early) "in ${RemindChoice.words(lead.toInt())} · $title" else title, titleOf(t), time, now.toLocalDate().toString(), quiet = NotifyCopy.quiet(now.toLocalTime()), actions = true)
         }
         parts.reminders().replan()
     }

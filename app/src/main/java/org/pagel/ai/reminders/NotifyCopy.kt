@@ -26,6 +26,19 @@ object NotifyPrefs {
     /** Tasks that also ring 10 minutes before (set per task in its panel). */
     fun early(ctx: Context): Set<String> = p(ctx).getStringSet("early", emptySet()).orEmpty().toSet()
     fun setEarly(ctx: Context, id: String, on: Boolean) = p(ctx).edit().putStringSet("early", if (on) early(ctx) + id else early(ctx) - id).apply()
+    /** "Remind me" per task (core round 4): minutes before its time (0 = at the time), or [OFF]; "id=minutes" entries. */
+    fun leads(ctx: Context): Map<String, Int> = p(ctx).getStringSet("lead", emptySet()).orEmpty().mapNotNull { e ->
+        val (id, m) = e.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
+        id to (m.toIntOrNull() ?: return@mapNotNull null)
+    }.toMap()
+    /** A task's choice; a task set by the old "Also 10 min before" switch reads as 10 min early. */
+    fun leadOf(ctx: Context, id: String): Int = leads(ctx)[id] ?: if (id in early(ctx)) 10 else 0
+    fun setLead(ctx: Context, id: String, minutes: Int) {
+        val rest = leads(ctx) - id + (id to minutes)
+        p(ctx).edit().putStringSet("lead", rest.map { "${it.key}=${it.value}" }.toSet()).putStringSet("early", early(ctx) - id).apply()
+    }
+    /** "Remind me: Off": the task does not ring at all. */
+    const val OFF = -1
     /** The task alarms set last time, so a task that lost its time (or was done) has its alarm cancelled. */
     fun planned(ctx: Context): Set<String> = p(ctx).getStringSet("planned", emptySet()).orEmpty().toSet()
     fun setPlanned(ctx: Context, ids: Set<String>) = p(ctx).edit().putStringSet("planned", ids).apply()

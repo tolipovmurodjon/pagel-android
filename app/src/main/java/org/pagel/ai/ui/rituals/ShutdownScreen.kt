@@ -76,7 +76,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val FLAGS = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE0))
+private val FLAGS = listOf(Color(0xFF92400E), Color(0xFFEB8909), Color(0xFF246FE0))
 private val HEAD_DATE = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
 
 @Composable

@@ -75,6 +75,11 @@ data class TaskEntity(
     @ColumnInfo(defaultValue = "NULL") val habitGroup: String? = null,
     /** The project goal's milestone this task moves (v10, core round); null = none. */
     @ColumnInfo(defaultValue = "NULL") val milestone: String? = null,
+    /**
+     * Micro-steps (v13, core round 4): the funny tiny steps "Make it tiny" wrote, as a JSON list of strings. Separate from
+     * the GTD [StepEntity] steps: disposable scaffolding for Focus mode, never shown in lists; synced as `micro`.
+     */
+    @ColumnInfo(defaultValue = "'[]'") val micro: String = "[]",
 )
 
 @Entity(tableName = "steps", primaryKeys = ["taskId", "position"], indices = [Index("taskId")])
@@ -104,6 +109,32 @@ data class TodayOrderEntity(
     @PrimaryKey val position: Int,
     val taskId: String,
 )
+
+/**
+ * Boss's own order for one day's Today (v13, core round 4): a fractional sort per task, so one drag is one PATCH of one
+ * row (`today_sort` + `today_day`). Kept apart from [TaskEntity], so a sync never wipes it; a task without a row keeps
+ * pagel.uz's place (its position in [TodayOrderEntity]).
+ */
+@Entity(tableName = "today_sorts")
+data class TodaySortEntity(
+    @PrimaryKey val taskId: String,
+    val day: String,
+    val sort: Double,
+)
+
+/** Today's screen choices for one day (v13): the full list open or folded to 3, and the energy tapped for What now. */
+@Entity(tableName = "today_state")
+data class TodayStateEntity(
+    @PrimaryKey val id: String = ID,
+    val day: String,
+    val expanded: Boolean = false,
+    /** "low", "ok" or "high"; null = not asked yet today. */
+    val energy: String? = null,
+) {
+    companion object {
+        const val ID = "today"
+    }
+}
 
 /** A change made on the phone, waiting to reach pagel.uz. Sent in order by [org.pagel.ai.data.today.OutboxWorker]. */
 @Entity(tableName = "outbox", indices = [Index("taskId")])

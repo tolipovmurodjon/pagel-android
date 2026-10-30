@@ -168,6 +168,8 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     // The Add sheet's target: null = closed, "" = Today, a name = that project. The open task panel's task id.
     var adding by rememberSaveable { mutableStateOf<String?>(null) }
     var openTask by rememberSaveable { mutableStateOf<String?>(null) }
+    // Focus mode (core round 4): one micro-step per full-screen card, over whatever is open.
+    var focusTask by rememberSaveable { mutableStateOf<String?>(null) }
     val toasts = LocalToasts.current
     val top = stack.lastOrNull()
 
@@ -244,7 +246,8 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     val inProject = top as? ProjectPageRoute
     val showFab = (onTop && selected == 0) || inProject != null
     val fabAt = if (onTop) fabBottom else Space.lg
-    androidx.compose.runtime.CompositionLocalProvider(LocalTaskOpener provides { id: String -> openTask = id }, LocalGuideOpener provides { card: Int -> stack.add(GuideRoute(card)) }) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalTaskOpener provides { id: String -> openTask = id }, LocalGuideOpener provides { card: Int -> stack.add(GuideRoute(card)) },
+        org.pagel.ai.ui.task.LocalFocusOpener provides { id: String -> focusTask = id }) {
     Box(Modifier.fillMaxSize()) {
         AuroraBackground(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -398,7 +401,13 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     adding?.let { target -> AddTaskSheet(onClose = { adding = null }, project = target.ifEmpty { null }) }
     openTask?.let { id ->
         androidx.compose.runtime.key(id) {
-            TaskPanelSheet(id, onClose = { openTask = null }, onOpenProject = { name -> openTask = null; if (top != ProjectPageRoute(name)) stack.add(ProjectPageRoute(name)) })
+            TaskPanelSheet(id, onClose = { openTask = null }, onOpenProject = { name -> openTask = null; if (top != ProjectPageRoute(name)) stack.add(ProjectPageRoute(name)) },
+                onFocus = { focusTask = it })
+        }
+    }
+    focusTask?.let { id ->
+        androidx.compose.runtime.key("focus-$id") {
+            org.pagel.ai.ui.task.FocusSheet(id, onClose = { focusTask = null }, onOpenProject = { name -> focusTask = null; openTask = null; stack.add(ProjectPageRoute(name)) })
         }
     }
 }
