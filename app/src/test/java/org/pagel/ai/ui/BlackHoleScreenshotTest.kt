@@ -6,7 +6,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -66,6 +68,21 @@ class BlackHoleScreenshotTest {
         compose.onNodeWithText("Delete one · 1.3 s").assertIsDisplayed()
         compose.onNodeWithText("Clear all · 1.9 s").assertIsDisplayed()
         compose.onNodeWithText("Janky frames: 3.1 % (4 of 128)").assertIsDisplayed()
+    }
+
+    /** Checker 2026-10-30 #2: after a clear the list says All clear and the count is the list's, not "4 tasks done". */
+    @Test fun afterAClearCompletedSaysAllClearWithTheListsCount() {
+        compose.setContent {
+            GlassTheme {
+                AuroraBackground(Modifier.fillMaxSize()) {
+                    CompletedScreen(CompletedUi(loading = false, today = LocalDate.parse("2026-10-28"), count = 0, allClear = true), pad)
+                }
+            }
+        }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/completed-all-clear.png")
+        compose.onNodeWithText("All clear").assertIsDisplayed()
+        compose.onNodeWithText("0 tasks done").assertIsDisplayed()
+        compose.onAllNodesWithText("Nothing finished yet").assertCountEquals(0)
     }
 
     @Test fun completedHasClearDoneAndItCallsBack() {

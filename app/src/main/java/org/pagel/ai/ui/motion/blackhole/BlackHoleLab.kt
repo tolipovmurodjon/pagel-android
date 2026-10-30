@@ -139,6 +139,7 @@ fun BlackHoleLab(padding: PaddingValues, jank: String?, still: LabStill? = null,
                         BlackHoleCanvas(scene, { still.t }, shaderRing = still.shaderRing)
                     } else {
                         BlackHoleOverlay(run, onEnd = { run = null; onRunEnd() }, Modifier.fillMaxSize())
+                        BlackHolePrewarm()
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {

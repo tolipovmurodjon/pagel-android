@@ -133,12 +133,14 @@ data class CompletedUi(
     val projects: Map<String, ProjectEntity> = emptyMap(),
     /** Unticked here and still folding: Room has them open already, their done copy keeps the row for the fold. */
     val reopening: Set<String> = emptySet(),
-    /** Counts the Undos of "Clear done": the screen stops the black hole when it changes. */
+    /** Counts the Undos of "Clear done": the screen fades the black hole out when it changes. */
     val clearUndone: Int = 0,
+    /** "Clear done" emptied the list here: it says All clear, and the count is the list's (older ones stay on pagel.uz). */
+    val allClear: Boolean = false,
 )
 
 /** Completed's Room side, for one combine: the done tasks, the folding ones, pagel.uz's count, the clear Undos. */
-private data class CompletedRoom(val done: List<TaskEntity>, val folding: Map<String, TaskEntity>, val counted: ServerCount?, val undone: Int)
+private data class CompletedRoom(val done: List<TaskEntity>, val folding: Map<String, TaskEntity>, val counted: ServerCount?, val undone: Int, val cleared: Boolean)
 
 /** pagel.uz's count of finished tasks and how many Room held when it came (see [doneCount]). */
 internal data class ServerCount(val total: Int, val roomThen: Int)
@@ -154,20 +156,25 @@ class CompletedViewModel @Inject constructor(
     private val reopening = MutableStateFlow<Map<String, TaskEntity>>(emptyMap())
     private val server = MutableStateFlow<ServerCount?>(null)
     private val clearUndone = MutableStateFlow(0)
+    /** True from a "Clear done" until its Undo: the count follows the list, not pagel.uz's total. */
+    private val clearedHere = MutableStateFlow(false)
 
     val ui: StateFlow<CompletedUi> = combine(
-        combine(repo.completed, reopening, server, clearUndone) { a, b, c, d -> CompletedRoom(a, b, c, d) }, repo.days(), session.projects(), session.live,
+        combine(repo.completed, reopening, server, clearUndone, clearedHere) { a, b, c, d, e -> CompletedRoom(a, b, c, d, e) },
+        repo.days(), session.projects(), session.live,
     ) { room, today, projects, live ->
-        val (done, folding, counted, undone) = room
+        val (done, folding, counted, undone, cleared) = room
         val ids = done.mapTo(HashSet()) { it.id }
+        val rows = done + folding.values.filter { it.id !in ids }
         CompletedUi(
-            loading = done.isEmpty() && folding.isEmpty() && (live is LiveStatus.Idle || live is LiveStatus.Syncing),
+            loading = !cleared && done.isEmpty() && folding.isEmpty() && (live is LiveStatus.Idle || live is LiveStatus.Syncing),
             today = today,
-            groups = completedGroups(done + folding.values.filter { it.id !in ids }, today),
-            count = doneCount(done.size, counted?.total, counted?.roomThen ?: 0),
+            groups = completedGroups(rows, today),
+            count = if (cleared) rows.size else doneCount(done.size, counted?.total, counted?.roomThen ?: 0),
             projects = projects.associateBy(ProjectEntity::name),
             reopening = folding.keys,
             clearUndone = undone,
+            allClear = cleared && rows.isEmpty(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CompletedUi())
 
@@ -201,12 +208,14 @@ class CompletedViewModel @Inject constructor(
     fun clearDone(): Int {
         val ids = ui.value.groups.flatMap { g -> g.tasks.map { it.id } }.filter { it !in ui.value.reopening }
         if (ids.isEmpty()) return 0
+        clearedHere.value = true
         viewModelScope.launch {
             val cleared = repo.clearDone(ids)
             if (cleared.isEmpty()) return@launch
             val words = if (cleared.size == 1) "Cleared 1 done task" else "Cleared ${cleared.size} done tasks"
             toasts.show(words, action = "Undo", millis = CLEAR_UNDO_MS) {
                 clearUndone.update { it + 1 }
+                clearedHere.value = false
                 viewModelScope.launch { repo.undoClear(cleared) }
             }
         }

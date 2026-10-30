@@ -1,11 +1,17 @@
 package org.pagel.ai.ui.motion.blackhole
 
 import android.graphics.RuntimeShader
+import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -19,9 +25,14 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.pagel.ai.ui.glass.Glass
 import kotlin.math.roundToInt
 
@@ -42,30 +53,43 @@ internal fun DrawScope.drawCore(cx: Float, cy: Float, s: HoleShape) {
 }
 
 /**
- * API 26-32 (and when AGSL fails to compile): a dark radial shade over two radii and two sweep-gradient arcs turning
- * the opposite ways. No per-pixel work beyond what Canvas does for a gradient.
+ * The shade's strength: soft on the light page (a smudge at 0.24, checker 2026-10-30), and it leaves with the ring, so
+ * the closed capsule does not sit in a grey cloud.
  */
-internal fun DrawScope.drawFallbackRing(cx: Float, cy: Float, s: HoleShape, t: Float) {
-    if (s.alpha <= 0f) return
-    val c = Offset(cx, cy)
-    val r = s.ringRadius
-    drawCircle(
-        Brush.radialGradient(0f to Color.Black.copy(alpha = 0.24f * s.alpha), 1f to Color.Transparent, center = c, radius = r * 3f),
-        radius = r * 3f, center = c,
-    )
-    if (s.ring <= 0.01f) return
+internal fun shadeOf(s: HoleShape): Float = s.alpha * (0.3f + 0.7f * s.ring)
+
+/**
+ * API 26-32 (and when AGSL fails to compile): a soft radial shade and two sweep-gradient arcs turning the opposite
+ * ways. Every brush and stroke is made once at unit size around (0, 0); a frame only translates, scales and rotates.
+ */
+private object FallbackArt {
+    val shade = Brush.radialGradient(0f to Color.Black.copy(alpha = 0.12f), 0.5f to Color.Black.copy(alpha = 0.05f), 1f to Color.Transparent, center = Offset.Zero, radius = 1f)
     val sweep = Brush.sweepGradient(
         listOf(HoleColors.Gold.copy(alpha = 0f), HoleColors.Gold, HoleColors.Mint, HoleColors.Gold.copy(alpha = 0f), HoleColors.Gold, HoleColors.Gold.copy(alpha = 0f)),
-        center = c,
+        center = Offset.Zero,
     )
-    rotate(t * 140f, c) { drawCircle(sweep, radius = r * 1.12f, center = c, style = Stroke(width = r * 0.22f), alpha = s.ring * s.alpha) }
-    rotate(-t * 90f, c) { drawCircle(sweep, radius = r * 1.34f, center = c, style = Stroke(width = r * 0.08f), alpha = 0.6f * s.ring * s.alpha) }
+    val wide = Stroke(width = 0.22f)
+    val thin = Stroke(width = 0.08f)
+}
+
+internal fun DrawScope.drawFallbackRing(cx: Float, cy: Float, s: HoleShape, t: Float) {
+    if (s.alpha <= 0f) return
+    val r = s.ringRadius
+    translate(cx, cy) {
+        scale(r * 3.5f, Offset.Zero) { drawCircle(FallbackArt.shade, radius = 1f, center = Offset.Zero, alpha = shadeOf(s)) }
+        if (s.ring > 0.01f) scale(r, Offset.Zero) {
+            rotate(t * 140f, Offset.Zero) { drawCircle(FallbackArt.sweep, radius = 1.12f, center = Offset.Zero, style = FallbackArt.wide, alpha = s.ring * s.alpha) }
+            rotate(-t * 90f, Offset.Zero) { drawCircle(FallbackArt.sweep, radius = 1.34f, center = Offset.Zero, style = FallbackArt.thin, alpha = 0.6f * s.ring * s.alpha) }
+        }
+    }
 }
 
 /**
  * API 33+: the ring of light and the shade as one AGSL pass, run only in a box [BlackHole.RING_BOX] radii wide around
  * the hole and at half resolution (an offscreen layer half the size, drawn at 2x): full-screen fragment work is what
- * a Mali-G52 class GPU cannot afford. Fibres turn, 4.5x faster at the horizon; gold at the edge, mint further out.
+ * a Mali-G52 class GPU cannot afford. Fibres are periodic value noise along the circle (48 and 96 cells), pulled into
+ * a spiral by the radius and turning 4.5x faster at the horizon; gold at the edge, mint further out.
+ * One shader per process ([get]), built off the main thread and drawn once by [BlackHolePrewarm] before any run.
  */
 @RequiresApi(33)
 internal object AgslRing {
@@ -75,29 +99,64 @@ internal object AgslRing {
         uniform float time;
         uniform float strength;
         uniform float shade;
+        float hash(float n) { return fract(sin(n) * 43758.5453); }
+        float fibre(float a, float cells) {
+            float x = a * cells;
+            float i = floor(x);
+            float f = fract(x);
+            float u = f * f * (3.0 - 2.0 * f);
+            return mix(hash(mod(i, cells)), hash(mod(i + 1.0, cells)), u);
+        }
         half4 main(float2 p) {
             float2 d = p - center;
             float x = length(d) / max(radius, 1.0);
-            float ang = atan(d.y, d.x);
-            float spin = time * (2.0 + 4.5 / max(x, 1.0));
-            float f = 0.5 + 0.5 * sin(ang * 7.0 + spin + 3.0 * sin(ang * 3.0 - time));
-            float g = 0.5 + 0.5 * sin(ang * 13.0 - spin * 1.3 + x * 4.0);
-            float bx = (x - 1.12) / 0.16;
-            float hx = (x - 1.0) / 0.5;
+            float a = atan(d.y, d.x) / 6.2831853 + 0.5;
+            float spin = time * (0.32 + 0.72 / max(x, 1.0));
+            float twist = 0.06 * x;
+            float f1 = fibre(fract(a + spin + twist), 48.0);
+            float f2 = fibre(fract(a - spin * 1.4 + twist * 1.7), 96.0);
+            float fib = 0.55 * f1 + 0.45 * f2;
+            float bx = (x - 1.10) / 0.20;
+            float hx = (x - 1.0) / 0.55;
             float band = exp(-bx * bx);
-            float halo = exp(-hx * hx) * 0.35;
-            float ring = clamp((band * (0.55 + 0.45 * f * g) + halo) * strength, 0.0, 1.0);
+            float halo = exp(-hx * hx) * 0.25;
+            float ring = clamp((band * (0.35 + 0.65 * fib * fib * 1.6) + halo) * strength, 0.0, 1.0);
             half3 gold = half3(0.949, 0.710, 0.290);
             half3 mint = half3(0.400, 0.867, 0.659);
-            half3 col = mix(gold, mint, half(smoothstep(1.0, 1.6, x)));
-            float s = shade * 0.24 * (1.0 - smoothstep(1.0, 3.0, x));
-            float a = clamp(ring + s, 0.0, 1.0);
-            return half4(col * half(ring), half(a));
+            half3 col = mix(gold, mint, half(smoothstep(1.0, 1.7, x)));
+            float fall = 1.0 - smoothstep(0.9, 3.0, x);
+            float s = shade * 0.12 * fall * fall;
+            float alpha = clamp(ring + s, 0.0, 1.0);
+            return half4(col * half(ring), half(alpha));
         }
     """
 
-    /** Null when the shader does not compile here (the canvas fallback draws instead). */
-    fun createOrNull(): RuntimeShader? = runCatching { RuntimeShader(SOURCE) }.getOrNull()
+    @Volatile private var shader: RuntimeShader? = null
+    @Volatile private var brush: ShaderBrush? = null
+    @Volatile private var failed = false
+
+    /** The one ring shader; null when AGSL does not compile here (the canvas fallback draws instead). */
+    fun get(): RuntimeShader? {
+        shader?.let { return it }
+        if (failed) return null
+        synchronized(this) {
+            shader?.let { return it }
+            val made = runCatching { RuntimeShader(SOURCE) }.getOrNull()
+            if (made == null) failed = true else { shader = made; brush = ShaderBrush(made) }
+            return made
+        }
+    }
+
+    private fun brushOf(s: RuntimeShader): ShaderBrush = brush ?: ShaderBrush(s).also { brush = it }
+
+    private fun DrawScope.drawRing(s: RuntimeShader, cx: Float, cy: Float, radius: Float, t: Float, strength: Float, shade: Float) {
+        s.setFloatUniform("center", cx, cy)
+        s.setFloatUniform("radius", radius)
+        s.setFloatUniform("time", t)
+        s.setFloatUniform("strength", strength)
+        s.setFloatUniform("shade", shade)
+        drawRect(brushOf(s))
+    }
 
     @Composable
     fun Layer(shader: RuntimeShader, scene: BlackHoleScene, time: () -> Float) {
@@ -117,13 +176,26 @@ internal object AgslRing {
                     val t = time()
                     val s = scene.hole(t)
                     if (s.alpha <= 0f) return@drawBehind
-                    shader.setFloatUniform("center", size.width / 2f, size.height / 2f)
-                    shader.setFloatUniform("radius", s.ringRadius / 2f)
-                    shader.setFloatUniform("time", t)
-                    shader.setFloatUniform("strength", s.ring * s.alpha)
-                    shader.setFloatUniform("shade", s.alpha)
-                    drawRect(ShaderBrush(shader))
+                    drawRing(shader, size.width / 2f, size.height / 2f, s.ringRadius / 2f, t, s.ring * s.alpha, shadeOf(s))
                 },
         )
     }
+
+    /** One draw that changes no pixel (strength and shade 0), so the GPU compiles the pipeline now, not at frame 1. */
+    @Composable
+    fun WarmUp(shader: RuntimeShader) {
+        Box(Modifier.size(1.dp).drawBehind { drawRing(shader, 0f, 0f, 1f, 0f, 0f, 0f) })
+    }
+}
+
+/**
+ * Put on a screen that can play the hole (Completed, the Lab): builds the ring shader off the main thread when the
+ * screen opens and draws it once, invisibly, so the first run opens without a compile hitch. Below API 33: nothing.
+ */
+@Composable
+fun BlackHolePrewarm() {
+    if (Build.VERSION.SDK_INT < 33) return
+    var ready by remember { mutableStateOf<RuntimeShader?>(null) }
+    LaunchedEffect(Unit) { ready = withContext(Dispatchers.Default) { AgslRing.get() } }
+    ready?.let { AgslRing.WarmUp(it) }
 }

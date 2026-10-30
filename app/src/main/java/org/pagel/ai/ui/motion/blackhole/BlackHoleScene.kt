@@ -26,16 +26,23 @@ class BlackHoleScene private constructor(
 ) {
     val vertexCount: Int get() = mesh.vertexCount
 
-    fun hole(t: Float): HoleShape = holeAt(t, timing, radius)
+    private var holeT = Float.NaN
+    private var holeLast = holeAt(0f, timing, radius)
+
+    /** The hole at [t]; the ring, the shade and the core all ask for the same frame, so it is worked out once. */
+    fun hole(t: Float): HoleShape {
+        if (t != holeT) { holeLast = holeAt(t, timing, radius); holeT = t }
+        return holeLast
+    }
 
     /** Draws the pieces at [t] s into the run. */
     fun drawPieces(canvas: Canvas, t: Float) {
         mesh.update(t - timing.swallowStart, flow, radius)
         val count = mesh.vertexCount * 2
         canvas.drawVertices(Canvas.VertexMode.TRIANGLES, count, mesh.pos, 0, mesh.tex, 0, mesh.sharp, 0, mesh.indices, 0, mesh.indices.size, sharpPaint)
-        // The blurred copy only once something is near the horizon (before that every soft alpha is 0).
-        if (t > timing.swallowStart) {
-            canvas.drawVertices(Canvas.VertexMode.TRIANGLES, count, mesh.pos, 0, mesh.tex, 0, mesh.soft, 0, mesh.indices, 0, mesh.indices.size, softPaint)
+        // The blurred copy only on the triangles near the horizon (the mesh lists them each frame; most frames few).
+        if (mesh.softCount > 0) {
+            canvas.drawVertices(Canvas.VertexMode.TRIANGLES, count, mesh.pos, 0, mesh.tex, 0, mesh.soft, 0, mesh.softIndices, 0, mesh.softCount, softPaint)
         }
     }
 
@@ -48,6 +55,9 @@ class BlackHoleScene private constructor(
         fun prepare(snapshot: Bitmap, pieces: List<PieceRect>, cx: Float, cy: Float, radius: Float, cell: Float, timing: BlackHoleTiming): BlackHoleScene {
             // A GraphicsLayer snapshot is a HARDWARE bitmap: copy it once so it can be scaled.
             val readable = if (snapshot.config == Bitmap.Config.HARDWARE) snapshot.copy(Bitmap.Config.ARGB_8888, false) else snapshot
+            // Read before any recycle below (checker: the sizes were read from a recycled bitmap).
+            val fullW = snapshot.width.toFloat()
+            val fullH = snapshot.height.toFloat()
             val s = BlackHole.SNAPSHOT_SCALE
             val small = Bitmap.createScaledBitmap(readable, max(1, (readable.width * s).roundToInt()), max(1, (readable.height * s).roundToInt()), true)
             // Two halvings, each filtered: a softer blur than one jump to a quarter.
@@ -60,8 +70,8 @@ class BlackHoleScene private constructor(
             mesh.bind(flow)
             return BlackHoleScene(
                 timing, cx, cy, radius, mesh, flow,
-                shaderPaint(small, readable.width.toFloat() / small.width, readable.height.toFloat() / small.height),
-                shaderPaint(blurred, readable.width.toFloat() / blurred.width, readable.height.toFloat() / blurred.height),
+                shaderPaint(small, fullW / small.width, fullH / small.height),
+                shaderPaint(blurred, fullW / blurred.width, fullH / blurred.height),
             )
         }
 

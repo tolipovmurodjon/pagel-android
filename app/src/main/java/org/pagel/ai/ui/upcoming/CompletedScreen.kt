@@ -42,6 +42,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.motion.blackhole.BlackHole
 import org.pagel.ai.ui.motion.blackhole.BlackHoleOverlay
+import org.pagel.ai.ui.motion.blackhole.BlackHolePrewarm
 import org.pagel.ai.ui.motion.blackhole.BlackHoleRun
 import org.pagel.ai.ui.motion.blackhole.BlackHoleTiming
 import org.pagel.ai.ui.motion.blackhole.PieceRect
@@ -113,7 +114,9 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     var hole by remember { mutableStateOf<BlackHoleRun?>(null) }
-    LaunchedEffect(ui.clearUndone) { if (ui.clearUndone > 0) hole = null }
+    // Undo mid-run: the effect fades out in 120 ms (never cut in one frame) while the rows come back underneath.
+    var holeStop by remember { mutableStateOf(false) }
+    LaunchedEffect(ui.clearUndone) { if (ui.clearUndone > 0 && hole != null) holeStop = true }
     val clear: () -> Unit = {
         // Undispatched: the snapshot starts in the tap's own frame, before Room can redraw the list without the rows.
         // The data never waits longer than SNAPSHOT_WAIT_MS for it; without a snapshot the rows just leave.
@@ -123,6 +126,7 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
             val centre = holeCentre(info, density)
             val shot = withTimeoutOrNull(SNAPSHOT_WAIT_MS) { runCatching { layer.toImageBitmap().asAndroidBitmap() }.getOrNull() }
             onClearDone()
+            holeStop = false
             if (shot != null && pieces.isNotEmpty()) hole = BlackHoleRun(System.nanoTime(), shot, pieces, centre.x, centre.y, BlackHoleTiming.ClearAll)
         }
     }
@@ -148,6 +152,18 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
             ui.loading -> item(key = "loading", contentType = "note") {
                 Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
             }
+            ui.allClear -> item(key = "clear", contentType = "note") {
+                Pane(Modifier.fillMaxWidth().padding(horizontal = Space.lg)) {
+                    Column(Modifier.padding(Space.xl)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("All clear", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
+                            Spacer(Modifier.width(Space.sm))
+                            Icon(TabIcons.Check, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(Space.xl))
+                        }
+                        Text("The finished tasks are cleared. Undo brings them back.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+                    }
+                }
+            }
             ui.groups.isEmpty() -> item(key = "none", contentType = "note") {
                 Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Column(Modifier.padding(20.dp)) {
@@ -161,7 +177,9 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
             }
         }
         }
-        BlackHoleOverlay(hole, onEnd = { hole = null }, Modifier.matchParentSize())
+        BlackHoleOverlay(hole, onEnd = { hole = null; holeStop = false }, Modifier.matchParentSize(), stop = holeStop)
+        // The ring shader is built and drawn once now, so the first Clear done opens without a compile hitch.
+        BlackHolePrewarm()
     }
 }
 

@@ -904,7 +904,10 @@ tap "Clear done" || { log "WALKTHROUGH: Completed has no Clear done"; exit 1; }
 shot hole-cleared 1.5
 grep -qE '(text|content-desc)="Clear done"|text="Write the IT Park report"' "$(last hole-cleared)" && { log "WALKTHROUGH: the done rows are still on screen after Clear done"; exit 1; }
 grep -qE 'text="Cleared [0-9]+ done tasks?"' "$(last hole-cleared)" || { log "WALKTHROUGH: Clear done shows no Cleared toast"; exit 1; }
-log "   $(grep -oE 'Cleared [0-9]+ done tasks?' "$(last hole-cleared)" | head -1), the list is empty at once"
+# Checker 2026-10-30 #2: the empty list says All clear and its count is the list's (it said "4 tasks done").
+grep -q 'text="All clear"' "$(last hole-cleared)" || { log "WALKTHROUGH: the cleared list does not say All clear"; exit 1; }
+grep -q 'text="0 tasks done"' "$(last hole-cleared)" || { log "WALKTHROUGH: the cleared list's count is not 0 ($(grep -oE '[0-9]+ tasks? done' "$(last hole-cleared)" | head -1))"; exit 1; }
+log "   $(grep -oE 'Cleared [0-9]+ done tasks?' "$(last hole-cleared)" | head -1), the list says All clear · 0 tasks done at once"
 wait_log 'PATCH /api/v1/tasks/t_c2 {"remove":true} auth=True' 25 || { log "WALKTHROUGH: the remove never reached pagel.uz"; grep -E 'PATCH /api/v1/tasks/t_c' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   pagel.uz got the removes ($(grep -c '{"remove":true}' "$FAKE_LOG") in all)"
 tap Undo || { log "WALKTHROUGH: the Clear done toast lost its Undo before the removes left"; exit 1; }

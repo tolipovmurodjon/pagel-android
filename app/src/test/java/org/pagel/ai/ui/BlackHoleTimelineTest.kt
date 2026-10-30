@@ -14,6 +14,7 @@ import org.pagel.ai.ui.motion.blackhole.HoleMode
 import org.pagel.ai.ui.motion.blackhole.PieceRect
 import org.pagel.ai.ui.motion.blackhole.chooseMode
 import org.pagel.ai.ui.motion.blackhole.holeAt
+import org.pagel.ai.ui.motion.blackhole.shadeOf
 
 /**
  * The black hole's maths (black-hole brief, "Prove it"): the flow table is monotonic and the farthest point reaches the
@@ -103,6 +104,13 @@ class BlackHoleTimelineTest {
         assertEquals(0f, holeAt(t.total, t, radius).alpha, 1e-4f)
     }
 
+    @Test fun theShadeLeavesWithTheRingSoTheClosedHoleSitsInNoGreyCloud() {
+        val t = BlackHoleTiming.ClearAll
+        val open = holeAt(t.open, t, radius)
+        val closed = holeAt(t.closeEnd + t.bulge / 2f, t, radius)
+        assertTrue(shadeOf(closed) < 0.5f * shadeOf(open))
+    }
+
     @Test fun theMeshRestsUntilTheSwallowAndLeavesNothingVisibleAfterIt() {
         val pieces = listOf(PieceRect(0f, 400f, 1080f, 616f), PieceRect(0f, 640f, 1080f, 856f))
         val mesh = HoleMesh(pieces, 540f, 180f, 36f)
@@ -115,6 +123,12 @@ class BlackHoleTimelineTest {
             assertEquals(mesh.tex[2 * v], mesh.pos[2 * v], 1e-3f)
             assertEquals(255, mesh.sharp[v] ushr 24)
         }
+        assertEquals("no blurred triangles at rest", 0, mesh.softCount)
+        // Mid-swallow the blurred copy draws only the heated triangles near the horizon, not the whole mesh.
+        mesh.update(BlackHoleTiming.ClearAll.swallow * 0.6f, table, radius)
+        assertTrue("some blurred triangles: ${mesh.softCount}", mesh.softCount > 0)
+        assertTrue("only some: ${mesh.softCount} of ${mesh.indices.size}", mesh.softCount < mesh.indices.size)
+        assertEquals(0, mesh.softCount % 3)
         mesh.update(BlackHoleTiming.ClearAll.swallow + 0.01f, table, radius)
         for (v in 0 until mesh.vertexCount) {
             assertEquals("point $v is gone", 0, mesh.sharp[v] ushr 24)

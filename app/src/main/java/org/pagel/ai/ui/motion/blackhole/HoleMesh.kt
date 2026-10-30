@@ -24,6 +24,10 @@ class HoleMesh(pieces: List<PieceRect>, private val cx: Float, private val cy: F
     /** The blurred copy's colours: it takes over as a point heats. */
     val soft: IntArray
     val indices: ShortArray
+    /** The triangles the blurred copy draws this frame (any corner heated), and how many indices of them. */
+    val softIndices: ShortArray
+    var softCount: Int = 0
+        private set
     val maxStart: Float
     private val ux: FloatArray
     private val uy: FloatArray
@@ -42,6 +46,7 @@ class HoleMesh(pieces: List<PieceRect>, private val cx: Float, private val cy: F
         sharp = IntArray(verts)
         soft = IntArray(verts)
         indices = ShortArray(idx)
+        softIndices = ShortArray(idx)
         ux = FloatArray(verts)
         uy = FloatArray(verts)
         start = FloatArray(verts)
@@ -112,6 +117,18 @@ class HoleMesh(pieces: List<PieceRect>, private val cx: Float, private val cy: F
             sharp[v] = argb(alpha * (1f - 0.85f * heat), 255, g, b)
             soft[v] = argb(alpha * 0.85f * heat, 255, g, b)
         }
+        var n = 0
+        var k = 0
+        while (k < indices.size) {
+            val a = indices[k].toInt()
+            val b = indices[k + 1].toInt()
+            val c = indices[k + 2].toInt()
+            if ((soft[a] or soft[b] or soft[c]) ushr 24 != 0) {
+                softIndices[n++] = indices[k]; softIndices[n++] = indices[k + 1]; softIndices[n++] = indices[k + 2]
+            }
+            k += 3
+        }
+        softCount = n
     }
 
     companion object {

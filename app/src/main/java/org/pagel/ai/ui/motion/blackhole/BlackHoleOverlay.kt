@@ -56,7 +56,8 @@ fun animatorScale(context: Context): Float =
  */
 @Composable
 fun BlackHoleCanvas(scene: BlackHoleScene, time: () -> Float, modifier: Modifier = Modifier, shaderRing: Boolean = Build.VERSION.SDK_INT >= 33) {
-    val agsl: Any? = remember(shaderRing) { if (shaderRing && Build.VERSION.SDK_INT >= 33) AgslRing.createOrNull() else null }
+    // The process's one ring shader (BlackHolePrewarm built it when the screen opened; a test builds it here).
+    val agsl: Any? = remember(shaderRing) { if (shaderRing && Build.VERSION.SDK_INT >= 33) AgslRing.get() else null }
     Box(modifier.fillMaxSize()) {
         Spacer(Modifier.fillMaxSize().drawBehind { drawIntoCanvas { scene.drawPieces(it.nativeCanvas, time()) } })
         if (agsl != null && Build.VERSION.SDK_INT >= 33) {
@@ -75,8 +76,10 @@ fun BlackHoleCanvas(scene: BlackHoleScene, time: () -> Float, modifier: Modifier
  * Reduced motion, a scene that cannot be made, or two missed frame budgets in a row: the rows fade in 120 ms instead.
  */
 @Composable
-fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier = Modifier) {
+fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier = Modifier, stop: Boolean = false) {
     if (run == null) return
+    // [stop] (an Undo mid-run): the effect leaves by the same 120 ms fade, never cut in one frame.
+    val stopNow by rememberUpdatedState(stop)
     val view = LocalView.current
     val density = LocalDensity.current
     val radius = BlackHole.RADIUS_DP * density.density
@@ -87,7 +90,7 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
     val fadeAlpha = remember(run.id) { mutableFloatStateOf(1f) }
     LaunchedEffect(run.id) {
         var t = 0f
-        if (chooseMode(animatorScale(view.context)) == HoleMode.Full) {
+        if (!stopNow && chooseMode(animatorScale(view.context)) == HoleMode.Full) {
             val made = runCatching {
                 withContext(Dispatchers.Default) { BlackHoleScene.prepare(run.snapshot, run.pieces, run.cx, run.cy, radius, cell, run.timing) }
             }.getOrNull()
@@ -98,7 +101,7 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
                 var last = -1L
                 var landed = false
                 var gaveUp = false
-                while (t < run.timing.total && !gaveUp) {
+                while (t < run.timing.total && !gaveUp && !stopNow) {
                     val now = withFrameNanos { it }
                     if (last >= 0L) {
                         val raw = (now - last) / 1_000_000_000f
@@ -109,10 +112,10 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
                     time.floatValue = t
                     if (!landed && t >= run.timing.swallowEnd) {
                         landed = true
-                        view.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+                        view.performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY)
                     }
                 }
-                if (!gaveUp) {
+                if (!gaveUp && !stopNow) {
                     end()
                     return@LaunchedEffect
                 }
