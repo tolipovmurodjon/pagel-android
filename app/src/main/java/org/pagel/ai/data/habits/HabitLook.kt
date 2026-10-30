@@ -72,6 +72,26 @@ object HabitLook {
         return false
     }
 
+    /**
+     * Rows in stacking order (note 4): each habit right under the habit it follows when both are on the same page, with
+     * its depth (0 = leads). A link to a habit not on the page is shown as a plain row; every row shows exactly once.
+     */
+    fun <T> stackOrder(items: List<T>, id: (T) -> String, prefs: Map<String, HabitPrefEntity>): List<Pair<T, Int>> {
+        val here = items.map(id).toSet()
+        val parent = items.associate { t -> id(t) to (anchorOf(prefs[id(t)]?.after) as? Anchor.Habit)?.id?.takeIf { it in here && it != id(t) } }
+        val kids = items.groupBy { parent[id(it)] }
+        val out = mutableListOf<Pair<T, Int>>()
+        val seen = mutableSetOf<String>()
+        fun walk(t: T, d: Int) {
+            if (!seen.add(id(t))) return
+            out += t to d
+            kids[id(t)].orEmpty().forEach { walk(it, d + 1) }
+        }
+        items.filter { parent[id(it)] == null }.forEach { walk(it, 0) }
+        items.forEach { walk(it, 0) }
+        return out
+    }
+
     /** A habit the Habits tab shows as a card: every day, weekdays or set weekdays; not a prayer. */
     fun isDailyHabit(t: TaskEntity): Boolean {
         val e = t.every.orEmpty()

@@ -348,7 +348,35 @@ class HabitsViewModel @Inject constructor(
             toasts.show("Habit deleted", action = "Undo", millis = 5_000) { viewModelScope.launch { tasks.undoDelete(id, op) } }
         }
     }
-    fun setIdentity(id: String, line: String?) = viewModelScope.launch { prefsRepo.identity(id, line) }
+    /**
+     * Drag-to-link (note 4): [id] dropped on [onto] now comes after it; dropped on the habit it already follows, the
+     * link comes off. A loop is refused by [setAnchor]. Undo puts the old link back.
+     */
+    fun link(id: String, onto: String) {
+        val L = org.pagel.ai.data.habits.HabitLook
+        val was = ui.value.prefs[id]?.after
+        val unlink = (L.anchorOf(was) as? org.pagel.ai.data.habits.HabitLook.Anchor.Habit)?.id == onto
+        if (!unlink && (onto == id || L.leadsTo(onto, id, ui.value.prefs))) { toasts.show("That would make a loop"); return }
+        val name = ui.value.byId[onto]?.let { it.title ?: it.text } ?: "it"
+        viewModelScope.launch {
+            prefsRepo.after(id, if (unlink) null else onto)
+            toasts.show(if (unlink) "Unlinked" else "Linked: after $name", action = "Undo") { viewModelScope.launch { prefsRepo.after(id, was) } }
+        }
+    }
+
+    /** A new habit (note 8): every day from today, at the part's usual time; Undo takes it straight back. */
+    fun create(name: String, part: Part) {
+        val text = name.trim().takeIf(String::isNotEmpty) ?: return
+        val time = when (part) { Part.MORNING -> "07:00"; Part.AFTERNOON -> "13:00"; Part.EVENING -> "19:00"; Part.ANYTIME -> null }
+        val date = repo.today()
+        viewModelScope.launch {
+            val id = todayRepo.add(text, project = "me", priority = 2, due = if (time == null) date else "$date $time", every = "day", onToday = false)
+            repo.replan()
+            chosenPart.value = if (part == Part.ANYTIME) chosenPart.value else part
+            toasts.show("Habit added", action = "Undo", millis = 5_000) { viewModelScope.launch { tasks.delete(id); repo.replan() } }
+        }
+    }
+    fun setIdentity(id: String, line: String?) =viewModelScope.launch { prefsRepo.identity(id, line) }
     fun setMinutes(id: String, n: Int?) = viewModelScope.launch { prefsRepo.minutes(id, n) }
 
     /**

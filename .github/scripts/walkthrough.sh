@@ -297,6 +297,17 @@ shot habits-swiped 1.5
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 shot habits-swiped-top 1
 tr '>' '\n' < "$OUT/$(printf '%02d' $N)-habits-swiped-top.xml" | grep -F 'content-desc="Afternoon"' | grep -q 'selected="true"' || { log "WALKTHROUGH: a swipe on the habits did not bring Afternoon"; exit 1; }
+log "-- a new habit in two taps (note 8): + → name → Add reaches pagel.uz; the toast's Undo takes it back"
+REMOVES=$(grep -c '"remove":true' "$FAKE_LOG")
+tap "New habit" && shot new-habit-sheet 1.5 || { log "WALKTHROUGH: Habits has no + New habit"; exit 1; }
+$T adb shell "input text 'Floss%sat%snight'"; sleep 0.5
+tap "Add habit" || { log "WALKTHROUGH: the New habit sheet has no Add habit"; exit 1; }
+for i in $(seq 1 8); do grep -q 'POST /api/v1/tasks .*Floss at night' "$FAKE_LOG" && break; sleep 0.5; done
+grep -q 'POST /api/v1/tasks .*Floss at night' "$FAKE_LOG" || { log "WALKTHROUGH: the new habit never reached pagel.uz"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tail -3 | tee -a "$OUT/steps.txt"; exit 1; }
+tap Undo && shot new-habit-undone 1.5 || { log "WALKTHROUGH: the Habit added toast had no Undo"; exit 1; }
+for i in $(seq 1 30); do [ "$(grep -c '"remove":true' "$FAKE_LOG")" -gt "$REMOVES" ] && break; sleep 1; done
+[ "$(grep -c '"remove":true' "$FAKE_LOG")" -gt "$REMOVES" ] || { log "WALKTHROUGH: Undo of the new habit never reached pagel.uz"; exit 1; }
+log "   new habit added and taken back"
 tap Morning && sleep 1
 # The cards sit under the strip, the pills and the Namoz group: scroll the list up first.
 $T adb shell input swipe 160 460 160 260 400; sleep 1

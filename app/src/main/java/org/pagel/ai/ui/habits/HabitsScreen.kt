@@ -13,6 +13,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -133,6 +136,7 @@ fun HabitsRoute(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     var namozSheet by remember { mutableStateOf(false) }
+    var adding by remember { mutableStateOf(false) }
     var celebrate by remember { mutableStateOf(0) }
     var finished by remember { mutableStateOf<Pair<String, Int>?>(null) }
     val grants = rememberReminderGrants(vm)
@@ -148,8 +152,10 @@ fun HabitsRoute(
         onTick = vm::tick, onUntick = vm::untick, onOpen = onOpenHabit,
         onSelectDay = vm::selectDay, onSelectPart = vm::selectPart, onTimer = vm::toggleTimer, onHistory = onHistory,
         onStartNamoz = vm::startNamoz, onNamozMenu = { namozSheet = true }, onOpenNamoz = onOpenNamoz,
+        onNew = { adding = true }, onLink = vm::link,
     )
     if (namozSheet) NamozSheet(ui.board?.namoz.orEmpty(), ui.reminders, onToggle = grants.remind) { namozSheet = false }
+    if (adding) NewHabitSheet(ui.part, vm::create) { adding = false }
 }
 
 /**
@@ -177,6 +183,8 @@ fun HabitsScreen(
     onStartNamoz: () -> Unit = {},
     onNamozMenu: () -> Unit = {},
     onOpenNamoz: () -> Unit = {},
+    onNew: () -> Unit = {},
+    onLink: (String, String) -> Unit = { _, _ -> },
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -185,6 +193,7 @@ fun HabitsScreen(
     var nextBurst by remember { mutableLongStateOf(0L) }
     var rootAt by remember { mutableStateOf(Offset.Zero) }
     val centres = remember { mutableStateMapOf<String, Offset>() }
+    val links = remember { LinkDrag() }
     val list = rememberLazyListState()
     val board = ui.board
     val today = runCatching { LocalDate.parse(ui.today) }.getOrNull()
@@ -206,7 +215,7 @@ fun HabitsScreen(
         // One spacing rhythm (Boss 2026-10-29: "the spacing is different for all"): every block and every habit row sits
         // Space.paneGap apart, every row has the same height (HabitsScreenshotTest.rowsHaveOneHeightAndOneGap).
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.paneGap)) {
-            item(key = "head", contentType = "head") { Header(ui, board, onHistory) }
+            item(key = "head", contentType = "head") { Header(ui, board, onHistory, onNew) }
             if (ui.loading || board == null) {
                 item(key = "loading", contentType = "note") { Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) { SkeletonRows(3, Modifier.padding(vertical = Space.sm)) } }
                 return@LazyColumn
@@ -220,13 +229,13 @@ fun HabitsScreen(
             item(key = "pager", contentType = "pager") {
                 PartPager(ui.part, board, onSelectPart) { part, current ->
                     val cards = board.inPart(part)
-                    if (cards.isEmpty()) EmptyPart(part, board.total)
-                    for (c in cards) key(c.task.id) {
+                    if (cards.isEmpty()) EmptyPart(part, board.total, onNew)
+                    for ((c, depth) in org.pagel.ai.data.habits.HabitLook.stackOrder(cards, { it.task.id }, ui.prefs)) key(c.task.id) { LinkableRow(c.task.id, depth.coerceAtMost(2), links, onLink) {
                         HabitCardRow(
                             c, finishing = c.task.id in ui.finishing, timer = ui.timers[c.task.id], now = ui.now,
                             onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onTimer = onTimer,
                             onCentre = { if (current) centres[c.task.id] = it },
-                        )
+                        ) }
                     }
                 }
             }
@@ -257,7 +266,7 @@ fun HabitsScreen(
 }
 
 @Composable
-private fun Header(ui: HabitsUi, board: HabitBoard?, onHistory: () -> Unit) {
+private fun Header(ui: HabitsUi, board: HabitBoard?, onHistory: () -> Unit, onNew: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = Space.textEdge, end = Space.gutter, top = Space.headerTop), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Habits", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
@@ -270,6 +279,7 @@ private fun Header(ui: HabitsUi, board: HabitBoard?, onHistory: () -> Unit) {
             Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (board != null) DayRing(board.doneCount, board.total, Modifier.padding(end = Space.sm))
+        GlassIconButton(TabIcons.Plus, "New habit", size = Space.touch, plain = true, onClick = onNew)
         GlassIconButton(TabIcons.CalendarCheck, "History", size = Space.touch, onClick = onHistory)
     }
 }
@@ -540,16 +550,74 @@ private fun PartPills(part: Part, board: HabitBoard, onSelect: (Part) -> Unit) {
 }
 
 @Composable
-private fun EmptyPart(part: Part, total: Int) {
+private fun EmptyPart(part: Part, total: Int, onNew: () -> Unit) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Row(Modifier.fillMaxWidth().padding(Space.xl), verticalAlignment = Alignment.CenterVertically) {
             Image(painterResource(Emoji.res("seedling")), null, Modifier.size(40.dp))
             Spacer(Modifier.width(Space.md))
             Column {
                 Text(if (total == 0) "No habits yet" else "Nothing this ${part.label.lowercase()}", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
-                Text(if (total == 0) "Give a task a repeat; it lives here." else "Habits with no time show in every part.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+                Text(if (total == 0) "Start with one small thing." else "Habits with no time show in every part.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+                Text(
+                    "+ New habit", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk,
+                    modifier = Modifier.heightIn(min = Space.touch).clickable(role = Role.Button, onClick = onNew).wrapContentHeight(Alignment.CenterVertically),
+                )
             }
         }
+    }
+}
+
+// ── Habit stacking by drag (note 4) ─────────────────────────────────────────────────────────────────────────────────
+
+/** Where every row on the page is, which one is lifted, how far it moved, and the row it would link to. */
+@androidx.compose.runtime.Stable
+internal class LinkDrag {
+    val bounds = mutableMapOf<String, androidx.compose.ui.geometry.Rect>()
+    var dragging by mutableStateOf<String?>(null)
+    var offset by mutableStateOf(Offset.Zero)
+    var hover by mutableStateOf<String?>(null)
+    fun target(): String? {
+        val id = dragging ?: return null
+        val at = (bounds[id] ?: return null).center + offset
+        return bounds.entries.firstOrNull { it.key != id && it.value.contains(at) }?.key
+    }
+    fun reset() { dragging = null; offset = Offset.Zero; hover = null }
+}
+
+/**
+ * A row that can be stacked: hold it, it lifts; drag it onto another habit and let go = "after that one" (drop it on
+ * the one it already follows = unlinked). A habit that follows another sits under it, one step in, with a faint ↳.
+ */
+@Composable
+private fun LinkableRow(id: String, depth: Int, drag: LinkDrag, onLink: (String, String) -> Unit, content: @Composable () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    val lifted = drag.dragging == id
+    val shape = RoundedCornerShape(Space.lg)
+    Box(
+        Modifier.fillMaxWidth().padding(start = Space.lg * depth)
+            .onGloballyPositioned { drag.bounds[id] = it.boundsInRoot() }
+            .zIndex(if (lifted) 1f else 0f)
+            .graphicsLayer { if (lifted) { translationX = drag.offset.x; translationY = drag.offset.y; scaleX = 1.03f; scaleY = 1.03f; alpha = 0.92f } }
+            .then(if (drag.hover == id) Modifier.border(2.dp, Glass.Primary, shape) else Modifier)
+            .pointerInput(id) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); drag.dragging = id; drag.offset = Offset.Zero },
+                    onDrag = { change, by ->
+                        change.consume()
+                        drag.offset += by
+                        val t = drag.target()
+                        if (t != drag.hover) { drag.hover = t; if (t != null) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+                    },
+                    onDragEnd = { drag.target()?.let { onLink(id, it) }; drag.reset() },
+                    onDragCancel = { drag.reset() },
+                )
+            },
+    ) {
+        if (depth > 0) Text(
+            "↳", style = MaterialTheme.typography.labelLarge, color = Glass.Muted,
+            modifier = Modifier.align(Alignment.CenterStart).offset(x = -Space.md).clearAndSetSemantics {},
+        )
+        content()
     }
 }
 
@@ -656,7 +724,7 @@ internal fun HabitCardRow(
         Pane(
             Modifier.weight(1f).pressScale(press).combinedClickable(
                 press, indication = null, onClickLabel = "Open",
-                onLongClick = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); onOpen(id) },
+                // A long press lifts the row to link it (note 4, LinkableRow); a tap opens the page.
             ) { onOpen(id) },
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {

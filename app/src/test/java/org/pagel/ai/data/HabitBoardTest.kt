@@ -175,6 +175,16 @@ class HabitBoardTest {
         assertEquals("After ☕ coffee → 🧘 Floor routine", L.recipe(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"), null, "🧘", "Floor routine"))
     }
 
+    @Test fun stackedHabitsSitUnderTheirAnchor() {
+        val L = org.pagel.ai.data.habits.HabitLook
+        // c follows a, d follows c; e follows a habit on another page, so it stays a plain row.
+        val prefs = mapOf("c" to HabitPrefEntity("c", after = "a"), "d" to HabitPrefEntity("d", after = "c"), "e" to HabitPrefEntity("e", after = "zz"))
+        assertEquals(listOf("a" to 0, "c" to 1, "d" to 2, "b" to 0, "e" to 0), L.stackOrder(listOf("a", "b", "c", "d", "e"), { it }, prefs))
+        // A loop that slipped in (a after b, b after a) still shows each row once.
+        val loop = mapOf("a" to HabitPrefEntity("a", after = "b"), "b" to HabitPrefEntity("b", after = "a"))
+        assertEquals(setOf("a", "b"), L.stackOrder(listOf("a", "b"), { it }, loop).map { it.first }.toSet())
+    }
+
     @Test fun aHabitsLookKeepsEmojiAndColourTogether() {
         val L = org.pagel.ai.data.habits.HabitLook
         assertEquals("coffee/amber", L.look("coffee", "amber"))
