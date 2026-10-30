@@ -195,6 +195,54 @@ class TaskRepositoryTest {
         assertTrue("pagel.uz never saw it", patches.isEmpty())
     }
 
+    /** Checker 2026-10-30: add, pagel.uz renames the task, then every write with the phone's OLD id lands on the new one. */
+    @Test fun editsWithTheOldIdAfterAdoptGoToTheServerId() = runBlocking {
+        synced()
+        val r = tasks()
+        db.dao().adoptServerId("t_a", "t_srv")
+        r.title("t_a", "Renamed")
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(listOf("""t_srv {"title":"Renamed"}"""), patches.toList())
+    }
+
+    @Test fun undoDeleteWithTheOldIdAfterAdoptTakesItBackInsideTheWindow() = runBlocking {
+        synced()
+        val r = tasks()
+        val op = r.delete("t_a")!!
+        db.dao().adoptServerId("t_a", "t_srv")
+        r.undoDelete("t_a", op)
+        assertEquals("open", task("t_srv").status)
+        assertEquals(SendResult.ALL_SENT, sender(at = t0 + 10_000).sendAll(account))
+        assertTrue("pagel.uz never saw it", patches.isEmpty())
+    }
+
+    @Test fun undoDeleteWithTheOldIdAfterAdoptSendsARestoreToTheServerId() = runBlocking {
+        synced()
+        val r = tasks()
+        val op = r.delete("t_a")!!
+        db.dao().adoptServerId("t_a", "t_srv")
+        assertEquals(SendResult.ALL_SENT, sender(at = t0 + 6_000).sendAll(account))
+        r.undoDelete("t_a", op)
+        sender(at = t0 + 20_000).sendAll(account)
+        assertEquals(listOf("""t_srv {"remove":true}""", """t_srv {"restore":true}"""), patches.toList())
+    }
+
+    @Test fun takeBackWithTheOldIdAfterAdoptRestoresTheServerRow() = runBlocking {
+        synced()
+        val r = tasks()
+        val op = r.priority("t_a", 0)!!
+        db.dao().adoptServerId("t_a", "t_srv")
+        assertTrue(r.takeBack("t_a", op))
+        assertEquals(1, task("t_srv").priority)
+    }
+
+    @Test fun theOldToNewLinkLivesInRoomNotInMemory() = runBlocking {
+        synced()
+        db.dao().adoptServerId("t_a", "t_srv")
+        assertEquals("t_srv", db.dao().adoptedId("t_a"))
+        assertEquals("t_b", db.dao().currentId("t_b"))
+    }
+
     @Test fun deleteSentThenUndoSendsARestore() = runBlocking {
         synced()
         val r = tasks()

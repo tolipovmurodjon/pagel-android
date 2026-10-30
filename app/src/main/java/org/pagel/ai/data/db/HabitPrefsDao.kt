@@ -29,4 +29,8 @@ interface HabitPrefsDao {
 
     @Query("DELETE FROM habit_freezes WHERE day = :day AND taskId = :id")
     suspend fun unfreeze(day: String, id: String): Int
+
+    /** The server's id for a habit the phone made (PagelDao.adoptServerId), or null while it has none. */
+    @Query("SELECT newId FROM adopted_ids WHERE oldId = :id")
+    suspend fun adoptedId(id: String): String?
 }

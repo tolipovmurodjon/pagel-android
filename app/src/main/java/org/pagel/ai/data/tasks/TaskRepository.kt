@@ -96,7 +96,8 @@ class TaskRepository(
     }
 
     /** The whole step list with its ticks: the server matches ticks by index, so both always go together. */
-    suspend fun steps(id: String, steps: List<String>, ticked: List<Int>) {
+    suspend fun steps(phoneId: String, steps: List<String>, ticked: List<Int>) {
+        val id = dao.currentId(phoneId)
         val old = dao.stepsOnce(id).associateBy { it.text }
         val clean = steps.map { s -> if (s in old) s else s.replace(Regex("\\s+"), " ").trim().take(120) }.filter(String::isNotEmpty)
         val ticks = ticked.filter { it in clean.indices }.sorted()
@@ -112,7 +113,8 @@ class TaskRepository(
      * excuse never leaves the phone. Returns why it was refused, or null when saved. The star and P4 go in one op an
      * older server already understands; the reason (written to the brain's not-doing list) in its own.
      */
-    suspend fun notDoing(id: String, kind: String, reason: String): String? {
+    suspend fun notDoing(phoneId: String, kind: String, reason: String): String? {
+        val id = dao.currentId(phoneId)
         if (kind !in NotDoing.KINDS) return "Pick why: blocked, someday or not worth it."
         NotDoing.check(reason)?.let { return it }
         val t = dao.taskOnce(id) ?: return "That task is gone."
@@ -144,7 +146,8 @@ class TaskRepository(
         edit(id, buildJsonObject { put("remove", true) }, place = true) { it.copy(status = "dropped") }
 
     /** Undo of a delete: inside its 5 s the op is taken back (pagel.uz never hears of it); after, a restore is sent. */
-    suspend fun undoDelete(id: String, op: Long) {
+    suspend fun undoDelete(phoneId: String, op: Long) {
+        val id = dao.currentId(phoneId)
         val row = dao.outboxRow(op)
         if (row != null && dao.takeBackOp(op) > 0) {
             wasOf(row)?.let { dao.applyWas(id, it) }
@@ -171,7 +174,8 @@ class TaskRepository(
      * Takes an edit back while it still waits on the phone (an Undo inside the outbox): the phone goes back to `was` and
      * pagel.uz never hears of it. False when it already left; the caller then sends the opposite edit.
      */
-    suspend fun takeBack(id: String, op: Long): Boolean {
+    suspend fun takeBack(phoneId: String, op: Long): Boolean {
+        val id = dao.currentId(phoneId)
         val row = dao.outboxRow(op) ?: return false
         if (dao.takeBackOp(op) == 0) return false
         wasOf(row)?.let { dao.applyWas(id, it, clock()) }
@@ -183,7 +187,7 @@ class TaskRepository(
     fun tashkentDay(): String = Instant.ofEpochMilli(clock()).atZone(TASHKENT).toLocalDate().toString()
 
     private suspend fun edit(phoneId: String, set: JsonObject, place: Boolean = false, local: (suspend () -> Unit)? = null, change: (TaskEntity) -> TaskEntity): Long? {
-        val id = org.pagel.ai.data.db.AdoptedIds.current(phoneId)
+        val id = dao.currentId(phoneId)
         val before = dao.taskOnce(id) ?: return null
         val now = clock()
         // Read before building: the JSON builder is plain code, the reads are suspend calls.

@@ -405,10 +405,17 @@ grep -q 'content-desc="Namoz"\|text="Namoz"' "$OUT/$(printf '%02d' $N)-habits-mo
 tap Evening && shot habits-evening 1.5
 grep -q 'text="Read 10 pages"' "$OUT/$(printf '%02d' $N)-habits-evening.xml" || { log "WALKTHROUGH: Habits' Evening has no \"Read 10 pages\""; exit 1; }
 log "-- the parts are pages (Boss's note 5): a swipe right on Evening's habits brings Afternoon, its pill selected"
-$T adb shell input swipe 160 460 160 260 400; sleep 1
+# Checker 3 #13: shots 49 -> 50 showed the page 27 px higher. That was this walk's own scroll (a vertical swipe here
+# before the sideways one, and 27 px is all the page could scroll), so it is gone: the row is on screen already. The
+# sideways swipe must leave the page where it was: the + button's top is read before and after.
+plus_top() { tr '>' '\n' < "$1" | grep -F 'content-desc="New habit"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | sed -n 2p; }
+TOP_BEFORE=$(plus_top "$OUT/$(printf '%02d' $N)-habits-evening.xml")
 XY=$(centre "Read 10 pages") || { log "WALKTHROUGH: Evening's row went missing before the swipe"; exit 1; }
 set -- $XY; $T adb shell input swipe 50 "$2" 290 "$2" 300
 shot habits-swiped 1.5
+TOP_AFTER=$(plus_top "$OUT/$(printf '%02d' $N)-habits-swiped.xml")
+log "   the header's top before / after the sideways swipe: ${TOP_BEFORE:-?} / ${TOP_AFTER:-?}"
+[ -n "$TOP_BEFORE" ] && [ "$TOP_BEFORE" = "$TOP_AFTER" ] || { log "WALKTHROUGH: the sideways swipe moved the page (header top ${TOP_BEFORE:-none} -> ${TOP_AFTER:-none})"; exit 1; }
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 shot habits-swiped-top 1
 pill_selected "$OUT/$(printf '%02d' $N)-habits-swiped-top.xml" Afternoon || { log "WALKTHROUGH: a swipe on the habits did not bring Afternoon"; exit 1; }

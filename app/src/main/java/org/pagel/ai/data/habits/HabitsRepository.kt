@@ -59,7 +59,9 @@ class HabitsRepository(
      * so the screen never sees the habit moved but not yet counted (#5). The PATCH carries the day it was made and the
      * date it moved from: sent after midnight it still counts for this day, and never moves a habit the web ticked (#2).
      */
-    suspend fun tick(id: String): Ticked? {
+    suspend fun tick(phoneId: String): Ticked? {
+        // A habit made on the phone and renamed by pagel.uz answers to the server's id (checker 3 #5).
+        val id = dao.currentId(phoneId)
         val t = dao.taskOnce(id) ?: return null
         val every = t.every?.takeIf(String::isNotBlank) ?: return null
         val today = today()
@@ -91,7 +93,7 @@ class HabitsRepository(
     }
 
     /** Today's taps of a habit (0 = none yet). */
-    suspend fun tapsToday(id: String): Int = dao.habitTicksOf(id).firstOrNull { it.day == today() }?.n ?: 0
+    suspend fun tapsToday(phoneId: String): Int = dao.habitTicksOf(dao.currentId(phoneId)).firstOrNull { it.day == today() }?.n ?: 0
 
     /**
      * One day of the habit's last week, ticked or unticked from its dots (round B: "a habit tracker fully"), or one tap
@@ -99,7 +101,8 @@ class HabitsRepository(
      * logs for that day without moving the date. Unticking today's last tap of a habit that had moved on brings it back
      * to today (pagel.uz does the same). Days older than 7 are not touched.
      */
-    suspend fun setDay(id: String, day: String, done: Boolean): Boolean {
+    suspend fun setDay(phoneId: String, day: String, done: Boolean): Boolean {
+        val id = dao.currentId(phoneId)
         val t = dao.taskOnce(id) ?: return false
         if (t.every.isNullOrBlank() || t.status != "open") return false
         val today = today()
@@ -131,7 +134,8 @@ class HabitsRepository(
     }
 
     /** Undo of [tick]: taken back if it is still on the phone, otherwise the old date goes back to pagel.uz. */
-    suspend fun undo(id: String, ticked: Ticked) {
+    suspend fun undo(phoneId: String, ticked: Ticked) {
+        val id = dao.currentId(phoneId)
         val row = dao.outboxRow(ticked.op)
         if (row != null && dao.takeBackOp(ticked.op) > 0) {
             wasOf(row)?.let { dao.applyWas(id, it, clock()) }
@@ -175,8 +179,8 @@ class HabitsRepository(
         }
     }
 
-    suspend fun setReminder(id: String, on: Boolean) {
-        dao.setReminder(HabitReminderEntity(id, on))
+    suspend fun setReminder(phoneId: String, on: Boolean) {
+        dao.setReminder(HabitReminderEntity(dao.currentId(phoneId), on))
         reminders.replan()
     }
 

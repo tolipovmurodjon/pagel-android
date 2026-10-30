@@ -90,6 +90,12 @@ object Emoji {
     /** The glyph a habit's notification text starts with (the bundled picture's own Unicode twin). */
     fun glyph(key: String): String = GLYPHS[key] ?: "🌱"
 
+    /**
+     * The bundled picture for a Unicode emoji ("🪥" → "toothbrush"), with or without its U+FE0F; null if none is bundled.
+     * A moment's words are drawn with the picture, not the font: an older font draws 🪥 as an empty box (checker 3 #11).
+     */
+    fun keyOfGlyph(glyph: String): String? = glyph.replace("\uFE0F", "").let { g -> GLYPHS.entries.firstOrNull { it.value.replace("\uFE0F", "") == g }?.key }
+
     private val GLYPHS = mapOf(
         "coffee" to "☕", "water" to "💧", "food" to "🍽️", "salad" to "🥗", "chicken" to "🍗", "apple" to "🍎", "milk" to "🥛",
         "gym" to "🏋️", "biceps" to "💪", "lotus" to "🧘", "shoe" to "👟", "walk" to "🚶", "footprints" to "👣", "book" to "📖",
