@@ -274,6 +274,16 @@ class CalendarScreenshotTest {
         compose.mainClock.advanceTimeBy(5_000)
         compose.waitForIdle()
         assertEquals("the grid was pulled back after a scroll", scrolled, labelY("14"), 1f)
+        // The week turned and turned back (each page settling places the grid again): the hours stay where they were left.
+        compose.onRoot().performTouchInput { swipe(Offset(width * 0.85f, height * 0.6f), Offset(width * 0.1f, height * 0.6f), 300) }
+        compose.mainClock.advanceTimeBy(1_500)
+        compose.onNodeWithContentDescription("Monday 2 November").assertIsDisplayed()
+        assertEquals("the grid moved when the week turned", scrolled, labelY("14"), 1f)
+        compose.onRoot().performTouchInput { swipe(Offset(width * 0.15f, height * 0.6f), Offset(width * 0.9f, height * 0.6f), 300) }
+        compose.mainClock.advanceTimeBy(1_500)
+        compose.onNodeWithContentDescription("Monday 26 October").assertIsDisplayed()
+        compose.waitForIdle()
+        assertEquals("the grid moved when the week turned back", scrolled, labelY("14"), 1f)
     }
 
     /** Month: a task of the day's list long-pressed and dropped on Saturday 31: it moves there, its time kept. */

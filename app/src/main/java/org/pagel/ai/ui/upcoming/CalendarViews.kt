@@ -220,17 +220,9 @@ internal fun fitWords(m: TextMeasurer, text: String, style: TextStyle, w: Int, h
         val t = words.take(n).joinToString(" ")
         for ((k, sp) in sizes.withIndex()) lines(t, sp, last = k == sizes.lastIndex)?.let { return TitleFit(t, sp, it) }
     }
-    // One word wider than the box even at [minSp]: that word, whole, as small as it must be (never under 6 dp).
-    val first = words[0]
-    val floor = 6f / d.fontScale
-    val wide = m.measure(AnnotatedString(first), sized(style, minSp, ratio), softWrap = false, maxLines = 1, density = d).size.width.coerceAtLeast(1)
-    var sp = maxOf(minSp * w / wide, floor)
-    while (sp > floor) {
-        val r = measure(first, sp)
-        if (r.lineCount == 1 && r.getLineRight(0) <= w && r.size.height <= h) break
-        sp = maxOf(sp - 0.25f, floor)
-    }
-    return TitleFit(first, sp, 1)
+    // Not even the first word fits at [minSp] (8 sp, the floor: smaller is not read): no text. The block keeps its
+    // colour and its spoken title (checker round 3).
+    return TitleFit("", minSp, 1)
 }
 
 /**
@@ -921,7 +913,8 @@ internal fun DayList(day: LocalDate, ui: UpcomingUi, heldId: String?, handlers: 
                             else Modifier.pointerInput(t.id) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { local -> coords[0]?.takeIf { it.isAttached }?.let { handlers.start(t, it.positionInRoot(), local, it.size) } },
-                                    onDrag = { change, amount -> change.consume(); handlers.move(amount) },
+                                    // Where the finger is on screen, not a delta: the grid scrolls back into view under it.
+                                    onDrag = { change, _ -> change.consume(); coords[0]?.takeIf { it.isAttached }?.let { handlers.place(it.positionInRoot() + change.position) } },
                                     onDragEnd = { handlers.end(false) },
                                     onDragCancel = { handlers.end(true) },
                                 )

@@ -733,14 +733,26 @@ if [ -z "${4:-}" ] || [ "$(( ($2 + $4) / 2 ))" -gt "$(( H - $(dp 120) ))" ]; the
 fi
 [ -n "${4:-}" ] || { log "WALKTHROUGH: the Sunday's list has no Plan the lesson week"; exit 1; }
 CX=$(( ($1 + $3) / 2 )); CY=$(( ($2 + $4) / 2 ))
-P=$(centre_desc "$NEXT_SAT_SPOKEN") || { log "WALKTHROUGH: Month has no $NEXT_SAT_SPOKEN"; exit 1; }
-set -- $P; SX=$1; SY=$2
-log "   drag the row ($CX,$CY) onto $NEXT_SAT_SPOKEN ($SX,$SY)"
+# The bounds of the first node whose content-desc starts with $1 (a month cell says ", 1 task" after its date).
+desc_bounds() {
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n' | grep -F "content-desc=\"$1" | head -1 \
+    | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' '
+}
+log "   hold the row ($CX,$CY): the six weeks scroll back into view, then carry it to $NEXT_SAT_SPOKEN"
 $T adb shell input motionevent DOWN "$CX" "$CY"
-sleep 1.2
+sleep 1.6
+TB=$(desc_bounds "$NEXT_SAT_SPOKEN"); set -- $TB
+[ -n "${4:-}" ] || { $T adb shell input motionevent UP "$CX" "$CY"; log "WALKTHROUGH: Month has no $NEXT_SAT_SPOKEN while a row is held"; exit 1; }
+SX=$(( ($1 + $3) / 2 )); SY=$(( ($2 + $4) / 2 ))
 for k in 1 2 3 4 5 6 7 8; do $T adb shell input motionevent MOVE $(( CX + (SX - CX) * k / 8 )) $(( CY + (SY - CY) * k / 8 )); done
 sleep 0.4; $T adb shell input motionevent MOVE "$SX" "$SY"
 $T adb shell screencap -p /sdcard/drag.png; timeout 20 adb pull /sdcard/drag.png "$OUT/$(printf '%02d' $((N + 1)))-cal4-month-dragging.png" > /dev/null 2>&1; N=$((N + 1)); log "$(printf '%02d' $N)-cal4-month-dragging"
+# Checker round 3: the cell it lands on is below the glass top, in sight (walk 104 had the week under the header).
+TB=$(desc_bounds "$NEXT_SAT_SPOKEN"); GB=$(cal_bounds "Next month")
+set -- $TB; TTOP=${2:-0}; set -- $GB; GBOT=${4:-0}
+log "   target cell top $TTOP, glass top's arrows end at $GBOT"
+[ "$TTOP" -gt "$GBOT" ] && [ "$GBOT" -gt 0 ] || { $T adb shell input motionevent UP "$SX" "$SY"; log "WALKTHROUGH: the Month drop target ($NEXT_SAT_SPOKEN, top $TTOP) is under the glass top (ends $GBOT)"; exit 1; }
 $T adb shell input motionevent UP "$SX" "$SY"
 WANT="PATCH /api/v1/tasks/t_cal1 {\"due\":\"$NEXT_SAT 10:00-11:00\"} auth=True"
 wait_cal "$WANT" 20 || { log "WALKTHROUGH: the Month drop never reached pagel.uz as $WANT"; grep 't_cal1' "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; shot cal4-month-dropped 0.5; exit 1; }

@@ -230,6 +230,9 @@ fun UpcomingScreen(
     val moveTo by rememberUpdatedState(onMove)
     val viewNow by rememberUpdatedState(view)
     val monthNow by rememberUpdatedState(month)
+    // Month: the grid's own scroll (a lift brings the six weeks back into view) and the glass top's bottom on screen.
+    val monthScroll = rememberScrollState()
+    val glassBottom by rememberUpdatedState(with(density) { headDp.toPx() })
     val overdueFirst = if (shownView.overdue.isNotEmpty()) 1 else 0
 
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
@@ -242,8 +245,13 @@ fun UpcomingScreen(
         if (viewNow == CalView.MONTH) {
             val c = monthAt[0]?.takeIf { it.isAttached } ?: return null
             val at = c.positionInRoot()
-            return org.pagel.ai.data.upcoming.monthDayAt(finger.x - at.x, finger.y - at.y, c.size.width.toFloat(), c.size.height.toFloat(),
-                org.pagel.ai.data.upcoming.monthWeeks(monthNow))
+            val d = org.pagel.ai.data.upcoming.monthDayAt(finger.x - at.x, finger.y - at.y, c.size.width.toFloat(), c.size.height.toFloat(),
+                org.pagel.ai.data.upcoming.monthWeeks(monthNow)) ?: return null
+            // A cell under the glass top cannot be seen, so it is never a drop target (checker round 3: walk 104).
+            val weeks = org.pagel.ai.data.upcoming.monthWeeks(monthNow)
+            val row = weeks.indexOfFirst { d in it }
+            val centreY = at.y + c.size.height / weeks.size.toFloat() * (row + 0.5f)
+            return d.takeIf { centreY - rootAt.y >= glassBottom }
         }
         val c = strip[0]?.takeIf { it.isAttached } ?: return null
         val at = c.positionInRoot()
@@ -271,6 +279,12 @@ fun UpcomingScreen(
                 drag.id = t.id; drag.title = titleOf(t); drag.due = t.due; drag.priority = t.priority; drag.rowWidth = rowSize.width
                 drag.grab = local; drag.origin = rowAt; drag.finger = rowAt + local; drag.shown = true
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                // Month: the six weeks come back into view while the card follows the finger (the day list had pushed
+                // them under the glass top); the row goes down with them, so its way back moves too.
+                if (viewNow == CalView.MONTH && monthScroll.value > 0) {
+                    drag.origin = rowAt + Offset(0f, monthScroll.value.toFloat())
+                    scope.launch { monthScroll.animateScrollTo(0) }
+                }
                 scope.launch {
                     drag.pos.snapTo(rowAt); drag.lift.snapTo(0f); drag.scale.snapTo(1f)
                     drag.scale.animateTo(1.04f, spring(dampingRatio = 0.7f, stiffness = 600f))
@@ -278,6 +292,11 @@ fun UpcomingScreen(
             },
             move = { delta ->
                 drag.finger += delta
+                scope.launch { drag.pos.snapTo(drag.finger - drag.grab) }
+                drag.hovered = dayUnder(drag.finger)
+            },
+            place = { finger ->
+                drag.finger = finger
                 scope.launch { drag.pos.snapTo(drag.finger - drag.grab) }
                 drag.hovered = dayUnder(drag.finger)
             },
@@ -364,7 +383,7 @@ fun UpcomingScreen(
                             }
                         }
                     }
-                    CalView.MONTH -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    CalView.MONTH -> Column(Modifier.fillMaxSize().verticalScroll(monthScroll)) {
                         Spacer(Modifier.height(headDp + Space.sm))
                         MonthGrid(month, ui, focus, drag.hovered, onGrid = { monthAt[0] = it }) { d -> haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); focusText = d.toString() }
                         Spacer(Modifier.height(Space.paneGap))
@@ -437,6 +456,8 @@ internal object CalendarPrefs {
 internal class DragHandlers(
     val start: (TaskEntity, Offset, Offset, IntSize) -> Unit,
     val move: (Offset) -> Unit,
+    /** The finger where it is on screen (Month's list scrolls under it while held, so a delta would carry the scroll). */
+    val place: (Offset) -> Unit,
     val end: (cancelled: Boolean) -> Unit,
 )
 
@@ -648,7 +669,8 @@ private fun Ghost(drag: Drag, rootAt: Offset) {
                 val rise = -56.dp.toPx() * lift
                 val top = drag.pos.value.y - rootAt.y + gy * (1f - s) + rise
                 translationY = rise + (4.dp.toPx() - top).coerceAtLeast(0f)
-                alpha = ((s - 0.2f) / 0.8f).coerceIn(0f, 1f)
+                // Fades only with the drop's shrink to 0.2, never with the lift: over the glass top it stays a solid card.
+                alpha = ((drag.scale.value - 0.2f) / 0.8f).coerceIn(0f, 1f)
                 shadowElevation = 18.dp.toPx()
                 shape = RoundedCornerShape(18.dp)
                 clip = true
