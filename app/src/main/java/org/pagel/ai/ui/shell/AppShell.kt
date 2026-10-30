@@ -319,8 +319,14 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         GuideScreen(r.card, padding) { to ->
                             when (to) {
                                 GuideDestination.AddSheet -> adding = ""
-                                is GuideDestination.OnTab -> selected = Tab.entries.indexOf(to.tab)
-                                is GuideDestination.Push -> stack.add(to.route)
+                                // The guide leaves first, so Try it also works from the tab it was opened on.
+                                is GuideDestination.OnTab -> {
+                                    stack.removeLastOrNull()
+                                    val t = Tab.entries.indexOf(to.tab)
+                                    while (stacks[t].size > 1) stacks[t].removeLastOrNull()
+                                    selected = t
+                                }
+                                is GuideDestination.Push -> { stack.removeLastOrNull(); stack.add(to.route) }
                             }
                         }
                     }

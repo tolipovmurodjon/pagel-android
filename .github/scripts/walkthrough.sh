@@ -899,7 +899,7 @@ front guide-more
 shot guide-more 1.5
 tap "How it works" || { log "WALKTHROUGH: no How it works row under More"; exit 1; }
 shot guide-card-1 2
-TITLES=("Capture" "Clarify" "Next step" "Projects" "Areas" "Calendar" "Waiting and Someday" "Today.*s 3" "Close the day" "Stuck")
+TITLES=("Capture" "Clarify" "Next step" "Projects" "Areas" "Calendar" "Waiting and Someday" "Today.*s 3" "Close the day and the week" "Stuck")
 for i in $(seq 0 9); do
   X="$(last guide-card-$((i + 1)))"
   grep -qE "text=\"${TITLES[$i]}\"" "$X" || { log "WALKTHROUGH: How it works card $((i + 1)) does not read \"${TITLES[$i]}\""; exit 1; }
@@ -912,6 +912,20 @@ log "   all 10 cards read"
 $T adb shell input swipe 30 250 290 250 250; sleep 2.5
 tap "Try it" || { log "WALKTHROUGH: Try it was not on screen"; exit 1; }
 shot guide-try-close 2
-grep -q 'text="Close the day"' "$(last guide-try-close)" || { log "WALKTHROUGH: Try it on the Close the day card did not open Close the day"; exit 1; }
-$T adb shell input keyevent 4; sleep 1
+# Only the real Close the day has this line; the guide's own card title would also read "Close the day".
+grep -qE 'Five minutes\. Then nothing needs you tonight|Closed tonight|Day closed' "$(last guide-try-close)" || { log "WALKTHROUGH: Try it on the Close the day card did not open the real Close the day"; exit 1; }
+grep -q 'content-desc="Card [0-9]* of 10"' "$(last guide-try-close)" && { log "WALKTHROUGH: the guide is still under Close the day after Try it"; exit 1; }
+log "-- the same-tab case: Inbox -> How sorting works -> How it works -> Clarify -> Try it -> the Inbox, the guide gone"
+$T adb shell input keyevent 4; sleep 1.5
+tap Inbox && shot guide-inbox 2
+tap "How sorting works" || { log "WALKTHROUGH: no How sorting works button on the Inbox"; exit 1; }
+shot guide-sheet 2
+for k in 1 2 3 4 5; do onscreen 'How it works [^"]*' && break; $T adb shell input swipe 160 500 160 200 300; sleep 1; done
+tap 'How it works [^"]*' || { log "WALKTHROUGH: the sorting sheet has no How it works row"; exit 1; }
+shot guide-from-inbox 2.5
+grep -q 'text="Clarify"' "$(last guide-from-inbox)" || { log "WALKTHROUGH: the Inbox sheet did not open the Clarify card"; exit 1; }
+tap "Try it" || { log "WALKTHROUGH: Try it was not on screen (Clarify)"; exit 1; }
+shot guide-back-inbox 2.5
+grep -q 'content-desc="How sorting works"' "$(last guide-back-inbox)" || { log "WALKTHROUGH: Try it on Clarify did not return to the Inbox"; exit 1; }
+grep -q 'content-desc="Card [0-9]* of 10"' "$(last guide-back-inbox)" && { log "WALKTHROUGH: the guide stayed on screen after Try it from the Inbox"; exit 1; }
 log "GUIDE WALK DONE: $N steps"

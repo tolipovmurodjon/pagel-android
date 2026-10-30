@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,6 +36,7 @@ import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.GlassIconButton
 import org.pagel.ai.ui.glass.Pane
 import org.pagel.ai.ui.glass.Space
+import org.pagel.ai.ui.glass.edgeFade
 import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.rituals.MintButton
 
@@ -58,7 +60,7 @@ fun GuideScreen(card: Int, padding: PaddingValues, onTry: (GuideDestination) -> 
             Text("Swipe through ${cards.size} cards", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
             Text("How it works", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, maxLines = 1, modifier = Modifier.semantics { heading() })
         }
-        HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.Top, key = { cards[it].id }) { i ->
+        HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth().edgeFade(0.dp, Space.xl), verticalAlignment = Alignment.Top, key = { cards[it].id }) { i ->
             CardPage(cards[i], i, cards.size)
         }
         // Pinned under the pages, so Try it is on screen at any font size and never scrolls away with the card.
@@ -77,7 +79,8 @@ private fun CardPage(card: GuideCard, index: Int, total: Int) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Space.gutter)
             .semantics(mergeDescendants = false) { contentDescription = "Card ${index + 1} of $total" },
     ) {
-        Pane(Modifier.fillMaxWidth()) {
+        // One least height for every card, so the panel does not change size from card to card.
+        Pane(Modifier.fillMaxWidth().heightIn(min = 340.dp)) {
             Column(Modifier.padding(horizontal = Space.paneInset, vertical = Space.xl), verticalArrangement = Arrangement.spacedBy(Space.lg)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(

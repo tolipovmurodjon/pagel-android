@@ -95,7 +95,7 @@ class GuideScreenshotTest {
         for ((i, c) in GuideCards.all.withIndex()) {
             compose.onNodeWithText(c.title).assertIsDisplayed()
             compose.onNodeWithContentDescription("Try it").assertIsDisplayed()
-            if (i in listOf(0, 3, 9)) compose.onRoot().captureRoboImage("build/outputs/roborazzi/guide-card-${i + 1}-360.png")
+            compose.onRoot().captureRoboImage("build/outputs/roborazzi/guide-card-${i + 1}-360.png")
             compose.onNodeWithContentDescription("Try it").performClick()
             assertEquals(c.id, c.goes, tried)
             tried = null
@@ -107,14 +107,18 @@ class GuideScreenshotTest {
     }
 
     @Test fun cardsAt15xFontStillShowTheTitleAndTryIt() {
-        show(card = 1, fontScale = 1.5f)
-        compose.onNodeWithText("Clarify").assertIsDisplayed()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/guide-card-2-360-1.5x.png")
+        show(fontScale = 1.5f)
+        for ((i, c) in GuideCards.all.withIndex()) {
+            compose.onNodeWithText(c.title).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Try it").assertIsDisplayed()
+            compose.onRoot().captureRoboImage("build/outputs/roborazzi/guide-card-${i + 1}-360-1.5x.png")
+            if (i < GuideCards.all.lastIndex) { compose.onRoot().performTouchInput { swipeLeft() }; compose.waitForIdle() }
+        }
     }
 
     @Test fun theCardOpensOnTheCardAScreenAsksFor() {
         show(card = GuideCards.CLOSE_THE_DAY)
-        compose.onNodeWithText("Close the day").assertIsDisplayed()
+        compose.onNodeWithText("Close the day and the week").assertIsDisplayed()
         compose.onNodeWithContentDescription("Card 9 of 10").assertIsDisplayed()
     }
 }
