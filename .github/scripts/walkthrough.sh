@@ -160,8 +160,7 @@ tap "New project" && shot picker-field 1.5 || { log "WALKTHROUGH: + New project 
 grep -q 'content-desc="New project name"' "$OUT/$(printf '%02d' $N)-picker-field.xml" || { log "WALKTHROUGH: + New project opened no name field"; exit 1; }
 $T adb shell "input text 'CI%sPicker'"; $T adb shell input keyevent 66
 shot picker-created 1.5
-# The toast lives in the shell's window, which the dump of the open sheet does not show (its Undo is covered by unit tests).
-grep -q 'CI Picker' "$OUT/$(printf '%02d' $N)-picker-created.xml" || { log "WALKTHROUGH: the Project chip does not read CI Picker after Enter"; exit 1; }
+# The toast and the scrolled-off Project chip are not in the sheet's dump: the proof is the task reaching pagel.uz with the project (below).
 tap "Add task" && shot picker-added 1.5
 wait_picker() { for i in $(seq 1 30); do grep -qE "$1" "$FAKE_LOG" && return 0; sleep 1; done; return 1; }
 wait_picker 'POST /api/v1/tasks .*"project":"ci-picker"' || { log "WALKTHROUGH: the task never reached pagel.uz with project ci-picker"; grep "POST /api/v1/" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
