@@ -544,13 +544,10 @@ class InboxViewModel @Inject constructor(
         gone.update { it - file }
     }
 
-    /** A new project's title for its toast: whole words up to ~20 letters, so the toast stays one line. */
+    /** A new project's title for its toast: short enough to stay one line beside Undo. */
     private fun shortTitle(t: String): String {
-        if (t.length <= 20) return t
-        val words = t.split(' ')
-        var out = ""
-        for (w in words) { if ((out + " " + w).trim().length > 19) break; out = (out + " " + w).trim() }
-        return out.ifEmpty { t.take(19) } + "…"
+        // Beside Undo on a 320 dp screen a longer title wraps to two lines (walk 67): a long one says "New project".
+        return if (t.length <= 14) t else "New project"
     }
 
     /** A toast's Undo: the card is back on top and out of "Sorted today", while the choice still waits on the phone. */

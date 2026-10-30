@@ -783,7 +783,9 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
                 }
             }
             Spacer(Modifier.height(10.dp))
-            FitText(card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = if (room < 380.dp) 4 else 6, minSize = 16.sp)
+            // Takes what the rest of the card leaves, shrinking by words until it all fits: the pane clips what overflows it, and a
+            // clipped claim ("Quizzes beat rereading:" and no more, walk 78) is a cut text.
+            FitText(card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = 8, minSize = 15.sp, modifier = Modifier.weight(1f, fill = false))
             card.why?.let {
                 Spacer(Modifier.height(4.dp))
                 FitText(it, MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), Glass.Primary, maxLines = if (tight) 2 else 3, minSize = 11.sp)
