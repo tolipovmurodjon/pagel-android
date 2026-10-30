@@ -12,6 +12,18 @@
 - What's new lines live in the pagel.uz resource, not the app: the lead adds 0.3.35's "try this" lines.
 - Long-press on a row is now the drag lift (a tap still opens the page).
 
+## Swipe smoke + PNG findings (2026-10-30, after 0514fa8)
+- Smoke 40988456416 "a swipe did not bring Afternoon": the swipe WORKED (shots 50/51 show Afternoon outlined). The pill had
+  `clickable(role = Tab)` + `semantics(mergeDescendants = true)`: two merging nodes, "selected" on the outer, the label on the
+  inner, so uiautomator (and TalkBack) never saw "Afternoon, selected". Fix: one `selectable(role = Tab)` node. Check unchanged.
+- Finding 1+2: the row box summed sp before converting ((22·2+18).sp); non-linear font scaling made it too short at 1.5x, so
+  the title fell to one cut line and the progress line dropped. Each line converts alone, and the box is a floor (heightIn).
+  Header date: another day uses "Mon 26 Oct · looking back"; at a large font the line owns 2 lines (no jump).
+- Finding 3: the step in + ↳ live inside the card (HabitCardRow depth); every check on one x (test in aStackedHabit…).
+- Finding 4: Namoz card on the habit cards' insets (Space.sm + touch); "Start tracking" is a small tonal pill in its header row.
+- Finding 5: the chain's bleed in/out fades to transparent at the edge.
+- Note 9 (all-habits top chain, joined bar, never red) was already in WeekStrip; namaz row weight = finding 4.
+
 ## CI so far
 - f301151 code fixes (checker 1-5, 7-10): CI 40864085315 **build ✅** (unit + Roborazzi), no smoke.
 - 6331656 icon v2 + START HERE v18.2: CI 40866240431 build ✅, **smoke ❌** at "the habit's page has no Reminder row".

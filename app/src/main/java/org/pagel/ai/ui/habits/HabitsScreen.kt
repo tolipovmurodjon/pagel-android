@@ -9,6 +9,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -31,7 +32,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -124,6 +124,7 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 private val DAY_TITLE = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
+private val DAY_SHORT = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
 
 @Composable
 fun HabitsRoute(
@@ -230,9 +231,9 @@ fun HabitsScreen(
                 PartPager(ui.part, board, onSelectPart) { part, current ->
                     val cards = board.inPart(part)
                     if (cards.isEmpty()) EmptyPart(part, board.total, onNew)
-                    for ((c, depth) in org.pagel.ai.data.habits.HabitLook.stackOrder(cards, { it.task.id }, ui.prefs)) key(c.task.id) { LinkableRow(c.task.id, depth.coerceAtMost(2), links, onLink) {
+                    for ((c, depth) in org.pagel.ai.data.habits.HabitLook.stackOrder(cards, { it.task.id }, ui.prefs)) key(c.task.id) { LinkableRow(c.task.id, links, onLink) {
                         HabitCardRow(
-                            c, finishing = c.task.id in ui.finishing, timer = ui.timers[c.task.id], now = ui.now,
+                            c, depth = depth.coerceAtMost(2), finishing = c.task.id in ui.finishing, timer = ui.timers[c.task.id], now = ui.now,
                             onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onTimer = onTimer,
                             onCentre = { if (current) centres[c.task.id] = it },
                         ) }
@@ -270,13 +271,16 @@ private fun Header(ui: HabitsUi, board: HabitBoard?, onHistory: () -> Unit, onNe
     Row(Modifier.fillMaxWidth().padding(start = Space.textEdge, end = Space.gutter, top = Space.headerTop), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Habits", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
-            // One line, always there, so the strip under it never moves (RULES.md Layout 1).
+            // Always there with a fixed number of lines, so the strip under it never moves (RULES.md Layout 1). Another day
+            // uses the short date so "· looking back" fits; at a large font the line owns two lines and never cuts.
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
             val line = when {
                 board == null -> "Every day, the same few things"
                 board.selected == board.today -> board.selected.format(DAY_TITLE)
-                else -> board.selected.format(DAY_TITLE) + if (board.selected.isAfter(board.today)) " · ahead" else " · looking back"
+                else -> board.selected.format(DAY_SHORT) + if (board.selected.isAfter(board.today)) " · ahead" else " · looking back"
             }
-            Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val lines = if (big) 2 else 1
+            Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, minLines = lines, maxLines = lines, overflow = TextOverflow.Ellipsis)
         }
         if (board != null) DayRing(board.doneCount, board.total, Modifier.padding(end = Space.sm))
         GlassIconButton(TabIcons.Plus, "New habit", size = Space.touch, plain = true, onClick = onNew)
@@ -402,12 +406,16 @@ internal fun ChainRow(
                 val ice = marks[i] == Mark.FROZEN || marks.getOrNull(i + 1) == Mark.FROZEN
                 drawRect(if (ice) ICE else CHAIN, topLeft = Offset(x0, y - h / 2), size = Size(cell, h))
             }
-            // The chain goes on into last week / next week: the bar runs off the edge (Boss's reference, its 26).
+            // The chain goes on into last week / next week: the bar fades out at the edge, so it reads as "goes on", never
+            // as a cut stub (PNG finding 5).
             val edge = Space.sm.toPx()
-            if (bleedIn && marks.firstOrNull() == Mark.DONE) drawRect(CHAIN, topLeft = Offset(-edge, y - h / 2), size = Size(cell * (startSlot + 0.5f) + edge, h))
+            if (bleedIn && marks.firstOrNull() == Mark.DONE) {
+                val x = cell * (startSlot + 0.5f)
+                drawRect(Brush.horizontalGradient(listOf(CHAIN.copy(alpha = 0f), CHAIN), startX = -edge, endX = x), topLeft = Offset(-edge, y - h / 2), size = Size(x + edge, h))
+            }
             if (bleedOut && marks.lastOrNull() == Mark.DONE) {
                 val x = (startSlot + marks.size - 0.5f) * cell
-                drawRect(CHAIN, topLeft = Offset(x, y - h / 2), size = Size(size.width - x + edge, h))
+                drawRect(Brush.horizontalGradient(listOf(CHAIN, CHAIN.copy(alpha = 0f)), startX = x, endX = size.width + edge), topLeft = Offset(x, y - h / 2), size = Size(size.width - x + edge, h))
             }
         }
         Row(Modifier.fillMaxWidth()) {
@@ -533,8 +541,10 @@ private fun PartPills(part: Part, board: HabitBoard, onSelect: (Part) -> Unit) {
                 Modifier.weight(1f).heightIn(min = Space.touch).pressScale(press).clip(CircleShape)
                     .background(if (on) Color.White.copy(alpha = 0.92f) else Color.White.copy(alpha = 0.34f))
                     .border(if (on) 1.5.dp else 1.dp, if (on) Glass.Primary else Color.White.copy(alpha = 0.8f), CircleShape)
-                    .clickable(press, indication = null, role = Role.Tab) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelect(p) }
-                    .semantics(mergeDescendants = true) { contentDescription = p.label; selected = on; if (left > 0) stateDescription = "$left left" }
+                    // One merging node: clickable + semantics(mergeDescendants) made two, the label on one and
+                    // "selected" on the other, so TalkBack never heard "Afternoon, selected".
+                    .selectable(on, press, indication = null, role = Role.Tab) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelect(p) }
+                    .semantics { contentDescription = p.label; if (left > 0) stateDescription = "$left left" }
                     .padding(horizontal = Space.xs),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
             ) {
@@ -586,15 +596,16 @@ internal class LinkDrag {
 
 /**
  * A row that can be stacked: hold it, it lifts; drag it onto another habit and let go = "after that one" (drop it on
- * the one it already follows = unlinked). A habit that follows another sits under it, one step in, with a faint ↳.
+ * the one it already follows = unlinked). The step in and the ↳ live inside the card (HabitCardRow), so every check
+ * stays on one x position.
  */
 @Composable
-private fun LinkableRow(id: String, depth: Int, drag: LinkDrag, onLink: (String, String) -> Unit, content: @Composable () -> Unit) {
+private fun LinkableRow(id: String, drag: LinkDrag, onLink: (String, String) -> Unit, content: @Composable () -> Unit) {
     val haptics = LocalHapticFeedback.current
     val lifted = drag.dragging == id
     val shape = RoundedCornerShape(Space.lg)
     Box(
-        Modifier.fillMaxWidth().padding(start = Space.lg * depth)
+        Modifier.fillMaxWidth()
             .onGloballyPositioned { drag.bounds[id] = it.boundsInRoot() }
             .zIndex(if (lifted) 1f else 0f)
             .graphicsLayer { if (lifted) { translationX = drag.offset.x; translationY = drag.offset.y; scaleX = 1.03f; scaleY = 1.03f; alpha = 0.92f } }
@@ -612,13 +623,7 @@ private fun LinkableRow(id: String, depth: Int, drag: LinkDrag, onLink: (String,
                     onDragCancel = { drag.reset() },
                 )
             },
-    ) {
-        if (depth > 0) Text(
-            "↳", style = MaterialTheme.typography.labelLarge, color = Glass.Muted,
-            modifier = Modifier.align(Alignment.CenterStart).offset(x = -Space.md).clearAndSetSemantics {},
-        )
-        content()
-    }
+    ) { content() }
 }
 
 // ── One habit ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -698,7 +703,7 @@ internal object RowPart {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun HabitCardRow(
-    c: HabitCard, finishing: Boolean, timer: HabitTimer?, now: Long,
+    c: HabitCard, finishing: Boolean, timer: HabitTimer?, now: Long, depth: Int = 0,
     onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit,
     onTimer: (String, Int) -> Unit, onCentre: (Offset) -> Unit, modifier: Modifier = Modifier,
 ) {
@@ -722,12 +727,17 @@ internal fun HabitCardRow(
         )
         val press = remember { MutableInteractionSource() }
         Pane(
-            Modifier.weight(1f).pressScale(press).combinedClickable(
+            // A stacked habit's card steps in; its check stays in the one check column.
+            Modifier.weight(1f).padding(start = Space.lg * depth).pressScale(press).combinedClickable(
                 press, indication = null, onClickLabel = "Open",
                 // A long press lifts the row to link it (note 4, LinkableRow); a tap opens the page.
             ) { onOpen(id) },
         ) {
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.md), verticalAlignment = Alignment.CenterVertically) {
+                if (depth > 0) {
+                    Text("↳", style = MaterialTheme.typography.labelLarge, color = Glass.Muted, modifier = Modifier.clearAndSetSemantics {})
+                    Spacer(Modifier.width(Space.sm))
+                }
                 Box(Modifier.testTag(RowPart.EMOJI)) {
                     EmojiTile(c.emoji, 40.dp, quiet = done, colour = c.colour)
                     // Never miss twice (Atomic Habits): only a small amber dot, no words on the row.
@@ -739,8 +749,11 @@ internal fun HabitCardRow(
                 Spacer(Modifier.width(Space.md))
                 // Two title lines and the progress line in one fixed box (in sp, so it grows with the font): a one-line title
                 // sits centred, every row is the same height (Boss's ref: "Audio kitob eshitish" on 2 lines, same card).
-                val box = with(androidx.compose.ui.platform.LocalDensity.current) { (TITLE_LINE.value * 2 + 18f).sp.toDp() } + Space.xs
-                Column(Modifier.weight(1f).height(box), verticalArrangement = Arrangement.Center) {
+                // Each line converts on its own: font scaling is non-linear (Android 14+), so (22·2 + 18).sp came out
+                // shorter than two 22sp lines + one 18sp line at 1.5x, and the title fell to one cut line with no progress.
+                // A floor, not a fixed height: the row grows before it ever cuts a line.
+                val box = with(androidx.compose.ui.platform.LocalDensity.current) { TITLE_LINE.toDp() * 2 + 18.sp.toDp() } + Space.xs
+                Column(Modifier.weight(1f).heightIn(min = box), verticalArrangement = Arrangement.Center) {
                     Text(
                         c.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold, lineHeight = TITLE_LINE), color = if (done) Glass.Muted else Glass.Ink,
                         maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag(RowPart.TITLE),
@@ -838,7 +851,8 @@ private fun NamozGroup(
     centres: MutableMap<String, Offset>, modifier: Modifier = Modifier,
 ) {
     val prayers = board.namoz
-    Pane(modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+    // The habit cards' own insets (HabitCardRow: Space.sm + the 48 dp check column), so every card shares one left edge.
+    Pane(modifier.fillMaxWidth().padding(start = Space.sm + Space.touch, end = Space.gutter)) {
         Column(Modifier.fillMaxWidth().padding(Space.md)) {
             val started = Namoz.counts(board.selected.toString())
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -848,22 +862,25 @@ private fun NamozGroup(
                     Text("Namoz", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Glass.Ink, modifier = Modifier.semantics { heading() })
                     Text(if (prayers.isEmpty() || !started) "From 1 November" else "Five a day", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
                 }
-                if (prayers.isNotEmpty()) {
+                if (prayers.isEmpty()) {
+                    // A small tonal button, never the heaviest thing on screen (the namaz row weight).
+                    val press = remember { MutableInteractionSource() }
+                    Box(
+                        Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onStart),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "Start tracking", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1, softWrap = false,
+                            modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = Space.md, vertical = Space.sm),
+                        )
+                    }
+                } else {
                     // No "0/5" before the first: nothing counts yet (checker 2026-10-30).
                     if (started) DayRing(board.namozDone, prayers.size, size = 40.dp)
                     GlassIconButton(TabIcons.More, "Namoz reminders", size = Space.touch, plain = true, onClick = onMenu)
                 }
             }
-            if (prayers.isEmpty()) {
-                val press = remember { MutableInteractionSource() }
-                Spacer(Modifier.height(Space.md))
-                Text(
-                    "Start tracking", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = Space.touch).pressScale(press).background(Glass.PrimarySoft, CircleShape)
-                        .clickable(press, indication = null, role = Role.Button, onClick = onStart).padding(vertical = Space.md),
-                )
-                return@Column
-            }
+            if (prayers.isEmpty()) return@Column
             Spacer(Modifier.height(Space.sm))
             val nowT = LocalTime.now(ZoneId.of("Asia/Tashkent"))
             for (c in prayers) key(c.task.id) {

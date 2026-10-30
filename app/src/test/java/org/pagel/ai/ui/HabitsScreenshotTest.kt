@@ -170,6 +170,9 @@ class HabitsScreenshotTest {
         val (a, b, c) = listOf(box("Stretch for ten minutes"), box("Drink water"), box("Go through five saves in your Inbox"))
         assertTrue("stacked row under its anchor", a.top < b.top && b.top < c.top)
         assertTrue("stacked row one step in", b.left > a.left + 4f)
+        // PNG finding 3: the step in lives inside the card; every check stays on one x position.
+        val checks = compose.onAllNodesWithTag("row-tick", useUnmergedTree = true).fetchSemanticsNodes().map { it.boundsInRoot.left }
+        assertTrue("every check on one x: $checks", checks.size >= 3 && checks.all { kotlin.math.abs(it - checks[0]) < 0.6f })
     }
 
     @Test fun rowsHaveOneHeightAndOneGap() {
@@ -287,7 +290,7 @@ class HabitsScreenshotTest {
         show { HabitsScreen(ui(selected = "2026-10-26"), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-past-day.png")
         compose.onNodeWithContentDescription("Back to today").assertIsDisplayed()
-        compose.onNodeWithText("Monday 26 October · looking back").assertIsDisplayed()
+        compose.onNodeWithText("Mon 26 Oct · looking back").assertIsDisplayed()
     }
 
     /** RULES.md Layout 3: the strip's top stays put between today and a past day (the header line keeps its slot). */
