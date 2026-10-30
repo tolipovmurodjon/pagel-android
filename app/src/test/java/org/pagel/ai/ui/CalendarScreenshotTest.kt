@@ -13,11 +13,6 @@ import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.hasAnyDescendant
-import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.junit4.ComposeContentTestRule
-import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.toPixelMap
@@ -30,6 +25,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -54,21 +50,15 @@ import org.pagel.ai.ui.upcoming.UpcomingUi
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 /**
- * The timeline scrolled so the node [desc] sits 60 dp under the grid's top. performScrollTo only scrolls the nearest
- * scroll parent (the sideways pager), so the hours stayed where the clock put them: at Tashkent's midnight the 15:00
- * block was off screen and every drag test pressed on nothing (CI 41112608488).
+ * The calendar's "now" in every calendar test: Wednesday 28 October 2026, 14:00 in Tashkent. The grid opens at the hour
+ * before now, so 13:00 is at its top and the 15:00 block is on screen whatever CI's clock says (CI 41112608488 ran at
+ * Tashkent's midnight: the grid opened at 00:00 and every drag pressed on nothing).
  */
-internal fun ComposeContentTestRule.bringTimelineTo(desc: String) {
-    val scroller = onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and hasAnyDescendant(hasContentDescription(desc)))
-    val top = scroller.fetchSemanticsNode().boundsInRoot.top
-    val y = onNodeWithContentDescription(desc).fetchSemanticsNode().boundsInRoot.top
-    val margin = 60f * onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
-    scroller.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, y - top - margin) }
-    mainClock.advanceTimeBy(1_000)
-    waitForIdle()
-}
+internal val FIXED_NOW: ZonedDateTime = ZonedDateTime.of(2026, 10, 28, 14, 0, 0, 0, ZoneId.of("Asia/Tashkent"))
 
 /**
  * Core round 4 · Builder B: the calendar Monday to Sunday, Google-clean (hour lines only, no day lines, soft blocks),
@@ -119,7 +109,7 @@ class CalendarScreenshotTest {
 
     @Composable private fun Calendar(view: CalView) = UpcomingScreen(
         ui(), PaddingValues(top = 16.dp, bottom = 96.dp), initialView = view,
-        onMoveTo = { id, due -> moved = id to due }, onMove = { id, day -> movedDay = id to day },
+        onMoveTo = { id, due -> moved = id to due }, onMove = { id, day -> movedDay = id to day }, now = { FIXED_NOW },
     )
 
     /**
@@ -184,7 +174,6 @@ class CalendarScreenshotTest {
 
     @Test fun theWeekIsMondayToSundayAndClean() {
         show(CalView.WEEK)
-        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-360x800.png")
         assertNoBrokenWord()
         assertNoAlarmRed("the Week")
@@ -201,7 +190,6 @@ class CalendarScreenshotTest {
 
     @Test fun theWeekAtLargeFont() {
         show(CalView.WEEK, 1.5f)
-        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-360x800-font-1.5.png")
         assertNoBrokenWord()
         compose.onNodeWithContentDescription("Wednesday 28 October").assertIsDisplayed()
@@ -210,7 +198,6 @@ class CalendarScreenshotTest {
 
     @Test @Config(qualifiers = "w320dp-h640dp-mdpi") fun theWeekOnTheSmallScreen() {
         show(CalView.WEEK, 1.5f)
-        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-week-320x640-font-1.5.png")
         assertNoBrokenWord()
         compose.onNodeWithContentDescription("Sunday 1 November").assertIsDisplayed()
@@ -219,7 +206,6 @@ class CalendarScreenshotTest {
     /** Wednesday 15:00 long-pressed and carried two columns right and an hour down: Friday 16:00, read at the drop. */
     @Test fun aBlockDraggedToAnotherDayAndTimeMovesThere() {
         show(CalView.WEEK)
-        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         val block = compose.onNodeWithContentDescription("Record the fractions lesson, 15:00")
         val dx = centre("Column Friday 30 October").x - centre("Column Wednesday 28 October").x
         block.hold(Offset(dx, px(52f)), lift = false)
@@ -236,7 +222,6 @@ class CalendarScreenshotTest {
         show(CalView.DAY)
         compose.onNodeWithContentDescription("Change view").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/cal4-day-360x800.png")
-        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         val block = compose.onNodeWithContentDescription("Record the fractions lesson, 15:00")
         val h = block.fetchSemanticsNode().boundsInRoot.height
         block.hold(Offset(0f, px(60f)), at = Offset(block.fetchSemanticsNode().size.width / 2f, h - px(4f)))
@@ -270,6 +255,25 @@ class CalendarScreenshotTest {
         compose.onNodeWithContentDescription("Back to today").performClick()
         compose.mainClock.advanceTimeBy(1_500)
         compose.onNodeWithContentDescription("Monday 26 October").assertIsDisplayed()
+    }
+
+    /**
+     * Lead's round 2 ask: the opening scroll (the hour before now) happens once. A scroll by the finger stays where it
+     * was left, through later placements (the hour labels moving, the week page settling), never pulled back.
+     */
+    @Test fun aScrollIsNotUndone() {
+        show(CalView.WEEK)
+        fun labelY(t: String) = compose.onAllNodesWithText(t).fetchSemanticsNodes().first().positionInRoot.y
+        val opened = labelY("14")
+        val x = centre("Column Thursday 29 October").x
+        // On screen, below the glass top: the column's own centre (12:00) is above the grid's top at 14:00.
+        compose.onRoot().performTouchInput { swipe(Offset(x, height * 0.45f), Offset(x, height * 0.75f), 400) }
+        compose.mainClock.advanceTimeBy(1_500)
+        val scrolled = labelY("14")
+        assertTrue("the swipe did not scroll the grid ($opened → $scrolled)", scrolled > opened + 100f)
+        compose.mainClock.advanceTimeBy(5_000)
+        compose.waitForIdle()
+        assertEquals("the grid was pulled back after a scroll", scrolled, labelY("14"), 1f)
     }
 
     /** Month: a task of the day's list long-pressed and dropped on Saturday 31: it moves there, its time kept. */

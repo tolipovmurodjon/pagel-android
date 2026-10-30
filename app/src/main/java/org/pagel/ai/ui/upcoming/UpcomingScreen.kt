@@ -170,6 +170,8 @@ fun UpcomingScreen(
     onMoveTo: (String, String) -> Unit = { _, _ -> },
     /** Tests open a view; the app opens the one Boss chose last (CalendarPrefs). */
     initialView: CalView? = null,
+    /** Tashkent's time now for the timeline's opening hour and now line; tests pass a fixed one. */
+    now: () -> java.time.ZonedDateTime = { java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Tashkent")) },
 ) {
     val haptics = LocalHapticFeedback.current
     val ctx = androidx.compose.ui.platform.LocalContext.current.applicationContext
@@ -370,7 +372,7 @@ fun UpcomingScreen(
                         Spacer(Modifier.height(contentPadding.calculateBottomPadding() + Space.sm))
                     }
                     else -> Timeline(timelineView, tl, ui, timelineScroll, top = headDp + Space.sm, bottom = contentPadding.calculateBottomPadding() + Space.sm,
-                        onOpen = openTask, onMove = onMoveTo, holding = holding, clipTop = headDp)
+                        onOpen = openTask, onMove = onMoveTo, holding = holding, clipTop = headDp, now = now)
                 }
             }
         }

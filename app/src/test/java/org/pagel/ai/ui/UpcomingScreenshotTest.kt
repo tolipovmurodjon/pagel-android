@@ -244,7 +244,7 @@ class UpcomingScreenshotTest {
     // ── Round C: the calendar's views (Boss: "week calendar view like Google's, many view formats, colouring") ──
 
     private fun calendar(view: org.pagel.ai.data.upcoming.CalView, scale: Float, name: String) {
-        show(scale) { UpcomingScreen(upcoming(), pad, initialView = view) }
+        show(scale) { UpcomingScreen(upcoming(), pad, initialView = view, now = { FIXED_NOW }) }
         compose.mainClock.advanceTimeBy(500)
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/calendar-$name.png")
         // One header row: the view is a small button that says it (core round 4), not a five-way switch.
@@ -277,9 +277,8 @@ class UpcomingScreenshotTest {
     /** A block long-pressed and dragged an hour down moves its time an hour later (Room first; the VM sends it). */
     @Test @Config(qualifiers = "w360dp-h800dp-xxhdpi") fun aBlockDraggedAnHourDownMovesItsTime() {
         var moved: Pair<String, String>? = null
-        show { UpcomingScreen(upcoming(), pad, initialView = org.pagel.ai.data.upcoming.CalView.DAY, onMoveTo = { id, due -> moved = id to due }) }
+        show { UpcomingScreen(upcoming(), pad, initialView = org.pagel.ai.data.upcoming.CalView.DAY, onMoveTo = { id, due -> moved = id to due }, now = { FIXED_NOW }) }
         compose.mainClock.advanceTimeBy(500)
-        compose.bringTimelineTo("Record the fractions lesson, 15:00")
         val block = compose.onNodeWithContentDescription("Record the fractions lesson, 15:00")
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/calendar-day-before-drag.png")
         val hour = 60f * compose.onRoot().fetchSemanticsNode().boundsInRoot.width / 360f

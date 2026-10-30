@@ -125,9 +125,9 @@ import org.pagel.ai.ui.glass.TileColors
 import org.pagel.ai.ui.glass.pressScale
 import org.pagel.ai.ui.today.headline
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -561,6 +561,8 @@ internal fun Timeline(
     holding: MutableState<Held?> = remember { mutableStateOf<Held?>(null) },
     /** Where the glass top ends: nothing of the grid is drawn above it (checker round 2 #5). */
     clipTop: Dp = 0.dp,
+    /** Tashkent's time now, for the opening hour and the now line (tests pass a fixed one: CI's clock moved the grid). */
+    now: () -> ZonedDateTime = { ZonedDateTime.now(TASHKENT) },
 ) {
     val dayView = view == CalView.DAY
     val hourH = hourHeight(view)
@@ -580,6 +582,9 @@ internal fun Timeline(
     var held by holding
     val clipPx = with(density) { clipTop.toPx() }
     var hoursAt by remember { mutableIntStateOf(-1) }
+    // The opening scroll happens once per view: a later placement (a scroll, a drag) never pulls the grid back.
+    var opened by remember(view) { mutableStateOf(false) }
+    val clock by rememberUpdatedState(now)
 
     fun grid(): Grid? {
         val box = at[0]?.takeIf { it.isAttached } ?: return null
@@ -618,9 +623,10 @@ internal fun Timeline(
 
     // Opened at the hour before now when today is shown, else at 06:00 (Google opens at the working morning); once per view.
     LaunchedEffect(view, hoursAt) {
-        if (hoursAt < 0) return@LaunchedEffect
-        val now = LocalTime.now(TASHKENT).hour
-        val hour = if (ui.today in timelineDays(view, ui.today, pager.currentPage - TL_BACK)) (now - 1).coerceIn(0, 20) else 6
+        if (hoursAt < 0 || opened) return@LaunchedEffect
+        opened = true
+        val hourNow = clock().withZoneSameInstant(TASHKENT).hour
+        val hour = if (ui.today in timelineDays(view, ui.today, pager.currentPage - TL_BACK)) (hourNow - 1).coerceIn(0, 20) else 6
         scroll.scrollTo((hoursAt + (hourPx * hour).roundToInt() - (topPx - clipPx).roundToInt()).coerceAtLeast(0))
     }
     // While a block is held: the grid scrolls when the finger nears the top or the bottom, and the week turns when the
@@ -645,8 +651,9 @@ internal fun Timeline(
             place(h)
         }
     }
-    val nowMin by produceState(LocalTime.now(TASHKENT).let { it.hour * 60 + it.minute }) {
-        while (true) { delay(60_000); value = LocalTime.now(TASHKENT).let { it.hour * 60 + it.minute } }
+    fun minuteNow() = clock().withZoneSameInstant(TASHKENT).let { it.hour * 60 + it.minute }
+    val nowMin by produceState(minuteNow()) {
+        while (true) { delay(60_000); value = minuteNow() }
     }
 
     Box(
