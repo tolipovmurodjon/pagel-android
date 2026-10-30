@@ -162,6 +162,16 @@ class HabitsScreenshotTest {
      * Boss 2026-10-29 "the spacing is different for all": one rhythm. Every habit row has the same height and every gap
      * between rows is the same, with a long title, a count, a timer and a done row, at 1x and 1.5x font.
      */
+    /** Note 4: Drink water stacked after Stretch sits right under it, one step in, before the Inbox habit. */
+    @Test fun aStackedHabitSitsUnderItsAnchor() {
+        show { HabitsScreen(ui().copy(prefs = mapOf("h5" to HabitPrefEntity("h5", after = "h1"))), pad) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-stacked.png")
+        fun box(t: String) = compose.onNodeWithText(t).fetchSemanticsNode().boundsInRoot
+        val (a, b, c) = listOf(box("Stretch for ten minutes"), box("Drink water"), box("Go through five saves in your Inbox"))
+        assertTrue("stacked row under its anchor", a.top < b.top && b.top < c.top)
+        assertTrue("stacked row one step in", b.left > a.left + 4f)
+    }
+
     @Test fun rowsHaveOneHeightAndOneGap() {
         val long = habit("h7", "Log today's food and sugar, then shut down the kitchen for the night", "2026-10-28 08:00", times = 3)
         show { HabitsScreen(ui(h = habits + long), pad) }
