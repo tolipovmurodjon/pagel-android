@@ -752,10 +752,17 @@ internal fun HabitCardRow(
                 // Each line converts on its own: font scaling is non-linear (Android 14+), so (22·2 + 18).sp came out
                 // shorter than two 22sp lines + one 18sp line at 1.5x, and the title fell to one cut line with no progress.
                 // A floor, not a fixed height: the row grows before it ever cuts a line.
-                val box = with(androidx.compose.ui.platform.LocalDensity.current) { TITLE_LINE.toDp() * 2 + 18.sp.toDp() } + Space.xs
+                // Measured, in whole pixels, exactly as the column lays itself out: a summed Dp box was a pixel short of a
+                // two-line row, so that row alone grew.
+                val titleStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold, lineHeight = TITLE_LINE)
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+                val box = remember(titleStyle, density) {
+                    with(density) { (measurer.measure("Ag\nAg", titleStyle).size.height + Space.xs.roundToPx() + 18.sp.toDp().roundToPx()).toDp() }
+                }
                 Column(Modifier.weight(1f).heightIn(min = box), verticalArrangement = Arrangement.Center) {
                     Text(
-                        c.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold, lineHeight = TITLE_LINE), color = if (done) Glass.Muted else Glass.Ink,
+                        c.title, style = titleStyle, color = if (done) Glass.Muted else Glass.Ink,
                         maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag(RowPart.TITLE),
                     )
                     Spacer(Modifier.height(Space.xs))
