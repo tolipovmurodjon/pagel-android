@@ -151,6 +151,137 @@ for i in $(seq 1 30); do grep -qF 'PATCH /api/v1/tasks/t_ci2 {"done":false} auth
 grep -qF 'PATCH /api/v1/tasks/t_ci2 {"done":false} auth=True' "$FAKE_LOG" || { log "WALKTHROUGH: Reopen never reached pagel.uz"; exit 1; }
 $T adb shell input keyevent 4; shot panel-closed 1.5
 
+wait_picker() { for i in $(seq 1 30); do grep -qE "$1" "$FAKE_LOG" && return 0; sleep 1; done; return 1; }
+xml_of() { echo "$OUT/$(printf '%02d' $N)-$1.xml"; }
+# Every window: a half sheet's toast is its own popup window, which the plain dump (the active window only) leaves out.
+dump_all() {
+  $T adb shell rm -f /sdcard/uiw.xml > /dev/null 2>&1
+  $T adb shell uiautomator dump --windows /sdcard/uiw.xml > /dev/null 2>&1
+  local x; x=$(timeout 20 adb exec-out cat /sdcard/uiw.xml < /dev/null 2>/dev/null)
+  if echo "$x" | grep -q '<node'; then echo "$x"; return; fi
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null
+}
+DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
+SW=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f1); SW=${SW:-320}
+# The Undo on the toast above the Add sheet: by its node when the dump has it, else by its place (the right end of the
+# toast, 83 dp above the middle of the sheet's "New task" title, as measured on CI 41076461041 shot 35).
+undo_toast() {
+  local all b; all=$(dump_all | tr '>' '\n')
+  b=$(echo "$all" | grep -E '(text|content-desc)="Undo"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+  if [ -n "$b" ]; then
+    set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
+    log "   Undo found in the dump at $(( ($1 + $3) / 2 )),$(( ($2 + $4) / 2 ))"
+    $T adb shell input tap $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )); return 0
+  fi
+  b=$(echo "$all" | grep -F 'text="New task"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+  [ -n "$b" ] || return 1
+  set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
+  local x=$(( SW - 65 * DPI / 160 )) y=$(( ($2 + $4) / 2 - 83 * DPI / 160 ))
+  log "   Undo is not in the dump: tapping its place $x,$y above the sheet"
+  $T adb shell input tap $x $y
+}
+
+log "-- the task panel's project (checker #2): open a task -> tap its project -> pick Humopedia; pagel.uz gets one PATCH {project}"
+tap 'Measure the drone[^"]*' && shot move-panel 2.5 || { log "WALKTHROUGH: no Measure the drone task on Today"; exit 1; }
+tap "Project: ABABIL" && shot move-picker 2 || { log "WALKTHROUGH: the panel's project capsule opens no picker (no \"Project: ABABIL\")"; exit 1; }
+grep -q 'content-desc="New project"' "$(xml_of move-picker)" || { log "WALKTHROUGH: the panel's picker is not the full picker (no + New project)"; exit 1; }
+tap Humopedia && shot move-picked 2 || { log "WALKTHROUGH: the panel's picker lists no Humopedia"; exit 1; }
+wait_picker 'PATCH /api/v1/tasks/t_ci4 \{"project":"humopedia"\}' || { log "WALKTHROUGH: the move never reached pagel.uz"; grep "PATCH /api/v1/tasks/t_ci4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+[ "$(grep -cE 'PATCH /api/v1/tasks/t_ci4 \{"project"' "$FAKE_LOG")" -eq 1 ] || { log "WALKTHROUGH: one pick sent more than one PATCH {project}"; grep "PATCH /api/v1/tasks/t_ci4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+grep -q 'content-desc="Project: Humopedia"' "$(xml_of move-picked)" || { log "WALKTHROUGH: after the pick the panel does not say Humopedia"; exit 1; }
+# Humopedia's tasks mention lessons but are not a course: no Lesson steps chip (checker #9; CI 41086207276 shot 34 had one).
+grep -q 'content-desc="Add lesson steps"' "$(xml_of move-picked)" && { log "WALKTHROUGH: a Humopedia task offers the Lesson steps chip (not a course)"; exit 1; }
+log "   the task moved: one PATCH {project:humopedia}, the panel says Humopedia, no Lesson steps chip"
+$T adb shell input keyevent 4; sleep 1.5
+front move-closed
+
+log "-- the project picker (Boss 2026-10-30): Add -> a task -> Project -> + New project \"CI Picker\" -> Enter -> Add; pagel.uz gets the project, then the task with that project"
+tap "Add a task" && shot picker-add 2 || { log "WALKTHROUGH: no Add a task on Today"; exit 1; }
+$T adb shell "input text 'Read%schapter%sone'"
+tap "Project" && shot picker-open 2 || { log "WALKTHROUGH: the Add sheet has no Project chip"; exit 1; }
+grep -q 'content-desc="New project"' "$(xml_of picker-open)" || { log "WALKTHROUGH: the project picker has no + New project row"; exit 1; }
+tap "New project" && shot picker-field 1.5 || { log "WALKTHROUGH: + New project did not open"; exit 1; }
+grep -q 'content-desc="New project name"' "$(xml_of picker-field)" || { log "WALKTHROUGH: + New project opened no name field"; exit 1; }
+# Checker #10: with the keyboard up, at least 5 project rows stay in view (the title steps aside).
+# The name field is a row too; each project row carries its ⋯ (Edit …).
+ROWS=$(( $(tr '>' '\n' < "$(xml_of picker-field)" | grep -cE 'content-desc="Edit [^"]+"') + 1 ))
+[ "$ROWS" -ge 5 ] || { log "WALKTHROUGH: with the keyboard up the picker shows only $ROWS rows (5 wanted)"; exit 1; }
+log "   $ROWS rows in view with the keyboard up (the name field + projects)"
+$T adb shell "input text 'CI%sPicker'"; $T adb shell input keyevent 66
+shot picker-created 1.5
+# Checker #1: the chosen project is on screen in the Project chip (2nd chip, the row scrolled to it).
+CB=$(tr '>' '\n' < "$(xml_of picker-created)" | grep -F 'text="CI Picker"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' ')
+[ -n "$CB" ] || { log "WALKTHROUGH: after the pick the Project chip does not show CI Picker"; exit 1; }
+set -- $CB; [ "$1" -ge 0 ] && [ "$3" -le "$SW" ] && [ "$3" -gt "$1" ] || { log "WALKTHROUGH: the CI Picker chip is cut off the screen ($CB)"; exit 1; }
+log "   the Project chip reads CI Picker, on screen at $CB"
+tap "Add task" && shot picker-added 1.5
+wait_picker 'POST /api/v1/tasks .*"project":"ci-picker"' || { log "WALKTHROUGH: the task never reached pagel.uz with project ci-picker"; grep "POST /api/v1/" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+PP=$(grep -nE 'POST /api/v1/projects \{"name": ?"ci-picker"' "$FAKE_LOG" | head -1 | cut -d: -f1)
+PT=$(grep -nE 'POST /api/v1/tasks .*"project":"ci-picker"' "$FAKE_LOG" | head -1 | cut -d: -f1)
+[ -n "$PP" ] && [ -n "$PT" ] && [ "$PP" -lt "$PT" ] || { log "WALKTHROUGH: pagel.uz did not get the project (line ${PP:-none}) before the task (line ${PT:-none})"; exit 1; }
+log "   pagel.uz got the project, then the task linked to it"
+
+log "-- Undo a new project (checker #3): Add -> Project -> + New project \"CI Picker 2\" -> Enter -> the toast's Undo; pagel.uz deletes it or never hears of it"
+tap "Add a task" && shot undo-add 2 || { log "WALKTHROUGH: no Add a task on Today"; exit 1; }
+tap "Project" && shot undo-open 1.5 || { log "WALKTHROUGH: the Add sheet has no Project chip"; exit 1; }
+tap "New project" || { log "WALKTHROUGH: + New project is not in the picker"; exit 1; }
+sleep 1; $T adb shell "input text 'CI%sPicker%s2'"; $T adb shell input keyevent 66
+sleep 0.5
+undo_toast || { log "WALKTHROUGH: no Undo after the new project (no toast, no Add sheet)"; exit 1; }
+shot undo-done 1.5
+grep -qE 'text="(CI Picker 2|ci-picker-2)"' "$(xml_of undo-done)" && { log "WALKTHROUGH: after Undo the Project chip still names CI Picker 2"; exit 1; }
+sleep 6
+if grep -qE 'POST /api/v1/projects \{"name": ?"ci-picker-2"' "$FAKE_LOG"; then
+  wait_picker 'PATCH /api/v1/projects/ci-picker-2 \{"deleted": ?true' || { log "WALKTHROUGH: CI Picker 2 reached pagel.uz and its Undo sent no delete"; grep ci-picker-2 "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+  log "   Undo reached pagel.uz: PATCH ci-picker-2 {deleted:true}"
+else
+  log "   Undo took the create back before it left: pagel.uz never heard of ci-picker-2"
+fi
+
+log "-- drag in the picker: Project -> long-press Me and drop it above Humopedia; pagel.uz gets one sort for Me"
+S0=$(grep -cE 'PATCH /api/v1/projects/[a-z0-9-]+ \{"sort"' "$FAKE_LOG")
+tap "Project" && shot picker-open2 2 || { log "WALKTHROUGH: the Add sheet has no Project chip"; exit 1; }
+$T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+PX=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n')
+bounds_of() { echo "$PX" | grep -F "text=\"$1\"" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' '; }
+ME=$(bounds_of Me); HU=$(bounds_of Humopedia)
+[ -n "$ME" ] && [ -n "$HU" ] || { log "WALKTHROUGH: the picker does not list Me and Humopedia"; exit 1; }
+set -- $ME; MX=$(( ($1 + $3) / 2 )); MY=$(( ($2 + $4) / 2 ))
+set -- $HU; HY=$(( $2 + 8 ))
+$T adb shell input draganddrop $MX $MY $MX $HY 1500
+shot picker-dragged 1.5
+wait_picker 'PATCH /api/v1/projects/me \{"sort": ?-?[0-9]+\}' || { log "WALKTHROUGH: the drag never reached pagel.uz as a sort for Me"; grep "PATCH /api/v1/projects" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+[ "$(grep -cE 'PATCH /api/v1/projects/[a-z0-9-]+ \{"sort"' "$FAKE_LOG")" -eq $(( S0 + 1 )) ] || { log "WALKTHROUGH: one drag sent more than one sort"; grep 'PATCH /api/v1/projects' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   one drag = one PATCH of one row"
+log "-- a drop into the middle (checker #7): Labs between Me and Humopedia; still one PATCH, for Labs only"
+$T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+PX=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n')
+LA=$(bounds_of Labs); HU=$(bounds_of Humopedia)
+[ -n "$LA" ] && [ -n "$HU" ] || { log "WALKTHROUGH: the picker does not list Labs and Humopedia"; exit 1; }
+set -- $LA; LX=$(( ($1 + $3) / 2 )); LY=$(( ($2 + $4) / 2 ))
+set -- $HU; HY=$(( $2 + 8 ))
+$T adb shell input draganddrop $LX $LY $LX $HY 1500
+shot picker-dragged-middle 1.5
+wait_picker 'PATCH /api/v1/projects/labs \{"sort": ?-?[0-9]+\}' || { log "WALKTHROUGH: the middle drop never reached pagel.uz as a sort for Labs"; grep "PATCH /api/v1/projects" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+sleep 2
+[ "$(grep -cE 'PATCH /api/v1/projects/[a-z0-9-]+ \{"sort"' "$FAKE_LOG")" -eq $(( S0 + 2 )) ] || { log "WALKTHROUGH: the middle drop renumbered other rows"; grep 'PATCH /api/v1/projects' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   middle drop: $(grep -oE 'PATCH /api/v1/projects/labs \{"sort": ?-?[0-9]+\}' "$FAKE_LOG" | tail -1), nothing else"
+
+log "-- edit from the picker (checker #4): ⋯ on Humopedia -> colour amber -> Done; the picker row shows amber, pagel.uz gets one PATCH"
+tap "Edit Humopedia" && shot edit-settings 2 || { log "WALKTHROUGH: the picker row has no ⋯ (Edit Humopedia)"; exit 1; }
+for k in 1 2 3 4; do tap "Colour amber" && break; $T adb shell input swipe 160 460 160 260 300; sleep 1; done
+wait_picker 'PATCH /api/v1/projects/humopedia \{"color": ?"amber"\}' || { log "WALKTHROUGH: the colour from the picker's ⋯ never reached pagel.uz"; grep 'PATCH /api/v1/projects/humopedia' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+[ "$(grep -cE 'PATCH /api/v1/projects/humopedia \{"color"' "$FAKE_LOG")" -eq 1 ] || { log "WALKTHROUGH: one colour pick sent more than one PATCH"; exit 1; }
+tap Done || $T adb shell input keyevent 4
+shot edit-back 2
+grep -q 'content-desc="Humopedia, amber"' "$(xml_of edit-back)" || { log "WALKTHROUGH: back in the picker, the Humopedia row does not show amber"; exit 1; }
+log "   ⋯ edit: one PATCH {color:amber}, the picker row shows it"
+pp_on() { $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1; timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -qE "content-desc=\"($1)\""; }
+for k in 1 2 3 4; do pp_on 'Add task|Find a project|Done' || break; $T adb shell input keyevent 4; sleep 1; done
+front picker-closed
+tap Today; sleep 1
+
 log "-- the Inbox (Phase 2): sort 5 saves with no network, come back online, pagel.uz gets all 5 in the order made"
 tap Inbox && shot inbox 3
 grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbox.xml" || { log "WALKTHROUGH: the Inbox shows no card from pagel.uz"; exit 1; }
@@ -853,6 +984,26 @@ grep -q 'Write the flight plan' "$(last core-task)" || { log "WALKTHROUGH: the i
 wait_log 'POST /api/v1/tasks {"project":"ci-rocket","text":"Write the flight plan"' 30 || { log "WALKTHROUGH: the inline task never reached pagel.uz"; exit 1; }
 grep -q 'Next step' "$(last core-task)" || { log "WALKTHROUGH: the page does not open on its Next step"; exit 1; }
 
+log "-- paste a list (checker #11): Paste a list -> 5 lessons, one per line -> Add 5 tasks; pagel.uz gets 5 POSTs in that order; the one Undo takes all 5 back"
+REMOVES=$(grep -c '"remove":true' "$FAKE_LOG")
+tap "Paste a list" || { log "WALKTHROUGH: the project page has no Paste a list"; exit 1; }
+sleep 1.5
+for n in 1 2 3 4 5; do $T adb shell "input text 'Lesson%s$n%sof%sfive'"; [ "$n" -lt 5 ] && $T adb shell input keyevent 66; done
+shot core-paste 1.5
+grep -qE '(text|content-desc)="Add 5 tasks"' "$(last core-paste)" || { log "WALKTHROUGH: the paste sheet does not offer Add 5 tasks"; exit 1; }
+tap "Add 5 tasks" || { log "WALKTHROUGH: no Add 5 tasks button"; exit 1; }
+# Undo at once: the toast lives 5 s. The adds left first (the outbox keeps its order), so all 5 POSTs still arrive.
+sleep 0.5
+tap Undo && shot core-paste-undo 0.5 || { log "WALKTHROUGH: the paste toast has no Undo"; exit 1; }
+for i in $(seq 1 30); do [ "$(grep -cE 'POST /api/v1/tasks \{"project":"ci-rocket","text":"Lesson [1-5] of five"' "$FAKE_LOG")" -ge 5 ] && break; sleep 1; done
+ORDER=$(grep -oE 'POST /api/v1/tasks \{"project":"ci-rocket","text":"Lesson [1-5] of five"' "$FAKE_LOG" | grep -oE 'Lesson [1-5]' | tr -dc '1-5')
+[ "$ORDER" = "12345" ] || { log "WALKTHROUGH: the pasted lessons reached pagel.uz as \"$ORDER\", not 12345 in order"; exit 1; }
+for i in $(seq 1 30); do [ "$(grep -c '"remove":true' "$FAKE_LOG")" -ge $(( REMOVES + 5 )) ] && break; sleep 1; done
+[ "$(grep -c '"remove":true' "$FAKE_LOG")" -ge $(( REMOVES + 5 )) ] || { log "WALKTHROUGH: the paste's Undo did not take all 5 back on pagel.uz"; grep -E 'remove|Lesson' "$FAKE_LOG" | tail -12 | tee -a "$OUT/steps.txt"; exit 1; }
+shot core-paste-gone 1.5
+grep -q 'Lesson 1 of five' "$(last core-paste-gone)" && { log "WALKTHROUGH: after Undo the pasted lessons are still on the page"; exit 1; }
+log "   5 pasted lessons reached pagel.uz in order; one Undo sent 5 removes"
+
 tap "Project settings" && shot core-settings 2 || { log "WALKTHROUGH: no Project settings on the page"; exit 1; }
 tap_scroll "Colour violet" || { log "WALKTHROUGH: the colour picker has no violet"; exit 1; }
 wait_log 'PATCH /api/v1/projects/ci-rocket {"color":"violet"}' 30 || { log "WALKTHROUGH: the colour never reached pagel.uz"; exit 1; }
@@ -970,3 +1121,79 @@ $T adb shell "date -u $(date -u +%m%d%H%M%Y.%S)" > /dev/null || { log "WALKTHROU
 $T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
 sleep 2
 log "NAMOZ WALK DONE: $N steps (clock back to $(date -u +%FT%TZ))"
+
+log "-- How it works (Boss 2026-10-30): More -> How it works; swipe through all 10 cards, each reads its title; Try it opens the real screen"
+front guide-start
+# After the Namoz restart something may sit over the tab bar: wait, then Back once, then bring PAGEL to the front again.
+for k in 1 2 3 4 5 6; do
+  tap More && break
+  [ "$k" -ge 3 ] && { $T adb shell input keyevent 4; sleep 1; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null; }
+  sleep 3
+done
+shot guide-before-more 0.5
+front guide-more
+shot guide-more 1.5
+tap "How it works" || { log "WALKTHROUGH: no How it works row under More"; exit 1; }
+shot guide-card-1 2
+TITLES=("Capture" "Clarify" "Next step" "Projects" "Areas" "Calendar" "Waiting and Someday" "Today.*s 3" "Close the day and the week" "Stuck")
+for i in $(seq 0 9); do
+  X="$(last guide-card-$((i + 1)))"
+  grep -qE "text=\"${TITLES[$i]}\"" "$X" || { log "WALKTHROUGH: How it works card $((i + 1)) does not read \"${TITLES[$i]}\""; exit 1; }
+  grep -qF "content-desc=\"Card $((i + 1)) of 10\"" "$X" || { log "WALKTHROUGH: card $((i + 1)) has no Card $((i + 1)) of 10 marker"; exit 1; }
+  grep -qF 'content-desc="Try it"' "$X" || { log "WALKTHROUGH: card $((i + 1)) has no Try it"; exit 1; }
+  [ "$i" -lt 9 ] && { $T adb shell input swipe 290 250 30 250 250; shot guide-card-$((i + 2)) 2.5; }
+done
+log "   all 10 cards read"
+# Try it on the Close the day card (the last card's neighbour): the real Close the day opens.
+$T adb shell input swipe 30 250 290 250 250; sleep 2.5
+tap "Try it" || { log "WALKTHROUGH: Try it was not on screen"; exit 1; }
+shot guide-try-close 2
+# Only the real Close the day has this line; the guide's own card title would also read "Close the day".
+grep -qE 'Five minutes\. Then nothing needs you tonight|Closed tonight|Day closed' "$(last guide-try-close)" || { log "WALKTHROUGH: Try it on the Close the day card did not open the real Close the day"; exit 1; }
+grep -q 'content-desc="Card [0-9]* of 10"' "$(last guide-try-close)" && { log "WALKTHROUGH: the guide is still under Close the day after Try it"; exit 1; }
+log "-- the same-tab case: Inbox -> How sorting works -> How it works -> Clarify -> Try it -> the Inbox, the guide gone"
+$T adb shell input keyevent 4; sleep 1.5
+tap Inbox && shot guide-inbox 2
+tap "How sorting works" || { log "WALKTHROUGH: no How sorting works button on the Inbox"; exit 1; }
+shot guide-sheet 2
+for k in 1 2 3 4 5; do onscreen 'How it works [^"]*' && break; $T adb shell input swipe 160 500 160 200 300; sleep 1; done
+tap 'How it works [^"]*' || { log "WALKTHROUGH: the sorting sheet has no How it works row"; exit 1; }
+shot guide-from-inbox 2.5
+grep -q 'text="Clarify"' "$(last guide-from-inbox)" || { log "WALKTHROUGH: the Inbox sheet did not open the Clarify card"; exit 1; }
+tap "Try it" || { log "WALKTHROUGH: Try it was not on screen (Clarify)"; exit 1; }
+shot guide-back-inbox 2.5
+grep -q 'content-desc="How sorting works"' "$(last guide-back-inbox)" || { log "WALKTHROUGH: Try it on Clarify did not return to the Inbox"; exit 1; }
+grep -q 'content-desc="Card [0-9]* of 10"' "$(last guide-back-inbox)" && { log "WALKTHROUGH: the guide stayed on screen after Try it from the Inbox"; exit 1; }
+log "GUIDE WALK DONE: $N steps"
+log "-- Black hole (black-hole brief): More → Completed → Clear done; the rows leave at once, pagel.uz gets the removes after"
+log "   their 5 s hold; Undo after that sends restore + done and the rows come back"
+# CI 41070909739: right after the Namoz restart the tab bar was not up yet; Back then left PAGEL and a swipe pulled the
+# notification shade. Wait for the bar instead (no Back here), and swipe only inside the 640 px screen.
+$T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+front hole-start
+for k in $(seq 1 20); do onscreen More && break; sleep 1; done
+shot hole-start 0.5
+tap More || { log "WALKTHROUGH: no More tab before the black hole step"; exit 1; }
+sleep 1.5
+for k in 1 2 3; do tap Completed && break; $T adb shell input swipe 160 200 160 500 400; sleep 1; done
+shot hole-completed 2.5
+grep -qE '(text|content-desc)="Clear done"' "$(last hole-completed)" || shot hole-completed 3
+grep -qE '(text|content-desc)="Clear done"' "$(last hole-completed)" || { log "WALKTHROUGH: Completed shows no Clear done (no done rows?)"; exit 1; }
+tap "Clear done" || { log "WALKTHROUGH: Completed has no Clear done"; exit 1; }
+shot hole-cleared 1.5
+grep -qE '(text|content-desc)="Clear done"|text="Write the IT Park report"' "$(last hole-cleared)" && { log "WALKTHROUGH: the done rows are still on screen after Clear done"; exit 1; }
+grep -qE 'text="Cleared [0-9]+ done tasks?"' "$(last hole-cleared)" || { log "WALKTHROUGH: Clear done shows no Cleared toast"; exit 1; }
+# Checker 2026-10-30 #2: the empty list says All clear and its count is the list's (it said "4 tasks done").
+grep -q 'text="All clear"' "$(last hole-cleared)" || { log "WALKTHROUGH: the cleared list does not say All clear"; exit 1; }
+grep -q 'text="0 tasks done"' "$(last hole-cleared)" || { log "WALKTHROUGH: the cleared list's count is not 0 ($(grep -oE '[0-9]+ tasks? done' "$(last hole-cleared)" | head -1))"; exit 1; }
+log "   $(grep -oE 'Cleared [0-9]+ done tasks?' "$(last hole-cleared)" | head -1), the list says All clear · 0 tasks done at once"
+wait_log 'PATCH /api/v1/tasks/t_c2 {"remove":true} auth=True' 25 || { log "WALKTHROUGH: the remove never reached pagel.uz"; grep -E 'PATCH /api/v1/tasks/t_c' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got the removes ($(grep -c '{"remove":true}' "$FAKE_LOG") in all)"
+tap Undo || { log "WALKTHROUGH: the Clear done toast lost its Undo before the removes left"; exit 1; }
+wait_log 'PATCH /api/v1/tasks/t_c2 {"restore":true,"done":true} auth=True' 30 || { log "WALKTHROUGH: the Undo never reached pagel.uz as restore + done"; grep -E 'PATCH /api/v1/tasks/t_c' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+shot hole-undone 2.5
+grep -qE '(text|content-desc)="Clear done"' "$(last hole-undone)" || shot hole-undone 3
+grep -qE '(text|content-desc)="Clear done"' "$(last hole-undone)" || { log "WALKTHROUGH: Undo did not bring the done rows back"; exit 1; }
+$T adb logcat -d > "$OUT/logcat-hole.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-hole.txt" && { log "WALKTHROUGH: CRASH in the black hole (see logcat-hole.txt)"; exit 1; }
+log "BLACK HOLE WALK DONE: $N steps"

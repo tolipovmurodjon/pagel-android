@@ -19,9 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,10 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -54,8 +48,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -75,6 +67,7 @@ import org.pagel.ai.data.sync.LiveStatus
 import org.pagel.ai.ui.glass.Glass
 import org.pagel.ai.ui.glass.GlassIconButton
 import org.pagel.ai.ui.glass.Pane
+import org.pagel.ai.ui.glass.ProjectCreateField
 import org.pagel.ai.ui.glass.ProjectTile
 import org.pagel.ai.ui.glass.SkeletonRows
 import org.pagel.ai.ui.glass.Space
@@ -91,8 +84,17 @@ class ProjectsViewModel @Inject constructor(session: Session, private val repo: 
         ProjectsUiState(loading = projects.isEmpty() && live !is LiveStatus.Offline, projects = projects, status = live.line())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProjectsUiState())
 
-    /** A new project from its name; [then] gets its name (the page opens on it). */
-    fun create(title: String, then: (String) -> Unit) { viewModelScope.launch { then(repo.create(title)) } }
+    /**
+     * A new project from its name; [then] gets its name (the page opens on it). The same rule as the picker: a name that
+     * is taken opens that project instead of a twin, and an archived one comes back first.
+     */
+    fun create(title: String, then: (String) -> Unit) {
+        viewModelScope.launch {
+            val p = repo.existing(title)
+            if (p?.archived == true) repo.archive(p.name, false)
+            then(p?.name ?: repo.create(title))
+        }
+    }
     fun order(names: List<String>) { viewModelScope.launch { repo.order(names) } }
 }
 
@@ -155,11 +157,15 @@ fun ProjectsScreen(
                     Text("${ui.projects.filter { !it.archived && it.finishedAt == null }.sumOf { it.openCount }} open tasks" + if (ui.status.isEmpty()) "" else " · ${ui.status}",
                         style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
                 }
+                org.pagel.ai.ui.guide.GuideHelpButton(org.pagel.ai.ui.guide.GuideCards.PROJECTS)
                 GlassIconButton(TabIcons.Plus, "New project", on = adding) { adding = !adding }
             }
         }
         if (adding) item(key = "new", contentType = "new") {
-            NewProjectField(onDone = { t -> adding = false; if (t.isNotBlank()) onCreate(t.trim()) })
+            // The one create field (the picker's): Enter makes it and its page opens; an empty Enter closes it.
+            Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+                ProjectCreateField(onCreate = { t -> adding = false; onCreate(t) }, onCancel = { adding = false })
+            }
         }
         if (ui.loading) item(key = "loading", contentType = "loading") { SkeletonRows(6) }
         if (!ui.loading && ui.projects.isEmpty()) item(key = "empty", contentType = "empty") {
@@ -168,28 +174,6 @@ fun ProjectsScreen(
         if (lines.isNotEmpty()) item(key = "list", contentType = "list") { ReorderPane(lines, onOpenProject, onOrder) }
         if (done.isNotEmpty()) item(key = "done", contentType = "fold") { FoldedProjects("Done projects", done, onOpenProject) }
         if (archived.isNotEmpty()) item(key = "archived", contentType = "fold") { FoldedProjects("Archived", archived, onOpenProject) }
-    }
-}
-
-/** The name, then Enter: a new project (the next tile colour) and its page opens. */
-@Composable
-private fun NewProjectField(onDone: (String) -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    val style = MaterialTheme.typography.titleMedium.copy(color = Glass.Ink)
-    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically) {
-            Icon(TabIcons.Folder, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(Space.md))
-            BasicTextField(
-                text, { text = it.replace('\n', ' ').take(60) }, Modifier.weight(1f).focusRequester(focus).semantics { contentDescription = "New project name" },
-                textStyle = style, singleLine = true, cursorBrush = SolidColor(Glass.Primary),
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { onDone(text) }),
-                decorationBox = { inner -> Box { if (text.isEmpty()) Text("Name the project, then Enter", style = style, color = Glass.Muted); inner() } },
-            )
-        }
     }
 }
 

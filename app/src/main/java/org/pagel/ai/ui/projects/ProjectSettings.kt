@@ -110,14 +110,14 @@ data class SettingsActions(
 )
 
 @Composable
-fun ProjectSettingsRoute(project: String, onDismiss: () -> Unit, onGone: () -> Unit, onOpenProject: (String) -> Unit = {}, vm: ProjectSettingsViewModel = hiltViewModel()) {
+fun ProjectSettingsRoute(project: String, onDismiss: () -> Unit, onGone: () -> Unit, onOpenProject: (String) -> Unit = {}, calm: Boolean = false, vm: ProjectSettingsViewModel = hiltViewModel()) {
     val all by vm.projects.collectAsStateWithLifecycle()
     val p = all.firstOrNull { it.name == project } ?: return
     val toasts = LocalToasts.current
     val name = shortName(p.name, p.title)
     GlassSheet(onDismiss, full = true) {
         ProjectSettingsContent(
-            p, all, onDone = onDismiss, goal = { org.pagel.ai.ui.compass.ServesGoalRow(project) },
+            p, all, onDone = onDismiss, calm = calm, goal = { org.pagel.ai.ui.compass.ServesGoalRow(project) },
             actions = SettingsActions(
                 onRename = { t -> vm.run { rename(project, t) } },
                 onColor = { c -> vm.run { color(project, c) } },
@@ -151,7 +151,7 @@ fun ProjectSettingsRoute(project: String, onDismiss: () -> Unit, onGone: () -> U
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ProjectSettingsContent(p: ProjectEntity, all: List<ProjectEntity>, onDone: () -> Unit, actions: SettingsActions, goal: (@Composable () -> Unit)? = null) {
+fun ProjectSettingsContent(p: ProjectEntity, all: List<ProjectEntity>, onDone: () -> Unit, actions: SettingsActions, goal: (@Composable () -> Unit)? = null, calm: Boolean = false) {
     var color by remember(p.name) { mutableStateOf(TileColors.nameFor(p.name, p.color)) }
     var icon by remember(p.name) { mutableStateOf(p.icon) }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = Space.xxxl)) {
@@ -177,7 +177,8 @@ fun ProjectSettingsContent(p: ProjectEntity, all: List<ProjectEntity>, onDone: (
             else ChoiceChips(listOf<String?>(null) + parents.map { it.name }, p.parent, label = { n -> n?.let { all.firstOrNull { x -> x.name == it }?.let { x -> shortName(x.name, x.title) } } ?: "None" }, onPick = actions.onParent)
         }
         if (goal != null) Section("Serves goal") { goal() }
-        Section("Merge") {
+        // Opened from the picker (calm): the place to shape one project, not to remove or fold it away.
+        if (!calm) Section("Merge") {
             var open by rememberSaveable { mutableStateOf(false) }
             var into by rememberSaveable { mutableStateOf<String?>(null) }
             ActionRow(TabIcons.Shuffle, "Merge into another project…", "Merge into another project") { open = !open }
@@ -192,7 +193,7 @@ fun ProjectSettingsContent(p: ProjectEntity, all: List<ProjectEntity>, onDone: (
                 }
             }
         }
-        Section("Keep or remove") {
+        if (!calm) Section("Keep or remove") {
             ActionRow(TabIcons.Briefcase, if (p.archived) "Restore" else "Archive", if (p.archived) "Restore the project" else "Archive the project") { actions.onArchive(!p.archived) }
             var deleting by rememberSaveable { mutableStateOf(false) }
             ActionRow(TabIcons.Trash, "Delete…", "Delete the project", tint = Glass.Risk) { deleting = !deleting }
