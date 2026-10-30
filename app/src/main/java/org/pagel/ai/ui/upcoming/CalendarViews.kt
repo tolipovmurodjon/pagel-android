@@ -138,6 +138,7 @@ const val TL_BACK = 520
 const val TL_PAGES = TL_BACK * 2
 
 private val LETTER = DateTimeFormatter.ofPattern("EEE", Locale.UK)
+private val NARROW = DateTimeFormatter.ofPattern("EEEEE", Locale.UK)
 private val SPOKEN = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
 private val TASHKENT: ZoneId = ZoneId.of("Asia/Tashkent")
 private val Hair = 2.dp
@@ -176,7 +177,7 @@ fun CalHeader(title: String, view: CalView, showToday: Boolean, onView: (CalView
         // It shrinks before it is cut: "October 2026" never ends as "Oct…" at 1.5x on a 360 dp screen.
         BasicText(
             title, maxLines = 1, softWrap = false, style = MaterialTheme.typography.titleMedium.copy(color = Glass.Ink),
-            autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = MaterialTheme.typography.titleMedium.fontSize),
+            autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = MaterialTheme.typography.titleMedium.fontSize),
             modifier = Modifier.weight(1f).semantics { heading() },
         )
         if (onMonth != null) {
@@ -212,7 +213,9 @@ private fun ViewButton(view: CalView, onView: (CalView) -> Unit) {
                 Modifier.background(Glass.Ink.copy(alpha = 0.06f), CircleShape).padding(start = Space.md, end = Space.sm, top = Space.xs, bottom = Space.xs),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(view.label, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, softWrap = false)
+                // At large font the view's own icon says it (the word pushed the month off the row).
+                if (LocalDensity.current.fontScale > 1.3f) Icon(iconOf(view), contentDescription = null, tint = Glass.Ink, modifier = Modifier.size(20.dp))
+                else Text(view.label, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, softWrap = false)
                 Spacer(Modifier.width(Space.xs))
                 Icon(TabIcons.ChevronDown, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(16.dp))
             }
@@ -341,7 +344,13 @@ private fun DayHead(d: LocalDate, today: Boolean, modifier: Modifier, onTap: () 
             .semantics(mergeDescendants = true) { contentDescription = d.format(SPOKEN) },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(d.format(LETTER), style = MaterialTheme.typography.labelSmall, color = if (today) Glass.PrimaryInk else Glass.Muted, maxLines = 1, softWrap = false)
+        // "Mon" shrinks before it touches "Tue" (a 37 dp column at 1.5x); at large font one letter, as Google's week.
+        val small = MaterialTheme.typography.labelSmall
+        BasicText(
+            d.format(if (LocalDensity.current.fontScale > 1.3f) NARROW else LETTER), maxLines = 1, softWrap = false,
+            style = small.copy(color = if (today) Glass.PrimaryInk else Glass.Muted),
+            autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = small.fontSize),
+        )
         Box(
             Modifier.sizeIn(minWidth = 30.dp, minHeight = 30.dp)
                 .then(if (today) Modifier.background(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), CircleShape) else Modifier),
@@ -414,10 +423,14 @@ private fun AllDayChip(title: String, color: Color, spoken: String, onClick: () 
 
 /** A block held on the timeline: the lift (pure, [BlockDrag]), the finger, and where the ghost is drawn now. */
 @Stable
-private class Held(val drag: BlockDrag, val color: Color, val title: String) {
+private class Held(val drag: BlockDrag, val color: Color, val title: String, val liftY: Float) {
     var finger = Offset.Zero
     var slot by mutableStateOf<Slot?>(null)
     var ghost by mutableStateOf(Rect.Zero)
+    /** The grid scrolls (-1 up, 1 down) only while the finger is carried into the top or bottom edge, never from a lift there. */
+    var scrolls by mutableIntStateOf(0)
+    /** The finger rests beside the columns (-1 before, 1 after): the week turns after 0.6 s. */
+    var side by mutableIntStateOf(0)
 }
 
 /**
@@ -441,6 +454,8 @@ fun Timeline(
     val minBlockPx = with(density) { MIN_BLOCK.toPx() }
     val topPx = with(density) { top.toPx() }
     val bottomPx = with(density) { bottom.toPx() }
+    val edgeZonePx = with(density) { Space.xxxl.toPx() + Space.sm.toPx() }
+    val slackPx = with(density) { Space.sm.toPx() }
     val latest by rememberUpdatedState(ui)
     val move by rememberUpdatedState(onMove)
     // [0] this box, [1] the columns (the pager): read at the moment of need, never kept from the lift.
@@ -467,6 +482,19 @@ fun Timeline(
         val end = if (h.drag.resize) maxOf(s.minute, b.start + 15) else s.minute + (b.end - b.start)
         val y = g.top + start / 60f * hourPx
         h.ghost = Rect(g.left + col * colW, y, g.left + (col + 1) * colW, y + maxOf((end - start) / 60f * hourPx, minBlockPx))
+        val fy = h.finger.y
+        val boxH = at[0]?.takeIf { it.isAttached }?.size?.height ?: 0
+        h.scrolls = when {
+            fy < topPx + edgeZonePx && fy < h.liftY - slackPx -> -1
+            boxH > 0 && fy > boxH - bottomPx - edgeZonePx && fy > h.liftY + slackPx -> 1
+            else -> 0
+        }
+        h.side = when {
+            h.drag.resize -> 0
+            h.finger.x < g.left - slackPx / 2 -> -1
+            h.finger.x > g.left + g.width + slackPx / 2 -> 1
+            else -> 0
+        }
     }
 
     // Opened at the hour before now when today is shown, else at 06:00 (Google opens at the working morning); once per view.
@@ -478,27 +506,24 @@ fun Timeline(
     }
     // While a block is held: the grid scrolls when the finger nears the top or the bottom, and the week turns when the
     // finger rests beside the columns for 0.6 s; the ghost is placed again after each.
-    LaunchedEffect(held) {
+    // Frames run only while the finger is in an edge (a held block in the middle leaves the screen idle).
+    LaunchedEffect(held, held?.scrolls, held?.side) {
         val h = held ?: return@LaunchedEffect
-        val zone = with(density) { Space.xxxl.toPx() + Space.sm.toPx() }
+        if (h.scrolls == 0 && h.side == 0) return@LaunchedEffect
         val step = with(density) { Space.sm.toPx() }
-        val edge = with(density) { Space.xs.toPx() }
         var rest = 0L
         var last = 0L
         while (true) {
             val now = withFrameMillis { it }
             val dt = if (last == 0L) 0L else now - last
             last = now
-            val box = at[0]?.takeIf { it.isAttached } ?: continue
-            val y = h.finger.y
-            val d = when { y < topPx + zone -> -step; y > box.size.height - bottomPx - zone -> step; else -> 0f }
-            if (d != 0f && scroll.dispatchRawDelta(d) != 0f) place(h)
-            val g = grid() ?: continue
-            val side = when { h.finger.x < g.left - edge -> -1; h.finger.x > g.left + g.width + edge -> 1; else -> 0 }
-            if (side != 0 && !h.drag.resize && !pager.isScrollInProgress) {
+            // At the grid's end with no week to turn: stop asking for frames (the keys stay, so it does not restart).
+            if (h.scrolls != 0 && scroll.dispatchRawDelta(step * h.scrolls) == 0f && h.side == 0) { place(h); return@LaunchedEffect }
+            if (h.side != 0 && !pager.isScrollInProgress) {
                 rest += dt
-                if (rest > 600) { rest = 0; pager.animateScrollToPage(pager.currentPage + side); place(h) }
-            } else rest = 0
+                if (rest > 600) { rest = 0; pager.animateScrollToPage(pager.currentPage + h.side) }
+            }
+            place(h)
         }
     }
     val nowMin by produceState(LocalTime.now(TASHKENT).let { it.hour * 60 + it.minute }) {
@@ -522,7 +547,7 @@ fun Timeline(
                 val topY = g.top + b.start / 60f * hourPx
                 val shown = maxOf((b.end - b.start) / 60f * hourPx, minBlockPx)
                 val resize = shown >= 24.dp.toPx() && topY + shown - p.y <= minOf(12.dp.toPx(), shown / 3f)
-                val h = Held(BlockDrag.lift(b, resize, p.y, if (resize) g.top + b.end / 60f * hourPx else topY), projectColor(latest, b.task.project), titleOf(b.task))
+                val h = Held(BlockDrag.lift(b, resize, p.y, if (resize) g.top + b.end / 60f * hourPx else topY), projectColor(latest, b.task.project), titleOf(b.task), p.y)
                 h.finger = p
                 long.consume()
                 place(h)
@@ -618,9 +643,12 @@ private fun BlockView(b: Block, ui: UpcomingUi, hourH: Dp, colW: Int, held: Bool
             .semantics(mergeDescendants = true) { contentDescription = "${titleOf(b.task)}, $time" }
             .padding(horizontal = Space.xs, vertical = Hair),
     ) {
-        val lines = ((height.value - 4f) / 15f).toInt().coerceIn(1, 2)
-        Text(titleOf(b.task), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink,
-            maxLines = lines, overflow = TextOverflow.Clip, fontSize = if (laneW < 60.dp) 11.sp else androidx.compose.ui.unit.TextUnit.Unspecified)
+        // A week column is ~40 dp: 10 sp on 12 sp lines gives a half-hour block two lines ("Record the"), not "Recor".
+        val narrow = laneW < 60.dp
+        val lines = ((height.value - 2f) / (if (narrow) 12f else 15f)).toInt().coerceIn(1, 2)
+        val style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold)
+        Text(titleOf(b.task), style = if (narrow) style.copy(fontSize = 10.sp, lineHeight = 12.sp) else style, color = Glass.Ink,
+            maxLines = lines, overflow = TextOverflow.Clip)
         if (height > 40.dp && laneW > 56.dp) Text(time, style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false)
     }
 }

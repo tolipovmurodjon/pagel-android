@@ -11,6 +11,7 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
@@ -160,7 +161,8 @@ class CalendarScreenshotTest {
     /** Checker P4 #1 for the grid: Gym (a habit) and Bomdod (Namoz) never move. */
     @Test fun aHabitBlockCannotBeDragged() {
         show(CalView.DAY)
-        val bomdod = compose.onNodeWithContentDescription("Bomdod, 05:30")
+        // A daily habit is on the next day's page too (composed off screen): the first is today's.
+        val bomdod = compose.onAllNodesWithContentDescription("Bomdod, 05:30")[0]
         bomdod.performScrollTo()
         bomdod.hold(Offset(0f, px(120f)))
         compose.waitForIdle()

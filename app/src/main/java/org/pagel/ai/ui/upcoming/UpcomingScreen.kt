@@ -317,11 +317,12 @@ fun UpcomingScreen(
         scope.launch(Dispatchers.IO) { CalendarPrefs.setView(ctx, v) }
     }
     val tlDays = org.pagel.ai.data.upcoming.timelineDays(timelineView, ui.today, tl.currentPage - TL_BACK)
-    // The header says the month once (Google): the shown days' month, or both when a week crosses one.
+    // The header says the month once (Google): the shown days' month, or both when a week crosses one; short at large font.
+    val short = density.fontScale > 1.3f
     val title = when (view) {
-        CalView.MONTH -> month.atDay(1).format(MONTH_YEAR)
-        CalView.SCHEDULE -> stripStart.format(MONTH_YEAR)
-        else -> monthsOf(tlDays.first(), tlDays.last())
+        CalView.MONTH -> monthsOf(month.atDay(1), month.atDay(1), ui.today, short)
+        CalView.SCHEDULE -> monthsOf(stripStart, stripStart, ui.today, short)
+        else -> monthsOf(tlDays.first(), tlDays.last(), ui.today, short)
     }
     val away = when (view) {
         CalView.SCHEDULE -> page != 0 || focus != ui.today
@@ -405,14 +406,16 @@ fun UpcomingScreen(
 
 private val RANGE_DAY = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
 
-private val MONTH_YEAR = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)
+private val MONTH_FULL = DateTimeFormatter.ofPattern("MMMM", Locale.UK)
 private val MONTH_ONLY = DateTimeFormatter.ofPattern("MMM", Locale.UK)
 
-/** "October 2026", or "Oct – Nov 2026" for a week that crosses a month ("Dec 2026 – Jan 2027" across a year). */
-internal fun monthsOf(first: LocalDate, last: LocalDate): String = when {
-    first.month == last.month -> first.format(MONTH_YEAR)
-    first.year == last.year -> "${first.format(MONTH_ONLY)} – ${last.format(MONTH_ONLY)} ${last.year}"
-    else -> "${first.format(MONTH_ONLY)} ${first.year} – ${last.format(MONTH_ONLY)} ${last.year}"
+/**
+ * The header's month, as Google says it: "October" (the year only when it is not this one), "Oct – Nov" for a week that
+ * crosses a month; [short] (large font) says "Oct", so the row never cuts it to "Oc".
+ */
+internal fun monthsOf(first: LocalDate, last: LocalDate, today: LocalDate, short: Boolean = false): String {
+    fun name(d: LocalDate, full: Boolean) = d.format(if (full) MONTH_FULL else MONTH_ONLY) + if (d.year != today.year) " ${d.year}" else ""
+    return if (first.month == last.month && first.year == last.year) name(first, !short) else "${name(first, false)} – ${name(last, false)}"
 }
 
 /** The view Boss chose last, kept on the phone (read and written off Main). */
