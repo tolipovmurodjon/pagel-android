@@ -1,6 +1,8 @@
 package org.pagel.ai.data.today
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import org.pagel.ai.data.db.TodayStateEntity
 import org.pagel.ai.data.account.Account
 import org.pagel.ai.data.DataError
 import org.pagel.ai.data.Outcome
@@ -18,6 +20,9 @@ import org.pagel.ai.data.tasks.UNDO_WINDOW_MS
 import org.pagel.ai.data.tasks.applyWas
 import org.pagel.ai.data.tasks.sentOf
 import org.pagel.ai.data.tasks.wasOf
+
+/** An event's name or reason: lower-case words joined by "_" (what_now_pick, too_big), never free text. */
+val EVENT_WORD = Regex("[a-z][a-z_]{1,31}")
 
 /** Wakes the outbox sender (WorkManager in the app, a counter in tests). */
 fun interface OutboxScheduler {
@@ -88,6 +93,43 @@ class TodayRepository(
         dao.addToOutbox(OutboxEntity(taskId = id, op = OutboxEntity.ADD, createdAt = now))
         scheduler.kick()
         return id
+    }
+
+    /** The day in Tashkent, where pagel.uz counts its days. */
+    fun day(): String = java.time.Instant.ofEpochMilli(clock()).atZone(java.time.ZoneId.of("Asia/Tashkent")).toLocalDate().toString()
+
+    /** Boss's own order for [day] (the full list's drag), by task id. */
+    fun todaySorts(day: String): Flow<Map<String, Double>> = dao.todaySorts(day).map { rows -> rows.associate { it.taskId to it.sort } }
+
+    /** The task's own sort on [day], or null while it keeps pagel.uz's place. */
+    suspend fun todaySortOf(id: String, day: String): Double? = dao.todaySortsOnce(day).firstOrNull { it.taskId == id }?.sort
+
+    /** Today's screen state, only while it is still that day: a new day starts folded, with energy not asked. */
+    fun state(day: String): Flow<TodayStateEntity> = dao.todayState().map { s -> s?.takeIf { it.day == day } ?: TodayStateEntity(day = day) }
+
+    suspend fun setExpanded(on: Boolean) {
+        val d = day()
+        val s = dao.todayStateOnce()?.takeIf { it.day == d } ?: TodayStateEntity(day = d)
+        dao.saveTodayState(s.copy(expanded = on))
+    }
+
+    suspend fun setEnergy(energy: String) {
+        val d = day()
+        val s = dao.todayStateOnce()?.takeIf { it.day == d } ?: TodayStateEntity(day = d)
+        dao.saveTodayState(s.copy(energy = energy))
+    }
+
+    /**
+     * One plain event for the weekly review (core round 4): what_now_pick, what_now_skip, stuck (+ its reason word),
+     * micro_done, today_reorder, cal_move. Names and fixed words only, never free text; it rides the KPI post.
+     */
+    suspend fun event(name: String, reason: String? = null) {
+        require(name.matches(EVENT_WORD) && (reason == null || reason.matches(EVENT_WORD))) { "events are fixed words" }
+        val now = clock()
+        val r = if (reason == null) "" else ",\"reason\":\"$reason\""
+        dao.addToOutbox(OutboxEntity(taskId = "kpi", op = OutboxEntity.KPI, createdAt = now,
+            body = """{"method":"POST","path":"/api/v1/kpi","body":{"day":"${day()}","event":"$name"$r}}"""))
+        scheduler.kick()
     }
 
     /** Boss saw the "could not save" notice: the refused change leaves the outbox. */

@@ -96,6 +96,83 @@ for i in $(seq 1 30); do grep -q "PATCH /api/v1/tasks/t_ci1 {\"done\":true} auth
 grep -q "PATCH /api/v1/tasks/t_ci1" "$FAKE_LOG" || { log "WALKTHROUGH: the tick never reached pagel.uz (no PATCH in the fake log)"; exit 1; }
 log "   tick reached pagel.uz after ~${i} s"
 
+log "-- core round 4 (Today, the starting machine): All today opens in place, drag #5 to #1 = ONE order PATCH; What now -> Start -> tick reaches pagel.uz; Make it tiny (4 steps) -> Focus -> tick all -> the task is done"
+# The shared helpers (centre, wait_log, tap_scroll) are defined further down, so this walk keeps its own small ones.
+r4_xml() { $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1; timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null; }
+r4_centre() {
+  local b; b=$(r4_xml | tr '>' '\n' | grep -E "(text|content-desc)=\"$1\"" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+  [ -n "$b" ] || return 1
+  set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
+  echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
+}
+r4_wait() { for i in $(seq 1 "${2:-30}"); do grep -qF "$1" "$FAKE_LOG" && return 0; sleep 1; done; return 1; }
+r4_tap() { for k in 1 2 3; do tap "$1" && return 0; $T adb shell input swipe 160 460 160 260 300; sleep 1; done; return 1; }
+tap 'All today · [0-9]+' || { log "WALKTHROUGH: Today has no All today row"; exit 1; }
+shot r4-all-today 2
+for t in "Call the bank about the report" "Weigh in" "Clean the desk" "Write the release note"; do
+  grep -q "text=\"$t\"" "$OUT/$(printf '%02d' $N)-r4-all-today.xml" || { log "WALKTHROUGH: All today did not open in place (no \"$t\")"; exit 1; }
+done
+grep -q 'content-desc="Show 3"' "$OUT/$(printf '%02d' $N)-r4-all-today.xml" || { log "WALKTHROUGH: the open list has no Show 3 chevron"; exit 1; }
+FROM=$(r4_centre "Clean the desk") || { log "WALKTHROUGH: no Clean the desk row to drag"; exit 1; }
+TO=$(r4_centre "Call the bank about the report") || { log "WALKTHROUGH: no first row to drop on"; exit 1; }
+set -- $FROM $TO
+log "   drag #5 (Clean the desk) from $1,$2 to the first row at $3,$4"
+$T adb shell input draganddrop $1 $2 $3 $(( $4 - 12 )) 1800
+shot r4-dragged 2
+r4_wait 'PATCH /api/v1/tasks/t_now1 {"today_sort":' 30 || { log "WALKTHROUGH: the drag sent no order PATCH"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+sleep 3
+ORDERS=$(grep -c '"today_sort"' "$FAKE_LOG")
+[ "$ORDERS" -eq 1 ] || { log "WALKTHROUGH: one drag sent $ORDERS order PATCHes (want exactly 1)"; grep today_sort "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got ONE order PATCH: $(grep -o 'PATCH /api/v1/tasks/t_now1 {"today_sort":[^}]*}' "$FAKE_LOG" | head -1)"
+A=$(r4_centre "Clean the desk"); B=$(r4_centre "Call the bank about the report")
+[ -n "$A" ] && [ -n "$B" ] && [ "${A#* }" -lt "${B#* }" ] || { log "WALKTHROUGH: after the drag Clean the desk is not above Call the bank ($A vs $B)"; exit 1; }
+tap "Show 3" && shot r4-folded 2
+grep -q 'text="Clean the desk"' "$OUT/$(printf '%02d' $N)-r4-folded.xml" || { log "WALKTHROUGH: the dragged task is not one of the 3 after folding"; exit 1; }
+grep -q 'text="Measure the drone' "$OUT/$(printf '%02d' $N)-r4-folded.xml" && { log "WALKTHROUGH: folded Today still shows a 4th task"; exit 1; }
+
+log "-- What now: energy once, one pick (Clean the desk is first in Boss's order), Start · 10 min, the tick reaches pagel.uz"
+r4_tap "What now?" || { log "WALKTHROUGH: no What now button on Today"; exit 1; }
+shot r4-energy 2
+tap "Energy: OK" || { log "WALKTHROUGH: What now did not ask for the energy"; exit 1; }
+shot r4-what-now 2
+grep -q 'content-desc="Start 10 minutes: Clean the desk"' "$OUT/$(printf '%02d' $N)-r4-what-now.xml" || { log "WALKTHROUGH: What now did not pick Clean the desk with Start · 10 min"; exit 1; }
+r4_wait '"event":"what_now_pick"' 30 || { log "WALKTHROUGH: no what_now_pick event reached pagel.uz"; exit 1; }
+tap "Start 10 minutes: Clean the desk" && shot r4-running 2
+grep -qE 'content-desc="(9:[0-9]{2}|10:00) left"' "$OUT/$(printf '%02d' $N)-r4-running.xml" || { log "WALKTHROUGH: the 10-minute clock is not running"; exit 1; }
+tap "Done: Clean the desk" && shot r4-what-now-done 0.5
+r4_wait 'PATCH /api/v1/tasks/t_now1 {"done":true}' 30 || { log "WALKTHROUGH: What now's tick never reached pagel.uz"; grep t_now1 "$FAKE_LOG" | tail -3 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   What now: picked, started, ticked; pagel.uz has t_now1 done"
+shot r4-after-what-now 2
+
+log "-- Make it tiny: open Write the release note, spice 2, 4 funny steps from pagel.uz, Start -> Focus 1 of 4 -> tick all -> done"
+tap 'All today · [0-9]+' || r4_tap 'All today · [0-9]+' || { log "WALKTHROUGH: no All today row the second time"; exit 1; }
+sleep 1.5
+r4_tap "Write the release note" && shot r4-panel 2.5 || { log "WALKTHROUGH: Write the release note is not on the open list"; exit 1; }
+r4_tap "Make it tiny" || { log "WALKTHROUGH: the panel has no Make it tiny row"; exit 1; }
+shot r4-tiny-sheet 2
+tap "Write tiny steps" || { log "WALKTHROUGH: the tiny sheet has no Write tiny steps"; exit 1; }
+r4_wait 'POST /api/v1/tiny {"id":"t_now2","spice":2}' 30 || { log "WALKTHROUGH: Make it tiny never asked pagel.uz"; exit 1; }
+shot r4-tiny-steps 2.5
+grep -q 'Stand up. Yes, right now' "$OUT/$(printf '%02d' $N)-r4-tiny-steps.xml" || { log "WALKTHROUGH: the 4 tiny steps did not show"; exit 1; }
+tap "Start focus" || { log "WALKTHROUGH: no Start on the tiny steps"; exit 1; }
+r4_wait 'PATCH /api/v1/tasks/t_now2 {"micro":["Stand up.' 30 || { log "WALKTHROUGH: the micro-steps were never saved to pagel.uz"; grep t_now2 "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+shot r4-focus-1 2.5
+grep -q 'content-desc="Step 1 of 4"' "$OUT/$(printf '%02d' $N)-r4-focus-1.xml" || { log "WALKTHROUGH: Focus mode did not open on step 1 of 4"; exit 1; }
+for k in 1 2 3 4; do
+  tap 'Done: [^"]*' || { log "WALKTHROUGH: Focus step $k has no tick"; exit 1; }
+  [ "$k" = 2 ] && shot r4-focus-3 1.2 || sleep 1.5
+done
+r4_wait 'PATCH /api/v1/tasks/t_now2 {"done":true}' 30 || { log "WALKTHROUGH: the last micro-step did not finish the task on pagel.uz"; grep t_now2 "$FAKE_LOG" | tail -4 | tee -a "$OUT/steps.txt"; exit 1; }
+MD=$(grep -c '"event":"micro_done"' "$FAKE_LOG"); log "   Focus: 4 ticks, micro_done events: $MD, the task is done on pagel.uz"
+shot r4-focus-finished 2
+$T adb shell input keyevent 4; sleep 1.5
+front r4-back-on-today
+tap "Show 3" || true
+shot r4-today-end 2
+$T adb logcat -d > "$OUT/logcat-r4.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-r4.txt" && { log "WALKTHROUGH: CRASH in core round 4 (see logcat-r4.txt)"; exit 1; }
+log "CORE ROUND 4 WALK DONE: $N steps"
+
 log "-- add a task fast: + → type the line → Add task → it reaches pagel.uz with project and priority read from it"
 tap "Add a task" && shot add-sheet 2
 $T adb shell "input text 'Call%sAziz%stomorrow%s3pm%s#me%sp1'"; shot add-typed 1.5
@@ -837,7 +914,7 @@ log "   finished: pagel.uz has finished=true and the shipped line"
 log "-- KPI: the app counted opens and the first tick; Your week shows in More"
 wait_log 'POST /api/v1/kpi {"day":"' 10 || { log "WALKTHROUGH: no app-open count reached pagel.uz"; exit 1; }
 wait_log '"first_tick_ms":' 10 || { log "WALKTHROUGH: no open-to-first-tick count reached pagel.uz"; exit 1; }
-grep -E 'POST /api/v1/kpi' "$FAKE_LOG" | grep -vqE '\{"day":"[0-9-]+","(open":true|first_tick_ms":[0-9]+)\}' && { log "WALKTHROUGH: a KPI post carries more than counts"; exit 1; }
+grep -E 'POST /api/v1/kpi' "$FAKE_LOG" | grep -vqE '\{"day":"[0-9-]+","((open":true|first_tick_ms":[0-9]+)|event":"[a-z_]+"(,"reason":"[a-z_]+")?)\}' && { log "WALKTHROUGH: a KPI post carries more than counts"; exit 1; }
 for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
 for k in 1 2 3; do $T adb shell input swipe 160 450 160 120 400; sleep 1; done
 shot core-week 2

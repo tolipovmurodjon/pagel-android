@@ -126,6 +126,37 @@ abstract class PagelDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     abstract suspend fun taskOnce(id: String): TaskEntity?
 
+    // ── Today's own order and screen state (v13, core round 4) ──────────────────────────────────────────────────────
+
+    /** Boss's order for [day] (a drag on the full list): one sort per task he moved. */
+    @Query("SELECT * FROM today_sorts WHERE day = :day")
+    abstract fun todaySorts(day: String): Flow<List<TodaySortEntity>>
+
+    @Query("SELECT * FROM today_sorts WHERE day = :day")
+    abstract suspend fun todaySortsOnce(day: String): List<TodaySortEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun setTodaySort(row: TodaySortEntity)
+
+    @Query("DELETE FROM today_sorts WHERE taskId = :taskId")
+    abstract suspend fun deleteTodaySort(taskId: String)
+
+    /** Sorts of days gone by are noise: only today's order means anything. */
+    @Query("DELETE FROM today_sorts WHERE day < :day")
+    abstract suspend fun pruneTodaySorts(day: String)
+
+    @Query("UPDATE OR REPLACE today_sorts SET taskId = :new WHERE taskId = :old")
+    abstract suspend fun renameInTodaySorts(old: String, new: String)
+
+    @Query("SELECT * FROM today_state WHERE id = '${TodayStateEntity.ID}'")
+    abstract fun todayState(): Flow<TodayStateEntity?>
+
+    @Query("SELECT * FROM today_state WHERE id = '${TodayStateEntity.ID}'")
+    abstract suspend fun todayStateOnce(): TodayStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun saveTodayState(row: TodayStateEntity)
+
     @Query("UPDATE outbox SET taskId = :new WHERE taskId = :old")
     abstract suspend fun renameInOutbox(old: String, new: String)
 
@@ -156,6 +187,7 @@ abstract class PagelDao {
         upsertTasks(listOf(local.copy(id = new)))
         dropOrderIfServerHasIt(old, new)
         renameInToday(old, new)
+        renameInTodaySorts(old, new)
         renameInSweeps(old, new)
         // A habit made on the phone keeps its ticks, look, freezes and bell (checker 3 #5). The phone's rows win a
         // clash: they are newer than anything pagel.uz could hold for an id it has just made.

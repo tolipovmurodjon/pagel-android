@@ -44,6 +44,8 @@ data class SyncTaskDto(
     val group: String? = null,
     /** The project goal's milestone (core round); an older pagel.uz sends none. */
     val milestone: String? = null,
+    /** Micro-steps (core round 4): "Make it tiny"'s funny small steps; an older pagel.uz sends none. */
+    val micro: List<String> = emptyList(),
 )
 
 @Serializable
@@ -88,6 +90,13 @@ data class NewTaskBody(
 /** The created task; only its id is needed here, the next sync brings the rest. */
 @Serializable
 data class CreatedTaskDto(val id: String)
+
+/** `POST /api/v1/tiny`: a proposal of micro-steps for one task (nothing saved); spice 1 = few … 3 = tiny tiny steps. */
+@Serializable
+data class TinyBody(val id: String, val spice: Int)
+
+@Serializable
+data class TinyReply(val steps: List<String> = emptyList())
 
 @Serializable
 data class TaskStatusDto(val id: String, val status: String = "")

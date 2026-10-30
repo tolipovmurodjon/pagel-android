@@ -372,4 +372,38 @@ class MigrationTest {
             db.close()
         }
     }
+
+    /** v12 → v13 (core round 4): a task keeps its fields and gets no micro-steps; Today's order and state start empty. */
+    @Test fun twelveToThirteenAddsMicroStepsAndTodaysOwnOrder() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/12.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(12, schema["version"]!!.jsonPrimitive.content.toInt())
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("INSERT INTO tasks (id, project, phase, sort, text, title, status, priority, star, due, every, doneWhen, doneAt, updatedAt, serverVersion, syncStatus, lastModified) " +
+                "VALUES ('t_1', 'me', 'Now', 1.0, 'Read 2 pages', NULL, 'open', 2, 1, NULL, NULL, NULL, NULL, '2026-10-30T05:00:00Z', 1, 'synced', 0)")
+            old.version = 12
+        }
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            val t = db.dao().taskOnce("t_1")!!
+            assertEquals("Read 2 pages", t.text)
+            assertEquals("[]", t.micro)
+            assertEquals(emptyList<Any>(), db.dao().todaySortsOnce("2026-10-30"))
+            assertNull(db.dao().todayStateOnce())
+            db.dao().setTodaySort(org.pagel.ai.data.db.TodaySortEntity("t_1", "2026-10-30", -1.0))
+            assertEquals(-1.0, db.dao().todaySortsOnce("2026-10-30").single().sort, 0.0)
+            assertEquals(PagelDatabase.VERSION, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
 }

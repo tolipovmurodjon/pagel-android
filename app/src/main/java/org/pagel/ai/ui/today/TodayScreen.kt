@@ -59,6 +59,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -108,7 +113,12 @@ fun TodayRoute(
     val pills by rituals.pills.collectAsStateWithLifecycle()
     val line by compass.line.collectAsStateWithLifecycle()
     val prayer by namoz.line.collectAsStateWithLifecycle()
-    TodayScreen(ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onSendNow = vm::sendNow, compassLine = line, namozLine = prayer)
+    val now by vm.whatNow.collectAsStateWithLifecycle()
+    TodayScreen(
+        ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onSendNow = vm::sendNow, compassLine = line, namozLine = prayer,
+        onExpand = vm::expand, onReorder = vm::reorder, onWhatNow = vm::openWhatNow,
+    )
+    WhatNowSheet(now, onEnergy = vm::energy, onStart = vm::startNow, onNotThis = vm::notThis, onFinish = { vm.finishNow() }, onUndo = vm::undo, onClose = vm::closeWhatNow)
 }
 
 /** Today, native (NATIVE-PLAN Phase 2): the web's 3 at a time, a ring tick with ding, confetti and fold, undo. */
@@ -128,6 +138,15 @@ fun TodayScreen(
     compassLine: String? = null,
     /** The Namoz line: the next prayer and today's count, only after he started tracking and while Show on Today is on. */
     namozLine: org.pagel.ai.ui.namoz.NamozLine? = null,
+    /** "All today · N" opens the full list in place; the chevron folds it (core round 4). */
+    onExpand: (Boolean) -> Unit = {},
+    /** A drag on the full list: from index → to index. */
+    onReorder: (Int, Int) -> Unit = { _, _ -> },
+    /** The calm "What now?" button; null hides it. */
+    onWhatNow: (() -> Unit)? = null,
+    /** A screenshot's frozen drag: the row lifted from this index, sitting over that slot, [dragPreviewDy] px down. */
+    dragPreview: Pair<Int, Int>? = null,
+    dragPreviewDy: Float = 0f,
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -205,22 +224,122 @@ fun TodayScreen(
                 else -> item(key = "list", contentType = "list") {
                     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                         Column(Modifier.padding(vertical = 6.dp)) {
-                            for ((i, row) in ui.rows.withIndex()) key(row.id) {
+                            if (ui.expanded && ui.all.size > 1) {
+                                AllToday(ui.all, today, seen, reduce, dragPreview, dragPreviewDy, onOpen = { openTask(it) }, onReorder = onReorder) { row, centre -> finish(row, centre) }
+                            } else for ((i, row) in ui.rows.withIndex()) key(row.id) {
                                 if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
                                 TaskRow(row, today, isNew = seen.isNotEmpty() && row.id !in seen, reduce = reduce, onOpen = { openTask(row.id) }) { centre -> finish(row, centre) }
                             }
-                            if (ui.waiting > 0) {
-                                // "+2" waiting: one capsule, not a sentence (Boss: one icon beats many words).
-                                Text("+${ui.waiting}", style = Glass.NumberText, color = Glass.PrimaryInk,
-                                    modifier = Modifier.padding(start = 54.dp, top = 4.dp, bottom = 10.dp).background(Glass.PrimarySoft, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(horizontal = 9.dp, vertical = 3.dp)
-                                        .semantics { contentDescription = "${ui.waiting} more after these" })
-                            }
+                            // "All today · 9" (Boss 2026-10-29: "3 by default, then see more"): a quiet row that opens the full
+                            // list in place; the chevron up folds it back to 3.
+                            if (ui.waiting > 0 || (ui.expanded && ui.all.size > 1)) AllTodayRow(maxOf(ui.all.size, ui.rows.size + ui.waiting), ui.expanded) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onExpand(!ui.expanded) }
                         }
                     }
                 }
             }
+            // What now? (core round 4): one calm button under the list, only while something is open.
+            if (onWhatNow != null && !ui.loading && ui.rows.any { !it.done }) item(key = "whatnow", contentType = "whatnow") {
+                WhatNowButton(Modifier.padding(horizontal = Space.gutter), onWhatNow)
+            }
         }
         for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
+    }
+}
+
+/** The calm "What now?" button: one pick for right now, never a list. */
+@Composable
+internal fun WhatNowButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Row(
+        modifier.fillMaxWidth().heightIn(min = Space.touch).pressScale(press)
+            .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(24.dp))
+            .border(1.dp, Glass.Aurora1.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
+            .clickable(press, indication = null, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "What now?" }
+            .padding(horizontal = Space.lg, vertical = Space.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(TabIcons.Zap, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(Space.md))
+        Column(Modifier.weight(1f)) {
+            Text("What now?", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, maxLines = 1)
+            Text("One thing for right now", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(16.dp))
+    }
+}
+
+/** "All today · 9" with a chevron: down = open the full list, up = back to 3. */
+@Composable
+private fun AllTodayRow(count: Int, expanded: Boolean, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = Space.touch).pressScale(press)
+            .clickable(press, indication = null, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = if (expanded) "Show 3" else "All today · $count" }
+            .padding(start = Space.rowText, end = Space.lg),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(if (expanded) "Show 3" else "All today · $count", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1, modifier = Modifier.weight(1f))
+        Icon(if (expanded) TabIcons.ChevronUp else TabIcons.ChevronDown, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(18.dp))
+    }
+}
+
+/**
+ * Every task of today in Boss's order. A long press lifts a row (glass lift, a haptic tick per slot), the others make
+ * room, and the drop is one reorder ([onReorder] from → to). The first 3 are what the folded Today shows.
+ */
+@Composable
+private fun AllToday(
+    rows: List<TodayRow>, today: LocalDate, seen: Set<String>, reduce: Boolean, preview: Pair<Int, Int>?, previewDy: Float,
+    onOpen: (String) -> Unit, onReorder: (Int, Int) -> Unit, onTick: (TodayRow, Offset) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    val heights = remember { androidx.compose.runtime.mutableStateMapOf<Int, Int>() }
+    var from by remember { androidx.compose.runtime.mutableIntStateOf(preview?.first ?: -1) }
+    var slot by remember { androidx.compose.runtime.mutableIntStateOf(preview?.second ?: -1) }
+    var dy by remember { androidx.compose.runtime.mutableFloatStateOf(previewDy) }
+    var droppedAt by remember { mutableLongStateOf(0L) }
+    val count by androidx.compose.runtime.rememberUpdatedState(rows.size)
+    for ((i, row) in rows.withIndex()) key(row.id) {
+        if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
+        val lifted = from == i
+        val shift = if (from >= 0 && !lifted && slot >= 0) {
+            val h = (heights[from] ?: 0).toFloat()
+            when { i in (from + 1)..slot -> -h; i in slot until from -> h; else -> 0f }
+        } else 0f
+        Box(
+            Modifier.fillMaxWidth()
+                .onSizeChanged { heights[i] = it.height }
+                .zIndex(if (lifted) 1f else 0f)
+                .graphicsLayer {
+                    translationY = if (lifted) dy else shift
+                    if (lifted) { scaleX = 1.03f; scaleY = 1.03f; shadowElevation = 16.dp.toPx(); shape = RoundedCornerShape(16.dp); clip = true }
+                }
+                .background(if (lifted) Color.White.copy(alpha = 0.94f) else Color.Transparent)
+                .pointerInput(row.id, i) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { from = i; slot = i; dy = 0f; haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                        onDrag = { c, d ->
+                            c.consume(); dy += d.y
+                            val t = org.pagel.ai.ui.projects.dropIndex((0 until count).map { heights[it] ?: 0 }, i, dy)
+                            if (t != slot) { slot = t; haptics.performHapticFeedback(HapticFeedbackType.SegmentTick) }
+                        },
+                        onDragEnd = {
+                            val f = from; val t = slot
+                            from = -1; slot = -1; dy = 0f; droppedAt = android.os.SystemClock.uptimeMillis()
+                            if (f >= 0 && t >= 0 && t != f) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onReorder(f, t) }
+                        },
+                        onDragCancel = { from = -1; slot = -1; dy = 0f },
+                    )
+                }
+                .semantics { stateDescription = if (lifted) "Lifted" else "" },
+        ) {
+            TaskRow(row, today, isNew = seen.isNotEmpty() && row.id !in seen, reduce = reduce, onOpen = {
+                // The finger lifting after a drag is not a tap (0 = never dropped).
+                if (droppedAt == 0L || android.os.SystemClock.uptimeMillis() - droppedAt > 400) onOpen(row.id)
+            }) { centre -> onTick(row, centre) }
+        }
     }
 }
 

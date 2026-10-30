@@ -50,6 +50,8 @@ data class PanelUi(
     val pinned: Int = 0,
     /** A habit's taps a day (1 = once). */
     val times: Int = 1,
+    /** Micro-steps "Make it tiny" wrote (core round 4): the panel row says "Tiny steps · 4" and opens Focus. */
+    val microCount: Int = 0,
 )
 
 /** The web's rule: at most 3 tasks pinned to Today by hand (a date puts more there by itself). */
@@ -78,6 +80,7 @@ class TaskPanelViewModel @Inject constructor(
                     title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text), text = t.text, doneWhen = t.doneWhen.orEmpty(),
                     due = t.due, every = t.every, priority = t.priority, star = t.star, open = t.status == "open", doneAt = t.doneAt,
                     steps = steps.map { PanelStep(it.text, it.done) }, held = held > 0, pinned = pinned, times = t.times,
+                    microCount = org.pagel.ai.data.sync.microOf(t.micro).size,
                 )
             }
         }
