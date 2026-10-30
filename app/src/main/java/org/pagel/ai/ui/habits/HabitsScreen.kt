@@ -13,6 +13,12 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -210,14 +216,19 @@ fun HabitsScreen(
             item(key = "namoz", contentType = "namoz") {
                 NamozGroup(board, today, onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onStart = onStartNamoz, onMenu = onNamozMenu, onPage = onOpenNamoz, centres = centres, modifier = Modifier.animateItem())
             }
-            val cards = board.inPart(ui.part)
-            if (cards.isEmpty()) item(key = "empty-${ui.part}", contentType = "note") { EmptyPart(ui.part, board.total) }
-            items(cards, key = { it.task.id }, contentType = { "card" }) { c ->
-                HabitCardRow(
-                    c, finishing = c.task.id in ui.finishing, timer = ui.timers[c.task.id], now = ui.now,
-                    onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onTimer = onTimer,
-                    onCentre = { centres[c.task.id] = it }, modifier = Modifier.animateItem(),
-                )
+            // Morning · Afternoon · Evening as one swipe pager (Boss's note 5): the pills and the pages follow each other.
+            item(key = "pager", contentType = "pager") {
+                PartPager(ui.part, board, onSelectPart) { part, current ->
+                    val cards = board.inPart(part)
+                    if (cards.isEmpty()) EmptyPart(part, board.total)
+                    for (c in cards) key(c.task.id) {
+                        HabitCardRow(
+                            c, finishing = c.task.id in ui.finishing, timer = ui.timers[c.task.id], now = ui.now,
+                            onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onTimer = onTimer,
+                            onCentre = { if (current) centres[c.task.id] = it },
+                        )
+                    }
+                }
             }
             if (ui.day.allDone && ui.finishing.isEmpty() && board.selected == board.today) item(key = "all-done", contentType = "all-done") {
                 AllDone(ui.day.doneCount, ui.day.best, Modifier.animateItem())
@@ -471,6 +482,32 @@ private fun DayDot(n: Int, m: Mark, isToday: Boolean, isSelected: Boolean, circl
 }
 
 // ── Parts of the day ────────────────────────────────────────────────────────────────────────────────────────────────
+
+private val PARTS = listOf(Part.MORNING, Part.AFTERNOON, Part.EVENING)
+
+/**
+ * The three parts of the day as pages. Only the page on screen is composed when still (an anytime habit sits on every
+ * page; a second copy off screen would steal its taps and its confetti spot). The pager is as tall as the fullest part,
+ * worked out from one row's height (every row has one height), so a swipe never makes the list below jump.
+ */
+@Composable
+private fun PartPager(part: Part, board: HabitBoard, onSelect: (Part) -> Unit, page: @Composable (Part, Boolean) -> Unit) {
+    val pager = rememberPagerState(initialPage = PARTS.indexOf(part).coerceAtLeast(0)) { PARTS.size }
+    LaunchedEffect(part) { val i = PARTS.indexOf(part); if (i >= 0 && i != pager.currentPage) pager.animateScrollToPage(i) }
+    LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.collect { onSelect(PARTS[it]) } }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val gap = with(density) { Space.paneGap.roundToPx() }
+    val most = PARTS.maxOf { board.inPart(it).size }
+    var rowPx by remember { mutableIntStateOf(0) }
+    val min = if (rowPx > 0 && most > 0) with(density) { (most * rowPx + (most - 1) * gap).toDp() } else 0.dp
+    HorizontalPager(pager, Modifier.fillMaxWidth().heightIn(min = min), verticalAlignment = Alignment.Top, key = { PARTS[it] }) { i ->
+        val n = board.inPart(PARTS[i]).size
+        Column(
+            Modifier.fillMaxWidth().wrapContentHeight(Alignment.Top).onSizeChanged { if (n > 0) rowPx = (it.height - (n - 1) * gap) / n },
+            verticalArrangement = Arrangement.spacedBy(Space.paneGap),
+        ) { page(PARTS[i], i == pager.currentPage) }
+    }
+}
 
 @Composable
 private fun PartPills(part: Part, board: HabitBoard, onSelect: (Part) -> Unit) {

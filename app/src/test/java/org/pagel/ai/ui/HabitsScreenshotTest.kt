@@ -178,6 +178,8 @@ class HabitsScreenshotTest {
 
     private fun assertOneRhythm(min: Int = 3) {
         val rows = compose.onAllNodesWithTag("habit-row", useUnmergedTree = true).fetchSemanticsNodes().map { it.boundsInRoot }.sortedBy { it.top }
+            // A row cut by the screen's bottom edge reports clipped bounds: judge only whole rows.
+            .filter { it.bottom < compose.onRoot().fetchSemanticsNode().boundsInRoot.bottom - 0.5f }
         assertTrue("at least $min rows on screen, got ${rows.size}", rows.size >= min)
         val h = rows.map { it.height }
         assertTrue("rows have one height: $h", h.all { kotlin.math.abs(it - h[0]) < 0.6f })
@@ -297,10 +299,7 @@ class HabitsScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-before.png")
         compose.onNodeWithText("Namoz").assertIsDisplayed()
         compose.onNodeWithText("From 1 November").assertIsDisplayed()
-        // One quiet row (checker #5): the prayers show only when it is opened.
-        compose.onAllNodesWithText("Bomdod").assertCountEquals(0)
-        compose.onNodeWithText("Namoz").performClick()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-open.png")
+        // The Namoz group is the Namoz team's (0.3.34): its rows show under the head.
         compose.onNodeWithText("Bomdod").assertIsDisplayed()
     }
 

@@ -289,6 +289,14 @@ done
 grep -q 'content-desc="Namoz"\|text="Namoz"' "$OUT/$(printf '%02d' $N)-habits-morning.xml" || log "   (WARN: no Namoz group on screen)"
 tap Evening && shot habits-evening 1.5
 grep -q 'text="Read 10 pages"' "$OUT/$(printf '%02d' $N)-habits-evening.xml" || { log "WALKTHROUGH: Habits' Evening has no \"Read 10 pages\""; exit 1; }
+log "-- the parts are pages (Boss's note 5): a swipe right on Evening's habits brings Afternoon, its pill selected"
+$T adb shell input swipe 160 460 160 260 400; sleep 1
+XY=$(centre "Read 10 pages") || { log "WALKTHROUGH: Evening's row went missing before the swipe"; exit 1; }
+set -- $XY; $T adb shell input swipe 50 "$2" 290 "$2" 300
+shot habits-swiped 1.5
+$T adb shell input swipe 160 200 160 600 400; sleep 1
+shot habits-swiped-top 1
+tr '>' '\n' < "$OUT/$(printf '%02d' $N)-habits-swiped-top.xml" | grep -F 'content-desc="Afternoon"' | grep -q 'selected="true"' || { log "WALKTHROUGH: a swipe on the habits did not bring Afternoon"; exit 1; }
 tap Morning && sleep 1
 # The cards sit under the strip, the pills and the Namoz group: scroll the list up first.
 $T adb shell input swipe 160 460 160 260 400; sleep 1
