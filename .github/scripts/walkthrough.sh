@@ -898,11 +898,11 @@ for i in $(seq 0 9); do
   grep -qE "text=\"${TITLES[$i]}\"" "$X" || { log "WALKTHROUGH: How it works card $((i + 1)) does not read \"${TITLES[$i]}\""; exit 1; }
   grep -qF "content-desc=\"Card $((i + 1)) of 10\"" "$X" || { log "WALKTHROUGH: card $((i + 1)) has no Card $((i + 1)) of 10 marker"; exit 1; }
   grep -qF 'content-desc="Try it"' "$X" || { log "WALKTHROUGH: card $((i + 1)) has no Try it"; exit 1; }
-  [ "$i" -lt 9 ] && { $T adb shell input swipe 950 700 130 700 250; shot guide-card-$((i + 2)) 2.5; }
+  [ "$i" -lt 9 ] && { $T adb shell input swipe 290 250 30 250 250; shot guide-card-$((i + 2)) 2.5; }
 done
 log "   all 10 cards read"
 # Try it on the Close the day card (the last card's neighbour): the real Close the day opens.
-$T adb shell input swipe 130 700 950 700 250; sleep 2.5
+$T adb shell input swipe 30 250 290 250 250; sleep 2.5
 tap "Try it" || { log "WALKTHROUGH: Try it was not on screen"; exit 1; }
 shot guide-try-close 2
 grep -q 'text="Close the day"' "$(last guide-try-close)" || { log "WALKTHROUGH: Try it on the Close the day card did not open Close the day"; exit 1; }
