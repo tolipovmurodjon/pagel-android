@@ -46,6 +46,9 @@ data class SyncTaskDto(
     val milestone: String? = null,
     /** Micro-steps (core round 4): "Make it tiny"'s funny small steps; an older pagel.uz sends none. */
     val micro: List<String> = emptyList(),
+    /** Today's own order (core round 4): the task's sort on [todayDay]'s Today, set by a drag; null = pagel.uz's place. */
+    @SerialName("today_sort") val todaySort: Double? = null,
+    @SerialName("today_day") val todayDay: String? = null,
 )
 
 @Serializable

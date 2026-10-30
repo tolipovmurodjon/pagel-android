@@ -246,7 +246,8 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     val inProject = top as? ProjectPageRoute
     val showFab = (onTop && selected == 0) || inProject != null
     val fabAt = if (onTop) fabBottom else Space.lg
-    androidx.compose.runtime.CompositionLocalProvider(LocalTaskOpener provides { id: String -> openTask = id }, LocalGuideOpener provides { card: Int -> stack.add(GuideRoute(card)) }) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalTaskOpener provides { id: String -> openTask = id }, LocalGuideOpener provides { card: Int -> stack.add(GuideRoute(card)) },
+        org.pagel.ai.ui.task.LocalFocusOpener provides { id: String -> focusTask = id }) {
     Box(Modifier.fillMaxSize()) {
         AuroraBackground(Modifier.fillMaxSize().layerBackdrop(backdrop)) {
             val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()

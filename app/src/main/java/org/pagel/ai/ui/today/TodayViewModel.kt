@@ -37,8 +37,14 @@ data class TodayRow(
     val done: Boolean,
 )
 
-/** What now's one pick: the task, one WHY line (its project) and its tiny first step. */
-data class NowPick(val id: String, val title: String, val why: String, val first: String, val project: String, val projectColor: String?, val priority: Int)
+/**
+ * What now's one pick: the task, one WHY line (its project) and its tiny first step. [canTiny]: the task has no
+ * micro-steps and no steps, so the first step is only [FIRST_FALLBACK] and the card offers "✨ Make it tiny".
+ */
+data class NowPick(
+    val id: String, val title: String, val why: String, val first: String, val project: String, val projectColor: String?, val priority: Int,
+    val canTiny: Boolean = false,
+)
 
 /** What now's sheet, one stage at a time: the energy tap (once a day), the pick, nothing fits, the running start. */
 data class WhatNowUi(
@@ -99,6 +105,15 @@ class TodayViewModel @Inject constructor(
         Ordered(orderToday(list, sorts), todayKeys(list, sorts), state.expanded)
     }
     private data class Ordered(val tasks: List<org.pagel.ai.data.db.TaskEntity>, val keys: Map<String, Double>, val expanded: Boolean)
+
+    init {
+        // Once Boss's own order is in play (the full list opened, or a drag of his came back from pagel.uz), every open
+        // row gets its current place as a sort of its own, so ticking a task above never slides a kept-place row past a
+        // dragged one (checker round 2 #3). Phone only: pagel.uz keeps its own place for those rows.
+        viewModelScope.launch {
+            combine(repo.today, repo.todaySorts(day), repo.state(day)) { list, sorts, state -> unpinnedKeys(list, sorts, state.expanded) }.collect { missing -> if (missing.isNotEmpty()) repo.pinSorts(day, missing) }
+        }
+    }
 
     // A refused tick is said by the shell (ShellViewModel), for every screen at once.
     val ui: StateFlow<TodayUiState> = combine(ordered, finishing, session.projects(), session.live, counts) { (tasks, keys, expanded), folding, projects, live, (done, cleared, outbox, dated) ->
@@ -220,9 +235,11 @@ class TodayViewModel @Inject constructor(
         val r = whatNow(u.all, energy, today, now.toLocalTime(), free, skipped)
         if (r == null) { _now.value = WhatNowUi(WhatNowUi.Stage.NONE, shown = shownBefore); return }
         val t = tasks.task(r.id).first()
-        val steps = tasks.steps(r.id).first().filter { !it.done }.map { it.text }
-        val first = firstStepOf(org.pagel.ai.data.sync.microOf(t?.micro), steps)
-        _now.value = WhatNowUi(WhatNowUi.Stage.PICK, NowPick(r.id, r.title, r.projectTitle, first, r.project, r.projectColor, r.priority), shown = shownBefore + 1)
+        val allSteps = tasks.steps(r.id).first()
+        val micro = org.pagel.ai.data.sync.microOf(t?.micro)
+        val first = firstStepOf(micro, allSteps.filter { !it.done }.map { it.text })
+        _now.value = WhatNowUi(WhatNowUi.Stage.PICK, NowPick(r.id, r.title, r.projectTitle, first, r.project, r.projectColor, r.priority,
+            canTiny = micro.isEmpty() && allSteps.isEmpty()), shown = shownBefore + 1)
         repo.event("what_now_pick")
     }
 

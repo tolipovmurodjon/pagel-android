@@ -137,6 +137,9 @@ shot r4-energy 2
 tap "Energy: OK" || { log "WALKTHROUGH: What now did not ask for the energy"; exit 1; }
 shot r4-what-now 2
 grep -q 'content-desc="Start 10 minutes: Clean the desk"' "$OUT/$(printf '%02d' $N)-r4-what-now.xml" || { log "WALKTHROUGH: What now did not pick Clean the desk with Start · 10 min"; exit 1; }
+# Clean the desk has no steps: the first step is the plain 30-second start, and the card offers Make it tiny (checker round 2 #1).
+grep -q 'Put it in front of you · 30 s' "$OUT/$(printf '%02d' $N)-r4-what-now.xml" || { log "WALKTHROUGH: a task with no steps did not get the 30-second first step"; exit 1; }
+grep -q 'content-desc="Make it tiny"' "$OUT/$(printf '%02d' $N)-r4-what-now.xml" || { log "WALKTHROUGH: the pick of a task with no steps has no Make it tiny link"; exit 1; }
 r4_wait '"event":"what_now_pick"' 30 || { log "WALKTHROUGH: no what_now_pick event reached pagel.uz"; exit 1; }
 tap "Start 10 minutes: Clean the desk" && shot r4-running 2
 grep -qE 'content-desc="(9:[0-9]{2}|10:00) left"' "$OUT/$(printf '%02d' $N)-r4-running.xml" || { log "WALKTHROUGH: the 10-minute clock is not running"; exit 1; }

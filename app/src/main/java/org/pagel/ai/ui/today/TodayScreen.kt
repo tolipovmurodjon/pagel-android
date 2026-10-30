@@ -99,8 +99,8 @@ import kotlin.math.roundToInt
 private val TASHKENT = ZoneId.of("Asia/Tashkent")
 private val HEAD_DATE = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
 
-/** Todoist's flag colours, as the web: P0 red, P1 orange, P2 blue, P3 none (today-list.tsx FLAG). */
-private val FLAGS = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE0))
+/** The flag colours: P1 deep amber (never red, Boss's rule), P2 orange, P3 blue, P4 none. */
+private val FLAGS = listOf(Color(0xFF92400E), Color(0xFFEB8909), Color(0xFF246FE0))
 private val RingIdle = Color(0xFF9AA2BB)
 
 @Composable
@@ -118,7 +118,12 @@ fun TodayRoute(
         ui, contentPadding, reselect, onTick = vm::tick, onUndo = vm::undo, pills = pills, links = links, onSendNow = vm::sendNow, compassLine = line, namozLine = prayer,
         onExpand = vm::expand, onReorder = vm::reorder, onWhatNow = vm::openWhatNow,
     )
-    WhatNowSheet(now, onEnergy = vm::energy, onStart = vm::startNow, onNotThis = vm::notThis, onFinish = { vm.finishNow() }, onUndo = vm::undo, onClose = vm::closeWhatNow)
+    // What now's "✨ Make it tiny" (a task with no steps): the sheet closes, the tiny sheet opens; its Start opens Focus.
+    var tinyFor by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val focus = org.pagel.ai.ui.task.LocalFocusOpener.current
+    WhatNowSheet(now, onEnergy = vm::energy, onStart = vm::startNow, onNotThis = vm::notThis, onFinish = { vm.finishNow() }, onUndo = vm::undo, onClose = vm::closeWhatNow,
+        onTiny = { id -> vm.closeWhatNow(); tinyFor = id })
+    tinyFor?.let { id -> org.pagel.ai.ui.task.TinySheet(id, onClose = { tinyFor = null }, onFocus = focus) }
 }
 
 /** Today, native (NATIVE-PLAN Phase 2): the web's 3 at a time, a ring tick with ding, confetti and fold, undo. */
@@ -144,9 +149,8 @@ fun TodayScreen(
     onReorder: (Int, Int) -> Unit = { _, _ -> },
     /** The calm "What now?" button; null hides it. */
     onWhatNow: (() -> Unit)? = null,
-    /** A screenshot's frozen drag: the row lifted from this index, sitting over that slot, [dragPreviewDy] px down. */
+    /** A screenshot's frozen drag: the row lifted from this index, sitting exactly over that slot (offset from the rows' heights). */
     dragPreview: Pair<Int, Int>? = null,
-    dragPreviewDy: Float = 0f,
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -225,7 +229,7 @@ fun TodayScreen(
                     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                         Column(Modifier.padding(vertical = 6.dp)) {
                             if (ui.expanded && ui.all.size > 1) {
-                                AllToday(ui.all, today, seen, reduce, dragPreview, dragPreviewDy, onOpen = { openTask(it) }, onReorder = onReorder) { row, centre -> finish(row, centre) }
+                                AllToday(ui.all, today, seen, reduce, dragPreview, onOpen = { openTask(it) }, onReorder = onReorder) { row, centre -> finish(row, centre) }
                             } else for ((i, row) in ui.rows.withIndex()) key(row.id) {
                                 if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
                                 TaskRow(row, today, isNew = seen.isNotEmpty() && row.id !in seen, reduce = reduce, onOpen = { openTask(row.id) }) { centre -> finish(row, centre) }
@@ -237,14 +241,18 @@ fun TodayScreen(
                     }
                 }
             }
-            // What now? (core round 4): one calm button under the list, only while something is open.
+            // What now? (core round 4): one calm button under the list, only while something is open. It ends where the +
+            // begins (20 dp edge + 56 dp + a gap), so the + never covers it at any scroll or with a toast lifting the +.
             if (onWhatNow != null && !ui.loading && ui.rows.any { !it.done }) item(key = "whatnow", contentType = "whatnow") {
-                WhatNowButton(Modifier.padding(horizontal = Space.gutter), onWhatNow)
+                WhatNowButton(Modifier.padding(start = Space.gutter, end = FabClear), onWhatNow)
             }
         }
         for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
     }
 }
+
+/** Room the + button takes at the screen's right edge (AppShell.BottomActions: 20 dp edge, 56 dp drop) plus a gap. */
+private val FabClear = 20.dp + 56.dp + Space.md
 
 /** The calm "What now?" button: one pick for right now, never a list. */
 @Composable
@@ -291,35 +299,45 @@ private fun AllTodayRow(count: Int, expanded: Boolean, onClick: () -> Unit) {
  */
 @Composable
 private fun AllToday(
-    rows: List<TodayRow>, today: LocalDate, seen: Set<String>, reduce: Boolean, preview: Pair<Int, Int>?, previewDy: Float,
+    rows: List<TodayRow>, today: LocalDate, seen: Set<String>, reduce: Boolean, preview: Pair<Int, Int>?,
     onOpen: (String) -> Unit, onReorder: (Int, Int) -> Unit, onTick: (TodayRow, Offset) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
     val heights = remember { androidx.compose.runtime.mutableStateMapOf<Int, Int>() }
     var from by remember { androidx.compose.runtime.mutableIntStateOf(preview?.first ?: -1) }
     var slot by remember { androidx.compose.runtime.mutableIntStateOf(preview?.second ?: -1) }
-    var dy by remember { androidx.compose.runtime.mutableFloatStateOf(previewDy) }
+    var dy by remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    // A frozen preview has no finger: the lifted row sits exactly over its slot, read from the measured heights.
+    var dragging by remember { mutableStateOf(false) }
+    val gap = with(androidx.compose.ui.platform.LocalDensity.current) { 1.dp.toPx() }
+    fun previewDy(): Float = when {
+        from < 0 || slot < 0 -> 0f
+        slot < from -> -(slot until from).sumOf { (heights[it] ?: 0) + gap.toDouble() }.toFloat()
+        else -> ((from + 1)..slot).sumOf { (heights[it] ?: 0) + gap.toDouble() }.toFloat()
+    }
     var droppedAt by remember { mutableLongStateOf(0L) }
     val count by androidx.compose.runtime.rememberUpdatedState(rows.size)
     for ((i, row) in rows.withIndex()) key(row.id) {
         if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
         val lifted = from == i
-        val shift = if (from >= 0 && !lifted && slot >= 0) {
-            val h = (heights[from] ?: 0).toFloat()
-            when { i in (from + 1)..slot -> -h; i in slot until from -> h; else -> 0f }
-        } else 0f
         Box(
             Modifier.fillMaxWidth()
                 .onSizeChanged { heights[i] = it.height }
                 .zIndex(if (lifted) 1f else 0f)
                 .graphicsLayer {
-                    translationY = if (lifted) dy else shift
+                    // Read here, in the draw phase: the heights measured in this same frame move the rows before the
+                    // first draw, so the row under the lifted card (row 0 too) has already made room for it.
+                    val shift = if (from >= 0 && !lifted && slot >= 0) {
+                        val h = (heights[from] ?: 0) + gap
+                        when { i in (from + 1)..slot -> -h; i in slot until from -> h; else -> 0f }
+                    } else 0f
+                    translationY = if (lifted) (if (dragging) dy else previewDy()) else shift
                     if (lifted) { scaleX = 1.03f; scaleY = 1.03f; shadowElevation = 16.dp.toPx(); shape = RoundedCornerShape(16.dp); clip = true }
                 }
                 .background(if (lifted) Color.White else Color.Transparent)
                 .pointerInput(row.id, i) {
                     detectDragGesturesAfterLongPress(
-                        onDragStart = { from = i; slot = i; dy = 0f; haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
+                        onDragStart = { from = i; slot = i; dy = 0f; dragging = true; haptics.performHapticFeedback(HapticFeedbackType.LongPress) },
                         onDrag = { c, d ->
                             c.consume(); dy += d.y
                             val t = org.pagel.ai.ui.projects.dropIndex((0 until count).map { heights[it] ?: 0 }, i, dy)
@@ -327,10 +345,10 @@ private fun AllToday(
                         },
                         onDragEnd = {
                             val f = from; val t = slot
-                            from = -1; slot = -1; dy = 0f; droppedAt = android.os.SystemClock.uptimeMillis()
+                            from = -1; slot = -1; dy = 0f; dragging = false; droppedAt = android.os.SystemClock.uptimeMillis()
                             if (f >= 0 && t >= 0 && t != f) { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onReorder(f, t) }
                         },
-                        onDragCancel = { from = -1; slot = -1; dy = 0f },
+                        onDragCancel = { from = -1; slot = -1; dy = 0f; dragging = false },
                     )
                 }
                 .semantics { stateDescription = if (lifted) "Lifted" else "" },

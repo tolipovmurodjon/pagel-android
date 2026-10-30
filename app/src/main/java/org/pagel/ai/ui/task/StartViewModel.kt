@@ -102,11 +102,11 @@ class StartViewModel @Inject constructor(
         viewModelScope.launch {
             val account = (accounts.load() as? AccountState.Paired)?.account ?: run { tiny.value = Tiny.Offline; return@launch }
             tiny.value = when (val out = api.tiny(account.serverUrl, account.token, TinyBody(taskId, spice.coerceIn(1, 3)))) {
-                is Outcome.Ok -> out.value.steps.map(String::trim).filter(String::isNotEmpty).take(8).let { if (it.isEmpty()) Tiny.Failed("No steps came back · try again") else Tiny.Ready(it) }
+                is Outcome.Ok -> out.value.steps.map(String::trim).filter(String::isNotEmpty).take(8).let { if (it.isEmpty()) Tiny.Failed("No steps came back") else Tiny.Ready(it) }
                 is Outcome.Failed -> when (val e = out.error) {
                     DataError.Network -> Tiny.Offline
                     is DataError.Refused -> Tiny.Failed(e.message)
-                    else -> Tiny.Failed("pagel.uz could not write them · try again")
+                    else -> Tiny.Failed("pagel.uz could not write them")
                 }
             }
         }

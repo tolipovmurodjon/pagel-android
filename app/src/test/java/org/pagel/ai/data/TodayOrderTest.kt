@@ -48,8 +48,12 @@ class TodayOrderTest {
     private val t0 = Instant.parse("2026-10-30T06:00:00Z").toEpochMilli()
     private val day = "2026-10-30"
 
+    /** What pagel.uz says of a task beyond the basics (its status, today_sort…), as JSON fields after a comma. */
+    private val said = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val status = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private fun task(id: String, sort: Int, extra: String = "") =
-        """{"id":"$id","project":"me","phase":"Now","sort":$sort,"text":"Task $id","status":"open","priority":2,"star":true,"updated_at":"2026-10-30T05:00:00Z","version":1,"steps":[]$extra}"""
+        """{"id":"$id","project":"me","phase":"Now","sort":$sort,"text":"Task $id","status":"${status[id] ?: "open"}","priority":2,"star":true,"updated_at":"2026-10-30T05:00:00Z","version":1,"steps":[]$extra${said[id].orEmpty()}}"""
 
     @Before fun setUp() {
         db = inMemoryDb()
@@ -181,6 +185,56 @@ class TodayOrderTest {
         assertEquals(listOf("""{"day":"2026-10-30","event":"stuck","reason":"too_big"}""", """{"day":"2026-10-30","event":"what_now_pick"}"""), posts.toList())
         val refused = runCatching { today().event("stuck", "I am tired of this") }
         assertTrue("free text never becomes an event", refused.isFailure)
+    }
+
+    @Test fun theOrderComesBackFromPagelOnAFreshInstall() = runBlocking {
+        // Boss dragged t_5 to the top on another phone (or before a reinstall): pagel.uz has it, this phone has nothing.
+        said["t_5"] = ""","today_sort":-1.0,"today_day":"$day""""
+        synced()
+        assertEquals(listOf("t_5", "t_1", "t_2", "t_3", "t_4"), order())
+        // A second sync changes nothing.
+        synced()
+        assertEquals(listOf("t_5", "t_1", "t_2", "t_3", "t_4"), order())
+    }
+
+    @Test fun aDragStillOnThePhoneWinsOverPagelsOlderOrder() = runBlocking {
+        said["t_5"] = ""","today_sort":-1.0,"today_day":"$day""""
+        synced()
+        tasks().todaySort("t_5", day, 2.5)
+        synced()
+        assertEquals("the phone's newer drag (not yet sent) stays", listOf("t_1", "t_2", "t_3", "t_5", "t_4"), order())
+        // Sent, and pagel.uz now says 2.5 too: it stays.
+        sender().sendAll(account)
+        said["t_5"] = ""","today_sort":2.5,"today_day":"$day""""
+        synced()
+        assertEquals(listOf("t_1", "t_2", "t_3", "t_5", "t_4"), order())
+    }
+
+    @Test fun ticksAboveNeverSlideAKeptPlaceRowPastADraggedOne() = runBlocking {
+        synced()
+        val r = today()
+        // The full list opens: every row gets its current place as its own sort (phone only, no PATCH).
+        val list = db.dao().todayTasks().first()
+        r.pinSorts(day, org.pagel.ai.ui.today.unpinnedKeys(list, r.todaySorts(day).first(), expanded = true))
+        assertTrue("pinning sends nothing", db.dao().waitingOutbox().none { it.taskId != "kpi" })
+        tasks().todaySort("t_5", day, todaySortAfterMove(keys(), from = 4, to = 3))
+        assertEquals(listOf("t_1", "t_2", "t_3", "t_5", "t_4"), order())
+        r.tick("t_1", done = true)
+        r.tick("t_2", done = true)
+        assertEquals("t_5 stays above t_4 after two ticks above it", listOf("t_3", "t_5", "t_4"), order().filter { it !in setOf("t_1", "t_2") })
+        assertEquals("nothing left to pin", emptyMap<String, Double>(), org.pagel.ai.ui.today.unpinnedKeys(db.dao().todayTasks().first(), r.todaySorts(day).first(), expanded = true))
+    }
+
+    @Test fun theDoneCountNeverGoesDownWhenPagelSendsADoneTaskWithoutItsTime() = runBlocking {
+        synced()
+        val r = today()
+        r.tick("t_1", done = true)
+        assertEquals(1, r.doneToday().first())
+        sender().sendAll(account)
+        status["t_1"] = "done"
+        synced()
+        assertEquals("the phone keeps its tick time", 1, r.doneToday().first())
+        assertTrue(db.dao().taskOnce("t_1")!!.doneAt != null)
     }
 
     @Test fun theFullListAndEnergyAreRememberedForTodayOnly() = runBlocking {

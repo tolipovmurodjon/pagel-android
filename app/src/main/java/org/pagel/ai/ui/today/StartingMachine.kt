@@ -23,6 +23,16 @@ fun todayKeys(tasks: List<TaskEntity>, sorts: Map<String, Double>): Map<String, 
     }
 }
 
+/**
+ * The open rows that still keep pagel.uz's place, with the key they show at now: what `TodayRepository.pinSorts` stores
+ * once Boss's own order is in play (the full list [expanded], or any row with its own sort). Empty before that.
+ */
+fun unpinnedKeys(tasks: List<TaskEntity>, sorts: Map<String, Double>, expanded: Boolean): Map<String, Double> {
+    if (!expanded && sorts.isEmpty()) return emptyMap()
+    val open = tasks.filter { it.status == "open" }.mapTo(HashSet()) { it.id }
+    return todayKeys(tasks, sorts).filterKeys { it in open && it !in sorts }
+}
+
 /** Today in Boss's order for the day ([todayKeys]); a tie keeps pagel.uz's order. */
 fun orderToday(tasks: List<TaskEntity>, sorts: Map<String, Double>): List<TaskEntity> {
     val keys = todayKeys(tasks, sorts)
@@ -114,6 +124,9 @@ fun clockText(secondsLeft: Long): String {
     return String.format(java.util.Locale.ROOT, "%d:%02d", s / 60, s % 60)
 }
 
-/** The first thing to do: the first micro-step, else the first open step, else a 2-minute look. */
+/** What What now says when a task has no micro-steps and no steps: a physical 30-second start, the same for any task. */
+const val FIRST_FALLBACK = "Put it in front of you · 30 s"
+
+/** The first thing to do: the first micro-step, else the first open step, else [FIRST_FALLBACK]. */
 fun firstStepOf(micro: List<String>, openSteps: List<String>): String =
-    micro.firstOrNull() ?: openSteps.firstOrNull() ?: "Open it and look for 2 minutes"
+    micro.firstOrNull() ?: openSteps.firstOrNull() ?: FIRST_FALLBACK

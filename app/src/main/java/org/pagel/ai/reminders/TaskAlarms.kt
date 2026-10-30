@@ -78,13 +78,13 @@ object TaskAlarms {
         for (t in dao.datedOpen().first()) {
             if (t.status != "open" || t.id in belled) continue
             val at = (if (t.every.isNullOrBlank()) startOf(t.due) else ReminderMath.nextFire(t.due, t.every, now)) ?: continue
-            // "Remind me" (core round 4): one ring, at the time or N minutes early; Off = none. The old switch = 10 early.
-            val lead = leads[t.id] ?: if (t.id in early) 10 else 0
-            if (lead == NotifyPrefs.OFF) continue
-            if (lead == 0) { if (at.isAfter(now) && at.isBefore(horizon)) { set(am, at, fireIntent(ctx, t.id, false)); planned += t.id } }
-            else {
-                val before = at.minusMinutes(lead.toLong())
-                if (before.isAfter(now) && before.isBefore(horizon)) { set(am, before, fireIntent(ctx, t.id, true)); planned += "${t.id}!" }
+            // "Remind me" (core round 4): at the time or N minutes early; Off = none (RemindChoice.rings).
+            for (lead in RemindChoice.rings(leads[t.id], t.id in early)) {
+                val ring = at.minusMinutes(lead.toLong())
+                if (ring.isAfter(now) && ring.isBefore(horizon)) {
+                    set(am, ring, fireIntent(ctx, t.id, lead > 0))
+                    planned += if (lead > 0) "${t.id}!" else t.id
+                }
             }
         }
         for (old in NotifyPrefs.planned(ctx) - planned) am.cancel(fireIntent(ctx, old.removeSuffix("!"), old.endsWith("!")))

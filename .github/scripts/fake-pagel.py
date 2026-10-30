@@ -21,7 +21,18 @@ PROJECTS = [("humopedia", "Humopedia", 41), ("ababil", "ABABIL", 27), ("pagel", 
 TODAY = [("t_ci1", "pagel", "Ship the native app", 0, "2026-10-27 15:00"), ("t_ci2", "me", "Call the bank about the report", 1, None),
          ("t_ci3", "humopedia", "Record the fractions lesson", 2, None), ("t_ci4", "ababil", "Measure the drone's hover time", 1, None),
          ("t_ci5", "me", "Weigh in", 3, None)]
-DONE = set()
+class DoneSet(set):
+    """The finished stars, with when each was ticked: /sync sends done_at like pagel.uz (checker round 2 #11)."""
+    def __init__(self):
+        super().__init__()
+        self.at = {}
+    def add(self, x):
+        self.at.setdefault(x, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"))
+        super().add(x)
+    def discard(self, x):
+        self.at.pop(x, None)
+        super().discard(x)
+DONE = DoneSet()
 # Panel edits the app sent (Phase 1), applied like pagel.uz does, so the next sync shows them.
 STEPS = {"t_ci2": [["Find the account number", False], ["Call at 10", False]]}
 EDITS = {}
@@ -99,7 +110,7 @@ def sync_body():
     return {"cursor": 10, "full": True,
             "projects": [{"name": n, "title": t, "color": None, "sort": i, "open": o} for i, (n, t, o) in enumerate(PROJECTS)],
             "tasks": [{"id": i, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": k, "text": text, "status": "done" if i in DONE else "open",
-                       "priority": pr, "star": True, "due": due, "updated_at": "2026-10-27T10:00:00Z", "version": 1,
+                       "done_at": DONE.at.get(i), "priority": pr, "star": True, "due": due, "updated_at": "2026-10-27T10:00:00Z", "version": 1,
                        "steps": [{"text": t, "done": d} for t, d in STEPS.get(i, [])], **EDITS.get(i, {})}
                       for k, (i, p, text, pr, due) in enumerate(TODAY)]
                      + [{"id": hid, "project": "me", "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 50 + k, "text": text, "status": "open",
@@ -468,7 +479,7 @@ def sync_body():
     s = _core_sync()
     known = {t["id"] for t in s["tasks"]}
     # Tasks the phone added into a project it made stay in /sync (a real server keeps them).
-    s["tasks"] += [{"id": tid, "project": b["project"], "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 200 + k, "text": b["text"], "status": "done" if tid in DONE else "open",
+    s["tasks"] += [{"id": tid, "project": b["project"], "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 200 + k, "text": b["text"], "status": "done" if tid in DONE else "open", "done_at": DONE.at.get(tid),
                     "priority": b.get("priority", 2), "star": False, "due": b.get("due"), "every": None, "updated_at": "2026-10-29T10:00:00Z", "version": 1, "steps": [], **EDITS.get(tid, {})}
                    for k, (tid, b) in enumerate(ADDED) if b.get("project") in MADE and tid not in known and tid not in REMOVED]
     for t in s["tasks"]:
@@ -550,8 +561,8 @@ _r4_post, _r4_patch, _r4_get, _r4_sync = H.do_POST, H.do_PATCH, H.do_GET, sync_b
 def sync_body():
     s = _r4_sync()
     s["tasks"] += [{"id": i, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 300 + k, "text": text, "status": "done" if i in DONE else "open",
-                    "priority": pr, "star": False, "due": None, "updated_at": "2026-10-30T10:00:00Z", "version": 1, "steps": [], **EDITS.get(i, {})}
-                   for k, (i, p, text, pr) in enumerate(NOW)]
+                    "done_at": DONE.at.get(i), "priority": pr, "star": False, "due": None, "updated_at": "2026-10-30T10:00:00Z", "version": 1, "steps": [], **EDITS.get(i, {})}
+                   for k, (i, p, text, pr) in enumerate(NOW) if i not in REMOVED]
     return s
 
 def _r4_post_h(self):
@@ -611,7 +622,8 @@ def _hole_patch_h(self):
     tid = self.path.rsplit("/", 1)[-1]
     raw = self.rfile.read(int(self.headers.get("content-length") or 0))
     b = json.loads(raw or b"{}")
-    if tid not in DONE_AT or not ("remove" in b or "restore" in b):
+    # Today's ticked stars come with done_at too (checker round 2 #11), so they are on Completed and Clear done takes them.
+    if (tid not in DONE_AT and tid not in DONE) or not ("remove" in b or "restore" in b):
         self.rfile = io.BytesIO(raw)
         return _hole_patch(self)
     LOG.write(f"PATCH {self.path} {raw.decode()[:300]} auth={self.authed()}\n")

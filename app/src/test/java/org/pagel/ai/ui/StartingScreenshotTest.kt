@@ -41,6 +41,7 @@ import org.pagel.ai.ui.task.StuckContent
 import org.pagel.ai.ui.task.StuckReason
 import org.pagel.ai.ui.task.Tiny
 import org.pagel.ai.ui.task.TinyContent
+import org.pagel.ai.ui.today.FIRST_FALLBACK
 import org.pagel.ai.ui.today.NowPick
 import org.pagel.ai.ui.today.TodayRow
 import org.pagel.ai.ui.today.TodayScreen
@@ -98,7 +99,7 @@ class StartingScreenshotTest {
 
     @Composable
     private fun Today(ui: TodayUiState, drag: Pair<Int, Int>? = null, onExpand: (Boolean) -> Unit = {}) =
-        TodayScreen(ui, pad, today = day, onWhatNow = {}, onExpand = onExpand, dragPreview = drag, dragPreviewDy = if (drag != null) -660f else 0f)
+        TodayScreen(ui, pad, today = day, onWhatNow = {}, onExpand = onExpand, dragPreview = drag)
 
     // ── Today ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -108,6 +109,7 @@ class StartingScreenshotTest {
         compose.onNodeWithText("All today · 6").assertIsDisplayed()
         compose.onNodeWithContentDescription("What now?").assertIsDisplayed()
         assertTrue("the 4th waits", compose.onRoot().fetchSemanticsNode().let { texts(it) }.none { it == "Weigh in" })
+        assertNoCutText(1f)
         shot("today-folded", 1f)
         compose.onNodeWithContentDescription("All today · 6").performClick()
         assertEquals("opens in place", true, asked)
@@ -115,18 +117,26 @@ class StartingScreenshotTest {
 
     @Test fun todayFoldedLargeFont() {
         show(1.5f) { Today(folded) }
+        assertNoCutText(1.5f)
         shot("today-folded", 1.5f)
     }
 
     @Test fun todayOpenListsEveryTaskInOrder() = both({ Today(folded.copy(expanded = true)) }) { s ->
         compose.onNodeWithText("Write the release note").assertIsDisplayed()
         compose.onNodeWithContentDescription("Show 3").assertIsDisplayed()
+        assertNoCutText(s)
         shot("today-open", s)
     }
 
     @Test fun todayMidDragLiftsTheFifthRowOverTheFirst() = both({ Today(folded.copy(expanded = true), drag = 4 to 0) }) { s ->
         val lifted = nodes().filter { it.config.getOrNull(SemanticsProperties.StateDescription) == "Lifted" }
         assertEquals("one row is lifted", 1, lifted.size)
+        // The lifted card sits over slot 0 and row 0 has made room below it: its title starts under the card, not under it.
+        val card = lifted.single().boundsInRoot
+        val first = nodes().first { n -> n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == "Call the bank about the report" } }.boundsInRoot
+        assertTrue("${s}x row 0 moved below the lifted card (title top ${first.top}, card bottom ${card.bottom})", first.top >= card.bottom - 2f)
+        assertTrue("${s}x the card covers slot 0 (card top ${card.top}, title top ${first.top})", card.top < first.top)
+        assertNoCutText(s)
         shot("today-mid-drag", s)
     }
 
@@ -146,6 +156,20 @@ class StartingScreenshotTest {
         compose.onNodeWithContentDescription("Pick 1 of 3").assertIsDisplayed()
         assertNoCutText(s)
         shot("what-now-card", s)
+    }
+
+    @Test fun whatNowWithNoStepsOffersMakeItTiny() = both({
+        Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.PICK, pick.copy(first = FIRST_FALLBACK, canTiny = true), shown = 1)) }
+    }) { s ->
+        compose.onNodeWithText("First: Put it in front of you · 30 s").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Make it tiny").assertIsDisplayed()
+        assertNoCutText(s)
+        shot("what-now-no-steps", s)
+    }
+
+    @Test fun whatNowWithMicroStepsHasNoTinyLink() {
+        show { Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.PICK, pick, shown = 1)) } }
+        compose.onNodeWithContentDescription("Make it tiny").assertDoesNotExist()
     }
 
     private val t0 = 1_000_000L
@@ -181,7 +205,9 @@ class StartingScreenshotTest {
 
     @Test fun makeItTinyOfflineSaysSoInOneQuietLine() {
         show { Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Offline), spice = 1) } }
-        compose.onNodeWithText("Needs internet · try again").assertIsDisplayed()
+        compose.onNodeWithText("Needs internet").assertIsDisplayed()
+        compose.onNodeWithText("Try again").assertIsDisplayed()
+        assertTrue("\"try again\" is said once", texts(compose.onRoot().fetchSemanticsNode()).count { it.contains("try again", ignoreCase = true) } == 1)
         shot("tiny-offline", 1f)
     }
 
@@ -200,6 +226,16 @@ class StartingScreenshotTest {
         assertEquals("the card's top is the same on step 1 and step 2", top1, compose.onNodeWithTag("focus-card").getBoundsInRoot().top)
         assertNoCutText(s)
         shot("focus-2-of-5", s)
+    }
+
+    @Test fun skipOnTheLastFocusStepAsksDone() = both({ FocusContent(task, 4, asking = true) }) { s ->
+        compose.onNodeWithContentDescription("Step 5 of 5").assertIsDisplayed()
+        compose.onNodeWithText("Done?").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Done: Write the release note").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Not yet").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Skip").assertDoesNotExist()
+        assertNoCutText(s)
+        shot("focus-last-asks-done", s)
     }
 
     private var picked by mutableIntStateOf(10)

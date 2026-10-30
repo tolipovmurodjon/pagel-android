@@ -222,10 +222,11 @@ fun TaskPanelContent(ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: 
         TitleBlock(ui, a)
         Spacer(Modifier.height(14.dp))
         Steps(ui, a)
+        Spacer(Modifier.height(12.dp))
+        Props(ui, today, a, onPick = { picker = it })
+        // The starting tools sit under the props: on a 640 dp screen Priority stays above the fold (checker round 2 #6).
         Spacer(Modifier.height(Space.md))
         StartRows(ui.microCount, a.onTiny, a.onStuck)
-        Spacer(Modifier.height(Space.md))
-        Props(ui, today, a, onPick = { picker = it })
         // The note only when it says more than the title (Boss 2026-10-28: the pane repeated the title word for word).
         if (ui.text.trim() != ui.title.trim()) {
             Spacer(Modifier.height(12.dp))
@@ -275,7 +276,8 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
         if (canStop) GlassIconButton(TabIcons.Ban, "Won't do, with the reason", on = stopping, size = 36.dp, label = "Won't do", onClick = onStop)
         else Spacer(Modifier.size(Space.touch))
         a.onTurnIntoProject?.let { GlassIconButton(TabIcons.Folder, "Turn into project", size = 36.dp, label = "Turn into project", onClick = it) }
-        GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Risk, size = 36.dp, label = "Delete", rim = Glass.Risk, onClick = a.onDelete)
+        // Ink with an amber rim, never red (Boss's rule); the Undo toast is the safety net.
+        GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Ink, size = 36.dp, label = "Delete", rim = Glass.Amber, onClick = a.onDelete)
         GlassIconButton(TabIcons.Close, "Close", size = 36.dp, label = "Close", onClick = a.onClose)
     }
 }

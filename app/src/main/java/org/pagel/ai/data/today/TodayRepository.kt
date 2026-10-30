@@ -104,6 +104,17 @@ class TodayRepository(
     /** The task's own sort on [day], or null while it keeps pagel.uz's place. */
     suspend fun todaySortOf(id: String, day: String): Double? = dao.todaySortsOnce(day).firstOrNull { it.taskId == id }?.sort
 
+    /**
+     * Gives every open row of [day]'s Today that has no sort of its own its current place ([keys]), on the phone only
+     * (no PATCH: pagel.uz keeps its own place for them). Without it a row that kept pagel.uz's place moved up one when a
+     * task above it was ticked, while a dragged row kept its sort, so the two drifted past each other (checker round 2 #3).
+     */
+    suspend fun pinSorts(day: String, keys: Map<String, Double>) {
+        val have = dao.todaySortsOnce(day).mapTo(HashSet()) { it.taskId }
+        val missing = keys.filterKeys { it !in have }
+        if (missing.isNotEmpty()) dao.addTodaySorts(missing.map { (id, sort) -> org.pagel.ai.data.db.TodaySortEntity(id, day, sort) })
+    }
+
     /** Today's screen state, only while it is still that day: a new day starts folded, with energy not asked. */
     fun state(day: String): Flow<TodayStateEntity> = dao.todayState().map { s -> s?.takeIf { it.day == day } ?: TodayStateEntity(day = day) }
 

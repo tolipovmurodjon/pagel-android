@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 /** Ids per DELETE … IN (…): under the 999 variables Android 11's SQLite allows. */
 private const val MAX_IDS = 500
 
+/** A finished task's tick time ([PagelDao.doneTimes]). */
+data class DoneTime(val id: String, val doneAt: String)
+
 @Dao
 abstract class PagelDao {
     /** Every project the phone shows (one inside a delete's or a merge's Undo window is hidden). */
@@ -137,6 +140,36 @@ abstract class PagelDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun setTodaySort(row: TodaySortEntity)
+
+    @Query("SELECT * FROM today_sorts WHERE taskId = :taskId")
+    abstract suspend fun todaySortRow(taskId: String): TodaySortEntity?
+
+    /** Rows for tasks with no sort on that day yet (a row left from an earlier day is replaced). */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun addTodaySorts(rows: List<TodaySortEntity>)
+
+    /**
+     * pagel.uz's copy of Today's order (`today_sort`/`today_day` in /sync): it wins over the phone's row, unless the task
+     * has a change still waiting (the phone's drag is newer) or the phone's row is for a later day.
+     */
+    @Transaction
+    open suspend fun applyServerTodaySorts(rows: List<TodaySortEntity>) {
+        if (rows.isEmpty()) return
+        val pending = pendingIds().toSet()
+        for (r in rows) {
+            if (r.taskId in pending) continue
+            val mine = todaySortRow(r.taskId)
+            if (mine != null && mine.day > r.day) continue
+            setTodaySort(r)
+        }
+    }
+
+    /**
+     * pagel.uz sends a finished task without `done_at` (an older server, or the walk's fake): the phone keeps the time it
+     * was ticked, so Today's "2 done" never goes down after a tick (checker round 2 #11).
+     */
+    @Query("SELECT id, doneAt FROM tasks WHERE id IN (:ids) AND doneAt IS NOT NULL")
+    abstract suspend fun doneTimes(ids: List<String>): List<DoneTime>
 
     @Query("DELETE FROM today_sorts WHERE taskId = :taskId")
     abstract suspend fun deleteTodaySort(taskId: String)
@@ -327,7 +360,10 @@ abstract class PagelDao {
         // Conflict rule (RULES.md): a task with a tick still waiting in the outbox keeps the phone's version until
         // pagel.uz has it; the server's copy wins on the next sync after that.
         val pending = pendingIds().toSet()
-        val incoming = tasks.filter { it.id !in pending }
+        // Read before the copy below replaces them: a finished task that comes without its done_at keeps the phone's.
+        val noTime = tasks.filter { it.id !in pending && it.status == "done" && it.doneAt == null }.map { it.id }
+        val times = noTime.chunked(MAX_IDS).flatMap { doneTimes(it) }.associate { it.id to it.doneAt }
+        val incoming = tasks.filter { it.id !in pending }.map { t -> times[t.id]?.let { t.copy(doneAt = it) } ?: t }
         if (full) {
             deleteSyncedSteps()
             deleteSyncedTasks()

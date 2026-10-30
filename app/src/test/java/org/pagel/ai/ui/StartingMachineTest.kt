@@ -86,7 +86,7 @@ class StartingMachineTest {
     @Test fun theFirstStepIsTheFirstMicroStepElseAnOpenStep() {
         assertEquals("Pick up the book", firstStepOf(listOf("Pick up the book"), listOf("Read chapter 2")))
         assertEquals("Read chapter 2", firstStepOf(emptyList(), listOf("Read chapter 2")))
-        assertEquals("Open it and look for 2 minutes", firstStepOf(emptyList(), emptyList()))
+        assertEquals("Put it in front of you · 30 s", firstStepOf(emptyList(), emptyList()))
     }
 
     @Test fun clocksNeverGoNegative() {
@@ -102,6 +102,11 @@ class StartingMachineTest {
         assertEquals("At the time, 18:00", RemindChoice.value(0, "2026-10-30 18:00"))
         assertEquals("Off", RemindChoice.value(NotifyPrefs.OFF, "2026-10-30 18:00"))
         assertEquals("1 h", RemindChoice.words(60))
+        // The old "Also 10 min before" switch kept its on-time ring; a task it set still rings twice until a new choice.
+        assertEquals(listOf(0, 10), RemindChoice.rings(null, oldEarly = true))
+        assertEquals(listOf(0), RemindChoice.rings(null, oldEarly = false))
+        assertEquals(listOf(30), RemindChoice.rings(30, oldEarly = true))
+        assertEquals(emptyList<Int>(), RemindChoice.rings(NotifyPrefs.OFF, oldEarly = true))
     }
 
     @Test fun waitingForOffersTomorrowThreeDaysAndNextMonday() {

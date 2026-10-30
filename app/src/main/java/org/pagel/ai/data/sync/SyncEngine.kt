@@ -132,6 +132,12 @@ class SyncEngine(
             removed = r.removed,
             state = SyncStateEntity(cursor = r.cursor, lastSyncAt = now),
         )
+        // Today's own order back from pagel.uz (core round 4): a fresh install or a second phone gets Boss's drags too.
+        dao.applyServerTodaySorts(r.tasks.mapNotNull { t ->
+            val sort = t.todaySort ?: return@mapNotNull null
+            val day = t.todayDay?.takeIf { it.length == 10 } ?: return@mapNotNull null
+            org.pagel.ai.data.db.TodaySortEntity(t.id, day, sort)
+        })
     }
 }
 

@@ -9,6 +9,17 @@ import java.time.LocalTime
 object RemindChoice {
     val ALL = listOf(0, 10, 30, 60, NotifyPrefs.OFF)
 
+    /**
+     * The rings one task gets, as minutes before its time (0 = on time): its choice, or none made yet. A task the old
+     * "Also 10 min before" switch set ([oldEarly], no choice since) keeps both of its rings, on time and 10 early.
+     */
+    fun rings(chosen: Int?, oldEarly: Boolean): List<Int> = when {
+        chosen == NotifyPrefs.OFF -> emptyList()
+        chosen != null -> listOf(chosen)
+        oldEarly -> listOf(0, 10)
+        else -> listOf(0)
+    }
+
     /** "10 min", "1 h" (a notification's "in 10 min · …"). */
     fun words(minutes: Int): String = if (minutes >= 60 && minutes % 60 == 0) "${minutes / 60} h" else "$minutes min"
 

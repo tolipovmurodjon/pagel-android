@@ -64,7 +64,7 @@ import org.pagel.ai.ui.glass.pressScale
 @Composable
 fun WhatNowSheet(
     ui: WhatNowUi, onEnergy: (Energy) -> Unit, onStart: () -> Unit, onNotThis: () -> Unit,
-    onFinish: () -> String?, onUndo: (String) -> Unit, onClose: () -> Unit,
+    onFinish: () -> String?, onUndo: (String) -> Unit, onClose: () -> Unit, onTiny: (String) -> Unit = {},
 ) {
     if (ui.stage == WhatNowUi.Stage.CLOSED) return
     val ctx = LocalContext.current
@@ -73,7 +73,8 @@ fun WhatNowSheet(
     val toasts = LocalToasts.current
     var finishing by remember { mutableStateOf(false) }
     GlassSheet(onClose) {
-        WhatNowContent(ui, finishing = finishing, onEnergy = onEnergy, onStart = onStart, onNotThis = onNotThis, onClose = onClose, onFinish = {
+        WhatNowContent(ui, finishing = finishing, onEnergy = onEnergy, onStart = onStart, onNotThis = onNotThis, onClose = onClose,
+            onTiny = { ui.pick?.id?.let(onTiny) }, onFinish = {
             // The finish moment: Confirm haptic, the ding, the ring pops and draws its tick; then the sheet folds away.
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
             scope.launch(Dispatchers.Default) { Ding.play(ctx.applicationContext) }
@@ -94,11 +95,12 @@ fun WhatNowSheet(
 fun WhatNowContent(
     ui: WhatNowUi, finishing: Boolean = false, clock: () -> Long = System::currentTimeMillis,
     onEnergy: (Energy) -> Unit = {}, onStart: () -> Unit = {}, onNotThis: () -> Unit = {}, onFinish: () -> Unit = {}, onClose: () -> Unit = {},
+    onTiny: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.gutter, bottom = SheetBottom)) {
         when (ui.stage) {
             WhatNowUi.Stage.ENERGY -> EnergyAsk(onEnergy)
-            WhatNowUi.Stage.PICK -> ui.pick?.let { PickCard(it, ui.shown, onStart, onNotThis) }
+            WhatNowUi.Stage.PICK -> ui.pick?.let { PickCard(it, ui.shown, onStart, onNotThis, onTiny) }
             WhatNowUi.Stage.TIMER -> ui.pick?.let { RunningStart(it, ui.startedAt, ui.minutes, finishing, clock, onFinish) }
             WhatNowUi.Stage.NONE -> NothingFits(onClose)
             WhatNowUi.Stage.CLOSED -> {}
@@ -138,9 +140,12 @@ private fun EnergyAsk(onEnergy: (Energy) -> Unit) {
     }
 }
 
-/** One task for right now: why (its project), its tiny first step, Start · 10 min, Not this. */
+/**
+ * One task for right now: why (its project), its tiny first step, Start · 10 min, Not this. A task with no steps at all
+ * also gets a quiet "✨ Make it tiny" link under its first step (the generic start is only a fallback).
+ */
 @Composable
-private fun PickCard(p: NowPick, shown: Int, onStart: () -> Unit, onNotThis: () -> Unit) {
+private fun PickCard(p: NowPick, shown: Int, onStart: () -> Unit, onNotThis: () -> Unit, onTiny: () -> Unit) {
     SheetTitle("What now?")
     Spacer(Modifier.height(Space.md))
     Pane(Modifier.fillMaxWidth()) {
@@ -159,12 +164,30 @@ private fun PickCard(p: NowPick, shown: Int, onStart: () -> Unit, onNotThis: () 
                 Spacer(Modifier.width(Space.sm))
                 Text("First: ${p.first}", style = MaterialTheme.typography.bodyMedium, color = Glass.PrimaryInk, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
+            if (p.canTiny) TinyLink(onTiny)
         }
     }
     Spacer(Modifier.height(Space.lg))
     PrimaryPill("Start · $START_MINUTES min", "Start $START_MINUTES minutes: ${p.title}", onStart)
     Spacer(Modifier.height(Space.xs))
     QuietButton(if (shown >= MAX_PICKS) "Not this · last one" else "Not this", onNotThis)
+}
+
+/** "✨ Make it tiny": a quiet text link (no fill, no rim), a full touch target, under the first step. */
+@Composable
+private fun TinyLink(onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Row(
+        Modifier.heightIn(min = Space.touch).pressScale(press)
+            .clickable(press, indication = null, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "Make it tiny" }
+            .padding(end = Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(TabIcons.Sparkles, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(Space.sm))
+        Text("Make it tiny", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
+    }
 }
 
 /** The running start: the clock, the first step, one big tick that ends in the finish moment. */

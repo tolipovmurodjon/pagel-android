@@ -191,7 +191,7 @@ fun TinyContent(ui: StartUi, spice: Int, onSpice: (Int) -> Unit = {}, onWrite: (
                 PrimaryPill("Start · step 1 of ${t.steps.size}", "Start focus", { onStart(t.steps) })
                 QuietButton("Again", onWrite)
             }
-            Tiny.Offline -> { Quiet("Needs internet · try again"); QuietButton("Try again", onWrite) }
+            Tiny.Offline -> { Quiet("Needs internet"); QuietButton("Try again", onWrite) }
             is Tiny.Failed -> { Quiet(t.message); QuietButton("Try again", onWrite) }
         }
     }
@@ -401,27 +401,36 @@ fun FocusSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) -> U
     var popping by remember { mutableStateOf(false) }
     var stuck by rememberSaveable(taskId) { mutableStateOf(false) }
     var tiny by rememberSaveable(taskId) { mutableStateOf(false) }
+    // Skip on the last step asks "Done?" instead of closing (checker round 2 #9): Done plays the finish moment.
+    var asking by rememberSaveable(taskId) { mutableStateOf(false) }
+    /** The tick's pop + haptic + ding; on the last step (or a "Done" after Skip) it is the task's finish moment. */
+    fun tick(countsStep: Boolean) {
+        if (popping) return
+        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        if (countsStep) vm.microDone()
+        popping = true
+        val last = !countsStep || index >= ui.micro.lastIndex
+        scope.launch(Dispatchers.Default) { Ding.play(ctx.applicationContext) }
+        scope.launch {
+            delay(if (last) org.pagel.ai.ui.today.TodayViewModel.FOLD_MS else 420L)
+            popping = false
+            if (last) { asking = false; vm.finishTask(); onClose() } else index++
+        }
+    }
     GlassSheet(onClose, full = true) {
-        FocusContent(ui, index, popping, onTick = {
-            if (popping) return@FocusContent
-            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-            vm.microDone()
-            popping = true
-            val last = index >= ui.micro.lastIndex
-            scope.launch(Dispatchers.Default) { Ding.play(ctx.applicationContext) }
-            scope.launch {
-                delay(if (last) org.pagel.ai.ui.today.TodayViewModel.FOLD_MS else 420L)
-                popping = false
-                if (last) { vm.finishTask(); onClose() } else index++
-            }
-        }, onSkip = { if (index < ui.micro.lastIndex) index++ else onClose() }, onStuck = { stuck = true }, onClose = onClose)
+        FocusContent(ui, index, popping, asking = asking, onTick = { tick(countsStep = true) },
+            onSkip = { if (index < ui.micro.lastIndex) index++ else asking = true }, onStuck = { stuck = true }, onClose = onClose,
+            onDone = { tick(countsStep = false) }, onNotYet = { asking = false; onClose() })
     }
     if (stuck) StuckSheet(taskId, onClose = { stuck = false }, onTiny = { tiny = true }, onOpenProject = { onClose(); onOpenProject(it) })
     if (tiny) TinySheet(taskId, onClose = { tiny = false }, onFocus = { index = 0 })
 }
 
 @Composable
-fun FocusContent(ui: StartUi, index: Int, popping: Boolean = false, onTick: () -> Unit = {}, onSkip: () -> Unit = {}, onStuck: () -> Unit = {}, onClose: () -> Unit = {}) {
+fun FocusContent(
+    ui: StartUi, index: Int, popping: Boolean = false, asking: Boolean = false, onTick: () -> Unit = {}, onSkip: () -> Unit = {}, onStuck: () -> Unit = {},
+    onClose: () -> Unit = {}, onDone: () -> Unit = {}, onNotYet: () -> Unit = {},
+) {
     val steps = ui.micro
     val i = index.coerceIn(0, (steps.size - 1).coerceAtLeast(0))
     Column(Modifier.fillMaxWidth().fillMaxHeight().padding(start = Space.gutter, end = Space.gutter, bottom = SheetBottom), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -448,7 +457,14 @@ fun FocusContent(ui: StartUi, index: Int, popping: Boolean = false, onTick: () -
             }
         }
         Spacer(Modifier.weight(1f))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        if (asking) {
+            // Skipped the last step: is the task done? Done = the finish moment; Not yet = out of focus, the task stays open.
+            Text("Done?", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(bottom = Space.sm).semantics { heading() })
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { PrimaryPill("Done", "Done: ${ui.title}", onDone) }
+                QuietButton("Not yet", onNotYet, Modifier.weight(1f))
+            }
+        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             QuietButton("Skip", onSkip, Modifier.weight(1f))
             QuietButton("I'm stuck", onStuck, Modifier.weight(1f))
         }
