@@ -190,7 +190,9 @@ tap Humopedia && shot move-picked 2 || { log "WALKTHROUGH: the panel's picker li
 wait_picker 'PATCH /api/v1/tasks/t_ci4 \{"project":"humopedia"\}' || { log "WALKTHROUGH: the move never reached pagel.uz"; grep "PATCH /api/v1/tasks/t_ci4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 [ "$(grep -cE 'PATCH /api/v1/tasks/t_ci4 \{"project"' "$FAKE_LOG")" -eq 1 ] || { log "WALKTHROUGH: one pick sent more than one PATCH {project}"; grep "PATCH /api/v1/tasks/t_ci4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 grep -q 'content-desc="Project: Humopedia"' "$(xml_of move-picked)" || { log "WALKTHROUGH: after the pick the panel does not say Humopedia"; exit 1; }
-log "   the task moved: one PATCH {project:humopedia}, the panel says Humopedia"
+# Humopedia's tasks mention lessons but are not a course: no Lesson steps chip (checker #9; CI 41086207276 shot 34 had one).
+grep -q 'content-desc="Add lesson steps"' "$(xml_of move-picked)" && { log "WALKTHROUGH: a Humopedia task offers the Lesson steps chip (not a course)"; exit 1; }
+log "   the task moved: one PATCH {project:humopedia}, the panel says Humopedia, no Lesson steps chip"
 $T adb shell input keyevent 4; sleep 1.5
 front move-closed
 

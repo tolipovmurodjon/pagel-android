@@ -202,6 +202,7 @@ class ProjectPickerScreenshotTest {
         assertTrue(looksLikeLessons("Blender", listOf("Lecture 4 UVs", "Module 2 · Basics")))
         assertFalse(looksLikeLessons("Me", listOf("Call the bank", "Weigh in", "Pay the internet bill")))
         assertFalse(looksLikeLessons("Me", listOf("Lesson plan for Aziz")))
+        assertFalse(looksLikeLessons("Humopedia", listOf("Record the fractions lesson", "Review the lesson draft", "Lesson plan for grade 5")))
     }
 
     private val lessonTask = PanelUi(

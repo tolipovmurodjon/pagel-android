@@ -424,7 +424,9 @@ private fun Ring(priority: Int, done: Boolean, title: String, drawIn: Boolean = 
 /** The four steps a course lesson takes, in order; one tap adds those the task does not have yet. */
 val LESSON_STEPS = listOf("Open lesson", "Watch 10 min", "Rebuild it", "Note 1 thing")
 
-private val LESSON_LINE = Regex("""^(lesson|lecture|module|chapter|episode|unit|video|class|section)\b|\blesson\b""", RegexOption.IGNORE_CASE)
+// A numbered lesson line ("Lesson 3 …", "Lecture 12: …", "Module 2 · …"); a task that only mentions a lesson ("Record the
+// fractions lesson" in Humopedia) is not one (CI 41086207276 shot 34 offered the chip there).
+private val LESSON_LINE = Regex("""^(lesson|lecture|module|chapter|episode|unit|part|section|video|class|day)\s*#?\d+""", RegexOption.IGNORE_CASE)
 
 /**
  * A project of lessons: its name says course or lesson, or at least two of its tasks read like lessons ("Lesson 3 …",
