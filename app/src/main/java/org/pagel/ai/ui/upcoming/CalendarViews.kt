@@ -387,7 +387,8 @@ fun AllDayLine(pager: PagerState, view: CalView, ui: UpcomingUi, open: Boolean, 
                             tasks.isEmpty() -> Unit
                             open || tasks.size == 1 -> { for (t in tasks) key(t.id) { AllDayChip(titleOf(t), projectColor(ui, t.project), titleOf(t)) { onOpen(t.id) } } }
                             else -> AllDayChip(
-                                if (wide) "${titleOf(tasks[0])} +${tasks.size - 1}" else "+${tasks.size}", projectColor(ui, tasks[0].project),
+                                // "+N" says a count, not a project: mint, never a project's warm tint read as an alarm.
+                                if (wide) "${titleOf(tasks[0])} +${tasks.size - 1}" else "+${tasks.size}", if (wide) projectColor(ui, tasks[0].project) else Glass.Primary,
                                 "${tasks.size} all-day tasks on ${d.format(SPOKEN)}, show all", onClick = onToggle,
                             )
                         }
@@ -688,7 +689,9 @@ private fun Ghost(h: Held, hourPx: Float) {
             .padding(horizontal = Space.xs, vertical = Hair),
     ) {
         Text(h.title, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Clip)
-        Text(time, style = Glass.NumberText, color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
+        // "14:30" whole in a 37 dp week column (CI walk 82: "14:3").
+        Text(time, style = if (r.width < with(density) { 56.dp.toPx() }) Glass.NumberText.copy(fontSize = 9.sp) else Glass.NumberText,
+            color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
     }
 }
 

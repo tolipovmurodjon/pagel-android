@@ -318,7 +318,8 @@ fun UpcomingScreen(
     }
     val tlDays = org.pagel.ai.data.upcoming.timelineDays(timelineView, ui.today, tl.currentPage - TL_BACK)
     // The header says the month once (Google): the shown days' month, or both when a week crosses one; short at large font.
-    val short = density.fontScale > 1.3f
+    // Month's arrows on a 320 dp screen leave the title ~40 dp: "Oct", not "Octo" at 9 sp (CI walk 79).
+    val short = density.fontScale > 1.3f || (view == CalView.MONTH && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360)
     val title = when (view) {
         CalView.MONTH -> monthsOf(month.atDay(1), month.atDay(1), ui.today, short)
         CalView.SCHEDULE -> monthsOf(stripStart, stripStart, ui.today, short)
