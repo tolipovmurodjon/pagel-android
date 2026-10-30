@@ -464,11 +464,13 @@ $T adb shell input keyevent 4; sleep 1; tap Upcoming && sleep 2
 log "-- Upcoming in landscape and at 1.5x on the 320 dp screen (checker P4 #3: only the strip is pinned now)"
 $T adb shell settings put system accelerometer_rotation 0
 $T adb shell settings put system user_rotation 1; sleep 3; front upcoming-landscape; shot upcoming-landscape 1
-grep -qF "content-desc=\"$TODAY_SPOKEN" "$OUT/$(printf '%02d' $N)-upcoming-landscape.xml" || { log "WALKTHROUGH: Upcoming's strip is gone in landscape"; exit 1; }
+# The day may turn at Tashkent midnight mid-run (CI 40932552197: TODAY_SPOKEN said Thursday, the strip said Friday), so either day counts.
+TODAY_NOW=$(LC_ALL=C TZ=Asia/Tashkent date '+%A %-d %B')
+grep -qF -e "content-desc=\"$TODAY_SPOKEN" -e "content-desc=\"$TODAY_NOW" "$OUT/$(printf '%02d' $N)-upcoming-landscape.xml" || { log "WALKTHROUGH: Upcoming's strip is gone in landscape"; exit 1; }
 $T adb shell input swipe 320 240 320 90 300; shot upcoming-landscape-scrolled 1
 $T adb shell settings put system user_rotation 0; sleep 3; front upcoming-portrait
 $T adb shell settings put system font_scale 1.5; sleep 3; front upcoming-font-1.5; shot upcoming-font-1.5 1
-grep -qF "content-desc=\"$TODAY_SPOKEN" "$OUT/$(printf '%02d' $N)-upcoming-font-1.5.xml" || { log "WALKTHROUGH: Upcoming's strip is gone at 1.5x"; exit 1; }
+grep -qF -e "content-desc=\"$TODAY_SPOKEN" -e "content-desc=\"$TODAY_NOW" "$OUT/$(printf '%02d' $N)-upcoming-font-1.5.xml" || { log "WALKTHROUGH: Upcoming's strip is gone at 1.5x"; exit 1; }
 $T adb shell settings put system font_scale 1.0; sleep 3; front upcoming-font-1.0
 $T adb shell input keyevent 4; shot back-to-more-2 1.5
 tap Completed && shot completed 2.5
@@ -525,7 +527,7 @@ log "WALKTHROUGH DONE: $N steps"
 log "== Phase 5: Empty your head (3 lines -> 3 tasks on pagel.uz), the evening reminder opens Close the day, keep/later/drop + a pick -> the shutdown, the weekly review"
 # Tap $1; if it is not on screen, scroll the list up a little and try again (twice).
 tap_scroll() {
-  for k in 1 2 3; do
+  for k in $(seq 1 "${2:-3}"); do
     tap "$1" && return 0
     $T adb shell input swipe 160 460 160 200 300; sleep 1
   done
@@ -703,3 +705,148 @@ $T adb shell locksettings clear --old 1111 > /dev/null 2>&1 || true
 $T adb logcat -d > "$OUT/logcat-compass.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-compass.txt" && { log "WALKTHROUGH: CRASH in the Compass (see logcat-compass.txt)"; exit 1; }
 log "PHASE 6a WALK DONE: $N steps"
+
+# ── Core round · projects you shape (2026-10-29) ───────────────────────────────────────────────────────────────────
+log "== Core: new project in 2 taps -> a task inline -> recolour (pagel.uz gets it) -> new icon -> drag a task in -> merge -> Undo -> finish"
+last() { echo "$OUT/$(printf '%02d' $N)-$1.xml"; }
+hide_keys() { $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }; return 0; }
+to_projects() {
+  for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
+  for k in 1 2 3; do $T adb shell input swipe 160 450 160 120 400; sleep 1; tap Projects && return 0; done
+  return 1
+}
+$T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+front core-start
+to_projects && shot core-projects 1.5 || { log "WALKTHROUGH: no Projects under More"; exit 1; }
+tap "New project" || { log "WALKTHROUGH: Projects has no + (New project)"; exit 1; }
+sleep 1.5
+$T adb shell "input text 'CI%sRocket'"; $T adb shell input keyevent 66
+shot core-new 2.5
+grep -q 'Add the next step' "$(last core-new)" || { log "WALKTHROUGH: the new project's page did not open on Add the next step"; exit 1; }
+wait_log 'POST /api/v1/projects {"name":"ci-rocket","title":"CI Rocket"' 30 || { log "WALKTHROUGH: the new project never reached pagel.uz"; exit 1; }
+log "   a new project in 2 taps: + then its name and Enter; pagel.uz has ci-rocket"
+
+tap "Add a task to CI Rocket" || { log "WALKTHROUGH: the project page has no inline Add"; exit 1; }
+sleep 1; $T adb shell "input text 'Write%sthe%sflight%splan'"; $T adb shell input keyevent 66; sleep 1; hide_keys
+shot core-task 2
+grep -q 'Write the flight plan' "$(last core-task)" || { log "WALKTHROUGH: the inline task is not on the page"; exit 1; }
+wait_log 'POST /api/v1/tasks {"project":"ci-rocket","text":"Write the flight plan"' 30 || { log "WALKTHROUGH: the inline task never reached pagel.uz"; exit 1; }
+grep -q 'Next step' "$(last core-task)" || { log "WALKTHROUGH: the page does not open on its Next step"; exit 1; }
+
+tap "Project settings" && shot core-settings 2 || { log "WALKTHROUGH: no Project settings on the page"; exit 1; }
+tap_scroll "Colour violet" || { log "WALKTHROUGH: the colour picker has no violet"; exit 1; }
+wait_log 'PATCH /api/v1/projects/ci-rocket {"color":"violet"}' 30 || { log "WALKTHROUGH: the colour never reached pagel.uz"; exit 1; }
+shot core-violet 1.5
+log "   recoloured: pagel.uz got color=violet"
+tap_scroll "Search icons" || { log "WALKTHROUGH: no icon search"; exit 1; }
+sleep 1; $T adb shell input text rocket; sleep 1; hide_keys
+tap_scroll "Emoji rocket" || { log "WALKTHROUGH: the icon search found no rocket"; exit 1; }
+wait_log 'PATCH /api/v1/projects/ci-rocket {"icon":"emoji:' 30 || { log "WALKTHROUGH: the icon never reached pagel.uz"; exit 1; }
+shot core-icon 1.5
+tap Done || $T adb shell input keyevent 4
+sleep 1
+
+log "-- drag a task in: Me → long-press Pay the internet bill (a list row: the next step sits in its card, and Weigh in was dropped in Close the day) → drop it on CI Rocket in the Move to strip"
+$T adb shell input keyevent 4; sleep 1
+tap_scroll Me && shot core-me 2 || { log "WALKTHROUGH: no Me project"; exit 1; }
+XML="$(last core-me)"
+DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
+H0=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2); BAR=$(( ${H0:-640} - 30 * DPI / 160 ))
+# Me's habits come before it, so scroll in small steps until the row is clear of the Move to strip's place.
+for k in 1 2 3 4 5 6; do FROM=$(centre "Pay the internet bill") && [ "${FROM#* }" -lt $(( ${BAR:-550} - 120 )) ] && break; FROM=""; $T adb shell input swipe 160 450 160 300 400; sleep 1; done
+[ -n "$FROM" ] || { log "WALKTHROUGH: Pay the internet bill is not on the Me page"; exit 1; }
+DPI=$($T adb shell wm density | grep -oE '[0-9]+' | tail -1); DPI=${DPI:-160}
+# The project page has no tab bar: "Today" above matched a row's date ("Today 21:30"), so the drop landed in the list
+# and became a reorder (CI 40936570317 sent {"sort":109.0}). The Move to strip is pinned to the screen bottom
+# (~95 dp tall, 8 dp + the nav inset above the edge), so drop 85 dp above the bottom: inside it for any inset 0-56 dp.
+H=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f2); H=${H:-640}
+TX=$(( 46 * DPI / 160 )); TY=$(( H - 85 * DPI / 160 ))
+log "   drag from $FROM to $TX $TY (screen height $H)"
+$T adb shell input draganddrop $FROM $TX $TY 1800
+shot core-dragged 2
+wait_log 'PATCH /api/v1/tasks/t_u2 {"project":"ci-rocket"}' 30 || { log "WALKTHROUGH: the dragged task never moved on pagel.uz"; grep -E 'PATCH /api/v1/tasks/t_u2' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   Pay the internet bill moved into CI Rocket (pagel.uz has it)"
+
+log "-- merge CI Rocket into Humopedia, then Undo inside 5 s: pagel.uz never hears of the merge"
+$T adb shell input keyevent 4; sleep 1
+tap_scroll "CI Rocket" && shot core-rocket 2 || { log "WALKTHROUGH: CI Rocket is not in the list"; exit 1; }
+tap "Project settings" || exit 1
+sleep 1.5
+tap_scroll "Merge into another project" 8 || { log "WALKTHROUGH: settings have no Merge"; exit 1; }
+tap_scroll "Into Humopedia" 4 || { log "WALKTHROUGH: Merge offers no Humopedia"; exit 1; }
+tap_scroll "Merge into Humopedia" 4 || { log "WALKTHROUGH: no Merge button"; exit 1; }
+# Undo straight away: the hold is 5 s, and a shot (screencap + dump) before it took ~5 s on the emulator, so the
+# Undo landed ~12 s after the merge and the merge had rightly left (CI 40966460030: POST at :12.5, Undo dump at :15.9).
+sleep 0.5
+tap Undo || { log "WALKTHROUGH: the merge toast has no Undo"; exit 1; }
+shot core-merged 0.5
+sleep 8
+grep -q 'POST /api/v1/projects/ci-rocket/merge' "$FAKE_LOG" && { log "WALKTHROUGH: the merge reached pagel.uz although it was undone"; exit 1; }
+$T adb shell input keyevent 4; sleep 1
+to_projects; shot core-after-undo 2
+grep -q 'text="CI Rocket"' "$(last core-after-undo)" || { log "WALKTHROUGH: CI Rocket did not come back after Undo"; exit 1; }
+log "   merge undone in time: no POST merge, CI Rocket is back"
+
+log "-- finish: tick both tasks → Everything is done → Finish project with a shipped line"
+tap_scroll "CI Rocket" && shot core-rocket-2 2 || exit 1
+for t in "Write the flight plan" "Pay the internet bill"; do tap "Done: $t" || { sleep 2; tap "Done: $t"; } || { log "WALKTHROUGH: no ring for $t"; exit 1; }; sleep 2; done
+shot core-all-done 2
+tap_scroll "Finish project" || { log "WALKTHROUGH: all done but no Finish project"; exit 1; }
+sleep 1.5; tap "What I shipped"; sleep 1
+$T adb shell "input text 'CI%srocket%sflew'"; $T adb shell input keyevent 66
+shot core-finished 2.5
+wait_log 'PATCH /api/v1/projects/ci-rocket {"finished":true,"shipped":"CI rocket flew"}' 30 || { log "WALKTHROUGH: the finish never reached pagel.uz"; grep ci-rocket "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+grep -q 'CI rocket flew' "$(last core-finished)" || shot core-finished 2
+log "   finished: pagel.uz has finished=true and the shipped line"
+
+log "-- KPI: the app counted opens and the first tick; Your week shows in More"
+wait_log 'POST /api/v1/kpi {"day":"' 10 || { log "WALKTHROUGH: no app-open count reached pagel.uz"; exit 1; }
+wait_log '"first_tick_ms":' 10 || { log "WALKTHROUGH: no open-to-first-tick count reached pagel.uz"; exit 1; }
+grep -E 'POST /api/v1/kpi' "$FAKE_LOG" | grep -vqE '\{"day":"[0-9-]+","(open":true|first_tick_ms":[0-9]+)\}' && { log "WALKTHROUGH: a KPI post carries more than counts"; exit 1; }
+for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
+for k in 1 2 3; do $T adb shell input swipe 160 450 160 120 400; sleep 1; done
+shot core-week 2
+grep -q 'Your week' "$(last core-week)" || { log "WALKTHROUGH: More has no Your week card"; exit 1; }
+$T adb logcat -d > "$OUT/logcat-core.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-core.txt" && { log "WALKTHROUGH: CRASH in the projects round (see logcat-core.txt)"; exit 1; }
+log "CORE PROJECTS WALK DONE: $N steps"
+
+log "-- the Namoz page (namoz brief): open it from Habits; tick Asr; long-press Shom -> In the mosque; the counts change"
+# Ticks count from 1 November. Last in the walk, the emulator's clock moves to Thu 12 November 2026, 16:10 Tashkent
+# (11:10 UTC, Asr's time). adb root restarts adbd, which drops adb reverse: it is put back before the app starts.
+$T adb root > /dev/null 2>&1; sleep 3; $T adb wait-for-device
+$T adb shell "date -u 111211102026.00" > /dev/null || { log "WALKTHROUGH: could not set the emulator's date for Namoz"; exit 1; }
+$T adb reverse tcp:8799 tcp:8799
+$T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+front namoz-start
+for k in 1 2 3; do tap Habits && break; $T adb shell input keyevent 4; sleep 1; done
+sleep 2
+for k in 1 2 3; do tap Namoz && break; $T adb shell input swipe 160 200 160 600 400; sleep 1; done
+shot namoz-page 3
+grep -q 'text="Next · ' "$(last namoz-page)" || { log "WALKTHROUGH: the Namoz page did not open (no Next · line)"; exit 1; }
+grep -q 'text="Tracking starts 1 November"' "$(last namoz-page)" && { log "WALKTHROUGH: on 12 November the page still waits for 1 November"; exit 1; }
+# A row reads "Asr 14:52–16:58" (its name + its window); the stats rows read "Asr: n of d days".
+tap 'Asr [^"]*' || { log "WALKTHROUGH: no Asr row on the Namoz page"; exit 1; }
+shot namoz-asr 2
+$T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+B=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n' | grep -E 'content-desc="Shom [^"]*"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+[ -n "$B" ] || { log "WALKTHROUGH: no Shom row on the Namoz page"; exit 1; }
+set -- $(echo "$B" | grep -oE '[0-9]+' | tr '\n' ' ')
+$T adb shell input swipe $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) $(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 )) 900
+shot namoz-how 2
+tap "In the mosque" || { log "WALKTHROUGH: the long press showed no In the mosque choice"; exit 1; }
+sleep 2
+# The counts sit under the five rows: scroll until the mosque line shows.
+for k in 1 2 3 4; do onscreen '[0-9]+ in the mosque this month' && break; $T adb shell input swipe 160 500 160 200 400; sleep 1; done
+shot namoz-counts 2
+grep -q 'text="1 in the mosque this month"' "$(last namoz-counts)" || { log "WALKTHROUGH: the mosque count did not become 1"; exit 1; }
+grep -q 'content-desc="Asr: 1 of 12 days"' "$(last namoz-counts)" || { log "WALKTHROUGH: Asr's 30-day count did not become 1 of 12"; exit 1; }
+grep -q 'content-desc="Shom: 1 of 12 days"' "$(last namoz-counts)" || { log "WALKTHROUGH: Shom's 30-day count did not become 1 of 12"; exit 1; }
+wait_log '"day":"2026-11-12"' 30 && log "   the prayer ticks reached pagel.uz" || log "   (WARN: no tick for 2026-11-12 reached pagel.uz)"
+$T adb logcat -d > "$OUT/logcat-namoz.txt"
+grep -q "Process: $PKG, PID" "$OUT/logcat-namoz.txt" && { log "WALKTHROUGH: CRASH on the Namoz page (see logcat-namoz.txt)"; exit 1; }
+# Put the real clock back: the next walks (Phase 5 Close the day) compare the app's today with the runner's date.
+$T adb shell "date -u $(date -u +%m%d%H%M%Y.%S)" > /dev/null || { log "WALKTHROUGH: could not put the emulator's clock back"; exit 1; }
+$T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
+sleep 2
+log "NAMOZ WALK DONE: $N steps (clock back to $(date -u +%FT%TZ))"

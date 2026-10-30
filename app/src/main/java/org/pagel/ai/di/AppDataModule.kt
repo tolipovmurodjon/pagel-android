@@ -87,6 +87,10 @@ object AppDataModule {
 
     @Provides
     @Singleton
+    fun provideNamozDao(db: PagelDatabase): org.pagel.ai.data.db.NamozDao = db.namoz()
+
+    @Provides
+    @Singleton
     fun provideWhereItWent(db: PagelDatabase, inbox: InboxDao, api: PagelApi): org.pagel.ai.data.inbox.WhereItWent =
         org.pagel.ai.data.inbox.WhereItWent(db.inboxLog(), inbox, api)
 
@@ -120,10 +124,15 @@ object AppDataModule {
     fun provideTaskRepository(@ApplicationContext ctx: Context, dao: PagelDao): TaskRepository =
         TaskRepository(dao, OutboxWorker.scheduler(ctx))
 
+    /** Projects you shape (core round): create, edit, merge, delete with Undo, finish, goals, KPI counts. */
+    @Provides @Singleton
+    fun provideProjectRepository(@ApplicationContext ctx: Context, dao: PagelDao, tasks: TaskRepository): org.pagel.ai.data.projects.ProjectRepository =
+        org.pagel.ai.data.projects.ProjectRepository(dao, tasks, OutboxWorker.scheduler(ctx))
+
     /** The habits' reminder alarms (Phase 3). */
     @Provides @Singleton
     fun provideReminderPlanner(@ApplicationContext ctx: Context, dao: PagelDao, db: PagelDatabase, @AppScope scope: CoroutineScope, @IoDispatcher io: CoroutineDispatcher): ReminderPlanner =
-        HabitAlarms(ctx, dao, scope, io, rituals = db.rituals())
+        HabitAlarms(ctx, dao, scope, io, rituals = db.rituals(), namoz = db.namoz())
 
     @Provides @Singleton
     fun provideHabitsRepository(@ApplicationContext ctx: Context, dao: PagelDao, api: PagelApi, reminders: ReminderPlanner): HabitsRepository =

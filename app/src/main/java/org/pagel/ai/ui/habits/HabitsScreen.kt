@@ -122,6 +122,7 @@ fun HabitsRoute(
     reselect: Int,
     onOpenHabit: (String) -> Unit = {},
     onHistory: () -> Unit = {},
+    onOpenNamoz: () -> Unit = {},
     vm: HabitsViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -140,7 +141,7 @@ fun HabitsRoute(
         ui, contentPadding, reselect, celebrate = celebrate, finished = finished,
         onTick = vm::tick, onUntick = vm::untick, onOpen = onOpenHabit,
         onSelectDay = vm::selectDay, onSelectPart = vm::selectPart, onTimer = vm::toggleTimer, onHistory = onHistory,
-        onStartNamoz = vm::startNamoz, onNamozMenu = { namozSheet = true },
+        onStartNamoz = vm::startNamoz, onNamozMenu = { namozSheet = true }, onOpenNamoz = onOpenNamoz,
     )
     if (namozSheet) NamozSheet(ui.board?.namoz.orEmpty(), ui.reminders, onToggle = grants.remind) { namozSheet = false }
 }
@@ -169,6 +170,7 @@ fun HabitsScreen(
     onHistory: () -> Unit = {},
     onStartNamoz: () -> Unit = {},
     onNamozMenu: () -> Unit = {},
+    onOpenNamoz: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -206,7 +208,7 @@ fun HabitsScreen(
             item(key = "strip", contentType = "strip") { WeekStrip(board, onSelectDay) }
             item(key = "parts", contentType = "parts") { PartPills(ui.part, board, onSelectPart) }
             item(key = "namoz", contentType = "namoz") {
-                NamozGroup(board, today, onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onStart = onStartNamoz, onMenu = onNamozMenu, centres = centres, modifier = Modifier.animateItem())
+                NamozGroup(board, today, onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onStart = onStartNamoz, onMenu = onNamozMenu, onPage = onOpenNamoz, centres = centres, modifier = Modifier.animateItem())
             }
             val cards = board.inPart(ui.part)
             if (cards.isEmpty()) item(key = "empty-${ui.part}", contentType = "note") { EmptyPart(ui.part, board.total) }
@@ -727,74 +729,53 @@ private fun CheckCircle(
  */
 @Composable
 private fun NamozGroup(
-    board: HabitBoard, today: LocalDate?, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit, onStart: () -> Unit, onMenu: () -> Unit,
+    board: HabitBoard, today: LocalDate?, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit, onStart: () -> Unit, onMenu: () -> Unit, onPage: () -> Unit,
     centres: MutableMap<String, Offset>, modifier: Modifier = Modifier,
 ) {
     val prayers = board.namoz
-    var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-    val started = prayers.isNotEmpty() && Namoz.counts(board.selected.toString())
-    val nowT = LocalTime.now(ZoneId.of("Asia/Tashkent"))
-    // The one line under "Namoz": the prayer that comes next today, or how many on another day.
-    val line = when {
-        prayers.isEmpty() || !started -> "From 1 November"
-        board.namozDone == prayers.size -> "All five today"
-        board.selected != today -> "${board.namozDone} of ${prayers.size}"
-        else -> prayers.firstOrNull { !it.done && it.window != null && (it.window.to > nowT || it.window.to < it.window.from) }
-            ?.let { "${it.title} · ${it.window!!.label().take(5)}" } ?: "${board.namozDone} of ${prayers.size}"
-    }
-    Row(modifier.fillMaxWidth().padding(start = Space.sm, end = Space.gutter), verticalAlignment = Alignment.Top) {
-        // The check's slot holds the day's prayer ring, so the group lines up with the habit rows.
-        Box(Modifier.size(Space.touch).padding(top = Space.md), contentAlignment = Alignment.Center) {
-            if (started) DayRing(board.namozDone, prayers.size, size = 36.dp)
-        }
-        val press = remember { MutableInteractionSource() }
-        Pane(Modifier.weight(1f)) {
-            Column(Modifier.fillMaxWidth()) {
+    Pane(modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        Column(Modifier.fillMaxWidth().padding(Space.md)) {
+            val started = Namoz.counts(board.selected.toString())
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EmojiTile("mosque", 40.dp)
+                Spacer(Modifier.width(Space.md))
+                Column(Modifier.weight(1f).heightIn(min = Space.touch).clickable(onClickLabel = "Open the Namoz page", onClick = onPage), verticalArrangement = Arrangement.Center) {
+                    Text("Namoz", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Glass.Ink, modifier = Modifier.semantics { heading() })
+                    Text(if (prayers.isEmpty() || !started) "From 1 November" else "Five a day", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                }
+                if (prayers.isNotEmpty()) {
+                    // No "0/5" before the first: nothing counts yet (checker 2026-10-30).
+                    if (started) DayRing(board.namozDone, prayers.size, size = 40.dp)
+                    GlassIconButton(TabIcons.More, "Namoz reminders", size = Space.touch, plain = true, onClick = onMenu)
+                }
+            }
+            if (prayers.isEmpty()) {
+                val press = remember { MutableInteractionSource() }
+                Spacer(Modifier.height(Space.md))
+                Text(
+                    "Start tracking", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = Space.touch).pressScale(press).background(Glass.PrimarySoft, CircleShape)
+                        .clickable(press, indication = null, role = Role.Button, onClick = onStart).padding(vertical = Space.md),
+                )
+                return@Column
+            }
+            Spacer(Modifier.height(Space.sm))
+            val nowT = LocalTime.now(ZoneId.of("Asia/Tashkent"))
+            for (c in prayers) key(c.task.id) {
+                val w = c.window
+                val current = board.selected == today && w != null && (if (w.to > w.from) nowT >= w.from && nowT < w.to else nowT >= w.from || nowT < w.to)
+                val rowPress = remember { MutableInteractionSource() }
                 Row(
-                    Modifier.fillMaxWidth().pressScale(press)
-                        .clickable(press, indication = null, enabled = prayers.isNotEmpty(), onClickLabel = if (open) "Close" else "Open") { open = !open }
-                        .semantics(mergeDescendants = true) { contentDescription = "Namoz"; stateDescription = line }
-                        .padding(horizontal = Space.md, vertical = Space.md),
+                    Modifier.fillMaxWidth().heightIn(min = Space.touch).background(if (current) Glass.PrimarySoft.copy(alpha = 0.7f) else Color.Transparent, RoundedCornerShape(14.dp))
+                        .clickable(rowPress, indication = null, onClickLabel = "Open") { onOpen(c.task.id) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    EmojiTile("mosque", 40.dp)
-                    Spacer(Modifier.width(Space.md))
-                    Column(Modifier.weight(1f)) {
-                        Text("Namoz", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink, maxLines = 1)
-                        Spacer(Modifier.height(Space.xs))
-                        Text(line, style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    if (prayers.isEmpty()) {
-                        val start = remember { MutableInteractionSource() }
-                        Text(
-                            "Start tracking", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1,
-                            modifier = Modifier.heightIn(min = Space.touch).pressScale(start).clip(CircleShape).background(Glass.PrimarySoft)
-                                .clickable(start, indication = null, role = Role.Button, onClick = onStart).padding(horizontal = Space.md, vertical = Space.md),
-                        )
-                    } else {
-                        val turn by animateFloatAsState(if (open) 180f else 0f, spring(dampingRatio = 1f, stiffness = Spring.StiffnessMedium), label = "chevron")
-                        Icon(TabIcons.ChevronDown, null, tint = Glass.Muted, modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = turn })
-                    }
-                }
-                if (open && prayers.isNotEmpty()) Column(Modifier.fillMaxWidth().padding(start = Space.xs, end = Space.md, bottom = Space.sm)) {
-                    for (c in prayers) key(c.task.id) {
-                        val w = c.window
-                        val current = board.selected == today && w != null && (if (w.to > w.from) nowT >= w.from && nowT < w.to else nowT >= w.from || nowT < w.to)
-                        val rowPress = remember { MutableInteractionSource() }
-                        Row(
-                            Modifier.fillMaxWidth().heightIn(min = Space.touch).background(if (current) Glass.PrimarySoft.copy(alpha = 0.7f) else Color.Transparent, RoundedCornerShape(14.dp))
-                                .clickable(rowPress, indication = null, onClickLabel = "Open") { onOpen(c.task.id) },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            CheckCircle(c, c.done, enabled = c.mark != Mark.BEFORE && c.mark != Mark.FUTURE, onClick = { if (c.done) onUntick(c.task.id) else onTick(c.task.id) },
-                                modifier = Modifier.onGloballyPositioned { centres[c.task.id] = it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f) })
-                            Image(painterResource(Emoji.res(c.emoji)), null, Modifier.size(22.dp))
-                            Spacer(Modifier.width(Space.sm))
-                            Text(c.title, style = MaterialTheme.typography.bodyLarge, color = if (c.done) Glass.Muted else Glass.Ink, modifier = Modifier.weight(1f))
-                            Text(w?.label().orEmpty(), style = Glass.NumberText, color = Glass.Muted)
-                        }
-                    }
-                    MenuRow(TabIcons.Bell, "Namoz reminders", onMenu)
+                    CheckCircle(c, c.done, enabled = c.mark != Mark.BEFORE && c.mark != Mark.FUTURE, onClick = { if (c.done) onUntick(c.task.id) else onTick(c.task.id) },
+                        modifier = Modifier.onGloballyPositioned { centres[c.task.id] = it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f) })
+                    Image(painterResource(Emoji.res(c.emoji)), null, Modifier.size(22.dp))
+                    Spacer(Modifier.width(Space.sm))
+                    Text(c.title, style = MaterialTheme.typography.bodyLarge, color = if (c.done) Glass.Muted else Glass.Ink, modifier = Modifier.weight(1f))
+                    Text(w?.label().orEmpty(), style = Glass.NumberText, color = Glass.Muted, modifier = Modifier.padding(end = Space.sm))
                 }
             }
         }
@@ -806,7 +787,7 @@ private fun NamozGroup(
 private fun NamozSheet(prayers: List<HabitCard>, reminders: Set<String>, onToggle: (String, Boolean) -> Unit, onDismiss: () -> Unit) {
     GlassSheet(onDismiss) {
         org.pagel.ai.ui.glass.SheetTitle("Namoz reminders", null)
-        Text("A plain note when a prayer's time comes: \"Peshin vaqti kirdi · 12:11\".", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted,
+        Text("A plain note when a prayer's time comes: \"Peshin · 12:11\".", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted,
             modifier = Modifier.padding(start = Space.xl, end = Space.xl, bottom = Space.md))
         Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
             Column {

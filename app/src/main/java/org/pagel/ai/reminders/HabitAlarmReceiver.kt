@@ -37,6 +37,7 @@ class HabitAlarmReceiver : BroadcastReceiver() {
     interface Parts {
         fun habits(): HabitsRepository
         fun dao(): PagelDao
+        fun namoz(): org.pagel.ai.data.db.NamozDao
     }
 
     override fun onReceive(ctx: Context, intent: Intent) {
@@ -76,7 +77,7 @@ class HabitAlarmReceiver : BroadcastReceiver() {
             val title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
             // A prayer (round D): only "Peshin vaqti kirdi · 12:11", its own picture, no streak (Boss: plain and respectful).
             val prayer = org.pagel.ai.data.habits.Namoz.prayerOf(title)?.takeIf { org.pagel.ai.data.habits.isNamoz(t) }
-            val window = prayer?.let { p -> org.pagel.ai.data.habits.Namoz.windows(java.time.LocalDate.parse(today)).first { it.prayer == p } }
+            val window = prayer?.let { p -> org.pagel.ai.data.habits.Namoz.windows(java.time.LocalDate.parse(today), org.pagel.ai.data.habits.Namoz.setupOf(parts.namoz().settingsOnce())).first { it.prayer == p } }
             if (window != null) postPrayer(ctx, id, window) else post(ctx, id, title, due?.drop(11)?.trim().orEmpty(), streak)
         }
         habits.replan()
@@ -102,6 +103,12 @@ class HabitAlarmReceiver : BroadcastReceiver() {
             .setLargeIcon(org.pagel.ai.ui.glass.Emoji.largeIcon(ctx, w.prayer.emoji))
             .setColor(0xFF1C7E69.toInt())
             .setContentTitle(org.pagel.ai.data.habits.Namoz.notice(w))
+            // On a locked screen only "Reminder" shows: the prayer's name stays private (namoz brief walls).
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(ctx, CHANNEL).setSmallIcon(org.pagel.ai.R.drawable.ic_stat_pagel).setColor(0xFF1C7E69.toInt())
+                    .setContentTitle("Reminder").setCategory(NotificationCompat.CATEGORY_REMINDER).build(),
+            )
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(open)
             .setAutoCancel(true)

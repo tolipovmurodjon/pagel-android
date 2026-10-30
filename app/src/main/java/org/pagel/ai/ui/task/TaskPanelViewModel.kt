@@ -63,6 +63,7 @@ class TaskPanelViewModel @Inject constructor(
     private val today: TodayRepository,
     private val toasts: ToastCenter,
     session: Session,
+    private val projectRepo: org.pagel.ai.data.projects.ProjectRepository,
 ) : ViewModel() {
     private val id = MutableStateFlow<String?>(null)
 
@@ -154,6 +155,13 @@ class TaskPanelViewModel @Inject constructor(
     fun delete() = go { taskId ->
         val op = tasks.delete(taskId) ?: return@go
         toasts.show("Deleted", action = "Undo") { viewModelScope.launch { tasks.undoDelete(taskId, op) } }
+    }
+
+    /** "Turn into project": its open steps become the new project's tasks (the first is the next step). */
+    fun turnIntoProject(then: (String) -> Unit) = go { taskId ->
+        val name = projectRepo.turnIntoProject(taskId) { text, project -> today.add(text, project, 2, null, null, onToday = false) } ?: return@go
+        toasts.show("Now a project")
+        then(name)
     }
 
     fun dayToday(): LocalDate = LocalDate.parse(tasks.tashkentDay())

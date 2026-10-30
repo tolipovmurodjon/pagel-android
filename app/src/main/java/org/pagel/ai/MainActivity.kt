@@ -43,6 +43,7 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var session: Session
+    @Inject lateinit var projects: org.pagel.ai.data.projects.ProjectRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -66,6 +67,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         session.resume()
+        // KPI: days opened and open → first tick (counts only). Room write, off Main.
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { projects.recordOpen() }
     }
 
     override fun onStop() {

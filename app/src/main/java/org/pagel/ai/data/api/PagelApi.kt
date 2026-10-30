@@ -166,6 +166,18 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         }
     }
 
+    /** One project change or use count from the outbox (core round): [method] + [path] + a JSON [body]; the reply as JSON. */
+    suspend fun send(baseUrl: String, token: String, method: String, path: String, body: String): Outcome<kotlinx.serialization.json.JsonObject> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, path)).method(method, body.toRequestBody(JSON)), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.parseToJsonElement(it.ifEmpty { "{}" }) as kotlinx.serialization.json.JsonObject } }
+    }
+
+    /** `GET /api/v1/kpi/week`: the last 7 days of real use, counts only. */
+    suspend fun kpiWeek(baseUrl: String, token: String): Outcome<KpiWeekReply> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/kpi/week")), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(KpiWeekReply.serializer(), it) } }
+    }
+
     private suspend fun <T> call(block: () -> Outcome<T>): Outcome<T> = withContext(io) {
         try {
             block()

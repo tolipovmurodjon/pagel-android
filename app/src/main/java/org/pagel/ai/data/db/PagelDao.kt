@@ -12,8 +12,31 @@ private const val MAX_IDS = 500
 
 @Dao
 abstract class PagelDao {
-    @Query("SELECT * FROM projects ORDER BY sort")
+    /** Every project the phone shows (one inside a delete's or a merge's Undo window is hidden). */
+    @Query("SELECT * FROM projects WHERE hidden = 0 ORDER BY sort")
     abstract fun projects(): Flow<List<ProjectEntity>>
+
+    @Query("SELECT * FROM projects WHERE name = :name")
+    abstract suspend fun projectOnce(name: String): ProjectEntity?
+
+    @Query("SELECT name FROM projects")
+    abstract suspend fun projectNames(): List<String>
+
+    @Query("SELECT * FROM projects ORDER BY sort")
+    abstract suspend fun projectsOnce(): List<ProjectEntity>
+
+    @Query("SELECT id FROM tasks WHERE project = :project ORDER BY phaseNow DESC, phaseSort, sort")
+    abstract suspend fun taskIdsOf(project: String): List<String>
+
+    /** Projects with a change still waiting in the outbox: they keep the phone's copy until pagel.uz has it. */
+    @Query("SELECT DISTINCT substr(taskId, 9) FROM outbox WHERE op = '${OutboxEntity.PROJECT}' AND refused IS NULL")
+    abstract suspend fun pendingProjects(): List<String>
+
+    @Query("SELECT id FROM tasks WHERE project = :project AND status = 'open' ORDER BY phaseNow DESC, phaseSort, sort")
+    abstract suspend fun openTaskIds(project: String): List<String>
+
+    @Query("UPDATE tasks SET project = :into, lastModified = :at WHERE id IN (:ids)")
+    abstract suspend fun moveTasksLocal(ids: List<String>, into: String, at: Long)
 
     /** A project's open tasks, its NOW phase first, then in plan order (the web's plan page). */
     @Query("SELECT * FROM tasks WHERE project = :project AND status = 'open' ORDER BY phaseNow DESC, phaseSort, sort")
@@ -228,8 +251,10 @@ abstract class PagelDao {
      */
     @Transaction
     open suspend fun applySync(full: Boolean, projects: List<ProjectEntity>, tasks: List<TaskEntity>, steps: List<StepEntity>, removed: List<String>, state: SyncStateEntity) {
-        upsertProjects(projects)
-        deleteProjectsExcept(projects.map { it.name })
+        // A project with a change still waiting keeps the phone's copy (the same rule as tasks, below).
+        val mine = pendingProjects().toSet()
+        upsertProjects(projects.filter { it.name !in mine })
+        deleteProjectsExcept(projects.map { it.name } + mine)
         // Conflict rule (RULES.md): a task with a tick still waiting in the outbox keeps the phone's version until
         // pagel.uz has it; the server's copy wins on the next sync after that.
         val pending = pendingIds().toSet()

@@ -54,6 +54,8 @@ class HabitAlarms(
     private val clock: () -> Long = System::currentTimeMillis,
     /** The evening "Close the day" reminder (Phase 5) rides on the same planner, so boot and updates plan it too. */
     private val rituals: org.pagel.ai.data.db.RitualsDao? = null,
+    /** The Namoz page's settings (place, method, minutes added): a prayer's alarm follows them. */
+    private val namoz: org.pagel.ai.data.db.NamozDao? = null,
 ) : ReminderPlanner {
     private var job: Job? = null
 
@@ -71,6 +73,7 @@ class HabitAlarms(
         runCatching { TaskAlarms.plan(ctx, dao, rituals, am, now) }
         // Phase 6a: the Compass's birthday morning and season review (kinds and dates only, never words).
         runCatching { CompassAlarms.plan(ctx, am, now) }
+        val setup = org.pagel.ai.data.habits.Namoz.setupOf(runCatching { namoz?.settingsOnce() }.getOrNull())
         for (r in dao.remindersOnce()) {
             val pi = fireIntent(ctx, r.taskId)
             val h = habits[r.taskId]
@@ -78,7 +81,7 @@ class HabitAlarms(
             val prayer = h?.takeIf { org.pagel.ai.data.habits.isNamoz(it) }?.let { org.pagel.ai.data.habits.Namoz.prayerOf(it.title ?: it.text) }
             val at = when {
                 !r.enabled || h == null -> null
-                prayer != null -> org.pagel.ai.data.habits.Namoz.nextStart(prayer, now)
+                prayer != null -> org.pagel.ai.data.habits.Namoz.nextStart(prayer, now, setup)
                 else -> ReminderMath.nextFire(h.due, h.every, now)
             }
             if (at == null) { am.cancel(pi); continue }
