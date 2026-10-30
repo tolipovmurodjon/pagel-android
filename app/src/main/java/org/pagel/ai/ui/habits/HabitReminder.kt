@@ -110,7 +110,7 @@ fun ReminderContent(
         // nothing rings at all), then the exact time (without it a reminder may come up to 10 min late).
         when {
             !on -> Hint("Off. The habit still shows here every day.")
-            !notify -> FixRow(TabIcons.Bell, "Notifications off", "Turn on", Glass.Risk, onFixNotify)
+            !notify -> FixRow(TabIcons.Bell, "Notifications off", "Turn on", Glass.Amber, onFixNotify)
             !exact -> FixRow(TabIcons.Clock, "Exact time", "Allow", Glass.Ink, onFixExact)
             else -> Hint("At $time on the days it repeats, with a Done button.")
         }
@@ -122,7 +122,10 @@ private fun Hint(text: String) {
     Text(text, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = Space.md))
 }
 
-/** A missing grant: its icon and name, and the one word that opens the right Settings page, on a 48 dp row. */
+/**
+ * A missing grant: its icon and name, and the one word that opens the right Settings page, on a 48 dp row. [tone] tints
+ * the icon only; the words stay ink (checker 3 #1: red words read as an error, and a habit is never red).
+ */
 @Composable
 internal fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, action: String, tone: Color, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
@@ -135,7 +138,7 @@ internal fun FixRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label
     ) {
         Icon(icon, contentDescription = null, tint = tone, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(Space.md))
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = tone, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Text(action, style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1,
             modifier = Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = Space.lg, vertical = 8.dp))
     }

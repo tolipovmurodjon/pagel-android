@@ -168,16 +168,25 @@ fun HabitDetail(
             }
             Spacer(Modifier.width(Space.md))
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() })
+                // The whole name, however long: it grows, never "…" (checker 3 #9).
+                Text(title, style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
                 recipeOf(t, ui)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
         }
-        FlowRow(Modifier.padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        // Every chip has one height (Chip: a 36 dp pill in a 48 dp slot), so the slots alone space the rows.
+        FlowRow(Modifier.padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
             val time = t.due?.drop(11)?.trim()?.take(5)?.takeIf(String::isNotEmpty)
             Chip(time?.let { runCatching { partAt(LocalTime.parse(it)).label }.getOrNull() } ?: "Anytime")
             Chip(Repeat.label(t.every.orEmpty()))
-            // The quick glance at the reminder, honest about on/off; a tap opens the sheet at Reminder.
-            if (time != null) Chip(if (t.id in ui.reminders) "🔔 $time" else "🔕 $time") { onSettings(SheetAt.REMINDER) }
+            // The quick glance at the reminder, honest about on/off; a tap opens the sheet at Reminder. Off is a grey
+            // outline bell, never the bell-off emoji (its slash is red, checker 3 #2).
+            if (time != null) {
+                val on = t.id in ui.reminders
+                Chip(
+                    time, icon = if (on) TabIcons.BellRing else TabIcons.BellOff, iconTint = if (on) Glass.Primary else Glass.Muted,
+                    description = if (on) "Reminder on · $time" else "Reminder off · $time",
+                ) { onSettings(SheetAt.REMINDER) }
+            }
             minutesOf(title, pref?.minutes)?.let { Chip("$it min") }
             if (t.times > 1) Chip("${t.times}× a day")
         }
@@ -319,7 +328,7 @@ internal fun HabitSettings(
                     .testTag("look-tile"),
             ) { EmojiTile(emoji, 56.dp, colour = colour) }
             Spacer(Modifier.width(Space.md))
-            Text(title, style = MaterialTheme.typography.titleLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.titleLarge, color = Glass.Ink, modifier = Modifier.weight(1f))
         }
         if (!isNamoz(t)) {
             SheetLabel("Look", Modifier.padding(start = Space.xl))
@@ -337,8 +346,9 @@ internal fun HabitSettings(
         if (!isNamoz(t)) {
             val time = t.due?.drop(11)?.trim()?.take(5)?.takeIf(String::isNotEmpty)
             val part = time?.let { runCatching { partAt(LocalTime.parse(it)) }.getOrNull() } ?: Part.ANYTIME
-            Row(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
-                for (p in listOf(Part.MORNING, Part.AFTERNOON, Part.EVENING, Part.ANYTIME)) Chip(p.label, on = p == part, modifier = Modifier.weight(1f)) { onPart(p) }
+            // Natural widths that wrap to a second line, never four squeezed cells ("Mornin", checker 3 #3).
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
+                for (p in listOf(Part.MORNING, Part.AFTERNOON, Part.EVENING, Part.ANYTIME)) Chip(p.label, on = p == part) { onPart(p) }
             }
             val days = Repeat.daysOf(t.every.orEmpty()).toSet().ifEmpty { if (t.every == "day") (0..6).toSet() else if (t.every == "weekday") (1..5).toSet() else emptySet() }
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
@@ -434,13 +444,19 @@ private fun AnchorPicker(t: TaskEntity, ui: HabitsUi, onAnchor: (HabitLook.Ancho
         Column {
             val label = when (now) {
                 null -> "None"
-                is HabitLook.Anchor.Moment -> now.text
+                // The moment's words; its picture is drawn in the list below (a font may not have 🪥).
+                is HabitLook.Anchor.Moment -> now.text.let { m -> if (Emoji.keyOfGlyph(m.substringBefore(' ')) != null) m.substringAfter(' ') else m }
                 is HabitLook.Anchor.Habit -> ui.byId[now.id]?.let(::titleOf) ?: "None"
             }
             MenuRow(TabIcons.CornerDownLeft, "After · $label") { open = !open }
             if (!open) return@Column
             AnchorRow("None", null, null, now == null) { onAnchor(null) }
-            for (m in HabitLook.MOMENTS) AnchorRow(m, null, null, (now as? HabitLook.Anchor.Moment)?.text == m) { onAnchor(HabitLook.Anchor.Moment(m)) }
+            for (m in HabitLook.MOMENTS) {
+                val key = Emoji.keyOfGlyph(m.substringBefore(' '))
+                AnchorRow(if (key != null) m.substringAfter(' ') else m, key, null, (now as? HabitLook.Anchor.Moment)?.text == m, said = m, tile = false) {
+                    onAnchor(HabitLook.Anchor.Moment(m))
+                }
+            }
             var own by remember { mutableStateOf("") }
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.md), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(own, { own = it.take(40) }, Modifier.weight(1f), label = { Text("✏️ Your own moment") }, singleLine = true)
@@ -461,14 +477,16 @@ private fun AnchorPicker(t: TaskEntity, ui: HabitsUi, onAnchor: (HabitLook.Ancho
 }
 
 @Composable
-private fun AnchorRow(text: String, emoji: String?, colour: String?, on: Boolean, onClick: () -> Unit) {
+private fun AnchorRow(text: String, emoji: String?, colour: String?, on: Boolean, said: String = text, tile: Boolean = true, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Row(
         Modifier.fillMaxWidth().heightIn(min = Space.row).pressScale(press).clickable(press, indication = null, role = Role.RadioButton, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = "After: $text"; selected = on }.padding(horizontal = Space.lg),
+            .semantics(mergeDescendants = true) { contentDescription = "After: $said"; selected = on }.padding(horizontal = Space.lg),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (emoji != null) { EmojiTile(emoji, 32.dp, colour = colour); Spacer(Modifier.width(Space.md)) }
+        if (emoji != null && tile) { EmojiTile(emoji, 32.dp, colour = colour); Spacer(Modifier.width(Space.md)) }
+        // A moment: the bundled picture alone, as the words' own emoji (its glyph would need the font).
+        if (emoji != null && !tile) { Image(painterResource(Emoji.res(emoji)), null, Modifier.size(24.dp)); Spacer(Modifier.width(Space.sm)) }
         Text(text, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         if (on) Icon(TabIcons.Check, null, tint = Glass.Primary, modifier = Modifier.size(20.dp))
     }

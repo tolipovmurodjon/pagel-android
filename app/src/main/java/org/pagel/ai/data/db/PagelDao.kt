@@ -157,7 +157,30 @@ abstract class PagelDao {
         dropOrderIfServerHasIt(old, new)
         renameInToday(old, new)
         renameInSweeps(old, new)
+        // A habit made on the phone keeps its ticks, look, freezes and bell (checker 3 #5). The phone's rows win a
+        // clash: they are newer than anything pagel.uz could hold for an id it has just made.
+        renameInHabitTicks(old, new)
+        renameInHabitPrefs(old, new)
+        renameInHabitAnchors(old, new)
+        renameInHabitFreezes(old, new)
+        renameInHabitReminders(old, new)
     }
+
+    @Query("UPDATE OR REPLACE habit_ticks SET taskId = :new WHERE taskId = :old")
+    abstract suspend fun renameInHabitTicks(old: String, new: String)
+
+    @Query("UPDATE OR REPLACE habit_prefs SET taskId = :new WHERE taskId = :old")
+    abstract suspend fun renameInHabitPrefs(old: String, new: String)
+
+    /** Another habit that follows this one ("after Stretch") keeps following it. */
+    @Query("UPDATE habit_prefs SET `after` = :new WHERE `after` = :old")
+    abstract suspend fun renameInHabitAnchors(old: String, new: String)
+
+    @Query("UPDATE OR REPLACE habit_freezes SET taskId = :new WHERE taskId = :old")
+    abstract suspend fun renameInHabitFreezes(old: String, new: String)
+
+    @Query("UPDATE OR REPLACE habit_reminders SET taskId = :new WHERE taskId = :old")
+    abstract suspend fun renameInHabitReminders(old: String, new: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun recordAdopted(row: AdoptedIdEntity)

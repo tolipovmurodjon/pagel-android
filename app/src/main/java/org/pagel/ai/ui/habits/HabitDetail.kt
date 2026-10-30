@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -164,17 +166,32 @@ internal fun MonthChain(
 }
 
 @Composable
-internal fun Chip(text: String, on: Boolean = false, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+internal fun Chip(
+    text: String, on: Boolean = false, modifier: Modifier = Modifier, icon: ImageVector? = null, iconTint: Color = Glass.Muted,
+    description: String? = null, onClick: (() -> Unit)? = null,
+) {
     val press = remember { MutableInteractionSource() }
-    // A Box centres the word in the 48 dp target (a Text with heightIn sat on its top edge).
-    Box(
-        modifier.heightIn(min = if (onClick != null) Space.touch else 32.dp).clip(CircleShape)
+    // One pill height for every chip, tappable or not (checker 3 #10: the bell chip stood taller than its row): the pill
+    // is 36 dp, and the 48 dp touch target is layout space around it, the same for every chip in a row.
+    Row(
+        modifier.minimumInteractiveComponentSize().heightIn(min = 36.dp).clip(CircleShape)
             .background(if (on) Glass.PrimarySoft else Color.White.copy(alpha = 0.7f))
             .border(1.dp, if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.08f), CircleShape)
-            .then(if (onClick != null) Modifier.pressScale(press).clickable(press, indication = null, role = Role.RadioButton, onClick = onClick).semantics { selected = on } else Modifier)
+            .then(
+                when {
+                    onClick != null -> Modifier.pressScale(press).clickable(press, indication = null, role = Role.RadioButton, onClick = onClick)
+                        .semantics { selected = on; if (description != null) contentDescription = description }
+                    description != null -> Modifier.semantics(mergeDescendants = true) { contentDescription = description }
+                    else -> Modifier
+                },
+            )
             .padding(horizontal = Space.md, vertical = Space.xs),
-        contentAlignment = Alignment.Center,
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null) {
+            androidx.compose.material3.Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(Space.xs))
+        }
         Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), color = if (on) Glass.PrimaryInk else Glass.Ink, maxLines = 1)
     }
 }

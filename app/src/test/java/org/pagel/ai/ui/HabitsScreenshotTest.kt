@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.foundation.layout.Box
@@ -227,6 +228,9 @@ class HabitsScreenshotTest {
             val text = l.layoutInput.text.text
             val at = "$what \"${text.take(40)}\""
             assertTrue("$at has an ellipsis (lines ${l.lineCount}, overflow ${l.hasVisualOverflow})", (0 until l.lineCount).none { l.isLineEllipsized(it) })
+            // A one-line text wider than its box is cut without an ellipsis ("Mornin", checker 3 #3). Only the width is
+            // read: a text in a clipped pane can overflow its height and still show whole.
+            assertTrue("$at is cut by its box (one line, ${l.size.width} px drawn, overflow ${l.didOverflowWidth})", !(l.lineCount == 1 && l.didOverflowWidth))
             for (i in 0 until l.lineCount - 1) {
                 val e = l.getLineEnd(i)
                 assertTrue("$at breaks a word at line ${i + 1}", e >= text.length || text[e - 1].isWhitespace() || text[e].isWhitespace() || text[e - 1] == '-')
@@ -252,7 +256,10 @@ class HabitsScreenshotTest {
     private fun namoz320(name: String, h: List<TaskEntity>) {
         show { Box(Modifier.width(320.dp)) { HabitsScreen(ui(h = h), pad) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-320-$name.png")
-        assertNoCutText(allTexts().filter { n -> n.config.getOrNull(SemanticsProperties.Text)?.any { it.text in setOf("Namoz", "From 1 November", "Start tracking", "Five a day") } == true }, "namoz $name 320")
+        // The five prayer names too ("Bomd / od", checker 3 #4) and the header's date line ("Wednesday 28 Oct…", #8).
+        val words = setOf("Namoz", "From 1 November", "Start tracking", "Five a day", "Wednesday 28 October") + Namoz.Prayer.entries.map { it.uz }
+        assertNoCutText(allTexts().filter { n -> n.config.getOrNull(SemanticsProperties.Text)?.any { it.text in words } == true }, "namoz $name 320")
+        if (name == "rows") for (p in Namoz.Prayer.entries) compose.onNodeWithText(p.uz).assertExists()
     }
 
     @Test fun namozCardNeverBreaksAWordAt320WithRows() = namoz320("rows", habits + prayers)
@@ -263,7 +270,8 @@ class HabitsScreenshotTest {
         show(1.5f) { HabitDetail(habits[0], ui(), pad) }
         compose.onNode(hasTestTag("habit-stats")).assertIsDisplayed()
         assertNoCutText(allTexts(), "habit page 1.5x")
-        compose.onNodeWithText("October 2026").performScrollTo()
+        // The month's last day, not its title: the title was already on screen, so the shot never moved (checker 3 #12).
+        compose.onNodeWithContentDescription("Saturday 31 October").performScrollTo().assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-page-font-1.5-calendar.png")
         assertNoCutText(allTexts(), "habit page 1.5x calendar")
     }
@@ -433,10 +441,21 @@ class HabitsScreenshotTest {
         compose.onAllNodesWithText("Freeze today · 1 left this month").assertCountEquals(0)
         compose.onAllNodesWithText("Emoji").assertCountEquals(0)
         // The bell chip is the quick glance (h1's reminder is on) and opens the sheet at Reminder.
-        compose.onNodeWithText("🔔 07:30").performClick()
+        compose.onNodeWithContentDescription("Reminder on · 07:30").performClick()
         assertEquals(org.pagel.ai.ui.habits.SheetAt.REMINDER, at)
         compose.onNodeWithContentDescription("Habit settings").performClick()
         assertEquals(org.pagel.ai.ui.habits.SheetAt.TOP, at)
+        // Checker 3 #10: every chip in the header is one pill height (the bell chip stood taller).
+        val pills = listOf("Morning", "Daily", "07:30", "10 min").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot }
+        val mids = pills.map { it.center.y }
+        assertTrue("one row of chips, centred alike: $mids", mids.all { kotlin.math.abs(it - mids[0]) < 1.5f })
+    }
+
+    /** Checker 3 #2: a reminder that is off is a grey outline bell on the chip, never the bell-off emoji. */
+    @Test fun anOffReminderIsAGreyBellChip() {
+        show { HabitDetail(habits[0], ui(reminders = emptySet()), pad) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-page-reminder-off.png")
+        compose.onNodeWithContentDescription("Reminder off · 07:30").assertIsDisplayed()
     }
 
     @Test fun theHabitsPageShowsItsRecipe() {
@@ -504,7 +523,56 @@ class HabitsScreenshotTest {
         compose.onAllNodesWithContentDescription("After: Run the weekly review").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("After: Go through five saves in your Inbox").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("After: Stretch for ten minutes").assertCountEquals(0)
+        compose.onNodeWithContentDescription("After: 🪥 Brushing teeth").performScrollTo()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-after.png")
+    }
+
+    /** Checker 3 #3: the part chips keep their whole words at 360 dp ("Mornin / Afterno / Evenin / Anytim"). */
+    @Test fun thePartChipsAreWholeWords() {
+        show { androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) { org.pagel.ai.ui.habits.HabitSettings(habits[0], ui(), org.pagel.ai.ui.habits.SheetAt.TOP, reminder = {}) } }
+        compose.onNodeWithText("SCHEDULE").performScrollTo()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-schedule.png")
+        val parts = setOf("Morning", "Afternoon", "Evening", "Anytime")
+        assertNoCutText(allTexts().filter { n -> n.config.getOrNull(SemanticsProperties.Text)?.any { it.text in parts } == true }, "part chips 360")
+    }
+
+    /**
+     * Checker 3 #7: the Look picker open behind the tile, and a colour tapped: the tile above takes it at once (the
+     * live preview), from the habit's own saved colour.
+     */
+    @Test fun theLookPickerPreviewsTheColourLive() {
+        var p by androidx.compose.runtime.mutableStateOf(mapOf("h1" to HabitPrefEntity("h1", emoji = "lotus/teal")))
+        show {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                org.pagel.ai.ui.habits.HabitSettings(
+                    habits[0], ui().copy(prefs = p), org.pagel.ai.ui.habits.SheetAt.LOOK, reminder = {},
+                    onColour = { c -> p = mapOf("h1" to HabitPrefEntity("h1", emoji = org.pagel.ai.data.habits.HabitLook.look("lotus", c))) },
+                )
+            }
+        }
+        compose.onNodeWithText("Find an emoji").assertExists()
+        compose.onNodeWithContentDescription("Colour teal").performScrollTo()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-look.png")
+        compose.onAllNodesWithContentDescription("Colour red").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Colour amber").performScrollTo().performClick()
+        compose.onNodeWithTag("look-tile").performScrollTo()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-look-amber.png")
+        assertEquals("lotus/amber", p["h1"]?.emoji)
+        compose.onNodeWithContentDescription("Colour amber").assertIsSelected()
+    }
+
+    /** Checker 3 #7: the sheet opened from the bell chip, on a habit with a real reminder set. */
+    @Test fun theSettingsSheetWithAReminderSet() {
+        show {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                org.pagel.ai.ui.habits.HabitSettings(habits[0], ui(), org.pagel.ai.ui.habits.SheetAt.REMINDER, reminder = {
+                    ReminderContent(habits[0], on = true, exact = true, onToggle = {}, onTime = {})
+                })
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("At 07:30 on the days it repeats, with a Done button.").performScrollTo().assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-reminder.png")
     }
 
     @Test fun historyCalendar() {

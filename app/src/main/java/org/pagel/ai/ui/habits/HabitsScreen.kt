@@ -124,6 +124,8 @@ import java.time.format.TextStyle
 import java.util.Locale
 
 private val DAY_TITLE = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
+/** The widest header lines any day can show (today's long date, another day's short one): one decides the line count. */
+private val LONGEST_DAY_LINES = listOf("Wednesday 28 September", "Wed 28 Sep · looking back")
 private val DAY_SHORT = DateTimeFormatter.ofPattern("EEE d MMM", Locale.UK)
 
 @Composable
@@ -269,19 +271,25 @@ fun HabitsScreen(
 @Composable
 private fun Header(ui: HabitsUi, board: HabitBoard?, onHistory: () -> Unit, onNew: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = Space.textEdge, end = Space.gutter, top = Space.headerTop), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f)) { Column {
             Text("Habits", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
             // Always there with a fixed number of lines, so the strip under it never moves (RULES.md Layout 1). Another day
-            // uses the short date so "· looking back" fits; at a large font the line owns two lines and never cuts.
-            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+            // uses the short date so "· looking back" fits. When the longest line of any day does not fit (a large font, a
+            // 320 dp phone: "Wednesday 28 Oct…", checker 3 #8), the line owns two lines on every day and never cuts.
+            val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+            val style = MaterialTheme.typography.labelSmall
+            val room = constraints.maxWidth
+            val big = remember(room, style, androidx.compose.ui.platform.LocalDensity.current) {
+                LONGEST_DAY_LINES.any { measurer.measure(it, style, softWrap = false, maxLines = 1).size.width > room }
+            }
             val line = when {
                 board == null -> "Every day, the same few things"
                 board.selected == board.today -> board.selected.format(DAY_TITLE)
                 else -> board.selected.format(DAY_SHORT) + if (board.selected.isAfter(board.today)) " · ahead" else " · looking back"
             }
             val lines = if (big) 2 else 1
-            Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, minLines = lines, maxLines = lines, overflow = TextOverflow.Ellipsis)
-        }
+            Text(line, style = style, color = Glass.Muted, minLines = lines, maxLines = lines, overflow = TextOverflow.Ellipsis)
+        } }
         if (board != null) DayRing(board.doneCount, board.total, Modifier.padding(end = Space.sm))
         GlassIconButton(TabIcons.Plus, "New habit", size = Space.touch, plain = true, onClick = onNew)
         GlassIconButton(TabIcons.CalendarCheck, "History", size = Space.touch, onClick = onHistory)
@@ -854,6 +862,7 @@ private fun CheckCircle(
  * The five prayers as one group (Boss 2026-10-28): the ring "3/5", one row each with today's time window, the prayer
  * whose time it is now marked. From 1 November; before that, the rows wait. Plain and calm: no streak shaming, no red.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun NamozGroup(
     board: HabitBoard, today: LocalDate?, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit, onStart: () -> Unit, onMenu: () -> Unit, onPage: () -> Unit,
@@ -913,8 +922,16 @@ private fun NamozGroup(
                         modifier = Modifier.onGloballyPositioned { centres[c.task.id] = it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f) })
                     Image(painterResource(Emoji.res(c.emoji)), null, Modifier.size(22.dp))
                     Spacer(Modifier.width(Space.sm))
-                    Text(c.title, style = MaterialTheme.typography.bodyLarge, color = if (c.done) Glass.Muted else Glass.Ink, modifier = Modifier.weight(1f))
-                    Text(w?.label().orEmpty(), style = Glass.NumberText, color = Glass.Muted, modifier = Modifier.padding(end = Space.sm))
+                    // The name is one whole word ("Bomd / od" at 320 dp, checker 3 #4): when name and time do not fit on one
+                    // line, the time moves under the name instead of breaking it.
+                    androidx.compose.foundation.layout.FlowRow(
+                        Modifier.weight(1f).padding(end = Space.sm), horizontalArrangement = Arrangement.SpaceBetween,
+                        itemVerticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(c.title, style = MaterialTheme.typography.bodyLarge, color = if (c.done) Glass.Muted else Glass.Ink, softWrap = false, maxLines = 1,
+                            modifier = Modifier.padding(end = Space.sm))
+                        Text(w?.label().orEmpty(), style = Glass.NumberText, color = Glass.Muted, softWrap = false, maxLines = 1)
+                    }
                 }
             }
         }

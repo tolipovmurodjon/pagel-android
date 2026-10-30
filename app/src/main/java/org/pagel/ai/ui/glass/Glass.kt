@@ -30,6 +30,8 @@ object Glass {
     /** `.pane` background: rgb(238 249 244 / .55). */
     val PaneTint = Color(0xFFEEF9F4).copy(alpha = 0.55f)
     val Risk = Color(0xFFB3261E)
+    /** A grant that needs a tap ("Notifications off"): amber, never red; the words stay ink (checker 3 #1). */
+    val Amber = Color(0xFFB7791F)
 
     private fun variable(res: Int, weight: FontWeight) =
         Font(res, weight, variationSettings = FontVariation.Settings(weight, FontStyle.Normal))
