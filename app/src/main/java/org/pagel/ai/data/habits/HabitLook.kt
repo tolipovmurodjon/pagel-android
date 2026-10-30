@@ -22,11 +22,15 @@ object HabitLook {
     /** The daily moments offered before the habits in the "After" picker. */
     val MOMENTS = listOf("☕ Coffee", "🕌 Fajr", "🪥 Brushing teeth", "🍽 Lunch", "🛏 Getting into bed")
 
-    /** The ten tile colours (brain rules/gradient-project-icons, the projects' own palette). */
-    val COLOURS = listOf("mint", "teal", "sky", "blue", "violet", "pink", "red", "coral", "amber", "slate")
+    /**
+     * The tile colours (brain rules/gradient-project-icons, the projects' own palette) without red: a habit is never red
+     * (checker 3 #2). A habit saved red before shows as coral, the nearest swatch left ([MOVED]).
+     */
+    val COLOURS = listOf("mint", "teal", "sky", "blue", "violet", "pink", "coral", "amber", "slate")
+    private val MOVED = mapOf("red" to "coral")
 
     fun emojiOf(raw: String?): String? = raw?.substringBefore('/')?.trim()?.takeIf(String::isNotEmpty)
-    fun colourOf(raw: String?): String? = raw?.substringAfter('/', "")?.trim()?.takeIf { it in COLOURS }
+    fun colourOf(raw: String?): String? = raw?.substringAfter('/', "")?.trim()?.let { MOVED[it] ?: it }?.takeIf { it in COLOURS }
     fun look(emoji: String?, colour: String?): String? {
         val e = emoji?.trim().orEmpty()
         val c = colour?.takeIf { it in COLOURS }
