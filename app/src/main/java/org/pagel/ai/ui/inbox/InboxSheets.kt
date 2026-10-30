@@ -290,7 +290,7 @@ fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit) {
                 Pane(Modifier.fillMaxWidth().padding(vertical = Space.md)) {
                     Column(Modifier.padding(vertical = Space.xs)) {
                         tidy.sources.forEachIndexed { i, (name, count) ->
-                            if (i > 0) HorizontalDivider(Modifier.padding(start = Space.lg), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
+                            if (i > 0) HorizontalDivider(Modifier.padding(start = Space.lg), color = Glass.Ink.copy(alpha = 0.07f))
                             Row(Modifier.fillMaxWidth().heightIn(min = Space.touch).padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically) {
                                 Text(name, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f), maxLines = 1)
                                 Text("$count", style = Glass.NumberText, color = Glass.Muted)
