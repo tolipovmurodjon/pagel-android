@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextDecoration
@@ -172,6 +173,17 @@ private fun Step(step: Int, ui: ReviewUi, onStep: (String, String) -> Unit, onDr
                     )
                     Spacer(Modifier.width(8.dp))
                     QuietButton(if (gone) "Undo" else "Drop", if (gone) TabIcons.Undo else TabIcons.Trash, description = (if (gone) "Undo drop: " else "Drop: ") + t.title) { onDrop(t.id) }
+                }
+            }
+            // The ones waiting on someone else: read here so a stale ball is chased, not forgotten (Inbox clarify, 2026-10-30).
+            if (ui.waiting.isNotEmpty()) {
+                Text("Waiting for", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(top = org.pagel.ai.ui.glass.Space.lg).semantics { heading() })
+                ui.waiting.forEach { t ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = org.pagel.ai.ui.glass.Space.row), verticalAlignment = Alignment.CenterVertically) {
+                        ProjectTile(t.project, t.projectColor, t.projectTitle, size = 22.dp)
+                        Spacer(Modifier.width(org.pagel.ai.ui.glass.Space.md))
+                        Text(t.title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(vertical = org.pagel.ai.ui.glass.Space.sm))
+                    }
                 }
             }
         }

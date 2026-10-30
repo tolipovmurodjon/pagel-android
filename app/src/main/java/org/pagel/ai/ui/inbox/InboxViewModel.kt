@@ -110,7 +110,25 @@ data class InboxUi(
 data class Leaving(val id: Long, val card: InboxCard, val choice: Choice, val thrown: Throw = Throw.None, val shuffled: Boolean = false)
 
 /** An open choice form (Action, Note, Learn, Do now): the card it is for and the line Boss writes. */
-data class Form(val card: InboxCard, val choice: Choice, val line: String, val project: String, val someday: Boolean, val due: String? = null)
+data class Form(
+    val card: InboxCard, val choice: Choice, val line: String, val project: String, val someday: Boolean, val due: String? = null,
+    /** Waiting for: who has the ball (optional). Project: the new project's name. */
+    val who: String = "", val name: String = "",
+)
+
+/** Whether a form has what its choice needs before the card may leave. */
+fun formReady(f: Form, minWords: Int): Boolean = when (f.choice) {
+    Choice.NOW -> true
+    Choice.KEEP -> words(f.line) >= minWords
+    Choice.PROJECT -> words(f.name) >= 1 && words(f.line) >= 2
+    else -> words(f.line) >= 2
+}
+
+/** The bulk tidy-up sheet: the old saves found, and whether the ask is still out or failed (offline). */
+data class Tidy(val loading: Boolean = true, val items: List<InboxItemEntity> = emptyList(), val failed: Boolean = false) {
+    /** The old saves by where they came from, biggest first. */
+    val sources: List<Pair<String, Int>> get() = items.groupingBy { siteOf(it.source).second }.eachCount().toList().sortedByDescending { it.second }
+}
 
 /** Where a toast's Open goes (round D item 2): a project's tasks or its notes. */
 sealed interface InboxOpen {
@@ -144,6 +162,7 @@ class InboxViewModel @Inject constructor(
     private val toasts: ToastCenter,
     private val session: Session,
     private val where: org.pagel.ai.data.inbox.WhereItWent,
+    private val projects: org.pagel.ai.data.projects.ProjectRepository,
 ) : ViewModel() {
     private val _open = kotlinx.coroutines.channels.Channel<InboxOpen>(kotlinx.coroutines.channels.Channel.BUFFERED)
     /** A toast's Open: the shell pushes the project page or its notes. */
@@ -163,6 +182,8 @@ class InboxViewModel @Inject constructor(
     val leaving: StateFlow<Leaving?> = _leaving.asStateFlow()
     private val _form = MutableStateFlow<Form?>(null)
     val form: StateFlow<Form?> = _form.asStateFlow()
+    private val _tidy = MutableStateFlow<Tidy?>(null)
+    val tidy: StateFlow<Tidy?> = _tidy.asStateFlow()
     private val _pictures = MutableStateFlow<Map<String, Bitmap?>>(emptyMap())
     val picturesShown: StateFlow<Map<String, Bitmap?>> = _pictures.asStateFlow()
     /** A keep's milestone or the day's goal crossed on this screen: the screen fires confetti, the VM says the words. */
@@ -272,9 +293,22 @@ class InboxViewModel @Inject constructor(
         if (choice == Choice.LATER && card.putOff) return
         when (choice) {
             Choice.LATER, Choice.DROP -> leave(card, choice, thrown, null, null, null)
+            Choice.SOMEDAY -> someday(card, thrown)
             else -> openForm(card, choice)
         }
     }
+
+    /**
+     * Someday is one tap, no sheet (Boss 2026-10-30): a P3 task in the card's project with the AI's next step (or the
+     * claim) as its words, 5 s Undo. A save with too little to say opens the Action form with Someday already on.
+     */
+    private fun someday(card: InboxCard, thrown: Throw) {
+        val line = card.next.ifBlank { card.claim }.trim()
+        if (words(line) < 2) { _form.value = Form(card, Choice.ACT, "", homeOf(card), true); return }
+        leave(card, Choice.SOMEDAY, thrown, line, homeOf(card), true)
+    }
+
+    private fun homeOf(card: InboxCard) = if (ui.value.projects.any { it.name == card.project }) card.project else "me"
 
     /**
      * Swipe up (Boss 2026-10-28: "swipe up it should shuffle"): the card goes back into the deck at a random later spot,
@@ -292,14 +326,24 @@ class InboxViewModel @Inject constructor(
     }
 
     fun openForm(card: InboxCard, choice: Choice) {
-        val home = if (ui.value.projects.any { it.name == card.project }) card.project else "me"
+        val home = homeOf(card)
         val who = card.author?.let { if (card.site == Site.LINKEDIN || it.startsWith("@")) it else "@$it" }
         val line = when (choice) {
             Choice.ACT -> card.next
             Choice.NOTE -> card.note.ifEmpty { listOfNotNull(who, card.claim.ifEmpty { null }).joinToString(": ") }
+            Choice.CALENDAR, Choice.PROJECT -> card.next
+            Choice.WAITING -> card.claim.take(80)
             else -> ""
         }
-        _form.value = Form(card, choice, line, home, card.someday)
+        val today = where.today()
+        val due = when (choice) {
+            Choice.WAITING -> org.pagel.ai.data.inbox.checkDate(today)
+            Choice.CALENDAR -> org.pagel.ai.data.inbox.checkDate(today, 1)
+            else -> null
+        }
+        // A new project is named from the card (the claim, cut short); Boss can rewrite it.
+        val name = if (choice == Choice.PROJECT) card.claim.take(40).trim() else ""
+        _form.value = Form(card, choice, line, home, card.someday, due = due, name = name)
     }
 
     fun editForm(f: Form) { _form.value = f }
@@ -309,14 +353,47 @@ class InboxViewModel @Inject constructor(
     /** The form's button: the card leaves with its choice's motion, the words go with it. */
     fun submit() {
         val f = _form.value ?: return
-        val need = if (f.choice == Choice.KEEP) ui.value.minWords else 2
-        if (f.choice != Choice.NOW && words(f.line) < need) return
+        if (!formReady(f, ui.value.minWords)) return
         _form.value = null
         when (f.choice) {
+            Choice.WAITING -> leave(f.card, Choice.WAITING, Throw.None, org.pagel.ai.data.inbox.waitingLine(f.who, f.line), f.project, false, f.due ?: org.pagel.ai.data.inbox.checkDate(where.today()))
+            Choice.CALENDAR -> leave(f.card, Choice.CALENDAR, Throw.None, f.line, f.project, false, f.due)
+            // The project is made on the phone first (its create waits in the outbox ahead of the card's choice), then the
+            // card leaves with the first step as a task in it.
+            Choice.PROJECT -> viewModelScope.launch {
+                val slug = projects.create(f.name.trim())
+                leave(f.card, Choice.PROJECT, Throw.None, f.line, slug, false)
+            }
             Choice.ACT -> leave(f.card, Choice.ACT, Throw.None, f.line, f.project, f.someday, f.due)
             Choice.NOTE -> leave(f.card, Choice.NOTE, Throw.None, f.line, f.project, null)
             Choice.KEEP -> leave(f.card, Choice.KEEP, Throw.None, f.line, null, null)
             else -> leave(f.card, Choice.NOW, Throw.None, null, null, null)
+        }
+    }
+
+    /** The tidy-up: asks pagel.uz for the saves older than [org.pagel.ai.data.inbox.OLD_DAYS] days and shows how many. */
+    fun openTidy() {
+        _tidy.value = Tidy()
+        viewModelScope.launch {
+            val account = (accounts.load() as? AccountState.Paired)?.account
+            val r = account?.let { repo.older(it) }
+            _tidy.value = when (r) {
+                is org.pagel.ai.data.Outcome.Ok -> Tidy(loading = false, items = r.value)
+                else -> Tidy(loading = false, failed = true)
+            }
+        }
+    }
+
+    fun closeTidy() { _tidy.value = null }
+
+    /** Boss saw the count and chose: all of them go to Someday or are dropped, with one Undo that stops every one. */
+    fun tidyAll(choice: Choice) {
+        val items = _tidy.value?.items?.takeIf { it.isNotEmpty() } ?: return
+        _tidy.value = null
+        viewModelScope.launch {
+            val rows = repo.chooseMany(items, choice, "me")
+            val what = if (choice == Choice.SOMEDAY) "moved to Someday" else "dropped"
+            toasts.show("${items.size} $what", action = "Undo", millis = 5_000) { viewModelScope.launch { repo.undoMany(rows) } }
         }
     }
 
@@ -336,7 +413,7 @@ class InboxViewModel @Inject constructor(
         val keptBefore = ui.value.kept
         viewModelScope.launch {
             val op = repo.choose(card.file, choice, line, project, someday, due)
-            where.record(card.file, choice.wire, card.claim.ifEmpty { postBody(card.text).take(80) }, project, line, due, op)
+            where.record(card.file, choice.log, card.claim.ifEmpty { postBody(card.text).take(80) }, project, line, due, op)
             settle(card.file)
             // Every toast says where it went, with Open (round D item 2: an Act used to land on no screen Boss looks at).
             when (choice) {
@@ -354,6 +431,10 @@ class InboxViewModel @Inject constructor(
                 }
                 Choice.NOW -> toasts.show("Done and gone")
                 Choice.LATER -> toasts.show("⏳ Later · back in 3 days")
+                Choice.SOMEDAY -> toasts.show("🌙 Someday · ${projectName(project)}", action = "Undo", millis = 5_000) { undo(op, card) }
+                Choice.WAITING -> toasts.show("⏳ Waiting · check ${due.orEmpty()}".trim(), action = "Open") { project?.let { _open.trySend(InboxOpen.Project(it)) } }
+                Choice.CALENDAR -> toasts.show("📅 On the calendar · ${due.orEmpty()}".trim(), action = "Open") { project?.let { _open.trySend(InboxOpen.Project(it)) } }
+                Choice.PROJECT -> toasts.show("📁 New project ${projectName(project)} · first step added", action = "Open") { project?.let { _open.trySend(InboxOpen.Project(it)) } }
             }
             if (ui.value.cards.size < InboxRepository.LOW) refresh()
         }

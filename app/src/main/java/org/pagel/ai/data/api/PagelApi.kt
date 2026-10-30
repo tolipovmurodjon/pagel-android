@@ -63,8 +63,8 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(CreatedTaskDto.serializer(), it) } }
     }
 
-    suspend fun inbox(baseUrl: String, token: String, limit: Int, seed: Long): Outcome<InboxResponse> = call {
-        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox?limit=$limit&seed=$seed")), token).build()
+    suspend fun inbox(baseUrl: String, token: String, limit: Int, seed: Long, olderThan: Int? = null): Outcome<InboxResponse> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox?limit=$limit&seed=$seed" + (olderThan?.let { "&older_than=$it" } ?: ""))), token).build()
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(InboxResponse.serializer(), it) } }
     }
 

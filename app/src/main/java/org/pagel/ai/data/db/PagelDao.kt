@@ -42,6 +42,14 @@ abstract class PagelDao {
     @Query("SELECT * FROM tasks WHERE project = :project AND status = 'open' ORDER BY phaseNow DESC, phaseSort, sort")
     abstract fun openTasks(project: String): Flow<List<TaskEntity>>
 
+    /** The Someday list (Inbox clarify): open P3 tasks, repeats and Waiting-for ones aside, by project. */
+    @Query("SELECT * FROM tasks WHERE status = 'open' AND priority = 3 AND (every IS NULL OR every = '') AND text NOT LIKE 'Waiting for %' ORDER BY project, sort")
+    abstract fun somedayTasks(): Flow<List<TaskEntity>>
+
+    /** Tasks that wait on someone else, soonest check day first. */
+    @Query("SELECT * FROM tasks WHERE status = 'open' AND text LIKE 'Waiting for %' ORDER BY due IS NULL, due, sort")
+    abstract fun waitingTasks(): Flow<List<TaskEntity>>
+
     /** A project page: its open tasks and the ones done lately (sync keeps 14 days of them), in plan order. */
     @Query("SELECT * FROM tasks WHERE project = :project AND status IN ('open', 'done') ORDER BY phaseNow DESC, phaseSort, sort")
     abstract fun projectTasks(project: String): Flow<List<TaskEntity>>

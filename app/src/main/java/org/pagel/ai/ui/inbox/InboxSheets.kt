@@ -58,7 +58,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import org.pagel.ai.data.inbox.Choice
+import org.pagel.ai.data.inbox.OLD_DAYS
+import org.pagel.ai.ui.glass.DatePick
+import org.pagel.ai.ui.glass.DateSheet
 import org.pagel.ai.ui.glass.Glass
+import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.GlassChip
 import org.pagel.ai.ui.glass.GlassSheet
 import org.pagel.ai.ui.glass.Pane
@@ -75,12 +79,18 @@ private fun Choice.question() = when (this) {
     Choice.ACT -> "Next step: a verb and a thing"
     Choice.NOTE -> "One line you will want to find later"
     Choice.KEEP -> "In your words: the idea, or what you will do with it"
+    Choice.WAITING -> "What are you waiting for?"
+    Choice.CALENDAR -> "What happens, and when?"
+    Choice.PROJECT -> "Name it, then its first step"
     else -> "Do it now: under 2 minutes, then it is gone for good."
 }
 
 private fun Choice.placeholder() = when (this) {
     Choice.ACT -> "Watch the build video and list the parts"
     Choice.NOTE -> "@account: who they are, and why you saved them"
+    Choice.WAITING -> "The signed contract"
+    Choice.CALENDAR -> "The grant round closes"
+    Choice.PROJECT -> "Pick the tool and write issue one"
     else -> "Quizzes beat rereading, so every lesson ends with one"
 }
 
@@ -88,17 +98,22 @@ private fun Choice.button() = when (this) {
     Choice.ACT -> "Add to plan"
     Choice.NOTE -> "Save note"
     Choice.KEEP -> "Keep"
+    Choice.WAITING -> "Add to waiting"
+    Choice.CALENDAR -> "Put on calendar"
+    Choice.PROJECT -> "Start project"
     else -> "Done"
 }
 
 @Composable
 fun ChoiceFormSheet(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: () -> Unit, onDismiss: () -> Unit, withPicture: Boolean = false) {
     var picking by remember { mutableStateOf(false) }
+    var dating by remember { mutableStateOf(false) }
     GlassSheet(onDismiss) {
-        ChoiceFormContent(form, ui, onEdit, onSubmit, onProject = { picking = true }, focus = true, withPicture = withPicture)
+        ChoiceFormContent(form, ui, onEdit, onSubmit, onProject = { picking = true }, onDate = { dating = true }, focus = true, withPicture = withPicture)
         Spacer(Modifier.height(SheetBottom))
     }
     if (picking) ProjectSheet(ui.projects, form.project, onPick = { onEdit(form.copy(project = it)) }, onDismiss = { picking = false })
+    if (dating) DateSheet(form.due, java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent")), onPick = { onEdit(form.copy(due = it)) }, onDismiss = { dating = false })
 }
 
 /**
@@ -107,12 +122,13 @@ fun ChoiceFormSheet(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: (
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: () -> Unit, onProject: () -> Unit, focus: Boolean = false, withPicture: Boolean = false) {
+fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit: () -> Unit, onProject: () -> Unit, onDate: () -> Unit = {}, focus: Boolean = false, withPicture: Boolean = false) {
     val look = form.choice.look
     val uri = LocalUriHandler.current
     val need = if (form.choice == Choice.KEEP) ui.minWords else 2
     val count = words(form.line)
-    val ready = form.choice == Choice.NOW || count >= need
+    val ready = formReady(form, ui.minWords)
+    val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent"))
     val field = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (focus && form.choice != Choice.NOW) runCatching { field.requestFocus() } }
@@ -123,6 +139,14 @@ fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit:
             }
             Spacer(Modifier.width(12.dp))
             Text(form.choice.question(), style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
+        }
+        if (form.choice == Choice.PROJECT) {
+            FormField(form.name, { onEdit(form.copy(name = it.replace('\n', ' '))) }, "Project name", "Project name")
+            Spacer(Modifier.height(Space.sm))
+        }
+        if (form.choice == Choice.WAITING) {
+            FormField(form.who, { onEdit(form.copy(who = it.replace('\n', ' '))) }, "Who? (optional)", "Waiting for who")
+            Spacer(Modifier.height(Space.sm))
         }
         if (form.choice != Choice.NOW) {
             val shape = RoundedCornerShape(16.dp)
@@ -142,7 +166,7 @@ fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit:
             Spacer(Modifier.height(10.dp))
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (form.choice == Choice.ACT || form.choice == Choice.NOTE) {
+            if (form.choice == Choice.ACT || form.choice == Choice.NOTE || form.choice == Choice.WAITING || form.choice == Choice.CALENDAR) {
                 val p = ui.projects.firstOrNull { it.name == form.project }
                 GlassChip(TabIcons.Folder, p?.let { shortName(it.name, it.title) } ?: form.project, set = true, description = "Project: ${p?.title ?: form.project}",
                     leading = { ProjectTile(form.project, p?.color, p?.title ?: form.project, size = 20.dp) }, onClick = onProject)
@@ -160,6 +184,15 @@ fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit:
                     })
                 }
             }
+            // Waiting: the check day, 3 days on by default (Boss 2026-10-30). Calendar: the date and the wheel's hour.
+            if (form.choice == Choice.WAITING) {
+                val days = listOf(3L, 7L, 14L)
+                val chosen = days.indexOfFirst { form.due == today.plusDays(it).toString() }
+                Segmented(listOf("3 days", "1 week", "2 weeks"), chosen) { i -> onEdit(form.copy(due = today.plusDays(days[i]).toString())) }
+            }
+            if (form.choice == Choice.CALENDAR) {
+                GlassChip(TabIcons.Calendar, DatePick.dueText(form.due, today), set = form.due != null, description = "Date and time: ${DatePick.dueText(form.due, today)}", onClick = onDate)
+            }
             if (form.choice == Choice.NOW) form.card.link?.let { l -> GlassChip(TabIcons.ArrowUpRight, "Open it", set = false) { runCatching { uri.openUri(l) } } }
         }
         val hint = when (form.choice) {
@@ -171,6 +204,27 @@ fun ChoiceFormContent(form: Form, ui: InboxUi, onEdit: (Form) -> Unit, onSubmit:
         Spacer(Modifier.height(14.dp))
         PrimaryButton(form.choice.button(), TabIcons.CornerDownLeft, enabled = ready, color = look.color, onClick = onSubmit)
     }
+}
+
+/** A one-line field under the sheet's question (the project's name, who is waited on): the main line's look, one row tall. */
+@Composable
+private fun FormField(value: String, onChange: (String) -> Unit, placeholder: String, label: String) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(16.dp)
+    BasicTextField(
+        value = value,
+        onValueChange = onChange,
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth().heightIn(min = Space.touch).onFocusChanged { focused = it.isFocused }
+            .background(Color.White.copy(alpha = 0.86f), shape)
+            .border(if (focused) 1.5.dp else 1.dp, SolidColor(if (focused) Glass.Primary else Glass.Ink.copy(alpha = 0.14f)), shape)
+            .padding(horizontal = Space.lg, vertical = Space.md)
+            .semantics { contentDescription = label },
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Glass.Ink),
+        cursorBrush = SolidColor(Glass.Primary),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        decorationBox = { inner -> Box { if (value.isEmpty()) Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
+    )
 }
 
 /** The sheet's one primary action: the choice's colour, white words, a press and a confirm tick. */
@@ -212,6 +266,47 @@ private fun Segmented(options: List<String>, chosen: Int, onPick: (Int) -> Unit)
     }
 }
 
+/**
+ * The bulk tidy-up (Boss 2026-10-30: "900+ items"): the saves older than 60 days, counted before anything moves, by where
+ * they came from. One tap moves them all to Someday or drops them all; nothing leaves the phone for 5 s and one Undo
+ * takes every one back.
+ */
+@Composable
+fun TidySheet(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onDismiss: () -> Unit) {
+    GlassSheet(onDismiss) { TidyContent(tidy, onSomeday, onDrop); Spacer(Modifier.height(SheetBottom)) }
+}
+
+@Composable
+fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit) {
+    val n = tidy.items.size
+    Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        Text("Old saves", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs, bottom = Space.sm))
+        when {
+            tidy.loading -> Text("Looking for saves older than ${OLD_DAYS} days…", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
+            tidy.failed -> Text("Could not reach pagel.uz. Try again when you are online.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
+            n == 0 -> Text("Nothing older than ${OLD_DAYS} days. The Inbox is fresh.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
+            else -> {
+                Text("$n saves are older than ${OLD_DAYS} days", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs))
+                Pane(Modifier.fillMaxWidth().padding(vertical = Space.md)) {
+                    Column(Modifier.padding(vertical = Space.xs)) {
+                        tidy.sources.forEachIndexed { i, (name, count) ->
+                            if (i > 0) HorizontalDivider(Modifier.padding(start = Space.lg), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
+                            Row(Modifier.fillMaxWidth().heightIn(min = Space.touch).padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically) {
+                                Text(name, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f), maxLines = 1)
+                                Text("$count", style = Glass.NumberText, color = Glass.Muted)
+                            }
+                        }
+                    }
+                }
+                Text("Nothing is sent for 5 seconds. One Undo takes all $n back.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, bottom = Space.md))
+                PrimaryButton("Move all $n to Someday", TabIcons.Moon, enabled = true, color = Choice.SOMEDAY.look.color, onClick = onSomeday)
+                Spacer(Modifier.height(Space.sm))
+                PrimaryButton("Drop all $n", TabIcons.Trash, enabled = true, color = Choice.DROP.look.color, onClick = onDrop)
+            }
+        }
+    }
+}
+
 /** "How sorting works": the five gestures as one picture, then each choice with when to use it and an example (the web's guide). */
 @Composable
 fun GuideSheet(onDismiss: () -> Unit) {
@@ -225,7 +320,7 @@ fun GuideContent() {
         SwipeMap(Modifier.fillMaxWidth().padding(bottom = 14.dp))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 4.dp)) {
-                listOf(Choice.ACT, Choice.NOTE, Choice.KEEP, Choice.NOW, Choice.LATER, Choice.DROP).forEachIndexed { i, c ->
+                (NO_GROUP + YES_GROUP).forEachIndexed { i, c ->
                     if (i > 0) HorizontalDivider(Modifier.padding(start = 60.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
                     val look = c.look
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {
@@ -242,7 +337,7 @@ fun GuideContent() {
                 }
             }
         }
-        Text("GTD in one line: every save gets one decision now, so nothing waits in your head. Most saves are a Drop; that is the point.",
+        Text("GTD in one line: ask \"Can I do something about it?\". No → Drop, Someday, Note or Learn. Yes → Do now, Action, Project, Waiting or Calendar. Most saves are a Drop; that is the point.",
             style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
     }
 }

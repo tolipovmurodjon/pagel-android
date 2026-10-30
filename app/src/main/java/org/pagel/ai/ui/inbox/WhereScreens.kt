@@ -81,7 +81,11 @@ class NotesViewModel @Inject constructor(private val where: WhereItWent, private
 private val ACTION_WORDS = mapOf(
     "act" to ("✅" to "Tasks"), "note" to ("📝" to "Notes"), "keep" to ("🧠" to "Kept to learn"), "later" to ("⏳" to "Later"),
     "drop" to ("🗑️" to "Dropped"), "now" to ("⚡" to "Done now"),
+    "someday" to ("🌙" to "Someday"), "waiting" to ("⏳" to "Waiting for"), "project" to ("📁" to "New projects"), "calendar" to ("📅" to "On the calendar"),
 )
+
+/** The choices that land as a task in a project: their row opens that project. */
+private val TASK_ACTIONS = setOf("act", "someday", "waiting", "project", "calendar")
 
 /** "Sorted today": today's decisions grouped by where they went; a row opens its place; Undo while it still waits. */
 @Composable
@@ -110,7 +114,7 @@ fun SortedToday(
             Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
                 Column(Modifier.padding(vertical = Space.xs)) {
                     for (s in rows) {
-                        val target = when { s.action == "act" && s.project != null -> InboxOpen.Project(s.project); s.action == "note" && s.project != null -> InboxOpen.Notes(s.project); else -> null }
+                        val target = when { s.action in TASK_ACTIONS && s.project != null -> InboxOpen.Project(s.project); s.action == "note" && s.project != null -> InboxOpen.Notes(s.project); else -> null }
                         val press = remember(s.file) { MutableInteractionSource() }
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = Space.row).pressScale(press)

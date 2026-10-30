@@ -27,6 +27,10 @@ object ChoiceSound {
         Choice.NOW to intArrayOf(1319, 1568),
         Choice.LATER to intArrayOf(440),
         Choice.DROP to intArrayOf(330, 247),
+        Choice.SOMEDAY to intArrayOf(392, 330),
+        Choice.WAITING to intArrayOf(523, 440),
+        Choice.PROJECT to intArrayOf(523, 784, 1047),
+        Choice.CALENDAR to intArrayOf(587, 880),
     )
 
     private fun pcm(notes: IntArray): ShortArray {

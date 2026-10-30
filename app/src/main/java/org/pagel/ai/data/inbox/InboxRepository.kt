@@ -24,14 +24,20 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
 
-/** The six choices, with the web's keys (learn-client.tsx CHOICES). "now" (Do now) leaves the inbox like a drop. */
-enum class Choice(val wire: String, val key: String) {
-    ACT("act", "A"), NOTE("note", "N"), KEEP("keep", "K"), NOW("now", "2"), LATER("later", "L"), DROP("drop", "D");
+/**
+ * The choices, with the web's keys (learn-client.tsx CHOICES). "now" (Do now) leaves the inbox like a drop. The four
+ * GTD additions (Boss 2026-10-30) reach pagel.uz as an "act" with the fields it already has: Someday is a P3 task,
+ * Waiting and Calendar carry a due date, Project is a new project plus its first step. [log] is what "Sorted today" shows.
+ */
+enum class Choice(val wire: String, val key: String, val log: String = wire) {
+    ACT("act", "A"), NOTE("note", "N"), KEEP("keep", "K"), NOW("now", "2"), LATER("later", "L"), DROP("drop", "D"),
+    SOMEDAY("act", "S", "someday"), WAITING("act", "W", "waiting"), PROJECT("act", "P", "project"), CALENDAR("act", "C", "calendar");
 
     companion object {
-        /** The AI's guess per kind (learn-client.tsx GUESS): someday is an action with "Someday" set. */
+        /** The AI's guess per kind (learn-client.tsx GUESS): a someday kind is the one-tap Someday. */
         fun guessOf(kind: String): Choice = when (kind) {
-            "action", "someday" -> ACT
+            "someday" -> SOMEDAY
+            "action" -> ACT
             "note" -> NOTE
             "drop" -> DROP
             else -> KEEP
@@ -108,6 +114,35 @@ class InboxRepository(
     /** Undo (Drop's 5 s): true if the choice had not left the phone and the card is back. */
     suspend fun undo(opId: Long, file: String, choice: Choice): Boolean = dao.undo(opId, file, choice == Choice.KEEP)
 
+    /**
+     * The saves older than [days] that pagel.uz holds, for the tidy-up. An older pagel.uz ignores `older_than` and deals
+     * its newest cards, so every card is checked by its own date here and only the really old ones are returned.
+     */
+    suspend fun older(account: Account, days: Int = OLD_DAYS): Outcome<List<InboxItemEntity>> =
+        when (val r = api.inbox(account.serverUrl, account.token, OLDER_PAGE, seed = 0, olderThan = days)) {
+            is Outcome.Failed -> r
+            is Outcome.Ok -> Outcome.Ok(olderThan(r.value.items.map(::entity), days, tashkentDay(clock())))
+        }
+
+    /**
+     * One decision for many saves (Someday or Drop for the old ones): each is a quiet outbox row, held for the Undo
+     * window so [undoMany] stops them before pagel.uz hears of them. Returns the (outbox row, file) pairs for the Undo.
+     */
+    suspend fun chooseMany(items: List<InboxItemEntity>, choice: Choice, project: String): List<Pair<Long, String>> {
+        val now = clock()
+        val rows = items.map { i ->
+            val someday = choice == Choice.SOMEDAY
+            val line = if (someday) somedayLine(i) else null
+            val body = wire.encodeToString(SortBody.serializer(), SortBody(choice.wire, i.file, line, if (someday) project else null, if (someday) true else null))
+            dao.chooseQuiet(i.file, choice.wire, body, now) to i.file
+        }
+        scheduler.kick()
+        return rows
+    }
+
+    /** Takes the bulk back: how many had not left the phone (all of them inside the Undo window). */
+    suspend fun undoMany(rows: List<Pair<Long, String>>): Int = rows.count { (id, file) -> dao.undoQuiet(id, file) }
+
     private fun entity(i: InboxItemDto) = InboxItemEntity(
         file = i.file, position = 0, saved = i.saved, source = i.source, text = i.text, claim = i.claim, why = i.why, project = i.project,
         kind = i.kind, next = i.next, note = i.note, guessed = i.guessed, author = i.author, posted = i.posted, later = i.later, hasPicture = i.hasPicture,
@@ -118,8 +153,13 @@ class InboxRepository(
         const val DECK = 40
         /** Below this many cards the deck asks pagel.uz for more (the web's 8). */
         const val LOW = 8
+        /** The most pagel.uz deals in one answer. */
+        const val OLDER_PAGE = 60
     }
 }
+
+/** A Drop and a Someday wait out the 5 s Undo before they leave the phone: both have an Undo toast. */
+internal fun SortBody.holdsForUndo() = action == Choice.DROP.wire || someday == true
 
 /** What sending one Inbox choice ended with. */
 enum class SortStep { SENT, HOLD, SIGNED_OUT, TRY_LATER }
@@ -132,7 +172,7 @@ class InboxSender(private val api: PagelApi, private val dao: InboxDao, private 
     suspend fun send(account: Account, op: OutboxEntity): SortStep {
         val body = op.body?.let { runCatching { wire.decodeFromString(SortBody.serializer(), it) }.getOrNull() }
             ?: run { dao.removeFromOutbox(op.id); return SortStep.SENT }
-        if (body.action == Choice.DROP.wire && clock() - op.createdAt < UNDO_WINDOW_MS) return SortStep.HOLD
+        if (body.holdsForUndo() && clock() - op.createdAt < UNDO_WINDOW_MS) return SortStep.HOLD
         dao.countAttempt(op.id)
         return when (val out = api.sort(account.serverUrl, account.token, body)) {
             is Outcome.Ok -> { dao.sent(op.id, body.file, body.action, out.value.sorted, out.value.keptToday, clock()); SortStep.SENT }

@@ -27,6 +27,8 @@ import org.pagel.ai.ui.glass.TabIcons
 @Serializable data object NamozRoute : NavKey
 /** Inbox → "Sorted today" (round D item 2): today's decisions and where each went. */
 @Serializable data object SortedTodayRoute : NavKey
+/** More → Someday: the maybes (P3 tasks) and the ones waiting on someone else; "Bring back" makes one an Action again. */
+@Serializable data object SomedayRoute : NavKey
 /** The projects' quick notes (round D item 2): a project's list, or all projects with notes when [project] is null. */
 @Serializable data class NotesRoute(val project: String? = null) : NavKey
 /** pagel.uz itself in the kept-alive WebView, until each native feature replaces its page. */

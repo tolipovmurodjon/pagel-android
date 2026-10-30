@@ -289,6 +289,9 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                             when (o) { is org.pagel.ai.ui.inbox.InboxOpen.Project -> stack.add(ProjectPageRoute(o.name)); is org.pagel.ai.ui.inbox.InboxOpen.Notes -> stack.add(NotesRoute(o.project)) }
                         })
                     }
+                    entry<SomedayRoute> {
+                        org.pagel.ai.ui.inbox.SomedayRoute(padding, onBack = { stack.removeLastOrNull() }, onOpen = { stack.add(ProjectPageRoute(it)) })
+                    }
                     entry<NotesRoute> { r -> org.pagel.ai.ui.inbox.NotesRoute(r.project, padding, onBack = { stack.removeLastOrNull() }, onOpenProject = { stack.add(NotesRoute(it)) }) }
                     entry<HabitsRoute> { HabitsScreenRoute(padding, reselect, onOpenHabit = { stack.add(HabitDetailRoute(it)) }, onHistory = { stack.add(HabitHistoryRoute) }, onOpenNamoz = { stack.add(NamozRoute) }) }
                     entry<NamozRoute> { org.pagel.ai.ui.namoz.NamozRoute(padding, onBack = { stack.removeLastOrNull() }) }
@@ -350,7 +353,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
             org.pagel.ai.ui.compass.CompassRoute -> "Compass"
-            is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"; NamozRoute -> "Namoz"; SortedTodayRoute -> "Sorted today"; is NotesRoute -> "Notes"
+            is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"; NamozRoute -> "Namoz"; SortedTodayRoute -> "Sorted today"; SomedayRoute -> "Someday"; is NotesRoute -> "Notes"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
         val density = androidx.compose.ui.platform.LocalDensity.current
@@ -530,6 +533,7 @@ private fun More(padding: PaddingValues, onOpenUpcoming: () -> Unit, onOpenCompl
                 MoreRow(TabIcons.Calendar, "Upcoming", Color(0xFFD9620B), onOpenUpcoming)
                 MoreRow(TabIcons.Done, "Completed", Color(0xFF0E7490), onOpenCompleted)
                 MoreRow(TabIcons.StickyNote, "Notes", Color(0xFF0B7A5E)) { onOpenRitual(NotesRoute()) }
+                MoreRow(TabIcons.Hourglass, "Someday", Color(0xFF4F5FA8)) { onOpenRitual(SomedayRoute) }
                 // The rituals sit beside the lists, as the web's sidebar (nav.tsx: Empty head, Close day, Review).
                 MoreRow(TabIcons.Sparkles, "Empty your head", Color(0xFF7C4DDB)) { onOpenRitual(SweepRoute) }
                 MoreRow(TabIcons.Moon, "Close the day", Color(0xFF5B4BC4)) { onOpenRitual(ShutdownRoute) }

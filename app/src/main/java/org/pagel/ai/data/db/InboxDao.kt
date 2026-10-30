@@ -119,6 +119,24 @@ abstract class InboxDao {
         return addToOutbox(OutboxEntity(taskId = file, op = OutboxEntity.SORT, createdAt = at, body = body))
     }
 
+    /**
+     * One part of a bulk tidy-up (Someday or Drop for all the old saves): the card leaves and the choice waits in the
+     * outbox, but the day's 20 does not move: a hundred taps of "tidy" must not fake a day's sorting.
+     */
+    @Transaction
+    open suspend fun chooseQuiet(file: String, action: String, body: String, at: Long): Long {
+        markSorted(file, action)
+        return addToOutbox(OutboxEntity(taskId = file, op = OutboxEntity.SORT, createdAt = at, body = body))
+    }
+
+    /** Takes one bulk part back before it left the phone. False if it was already sent. */
+    @Transaction
+    open suspend fun undoQuiet(opId: Long, file: String): Boolean {
+        if (takeBack(opId) == 0) return false
+        markSorted(file, null)
+        return true
+    }
+
     /** Undo before the choice left the phone: the card is back on top. False if it was already sent. */
     @Transaction
     open suspend fun undo(opId: Long, file: String, keep: Boolean): Boolean {

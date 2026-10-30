@@ -144,10 +144,23 @@ val Choice.look: ChoiceLook
             "Not now, but not sure. Goes to the back once; next time you must decide.", "A long video you cannot watch tonight.")
         Choice.DROP -> ChoiceLook(TabIcons.Trash, "Drop", "git keeps it", Color(0xFFD1453B),
             "Nothing to do, nothing to keep. Most saves end here, and that is fine. Undo for 5 s.", "Memes, jokes, ads, \"10 AI tools\" lists you will never open.")
+        Choice.SOMEDAY -> ChoiceLook(TabIcons.Moon, "Someday", "maybe, with no date", Color(0xFF4F5FA8),
+            "Not now, maybe never. One tap files it where the weekly review looks; it has no date and no count.", "\"Learn to weld\" → Someday. Bring it back when the time is right.")
+        Choice.WAITING -> ChoiceLook(TabIcons.Hourglass, "Waiting", "someone else has the ball", Color(0xFF0E7490),
+            "Someone else must act first. Say who, and PAGEL asks you again on the check day (3 days on).", "\"Aziz sends the invoice\" → Waiting for Aziz, check Thursday.")
+        Choice.PROJECT -> ChoiceLook(TabIcons.Folder, "Project", "more than one step", Color(0xFF166534),
+            "It takes more than one step. Name the project, then write its very first step.", "\"Launch the newsletter\" → project Newsletter, first step \"Pick the tool\".")
+        Choice.CALENDAR -> ChoiceLook(TabIcons.Calendar, "Calendar", "tied to a day or time", Color(0xFFA8326B),
+            "It must happen on a day or at a time. Pick the date, and the wheel for the hour.", "\"Grant round closes 15 Nov\" → 15 Nov, 09:00.")
     }
 
-/** The web's chip order (A, N, K, 2, L, D). */
-private val ORDER = listOf(Choice.ACT, Choice.NOTE, Choice.KEEP, Choice.NOW, Choice.LATER, Choice.DROP)
+/**
+ * The GTD question's two groups (Boss 2026-10-30): "Can I do something about it?" No → Drop · Someday · Note · Learn
+ * (Later, the put-off, ends the row); Yes → Do now · Action · Project · Waiting · Calendar. Five slots a row, so the
+ * chips sit in a grid and a card never shifts them.
+ */
+val NO_GROUP = listOf(Choice.DROP, Choice.SOMEDAY, Choice.NOTE, Choice.KEEP, Choice.LATER)
+val YES_GROUP = listOf(Choice.NOW, Choice.ACT, Choice.PROJECT, Choice.WAITING, Choice.CALENDAR)
 
 /** Each choice's own feel under the finger (Apple HIG playing haptics: one per action, matched to its meaning). */
 fun Choice.haptic(): HapticFeedbackType = when (this) {
@@ -246,6 +259,8 @@ data class InboxActions(
     val readAll: (InboxCard) -> Unit = {},
     /** "Sorted today (N)": today's decisions and where each went (round D item 2). */
     val sorted: () -> Unit = {},
+    /** The bulk tidy-up of the old saves (Inbox clarify). */
+    val tidy: () -> Unit = {},
 )
 
 @Composable
@@ -259,6 +274,7 @@ fun InboxRoute(
     val form by vm.form.collectAsStateWithLifecycle()
     val pictures by vm.picturesShown.collectAsStateWithLifecycle()
     val cheer by vm.cheer.collectAsStateWithLifecycle()
+    val tidy by vm.tidy.collectAsStateWithLifecycle()
     var guide by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf<InboxCard?>(null) }
     androidx.lifecycle.compose.LifecycleStartEffect(Unit) {
@@ -267,8 +283,9 @@ fun InboxRoute(
     }
     InboxScreen(
         ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer, sortedCount = sortedToday.size,
-        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted),
+        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy),
     )
+    tidy?.let { t -> TidySheet(t, onSomeday = { vm.tidyAll(Choice.SOMEDAY) }, onDrop = { vm.tidyAll(Choice.DROP) }, onDismiss = vm::closeTidy) }
     form?.let { f -> ChoiceFormSheet(f, ui, onEdit = vm::editForm, onSubmit = vm::submit, onDismiss = vm::closeForm, withPicture = pictures[f.card.file] != null) }
     if (guide) GuideSheet { guide = false }
     reading?.let { c -> ReadAllSheet(c) { reading = null } }
@@ -325,7 +342,7 @@ fun InboxScreen(
     // drew the choice buttons behind the bar, only their tops showing).
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize().then(if (tall) Modifier else Modifier.verticalScroll(scroll)).padding(contentPadding).padding(bottom = if (tall) DockGap else 12.dp)) {
-            Header(ui, onHelp = actions.help, onRing = { ringAt = it }, sortedCount = sortedCount, onSorted = actions.sorted)
+            Header(ui, onHelp = actions.help, onRing = { ringAt = it }, sortedCount = sortedCount, onSorted = actions.sorted, onTidy = actions.tidy)
             // Tall: the middle takes what the header and the dock leave, and the card sits centred in it.
             val middle = if (tall) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth()
             when {
@@ -347,15 +364,16 @@ fun InboxScreen(
 }
 
 @Composable
-private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, sortedCount: Int = 0, onSorted: () -> Unit = {}) {
+private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, sortedCount: Int = 0, onSorted: () -> Unit = {}, onTidy: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 // With no card here, "N left" would sit over "Inbox zero" (checker 2026-10-28 #8): the empty card says it.
-                if (ui.cards.isNotEmpty()) Text("${ui.left} left", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                if (ui.cards.isNotEmpty()) Text(if (ui.sorted < ui.goal) "Today's ${ui.goal}" else "${ui.left} more", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
                 Text("Inbox", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
             }
             if (ui.streak > 0) Streak(ui.streak)
+            GlassIconButton(TabIcons.CalendarRange, "Tidy old saves", plain = true, onClick = onTidy)
             GlassIconButton(TabIcons.CircleHelp, "How sorting works", plain = true, onClick = onHelp)
             GoalRing(ui.sorted, ui.goal, Modifier.onGloballyPositioned { onRing(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) })
         }
@@ -658,6 +676,9 @@ private fun LeavingCard(l: Leaving, pictures: Map<String, Bitmap?>, reduce: Bool
                 Choice.NOW -> { translationX = if (t < 0.45f) 6.dp.toPx() * kotlin.math.sin(t * 40f) else 0f; scaleX = 1f + 0.15f * t; scaleY = scaleX }
                 Choice.LATER -> { translationY = 0.4f * h * t; scaleX = 1f - 0.08f * t; scaleY = scaleX }
                 Choice.DROP -> { translationY = 0.7f * h * t; rotationZ = 10f * t; scaleX = 1f - 0.1f * t; scaleY = scaleX }
+                Choice.SOMEDAY -> { translationY = -0.35f * h * t; scaleX = 1f - 0.2f * t; scaleY = scaleX }
+                Choice.WAITING -> { translationY = 0.4f * h * t; scaleX = 1f - 0.08f * t; scaleY = scaleX }
+                Choice.PROJECT, Choice.CALENDAR -> { translationX = 0.6f * w * t; translationY = -0.4f * h * t; scaleX = 1f - 0.6f * t; scaleY = scaleX; rotationZ = 6f * t }
             }
         },
     ) { CardBody(l.card, pictures, InboxActions(), room) }
@@ -825,14 +846,21 @@ private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
         val guess = card.guess
         if (guess != null) GuessButton(card, guess, ui) { actions.choose(card, guess, Throw.None) }
         else AiReading(ui.reading)
-        Spacer(Modifier.height(8.dp))
-        // One row of icons, each with its word under it (checker #5: as chips, three of six sat under the tab bar).
-        Row(Modifier.fillMaxWidth()) {
-            // slot: all six, always in the same places; the AI's pick is marked where it stands (spacing audit #2: the
-            // icons moved from card to card when the pick was taken out of the row).
-            for (c in ORDER) {
-                val off = (c == Choice.KEEP && ui.full) || (c == Choice.LATER && card.putOff)
-                ChoiceIcon(c, enabled = !off, picked = c == guess, modifier = Modifier.weight(1f)) { actions.choose(card, c, Throw.None) }
+        Text(
+            "Can I do something about it?", style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(top = Space.sm, start = Space.xs).semantics { heading() },
+        )
+        // Two rows of icons, each with its word under it (checker #5: as chips, three of six sat under the tab bar).
+        // slot: always in the same places; the AI's pick is marked where it stands (spacing audit #2: the icons moved
+        // from card to card when the pick was taken out of the row).
+        for ((answer, group) in listOf("No" to NO_GROUP, "Yes" to YES_GROUP)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(answer, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, softWrap = false,
+                    modifier = Modifier.width(Space.xxl + Space.xs).semantics { contentDescription = "If $answer" })
+                for (c in group) {
+                    val off = (c == Choice.KEEP && ui.full) || (c == Choice.LATER && card.putOff)
+                    ChoiceIcon(c, enabled = !off, picked = c == guess, modifier = Modifier.weight(1f)) { actions.choose(card, c, Throw.None) }
+                }
             }
         }
     }
@@ -890,10 +918,10 @@ private fun ChoiceIcon(choice: Choice, enabled: Boolean, modifier: Modifier, pic
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(42.dp).background(if (picked) look.color.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f), CircleShape)
+            Modifier.size(38.dp).background(if (picked) look.color.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f), CircleShape)
                 .border(if (picked) 2.dp else 1.dp, if (picked) androidx.compose.ui.graphics.SolidColor(look.color) else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.45f))), CircleShape),
             contentAlignment = Alignment.Center,
-        ) { Icon(look.icon, contentDescription = null, tint = look.color, modifier = Modifier.size(20.dp)) }
+        ) { Icon(look.icon, contentDescription = null, tint = look.color, modifier = Modifier.size(19.dp)) }
         Spacer(Modifier.height(3.dp))
         androidx.compose.foundation.text.BasicText(
             look.label,

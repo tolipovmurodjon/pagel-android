@@ -303,6 +303,8 @@ data class ReviewUi(
     val inbox: Int = 0,
     val stuck: List<StuckDto> = emptyList(),
     val someday: List<RitualTask> = emptyList(),
+    /** Someone else has the ball (the Inbox's Waiting): shown with the Someday step, soonest check day first. */
+    val waiting: List<RitualTask> = emptyList(),
     val steps: Map<String, String> = emptyMap(),
     val drops: Set<String> = emptySet(),
     val last: String? = null,
@@ -338,6 +340,7 @@ class ReviewViewModel @Inject constructor(
             // A project that got its next step during the review keeps its row (Boss is typing in it).
             stuck = Rituals.stuck(s.stuckList(), open).let { now -> s.stuckList().filter { st -> st in now || st.project in l.steps } },
             someday = snap.orEmpty().map { it.ritualTask(byName) },
+            waiting = open.filter { org.pagel.ai.data.inbox.isWaiting(it.text) }.sortedWith(compareBy({ it.due == null }, { it.due })).map { it.ritualTask(byName) },
             last = s.lastReview,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReviewUi())
