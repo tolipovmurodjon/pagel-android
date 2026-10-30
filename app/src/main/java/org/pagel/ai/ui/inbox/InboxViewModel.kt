@@ -504,14 +504,16 @@ class InboxViewModel @Inject constructor(
             val op = repo.choose(card.file, choice, line, project, someday, due)
             where.record(card.file, choice.log, card.claim.ifEmpty { postBody(card.text).take(80) }, project, line, due, op)
             settle(card.file)
-            // Every toast says where it went in one plain line (round D item 2). A choice held for its 5 s (Drop and every
-            // act) offers Undo; the rest offer Open (checker 2026-10-30 #5).
+            // Every toast says where it went in one plain line (round D item 2), short enough to stay one line beside Undo on
+            // a 320 dp screen (~20 letters). A choice held for its 5 s (Drop and every act) offers Undo; the rest offer Open
+            // (checker 2026-10-30 #5).
             val plain = org.pagel.ai.data.inbox.plainDay(due)
             when (choice) {
                 Choice.DROP -> toasts.show("Dropped", action = "Undo", millis = 5_000) { undo(op, card) }
                 Choice.ACT -> {
-                    val whenText = when (due) { null -> if (someday == true) " · Someday" else ""; where.today() -> " · today"; else -> " · $plain" }
-                    toasts.show("✅ Task in ${projectName(project)}$whenText", action = "Undo", millis = 5_000) { undo(op, card) }
+                    val tomorrow = java.time.LocalDate.parse(where.today()).plusDays(1).toString()
+                    val whenText = when (due) { null -> if (someday == true) " · Someday" else ""; where.today() -> " · today"; tomorrow -> " · tomorrow"; else -> " · $plain" }
+                    toasts.show("✅ ${projectName(project)}$whenText", action = "Undo", millis = 5_000) { undo(op, card) }
                 }
                 Choice.NOTE -> toasts.show("📝 Saved to ${projectName(project)} notes", action = "Open") { project?.let { _open.trySend(InboxOpen.Notes(it)) } }
                 Choice.KEEP -> {
@@ -523,10 +525,10 @@ class InboxViewModel @Inject constructor(
                 Choice.NOW -> toasts.show("Done and gone")
                 Choice.LATER -> toasts.show("🕒 Later · back in 3 days")
                 Choice.SOMEDAY -> toasts.show("🌙 Someday · ${projectName(project)}", action = "Undo", millis = 5_000) { undo(op, card) }
-                Choice.WAITING -> toasts.show("Waiting · check $plain", action = "Undo", millis = 5_000) { undo(op, card) }
-                Choice.CALENDAR -> toasts.show("📅 Calendar · $plain", action = "Undo", millis = 5_000) { undo(op, card) }
+                Choice.WAITING -> toasts.show("👤 check $plain", action = "Undo", millis = 5_000) { undo(op, card) }
+                Choice.CALENDAR -> toasts.show("📅 $plain", action = "Undo", millis = 5_000) { undo(op, card) }
                 // Undo takes the step back and the new project with it (it drops after its own 5 s).
-                Choice.PROJECT -> toasts.show("📁 ${title ?: projectName(project)} · first step in", action = "Undo", millis = 5_000) {
+                Choice.PROJECT -> toasts.show("📁 ${shortTitle(title ?: projectName(project))}", action = "Undo", millis = 5_000) {
                     undo(op, card) { project?.let { viewModelScope.launch { projects.delete(it, dropTasks = true) } } }
                 }
             }
@@ -540,6 +542,15 @@ class InboxViewModel @Inject constructor(
     private suspend fun settle(file: String) {
         withTimeoutOrNull(3_000) { repo.deck.first { d -> d.firstOrNull()?.file != file } }
         gone.update { it - file }
+    }
+
+    /** A new project's title for its toast: whole words up to ~20 letters, so the toast stays one line. */
+    private fun shortTitle(t: String): String {
+        if (t.length <= 20) return t
+        val words = t.split(' ')
+        var out = ""
+        for (w in words) { if ((out + " " + w).trim().length > 19) break; out = (out + " " + w).trim() }
+        return out.ifEmpty { t.take(19) } + "…"
     }
 
     /** A toast's Undo: the card is back on top and out of "Sorted today", while the choice still waits on the phone. */

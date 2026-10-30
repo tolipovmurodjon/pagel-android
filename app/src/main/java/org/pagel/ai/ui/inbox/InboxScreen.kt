@@ -378,10 +378,12 @@ private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, so
             Column(Modifier.weight(1f)) {
                 // With no card here, a count would sit over "Inbox zero" (checker 2026-10-28 #8): the empty card says it.
                 // After the goal: done for today, never the pile ("900 more", checker 2026-10-30 #9).
-                if (ui.cards.isNotEmpty()) Text(if (ui.sorted < ui.goal) "Today's ${ui.goal}" else "Done for today ✓", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+                if (ui.cards.isNotEmpty()) Text(if (ui.sorted < ui.goal) "Today's ${ui.goal}" else "Done today ✓", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("Inbox", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
             }
-            if (ui.streak > 0) Streak(ui.streak)
+            // At a large font the flame gives its room to the title: "Inbo / x" and a three-line "Done for today" at 1.5x
+            // on the 320 dp screen (walk 59, run 41089220966).
+            if (ui.streak > 0 && LocalDensity.current.fontScale < 1.3f) Streak(ui.streak)
             GlassIconButton(TabIcons.CalendarRange, "Tidy old saves", plain = true, onClick = onTidy)
             GlassIconButton(TabIcons.CircleHelp, "How sorting works", plain = true, onClick = onHelp)
             GoalRing(ui.sorted, ui.goal, Modifier.onGloballyPositioned { onRing(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) })
