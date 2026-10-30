@@ -104,6 +104,8 @@ dependencies {
     implementation(libs.kyant.backdrop)
     implementation(libs.kyant.shapes)
     implementation(libs.androidx.compose.ui.util)
+    // JankStats: the black-hole lab shows its janky % on the phone.
+    implementation(libs.androidx.metrics.performance)
 
     // DI
     implementation(libs.hilt.android)

@@ -15,6 +15,9 @@ import java.time.LocalDate
 /** A date change made here, for its Undo: the task, its date before, and the outbox row that carries it. */
 data class Moved(val id: String, val was: String?, val op: Long)
 
+/** A finished task cleared from Completed, for its Undo: the task and the outbox row that carries its remove. */
+data class Cleared(val id: String, val op: Long)
+
 /**
  * Upcoming, Overdue and Completed (Phase 4, the web's /upcoming and /completed). Everything reads Room; every change is
  * a task-panel edit ([TaskRepository]: Room first, then one outbox PATCH, sent in the order made, offline too).
@@ -77,6 +80,17 @@ class UpcomingRepository(
     suspend fun reopen(id: String): Long? = tasks.reopen(id)
 
     suspend fun undoReopen(id: String, op: Long) { if (!tasks.takeBack(id, op)) tasks.finish(id) }
+
+    /**
+     * Completed's "Clear done": every finished task leaves Room at once (status dropped, so Completed empties in one
+     * frame); each remove waits [org.pagel.ai.data.tasks.UNDO_WINDOW_MS] in the outbox, then pagel.uz gets it.
+     */
+    suspend fun clearDone(ids: List<String>): List<Cleared> = ids.mapNotNull { id -> tasks.delete(id)?.let { Cleared(id, it) } }
+
+    /** Undo of a clear, newest first: each comes back done (taken back while waiting, else restore + done). */
+    suspend fun undoClear(cleared: List<Cleared>) {
+        for (c in cleared.asReversed()) tasks.undoDeleteDone(c.id, c.op)
+    }
 
     /**
      * Finished tasks older than /sync's 14 days, newest first ([PAGE] of them), and pagel.uz's count of all of them

@@ -157,6 +157,7 @@ fun ProjectsScreen(
                     Text("${ui.projects.filter { !it.archived && it.finishedAt == null }.sumOf { it.openCount }} open tasks" + if (ui.status.isEmpty()) "" else " · ${ui.status}",
                         style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
                 }
+                org.pagel.ai.ui.guide.GuideHelpButton(org.pagel.ai.ui.guide.GuideCards.PROJECTS)
                 GlassIconButton(TabIcons.Plus, "New project", on = adding) { adding = !adding }
             }
         }

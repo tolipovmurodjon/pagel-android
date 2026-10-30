@@ -21,6 +21,7 @@ import org.pagel.ai.data.habits.links
 import org.pagel.ai.data.habits.markOf
 import org.pagel.ai.data.habits.minutesOf
 import org.pagel.ai.data.habits.neverMissTwice
+import java.io.File
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -191,6 +192,25 @@ class HabitBoardTest {
         assertEquals("coffee", L.emojiOf("coffee/amber")); assertEquals("amber", L.colourOf("coffee/amber"))
         assertEquals("/teal", L.look(null, "teal")); assertNull(L.emojiOf("/teal"))
         assertEquals("coffee", L.look("coffee", "purple"))  // not one of the ten: dropped
+    }
+
+    /**
+     * Checker 3 #1-#2: a habit is never red. No red swatch to pick, a habit saved red shows as coral, and no habits or
+     * Namoz composable paints with Glass.Risk or the 🔕 emoji (its slash is red). Reads the sources, as a lint would.
+     */
+    @Test fun habitsAreNeverRed() {
+        val L = org.pagel.ai.data.habits.HabitLook
+        assertFalse("red" in L.COLOURS)
+        assertEquals("coral", L.colourOf("gym/red"))
+        assertEquals("gym/coral", L.look("gym", L.colourOf("gym/red")))
+        val dirs = listOf("src/main/java/org/pagel/ai/ui/habits", "src/main/java/org/pagel/ai/ui/namoz").map { File(it) }
+        val files = dirs.flatMap { d -> d.walkTopDown().filter { it.extension == "kt" }.toList() }
+        assertTrue("found the habits sources: ${dirs.map { it.absolutePath }}", files.size >= 5)
+        for (f in files) {
+            val text = f.readText()
+            assertFalse("${f.name} paints with Glass.Risk", "Glass.Risk" in text)
+            assertFalse("${f.name} shows the 🔕 emoji", "🔕" in text)
+        }
     }
 
     /** Boss 2026-10-29: never a week before the habit started; a 3-day-old habit has one bar and is "too new". */

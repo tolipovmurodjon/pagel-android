@@ -50,10 +50,13 @@ import org.pagel.ai.ui.glass.pressScale
 
 /** The rituals' page head, as every native page: a small line, the big title, a muted line under it. */
 @Composable
-internal fun RitualHead(over: String, title: String, under: String? = null) {
+internal fun RitualHead(over: String, title: String, under: String? = null, guideCard: Int? = null) {
     Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp)) {
         Text(over, style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
-        Text(title, style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.weight(1f).semantics { heading() })
+            if (guideCard != null) org.pagel.ai.ui.guide.GuideHelpButton(guideCard)
+        }
         if (under != null) Text(under, style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, modifier = Modifier.padding(top = 4.dp))
     }
 }
