@@ -25,6 +25,10 @@ abstract class PagelDao {
     @Query("SELECT name FROM projects")
     abstract suspend fun projectNames(): List<String>
 
+    /** The three projects a task was last touched in (the picker's Recent, shown once there are more than eight). */
+    @Query("SELECT project FROM tasks WHERE project != 'inbox' GROUP BY project ORDER BY MAX(lastModified) DESC LIMIT 3")
+    abstract fun recentProjects(): Flow<List<String>>
+
     @Query("SELECT * FROM projects ORDER BY sort")
     abstract suspend fun projectsOnce(): List<ProjectEntity>
 

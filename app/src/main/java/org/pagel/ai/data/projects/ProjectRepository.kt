@@ -63,6 +63,21 @@ fun daysTakenOf(tasks: List<TaskEntity>, now: Long): Int? {
 
 fun goalsOf(raw: String): List<ProjectGoal> = runCatching { json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(ProjectGoal.serializer()), raw) }.getOrDefault(emptyList())
 
+/** What a create gives back: the project's name (its id) and the outbox op that sends it. */
+data class Created(val name: String, val op: Long)
+
+/** Room between two neighbours' sorts, so a drag has a place to land without renumbering the rest. */
+const val SORT_GAP = 1024
+
+/** A whole-number sort strictly between [before] and [after] (either may be absent); null when they touch. */
+fun sortBetween(before: Int?, after: Int?): Int? = when {
+    before == null && after == null -> 0
+    before == null -> after!! - SORT_GAP
+    after == null -> before + SORT_GAP
+    after - before > 1 -> before + (after - before) / 2
+    else -> null
+}
+
 /** The ten tile swatches in the order a new project takes them (rules/gradient-project-icons). */
 val SWATCHES = listOf("mint", "blue", "violet", "coral", "amber", "pink", "teal", "sky", "red", "slate")
 
@@ -91,6 +106,9 @@ class ProjectRepository(
 ) {
     fun projects(): Flow<List<ProjectEntity>> = dao.projects()
 
+    /** The projects touched last, newest first (at most 3). */
+    fun recent(): Flow<List<String>> = dao.recentProjects()
+
     /** "Your week" from Room alone: the numbers are right offline and right after a tick, before any sync. */
     fun week(): Flow<WeekCounts> =
         combine(dao.completed(), dao.habits(), dao.habitTicks(firstDayOfWeek(clock()).toString())) { done, habits, ticks -> weekCounts(done, habits, ticks, clock()) }
@@ -99,18 +117,52 @@ class ProjectRepository(
     fun daysTaken(project: List<TaskEntity>): Int? = daysTakenOf(project, clock())
 
     /** A new project from its name alone (2 taps: + then Enter); the next swatch colours it. Returns its name. */
-    suspend fun create(title: String, color: String? = null, area: String? = null, parent: String? = null): String {
+    suspend fun create(title: String, color: String? = null, area: String? = null, parent: String? = null): String =
+        make(title, color, area, parent).name
+
+    /** [create] for a caller that can offer Undo (the picker): also gives the op that sends it, for [undoCreate]. */
+    suspend fun createUndoable(title: String): Created = make(title, null, null, null)
+
+    /**
+     * The project already called [title] (case and spacing ignored), archived ones too, so the picker picks it (or offers to
+     * restore it) instead of making a twin.
+     */
+    suspend fun existing(title: String): ProjectEntity? {
+        val want = title.trim().lowercase().replace(Regex("""\s+"""), " ")
+        return dao.projectsOnce().firstOrNull { !it.hidden && (it.title.trim().lowercase().replace(Regex("""\s+"""), " ") == want || it.name == slugOf(title, emptyList())) }
+    }
+
+    suspend fun byName(name: String): ProjectEntity? = dao.projectOnce(name)
+
+    private suspend fun make(title: String, color: String?, area: String?, parent: String?): Created {
         val names = dao.projectNames()
         val name = slugOf(title, names)
         val all = dao.projectsOnce()
         // First colour no project uses yet, so new projects don't repeat colours.
         val used = all.mapNotNull { it.color }.toSet()
         val pick = color ?: SWATCHES.firstOrNull { it !in used } ?: SWATCHES[all.size % SWATCHES.size]
-        val sort = (all.maxOfOrNull { it.sort } ?: -1) + 1
+        // A gap after the last one, so a later drag into the list finds room between neighbours (one PATCH, no renumbering).
+        val sort = (all.maxOfOrNull { it.sort } ?: -SORT_GAP) + SORT_GAP
         dao.upsertProjects(listOf(ProjectEntity(name, title.trim(), pick, sort, 0, area = area, parent = parent)))
-        send(name, "POST", "/api/v1/projects", buildJsonObject { put("name", name); put("title", title.trim()); put("color", pick); if (area != null) put("area", area) })
+        // The phone's slug is the project's id: pagel.uz keeps it, and a retry of a POST that already landed answers 200
+        // (projects-api.ts), so a network drop never makes a twin. The tasks linked to it queue after this op, in order.
+        val op = send(name, "POST", "/api/v1/projects", buildJsonObject { put("name", name); put("title", title.trim()); put("color", pick); if (area != null) put("area", area) })
         if (parent != null) send(name, "PATCH", path(name), buildJsonObject { put("parent", parent) })
-        return name
+        return Created(name, op)
+    }
+
+    /**
+     * Undo of a create: a real inverse write. Still waiting in the outbox → both vanish and pagel.uz never hears of it;
+     * already sent → a delete reaches pagel.uz. Tasks that were linked to it go back to Inbox, on the phone and there.
+     */
+    suspend fun undoCreate(created: Created) {
+        val name = created.name
+        val p = dao.projectOnce(name) ?: return
+        val linked = dao.taskIdsOf(name)
+        if (linked.isNotEmpty()) dao.moveTasksLocal(linked, INBOX, clock())
+        if (dao.takeBackOp(created.op) > 0) { dao.deleteProjectsExcept(dao.projectNames() - name); return }
+        dao.upsertProjects(listOf(p.copy(hidden = true)))
+        send(name, "PATCH", path(name), buildJsonObject { put("deleted", true); put("tasks", "inbox") })
     }
 
     suspend fun rename(name: String, title: String) = patch(name, buildJsonObject { put("title", title.trim()) }) { it.copy(title = title.trim()) }
@@ -140,6 +192,25 @@ class ProjectRepository(
             val p = now[n] ?: return@forEachIndexed
             if (p.sort != i) patch(n, buildJsonObject { put("sort", i) }) { it.copy(sort = i) }
         }
+    }
+
+    /**
+     * One drag = one PATCH of one row: [name] lands right after [after] (or right before [before] when it leads). Its sort
+     * goes between its new neighbours ([sortBetween]); only when they touch is the list spaced out once ([SORT_GAP]) and
+     * the rows whose sort changed are sent. The order is the same in the picker, the Projects tab and Move to.
+     */
+    suspend fun place(name: String, after: String?, before: String? = null) {
+        val rest = dao.projectsOnce().filter { !it.hidden }.sortedBy { it.sort }.filter { it.name != name }
+        val at = when {
+            after != null -> rest.indexOfFirst { it.name == after } + 1
+            before != null -> rest.indexOfFirst { it.name == before }.coerceAtLeast(0)
+            else -> rest.size
+        }
+        val sort = sortBetween(rest.getOrNull(at - 1)?.sort, rest.getOrNull(at)?.sort)
+        if (sort != null) { patch(name, buildJsonObject { put("sort", sort) }) { it.copy(sort = sort) }; return }
+        val spaced = rest.map { it.name }.toMutableList().apply { add(at, name) }
+        val now = dao.projectsOnce().associateBy { it.name }
+        spaced.forEachIndexed { i, n -> val s = (i + 1) * SORT_GAP; if (now[n]?.sort != s) patch(n, buildJsonObject { put("sort", s) }) { it.copy(sort = s) } }
     }
 
     /** Delete: hidden at once; it leaves after the Undo window. Its open tasks go to Inbox, or drop with it ([dropTasks]). */
