@@ -397,10 +397,15 @@ private fun Ring(priority: Int, done: Boolean, title: String, drawIn: Boolean = 
     }
 }
 
+/** The four steps a course lesson takes, in order; one tap adds those the task does not have yet. */
+val LESSON_STEPS = listOf("Open lesson", "Watch 10 min", "Rebuild it", "Note 1 thing")
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Steps(ui: PanelUi, a: PanelActions) {
     val haptics = LocalHapticFeedback.current
     val texts = ui.steps.map { it.text }
+    val lessoned = LESSON_STEPS.all { it in texts }
     val ticked = ui.steps.mapIndexedNotNull { i, s -> if (s.done) i else null }
     var adding by rememberSaveable(ui.id) { mutableStateOf("") }
     var made by rememberSaveable(ui.id) { mutableStateOf(false) }
@@ -505,10 +510,17 @@ private fun Steps(ui: PanelUi, a: PanelActions) {
                 )
             }
             // slot: once made, the chip stays as a quiet "Made ✓" so the Props pane never jumps up 48 dp (spacing audit #9).
-            if (texts.isNotEmpty()) {
-                if (!made) GlassChip(TabIcons.ListPlus, "To tasks", set = false, description = "Make these steps tasks in ${ui.projectLabel}", modifier = Modifier.padding(start = Space.md)) {
-                    a.onMakeTasks(); made = true
-                } else GlassChip(TabIcons.Check, "Made", set = true, description = "Made into tasks", modifier = Modifier.padding(start = Space.md)) {}
+            FlowRow(Modifier.padding(start = Space.md), horizontalArrangement = Arrangement.spacedBy(Space.chipGap)) {
+                // A course lesson in one tap (Boss, 2026-10-30): the four things every lesson takes.
+                if (lessoned) GlassChip(TabIcons.Check, "Lesson steps", set = true, description = "Lesson steps added") {}
+                else GlassChip(TabIcons.ListPlus, "Lesson steps", set = false, description = "Add lesson steps") {
+                    a.onSteps(texts + LESSON_STEPS.filter { it !in texts }, ticked)
+                }
+                if (texts.isNotEmpty()) {
+                    if (!made) GlassChip(TabIcons.ListPlus, "To tasks", set = false, description = "Make these steps tasks in ${ui.projectLabel}") {
+                        a.onMakeTasks(); made = true
+                    } else GlassChip(TabIcons.Check, "Made", set = true, description = "Made into tasks") {}
+                }
             }
         }
     }

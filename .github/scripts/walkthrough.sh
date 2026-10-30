@@ -151,6 +151,40 @@ for i in $(seq 1 30); do grep -qF 'PATCH /api/v1/tasks/t_ci2 {"done":false} auth
 grep -qF 'PATCH /api/v1/tasks/t_ci2 {"done":false} auth=True' "$FAKE_LOG" || { log "WALKTHROUGH: Reopen never reached pagel.uz"; exit 1; }
 $T adb shell input keyevent 4; shot panel-closed 1.5
 
+log "-- the project picker (Boss 2026-10-30): Add -> a task -> Project -> + New project \"CI Picker\" -> Enter -> Add; pagel.uz gets the project, then the task with that project"
+tap "Add a task" && shot picker-add 2 || { log "WALKTHROUGH: no Add a task on Today"; exit 1; }
+$T adb shell "input text 'Read%schapter%sone'"
+tap "Project" && shot picker-open 2 || { log "WALKTHROUGH: the Add sheet has no Project chip"; exit 1; }
+grep -q 'content-desc="New project"' "$OUT/$(printf '%02d' $N)-picker-open.xml" || { log "WALKTHROUGH: the project picker has no + New project row"; exit 1; }
+tap "New project" && shot picker-field 1.5 || { log "WALKTHROUGH: + New project did not open"; exit 1; }
+grep -q 'content-desc="New project name"' "$OUT/$(printf '%02d' $N)-picker-field.xml" || { log "WALKTHROUGH: + New project opened no name field"; exit 1; }
+$T adb shell "input text 'CI%sPicker'"; $T adb shell input keyevent 66
+shot picker-created 1.5
+grep -q 'text="Undo"' "$OUT/$(printf '%02d' $N)-picker-created.xml" || { log "WALKTHROUGH: no Undo toast after the project was made"; exit 1; }
+tap "Add task" && shot picker-added 1.5
+wait_picker() { for i in $(seq 1 30); do grep -qE "$1" "$FAKE_LOG" && return 0; sleep 1; done; return 1; }
+wait_picker 'POST /api/v1/tasks .*"project":"ci-picker"' || { log "WALKTHROUGH: the task never reached pagel.uz with project ci-picker"; grep "POST /api/v1/" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+PP=$(grep -nE 'POST /api/v1/projects \{"name": ?"ci-picker"' "$FAKE_LOG" | head -1 | cut -d: -f1)
+PT=$(grep -nE 'POST /api/v1/tasks .*"project":"ci-picker"' "$FAKE_LOG" | head -1 | cut -d: -f1)
+[ -n "$PP" ] && [ -n "$PT" ] && [ "$PP" -lt "$PT" ] || { log "WALKTHROUGH: pagel.uz did not get the project (line ${PP:-none}) before the task (line ${PT:-none})"; exit 1; }
+log "   pagel.uz got the project, then the task linked to it"
+log "-- drag in the picker: Add -> Project -> long-press Me and drop it above Humopedia; pagel.uz gets one sort for Me"
+tap "Add a task" && shot picker-add2 2
+tap "Project" && shot picker-open2 2
+$T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+PX=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n')
+bounds_of() { echo "$PX" | grep -F "text=\"$1\"" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | tr '\n' ' '; }
+ME=$(bounds_of Me); HU=$(bounds_of Humopedia)
+[ -n "$ME" ] && [ -n "$HU" ] || { log "WALKTHROUGH: the picker does not list Me and Humopedia"; exit 1; }
+set -- $ME; MX=$(( ($1 + $3) / 2 )); MY=$(( ($2 + $4) / 2 ))
+set -- $HU; HY=$(( $2 + 8 ))
+$T adb shell input draganddrop $MX $MY $MX $HY 1500
+shot picker-dragged 1.5
+wait_picker 'PATCH /api/v1/projects/me \{"sort": ?-?[0-9]+\}' || { log "WALKTHROUGH: the drag never reached pagel.uz as a sort for Me"; grep "PATCH /api/v1/projects" "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+[ "$(grep -cE 'PATCH /api/v1/projects/[a-z0-9-]+ \{"sort"' "$FAKE_LOG")" -eq 1 ] || { log "WALKTHROUGH: one drag sent more than one sort"; grep 'PATCH /api/v1/projects' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+log "   one drag = one PATCH of one row"
+$T adb shell input keyevent 4; $T adb shell input keyevent 4; front picker-closed
+
 log "-- the Inbox (Phase 2): sort 5 saves with no network, come back online, pagel.uz gets all 5 in the order made"
 tap Inbox && shot inbox 3
 grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbox.xml" || { log "WALKTHROUGH: the Inbox shows no card from pagel.uz"; exit 1; }

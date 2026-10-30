@@ -62,7 +62,9 @@ import org.pagel.ai.ui.glass.GlassChip
 import org.pagel.ai.ui.glass.GlassMenu
 import org.pagel.ai.ui.glass.GlassSheet
 import org.pagel.ai.ui.glass.PriorityColors
+import org.pagel.ai.ui.glass.ProjectPickerActions
 import org.pagel.ai.ui.glass.ProjectSheet
+import org.pagel.ai.ui.glass.rememberProjectPickerActions
 import org.pagel.ai.ui.glass.Repeat
 import org.pagel.ai.ui.glass.RepeatSheet
 import org.pagel.ai.ui.glass.SheetBottom
@@ -89,7 +91,7 @@ fun AddTaskSheet(onClose: () -> Unit, project: String? = null, vm: AddTaskViewMo
     GlassSheet(onClose) {
         // The sheet closes once a task is added (round B: the toast showed and the sheet stayed); a long press on the
         // arrow adds and keeps it open with the project, for a quick second one.
-        AddTaskContent(projects, home = project ?: "me", toToday = project == null, now = vm::now, notSaved = notSaved, onAdded = onClose, onSave = vm::save)
+        AddTaskContent(projects, home = project ?: "me", toToday = project == null, now = vm::now, notSaved = notSaved, onAdded = onClose, picker = rememberProjectPickerActions(), onSave = vm::save)
         Spacer(Modifier.height(SheetBottom))
     }
 }
@@ -114,6 +116,8 @@ fun AddTaskContent(
     notSaved: List<NotSaved> = emptyList(),
     /** After a task is added (not on a long press of the arrow): the sheet closes. */
     onAdded: () -> Unit = {},
+    /** Makes, moves and edits projects from the project picker; null → the picker only chooses. */
+    picker: ProjectPickerActions? = null,
     onSave: (String, String, Picks, Boolean) -> Boolean,
 ) {
     var typed by rememberSaveable { mutableStateOf(initial) }
@@ -222,7 +226,7 @@ fun AddTaskContent(
     when (sheet) {
         "date" -> DateSheet(plan.due, today, onPick = { dueSet = true; due = it }, onDismiss = { sheet = "" })
         "repeat" -> RepeatSheet(plan.every, onChange = { everySet = true; every = it }, onDismiss = { sheet = "" })
-        "project" -> ProjectSheet(projects, plan.project, onPick = { pick = it }, onDismiss = { sheet = "" })
+        "project" -> ProjectSheet(projects, plan.project, onPick = { pick = it }, onDismiss = { sheet = "" }, picker = picker)
     }
 }
 

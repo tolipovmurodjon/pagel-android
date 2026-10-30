@@ -172,6 +172,8 @@ data class ProjectActions(
     val onTick: (String) -> Unit = {},
     /** An inline add (Enter adds another); null → the Add sheet. */
     val onAddText: ((String) -> Unit)? = null,
+    /** Many tasks from one paste (one per line, in order); null hides "Paste a list". */
+    val onAddMany: ((List<String>) -> Unit)? = null,
     val onAdd: () -> Unit = {},
     val onRename: (String) -> Unit = {},
     val onSettings: () -> Unit = {},
@@ -220,6 +222,14 @@ class ProjectViewModel @Inject constructor(
     fun bind(project: String) { name.value = project }
     fun tick(id: String) { viewModelScope.launch { today.tick(id, done = true) } }
     fun add(text: String) { val n = name.value ?: return; viewModelScope.launch { today.add(text, n, 2, null, null, onToday = false) } }
+    /** A pasted list: the tasks are added one by one, in order, so pagel.uz files them in that order; one Undo takes all back. */
+    fun addMany(lines: List<String>, undo: (suspend () -> Unit) -> Unit) {
+        val n = name.value ?: return
+        viewModelScope.launch {
+            val ids = lines.map { today.add(it, n, 2, null, null, onToday = false) }
+            undo { ids.forEach { tasks.delete(it) } }
+        }
+    }
     fun rename(title: String) { val n = name.value ?: return; viewModelScope.launch { projects.rename(n, title) } }
     fun sort(id: String, sort: Double) { viewModelScope.launch { tasks.sort(id, sort) } }
     fun moveTo(id: String, project: String, undo: (suspend () -> Unit) -> Unit) {
@@ -253,7 +263,7 @@ fun ProjectRoute(
     ProjectScreen(
         ui, contentPadding, reselect,
         actions = ProjectActions(
-            onOpenTask = onOpenTask, onTick = vm::tick, onAddText = vm::add, onAdd = { onAdd(project) }, onRename = vm::rename,
+            onOpenTask = onOpenTask, onTick = vm::tick, onAddText = vm::add, onAddMany = { lines -> vm.addMany(lines) { undo -> undoToast(if (lines.size == 1) "1 task added" else "${lines.size} tasks added", undo) } }, onAdd = { onAdd(project) }, onRename = vm::rename,
             onSettings = { settings = true }, onSort = vm::sort,
             onMoveTo = { id, to -> vm.moveTo(id, to) { undo -> undoToast("Moved to ${ui.others.firstOrNull { it.name == to }?.let { shortName(it.name, it.title) } ?: to}", undo) } },
             onFinish = { finishing = true }, onReopen = vm::reopen, onGoals = vm::goals, onLink = vm::link,
@@ -615,6 +625,11 @@ private fun AddLine(project: String, actions: ProjectActions, autoFocus: Boolean
             keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (text.isNotBlank()) { add(text.trim()); text = "" } }),
             decorationBox = { inner -> Box { if (text.isEmpty()) Text("Add task", style = style, color = Glass.Muted); inner() } },
         )
+        actions.onAddMany?.let { many ->
+            var pasting by rememberSaveable { mutableStateOf(false) }
+            GlassIconButton(TabIcons.ListPlus, "Paste a list", plain = true) { pasting = true }
+            if (pasting) PasteListSheet(project, onAdd = many, onDismiss = { pasting = false })
+        }
     }
 }
 
