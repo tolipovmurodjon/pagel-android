@@ -271,14 +271,13 @@ fun HabitsScreen(
 @Composable
 private fun Header(ui: HabitsUi, board: HabitBoard?, onHistory: () -> Unit, onNew: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = Space.textEdge, end = Space.gutter, top = Space.headerTop), verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f)) { Column {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f)) { val room = constraints.maxWidth; Column {
             Text("Habits", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
             // Always there with a fixed number of lines, so the strip under it never moves (RULES.md Layout 1). Another day
             // uses the short date so "· looking back" fits. When the longest line of any day does not fit (a large font, a
             // 320 dp phone: "Wednesday 28 Oct…", checker 3 #8), the line owns two lines on every day and never cuts.
             val measurer = androidx.compose.ui.text.rememberTextMeasurer()
             val style = MaterialTheme.typography.labelSmall
-            val room = constraints.maxWidth
             val big = remember(room, style, androidx.compose.ui.platform.LocalDensity.current) {
                 LONGEST_DAY_LINES.any { measurer.measure(it, style, softWrap = false, maxLines = 1).size.width > room }
             }
