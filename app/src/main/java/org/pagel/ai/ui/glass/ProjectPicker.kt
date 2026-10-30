@@ -1,5 +1,10 @@
 package org.pagel.ai.ui.glass
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,6 +12,9 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,6 +51,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -54,6 +63,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -83,6 +93,8 @@ sealed interface PickerRow {
     data class Item(val p: ProjectEntity) : PickerRow
     /** "Create “Gym”": what Enter makes when no project is called that. */
     data class Create(val title: String) : PickerRow
+    /** "Restore “Gym”": the name typed is an archived project's; it comes back instead of a twin being made. */
+    data class Restore(val p: ProjectEntity) : PickerRow
     data object NoProject : PickerRow
 }
 
@@ -90,17 +102,26 @@ private const val RECENT_AFTER = 8
 
 private fun ProjectEntity.words() = shortName(name, title)
 
+private fun ProjectEntity.called(q: String) = words().equals(q, ignoreCase = true) || title.trim().equals(q, ignoreCase = true)
+
+/** A row's colour for TalkBack (and the walkthrough): the swatch's name, or "custom" for a hue picked by hand. */
+internal fun colourWord(p: ProjectEntity): String = TileColors.nameFor(p.name, p.color).let { if (Regex("""h\d+""").matches(it)) "custom colour" else it }
+
 /**
  * What the picker lists for [query]: Recent first (only with more than 8 projects and nothing typed), then the projects
- * that match, then "Create “query”" unless one is already called that, and "No project" last (nothing typed).
+ * that match, then "Create “query”" unless one is already called that ("Restore “query”" when an archived one is), and
+ * "No project" last (nothing typed).
  */
 fun pickerRows(projects: List<ProjectEntity>, query: String, recent: List<String>, canCreate: Boolean): List<PickerRow> {
     val q = query.trim()
-    val all = projects.filter { it.name != NO_PROJECT && !it.archived }
+    val all = projects.filter { it.name != NO_PROJECT && !it.archived && !it.hidden }
     val rows = mutableListOf<PickerRow>()
     if (q.isEmpty() && all.size > RECENT_AFTER) recent.mapNotNull { r -> all.firstOrNull { it.name == r } }.take(3).forEach { rows += PickerRow.Recent(it) }
     all.filter { it.words().contains(q, ignoreCase = true) || it.name.contains(q, ignoreCase = true) }.forEach { rows += PickerRow.Item(it) }
-    if (canCreate && q.isNotEmpty() && all.none { it.words().equals(q, ignoreCase = true) || it.title.trim().equals(q, ignoreCase = true) }) rows += PickerRow.Create(q)
+    if (canCreate && q.isNotEmpty() && all.none { it.called(q) }) {
+        val archived = projects.firstOrNull { it.archived && !it.hidden && it.name != NO_PROJECT && it.called(q) }
+        rows += if (archived != null) PickerRow.Restore(archived) else PickerRow.Create(q)
+    }
     if (q.isEmpty()) rows += PickerRow.NoProject
     return rows
 }
@@ -112,6 +133,8 @@ data class ProjectPickerActions(
     val create: suspend (title: String, undone: () -> Unit) -> String,
     /** One drag: [name] now sits after [after] (or before [before] when it leads). */
     val move: (name: String, after: String?, before: String?) -> Unit,
+    /** Brings an archived project back (it is then picked); [undone] runs when its Undo is tapped. */
+    val restore: suspend (name: String, undone: () -> Unit) -> Unit = { _, _ -> },
 )
 
 @HiltViewModel
@@ -123,10 +146,20 @@ class ProjectPickerViewModel @Inject constructor(
     val recent: StateFlow<List<String>> = repo.recent().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     suspend fun create(title: String, undone: () -> Unit): String {
-        repo.existing(title)?.let { toasts.show("Using “${it.words()}”"); return it.name }
+        repo.existing(title)?.let { p ->
+            if (p.archived) restore(p.name, undone) else toasts.show("Using “${p.words()}”")
+            return p.name
+        }
         val made = repo.createUndoable(title.trim())
         toasts.show("“${title.trim()}” created", action = "Undo", millis = 5_000) { scope.launch { repo.undoCreate(made) }; undone() }
         return made.name
+    }
+
+    /** An archived project back in the list, said out loud with Undo (never a silent pick of a hidden one). */
+    suspend fun restore(name: String, undone: () -> Unit) {
+        val p = repo.byName(name) ?: return
+        repo.archive(name, false)
+        toasts.show("“${p.words()}” restored", action = "Undo", millis = 5_000) { scope.launch { repo.archive(name, true) }; undone() }
     }
 
     fun move(name: String, after: String?, before: String?) { scope.launch { repo.place(name, after, before) } }
@@ -135,12 +168,12 @@ class ProjectPickerViewModel @Inject constructor(
 @Composable
 fun rememberProjectPickerActions(vm: ProjectPickerViewModel = hiltViewModel()): ProjectPickerActions {
     val recent by vm.recent.collectAsStateWithLifecycle()
-    return remember(recent, vm) { ProjectPickerActions(recent, vm::create, vm::move) }
+    return remember(recent, vm) { ProjectPickerActions(recent, vm::create, vm::move, vm::restore) }
 }
 
 /**
- * The one "make a project" field (picker, and anywhere else a project is named): a mint plus, the name as you type,
- * Enter creates. Empty Enter closes it. It has the height of a picker row, so opening it moves nothing.
+ * The one "make a project" field (the picker and the Projects tab; the Inbox joins after its round): a mint plus, the name
+ * as you type, Enter creates. Empty Enter closes it. It has the height of a picker row, so opening it moves nothing.
  */
 @Composable
 fun ProjectCreateField(onCreate: (String) -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
@@ -151,9 +184,10 @@ fun ProjectCreateField(onCreate: (String) -> Unit, onCancel: () -> Unit, modifie
         PlusTile()
         Spacer(Modifier.width(Space.md))
         BasicTextField(
-            value = text, onValueChange = { text = it.replace('\n', ' ') }, singleLine = true,
+            // pagel.uz takes a name of 1-60 letters (projects-api.ts).
+            value = text, onValueChange = { text = it.replace('\n', ' ').take(60) }, singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = Glass.Ink), cursorBrush = SolidColor(Glass.Primary),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
             keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (text.isBlank()) onCancel() else onCreate(text.trim()) }),
             modifier = Modifier.weight(1f).focusRequester(focus).semantics { contentDescription = "New project name" },
             decorationBox = { inner -> Box { if (text.isEmpty()) Text("Name the project", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
@@ -162,14 +196,14 @@ fun ProjectCreateField(onCreate: (String) -> Unit, onCancel: () -> Unit, modifie
 }
 
 @Composable
-private fun PlusTile() {
+private fun PlusTile(icon: ImageVector = TabIcons.Plus) {
     Box(Modifier.size(Space.xxxl - Space.xs).background(Glass.Primary.copy(alpha = 0.14f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-        Icon(TabIcons.Plus, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(Space.lg))
+        Icon(icon, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(Space.lg))
     }
 }
 
 @Composable
-private fun TextRow(label: String, description: String, onClick: () -> Unit) {
+private fun TextRow(label: String, description: String, icon: ImageVector = TabIcons.Plus, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Row(
         Modifier.fillMaxWidth().heightIn(min = Space.row).pressScale(press)
@@ -178,7 +212,7 @@ private fun TextRow(label: String, description: String, onClick: () -> Unit) {
             .padding(horizontal = Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PlusTile()
+        PlusTile(icon)
         Spacer(Modifier.width(Space.md))
         Text(label, style = MaterialTheme.typography.bodyLarge, color = Glass.PrimaryInk, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
     }
@@ -194,6 +228,7 @@ private fun SmallHeading(text: String) {
  * The project picker: type to find one, "+ New project" first, every project as its tile with a check on the chosen one,
  * a ⋯ to edit it, a long press to move it. [picker] null → the old read-only list.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProjectContent(projects: List<ProjectEntity>, value: String, picker: ProjectPickerActions? = null, onEdit: ((String) -> Unit)? = null, onPick: (String) -> Unit) {
     var q by rememberSaveable { mutableStateOf("") }
@@ -215,8 +250,17 @@ fun ProjectContent(projects: List<ProjectEntity>, value: String, picker: Project
         }
     }
 
+    fun restore(p: ProjectEntity) {
+        scope.launch {
+            picker!!.restore(p.name) { onPick(value) }
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            onPick(p.name)
+        }
+    }
+
     Column(Modifier.fillMaxWidth()) {
-        SheetTitle("Project")
+        // While the keyboard is up the title steps aside, so a 640 dp phone keeps 5 rows in view, not 3 (checker #10).
+        AnimatedVisibility(!WindowInsets.isImeVisible, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { SheetTitle("Project") }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = Space.lg).height(Space.touch)
                 .background(Color.White.copy(alpha = 0.78f), RoundedCornerShape(24.dp))
@@ -231,8 +275,8 @@ fun ProjectContent(projects: List<ProjectEntity>, value: String, picker: Project
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = Glass.Ink), cursorBrush = SolidColor(Glass.Primary),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = {
-                    val first = rows.firstOrNull { it is PickerRow.Item || it is PickerRow.Create }
-                    when (first) { is PickerRow.Item -> onPick(first.p.name); is PickerRow.Create -> make(first.title); else -> {} }
+                    val first = rows.firstOrNull { it is PickerRow.Item || it is PickerRow.Create || it is PickerRow.Restore }
+                    when (first) { is PickerRow.Item -> onPick(first.p.name); is PickerRow.Create -> make(first.title); is PickerRow.Restore -> restore(first.p); else -> {} }
                 }),
                 modifier = Modifier.weight(1f).semantics { contentDescription = "Find a project" },
                 decorationBox = { inner -> Box { if (q.isEmpty()) Text("Type a project name", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
@@ -243,9 +287,10 @@ fun ProjectContent(projects: List<ProjectEntity>, value: String, picker: Project
             if (picker == null && rows.none { it is PickerRow.Item }) {
                 Text("No project called “${q.trim()}”", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(Space.xl))
             } else Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()).padding(vertical = Space.xs)) {
+                // With a name typed, the one way to make it is its own "Create “X”" row (checker #8).
                 if (picker != null) {
                     if (creating) ProjectCreateField(onCreate = { creating = false; make(it) }, onCancel = { creating = false })
-                    else TextRow("New project", "New project") { creating = true }
+                    else if (q.isBlank()) TextRow("New project", "New project") { creating = true }
                 }
                 val dragOk = picker != null && q.isEmpty() && onEdit != null
                 var itemIndex = -1
@@ -295,6 +340,7 @@ fun ProjectContent(projects: List<ProjectEntity>, value: String, picker: Project
                             )
                         }
                         is PickerRow.Create -> TextRow("Create “${row.title}”", "Create ${row.title}") { make(row.title) }
+                        is PickerRow.Restore -> TextRow("Restore “${row.p.words()}”", "Restore ${row.p.words()}", TabIcons.Undo) { restore(row.p) }
                         PickerRow.NoProject -> NoProjectLine(value == NO_PROJECT) { onPick(NO_PROJECT) }
                     }
                 }
@@ -310,7 +356,8 @@ private fun ProjectLine(p: ProjectEntity, chosen: Boolean, onPick: () -> Unit, o
     Row(
         modifier.fillMaxWidth().heightIn(min = Space.row).pressScale(press)
             .clickable(press, indication = null, role = Role.Button) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick() }
-            .semantics { selected = chosen }
+            // Name and colour, so TalkBack (and the walkthrough) hear a recolour from the ⋯ at once.
+            .semantics { selected = chosen; contentDescription = "${p.words()}, ${colourWord(p)}" }
             .padding(start = Space.md, end = if (onEdit == null) Space.md else Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {

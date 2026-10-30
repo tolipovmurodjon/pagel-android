@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -50,6 +52,8 @@ data class PanelUi(
     val pinned: Int = 0,
     /** A habit's taps a day (1 = once). */
     val times: Int = 1,
+    /** Its project holds lessons (a course): the panel offers Lesson steps as a chip ([looksLikeLessons]). */
+    val lessons: Boolean = false,
 )
 
 /** The web's rule: at most 3 tasks pinned to Today by hand (a date puts more there by itself). */
@@ -84,6 +88,11 @@ class TaskPanelViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PanelUi())
 
     val projects: StateFlow<List<ProjectEntity>> = session.projects().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Whether the task's project reads like a course; looked up again only when the task changes project. */
+    val lessons: StateFlow<Boolean> = ui.map { it.project to it.projectLabel }.distinctUntilChanged().flatMapLatest { (project, label) ->
+        if (project.isEmpty()) flowOf(false) else tasks.projectTasks(project).map { list -> looksLikeLessons(label, list.map { it.text }) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun bind(taskId: String) { id.value = taskId }
 
@@ -150,6 +159,16 @@ class TaskPanelViewModel @Inject constructor(
     fun reopen() = go { taskId ->
         val op = tasks.reopen(taskId) ?: return@go
         toasts.show("Back on your list", action = "Undo") { viewModelScope.launch { if (!tasks.takeBack(taskId, op)) tasks.finish(taskId) } }
+    }
+
+    /** The project capsule's picker: the task moves to [project] at once, with Undo (taken back if it has not left yet). */
+    fun moveTo(project: String) {
+        val from = cur.project
+        val label = projects.value.firstOrNull { it.name == project }?.let { shortName(it.name, it.title) } ?: project
+        go { taskId ->
+            val op = tasks.move(taskId, project) ?: return@go
+            toasts.show("Moved to $label", action = "Undo", millis = 5_000) { viewModelScope.launch { if (!tasks.takeBack(taskId, op)) tasks.move(taskId, from) } }
+        }
     }
 
     fun delete() = go { taskId ->

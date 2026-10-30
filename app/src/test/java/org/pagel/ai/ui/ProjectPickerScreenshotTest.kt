@@ -7,7 +7,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -19,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,6 +33,15 @@ import org.pagel.ai.ui.glass.PickerRow
 import org.pagel.ai.ui.glass.ProjectContent
 import org.pagel.ai.ui.glass.ProjectPickerActions
 import org.pagel.ai.ui.glass.pickerRows
+import org.pagel.ai.ui.projects.PasteListContent
+import org.pagel.ai.ui.projects.pastedLines
+import org.pagel.ai.ui.task.LESSON_STEPS
+import org.pagel.ai.ui.task.PanelActions
+import org.pagel.ai.ui.task.PanelStep
+import org.pagel.ai.ui.task.PanelUi
+import org.pagel.ai.ui.task.TaskPanelContent
+import org.pagel.ai.ui.task.looksLikeLessons
+import java.time.LocalDate
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -45,10 +58,13 @@ class ProjectPickerScreenshotTest {
     )
     private val many = projects + (1..6).map { ProjectEntity("p$it", "Project $it", null, 10 + it, 1) }
     private var made: String? = null
+    private var moved: Triple<String, String?, String?>? = null
+    private var restored: String? = null
     private val picker = ProjectPickerActions(
         recent = listOf("pagel", "me"),
         create = { title, _ -> made = title; "ci-picker" },
-        move = { _, _, _ -> },
+        move = { n, a, b -> moved = Triple(n, a, b) },
+        restore = { n, _ -> restored = n },
     )
 
     private fun show(fontScale: Float = 1f, body: @Composable () -> Unit) = compose.setContent {
@@ -126,6 +142,106 @@ class ProjectPickerScreenshotTest {
         show(fontScale = 1.5f) { ProjectContent(projects, "gym", picker, onEdit = {}) {} }
         compose.onNodeWithText("New project").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-picker-360-font-1.5.png")
+    }
+
+    /** Checker #6: an archived project's name offers "Restore", never a silent pick of a hidden project or a twin. */
+    @Test fun anArchivedNameOffersRestoreNotCreate() {
+        val all = projects + ProjectEntity("unity", "Unity course", "violet", 9, 0, archived = true)
+        val r = pickerRows(all, "unity COURSE", emptyList(), true)
+        assertEquals(listOf(PickerRow.Restore(all.last())), r)
+        assertEquals(PickerRow.Create("Unity"), pickerRows(all, "Unity", emptyList(), true).last())
+    }
+
+    @Test fun theRestoreRowBringsItBackAndPicksIt() {
+        var picked: String? = null
+        val all = projects + ProjectEntity("unity", "Unity course", "violet", 9, 0, archived = true)
+        show { ProjectContent(all, "pagel", picker, onEdit = {}) { picked = it } }
+        compose.onNodeWithContentDescription("Find a project").performTextInput("Unity course")
+        compose.onNodeWithText("Restore “Unity course”").performClick()
+        compose.waitForIdle()
+        assertEquals("unity", restored)
+        assertEquals("unity", picked)
+    }
+
+    /** Checker #8: with a name typed, only "Create “X”" makes it; "+ New project" steps away. */
+    @Test fun typingHidesNewProjectAndLeavesOnlyTheCreateRow() {
+        show { ProjectContent(projects, "pagel", picker, onEdit = {}) {} }
+        compose.onNodeWithText("New project").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Find a project").performTextInput("Gymnastics")
+        compose.onNodeWithText("New project").assertDoesNotExist()
+        compose.onNodeWithText("Create “Gymnastics”").assertIsDisplayed()
+    }
+
+    /** A row says its colour, so a recolour from the ⋯ is heard (and checked by the walkthrough). */
+    @Test fun aRowSaysItsNameAndColour() {
+        show { ProjectContent(projects, "pagel", picker, onEdit = {}) {} }
+        compose.onNodeWithContentDescription("Gym time, coral").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Humopedia, mint").assertIsDisplayed()
+    }
+
+    /** Checker #12: the drag, caught mid-air (lifted row, glass shadow, the rows below making room), then dropped. */
+    @Test fun draggingARowLiftsItAndTheDropIsOneMove() {
+        show { ProjectContent(projects, "pagel", picker, onEdit = {}) {} }
+        val to = compose.onNodeWithText("ABABIL").fetchSemanticsNode().boundsInRoot.center
+        val at = compose.onNodeWithText("Me").fetchSemanticsNode().boundsInRoot.center
+        compose.onNodeWithText("Me").performTouchInput {
+            down(center)
+            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 200)
+            for (k in 1..8) { moveTo(center + Offset(0f, (to.y - at.y) * k / 8f)); advanceEventTime(16) }
+        }
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-picker-dragging.png")
+        compose.onNodeWithText("Me").performTouchInput { up() }
+        compose.waitForIdle()
+        assertEquals("me", moved?.first)
+    }
+
+    @Test fun lessonStepsShowOnlyWhereTasksAreLessons() {
+        assertTrue(looksLikeLessons("Finish the Unity course", emptyList()))
+        assertTrue(looksLikeLessons("Unity", listOf("Lesson 1 Setup", "Lesson 2 Scenes", "Buy a mouse")))
+        assertTrue(looksLikeLessons("Blender", listOf("Lecture 4 UVs", "Module 2 · Basics")))
+        assertFalse(looksLikeLessons("Me", listOf("Call the bank", "Weigh in", "Pay the internet bill")))
+        assertFalse(looksLikeLessons("Me", listOf("Lesson plan for Aziz")))
+    }
+
+    private val lessonTask = PanelUi(
+        loading = false, id = "t_l1", project = "unity", projectLabel = "Unity course", title = "Lesson 3 · Prefabs",
+        text = "Lesson 3 · Prefabs", priority = 2, steps = listOf(PanelStep("Open lesson", true)),
+    )
+
+    @Test fun aLessonTaskHasTheLessonStepsChip() {
+        var steps: List<String>? = null
+        show { TaskPanelContent(lessonTask.copy(lessons = true), LocalDate.of(2026, 10, 30), PanelActions(onSteps = { s, _ -> steps = s })) }
+        compose.onNodeWithText("Lesson steps").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/panel-lesson-steps.png")
+        compose.onNodeWithText("Lesson steps").performClick()
+        assertEquals(LESSON_STEPS, steps)
+    }
+
+    @Test fun anOrdinaryTaskKeepsLessonStepsInTheDots() {
+        var steps: List<String>? = null
+        show { TaskPanelContent(lessonTask.copy(project = "me", projectLabel = "Me", title = "Call the bank", text = "Call the bank"), LocalDate.of(2026, 10, 30), PanelActions(onSteps = { s, _ -> steps = s })) }
+        compose.onNodeWithText("Lesson steps").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Step templates").performClick()
+        compose.onNodeWithText("Lesson steps").performClick()
+        assertEquals(LESSON_STEPS, steps)
+    }
+
+    @Test fun pastedLinesKeepOrderSkipBlanksAndKeepLongLinesWhole() {
+        val long = (1..26).joinToString(" ") { "w$it" }
+        val lines = pastedLines("1. Lesson 1 Setup\n\n  - Lesson 2 Scenes \n• Lesson 3 Prefabs\n\n$long\n")
+        assertEquals(listOf("Lesson 1 Setup", "Lesson 2 Scenes", "Lesson 3 Prefabs"), lines.take(3).map { it.text })
+        assertEquals(listOf(null, null, null), lines.take(3).map { it.note })
+        assertEquals(20, lines[3].text.split(' ').size)
+        assertEquals(long, lines[3].note)
+    }
+
+    @Test fun pasteAListLooksCalm() {
+        val raw = "Lesson 1 · Install Unity\nLesson 2 · The editor\nLesson 3 · Prefabs\nLesson 4 · Physics\nLesson 5 · " +
+            (1..22).joinToString(" ") { "word" }
+        show { PasteListContent("Unity course", onAdd = {}, autoFocus = false, initial = raw) }
+        compose.onNodeWithText("Add 5 tasks").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/paste-a-list.png")
     }
 
     @Test fun theOldReadOnlyPickerStillSaysNothingMatched() {

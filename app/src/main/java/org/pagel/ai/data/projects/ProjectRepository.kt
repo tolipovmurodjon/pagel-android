@@ -123,11 +123,16 @@ class ProjectRepository(
     /** [create] for a caller that can offer Undo (the picker): also gives the op that sends it, for [undoCreate]. */
     suspend fun createUndoable(title: String): Created = make(title, null, null, null)
 
-    /** The project already called [title] (case and spacing ignored), so the picker can pick it instead of making a twin. */
+    /**
+     * The project already called [title] (case and spacing ignored), archived ones too, so the picker picks it (or offers to
+     * restore it) instead of making a twin.
+     */
     suspend fun existing(title: String): ProjectEntity? {
         val want = title.trim().lowercase().replace(Regex("""\s+"""), " ")
         return dao.projectsOnce().firstOrNull { !it.hidden && (it.title.trim().lowercase().replace(Regex("""\s+"""), " ") == want || it.name == slugOf(title, emptyList())) }
     }
+
+    suspend fun byName(name: String): ProjectEntity? = dao.projectOnce(name)
 
     private suspend fun make(title: String, color: String?, area: String?, parent: String?): Created {
         val names = dao.projectNames()
@@ -136,7 +141,8 @@ class ProjectRepository(
         // First colour no project uses yet, so new projects don't repeat colours.
         val used = all.mapNotNull { it.color }.toSet()
         val pick = color ?: SWATCHES.firstOrNull { it !in used } ?: SWATCHES[all.size % SWATCHES.size]
-        val sort = (all.maxOfOrNull { it.sort } ?: -1) + 1
+        // A gap after the last one, so a later drag into the list finds room between neighbours (one PATCH, no renumbering).
+        val sort = (all.maxOfOrNull { it.sort } ?: -SORT_GAP) + SORT_GAP
         dao.upsertProjects(listOf(ProjectEntity(name, title.trim(), pick, sort, 0, area = area, parent = parent)))
         // The phone's slug is the project's id: pagel.uz keeps it, and a retry of a POST that already landed answers 200
         // (projects-api.ts), so a network drop never makes a twin. The tasks linked to it queue after this op, in order.

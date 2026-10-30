@@ -173,7 +173,7 @@ data class ProjectActions(
     /** An inline add (Enter adds another); null → the Add sheet. */
     val onAddText: ((String) -> Unit)? = null,
     /** Many tasks from one paste (one per line, in order); null hides "Paste a list". */
-    val onAddMany: ((List<String>) -> Unit)? = null,
+    val onAddMany: ((List<PastedLine>) -> Unit)? = null,
     val onAdd: () -> Unit = {},
     val onRename: (String) -> Unit = {},
     val onSettings: () -> Unit = {},
@@ -223,11 +223,11 @@ class ProjectViewModel @Inject constructor(
     fun tick(id: String) { viewModelScope.launch { today.tick(id, done = true) } }
     fun add(text: String) { val n = name.value ?: return; viewModelScope.launch { today.add(text, n, 2, null, null, onToday = false) } }
     /** A pasted list: the tasks are added one by one, in order, so pagel.uz files them in that order; one Undo takes all back. */
-    fun addMany(lines: List<String>, undo: (suspend () -> Unit) -> Unit) {
+    fun addMany(lines: List<PastedLine>, undo: (suspend () -> Unit) -> Unit) {
         val n = name.value ?: return
         viewModelScope.launch {
-            val ids = lines.map { today.add(it, n, 2, null, null, onToday = false) }
-            undo { ids.forEach { tasks.delete(it) } }
+            val ids = addPasted(today, tasks, n, lines)
+            undo { undoPasted(tasks, ids) }
         }
     }
     fun rename(title: String) { val n = name.value ?: return; viewModelScope.launch { projects.rename(n, title) } }

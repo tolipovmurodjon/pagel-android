@@ -26,9 +26,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -134,6 +137,7 @@ fun AddTaskContent(
     var every by rememberSaveable { mutableStateOf(initialPicks.every) }
     var priority by rememberSaveable { mutableStateOf(initialPicks.priority) }
     var sheet by rememberSaveable { mutableStateOf("") }
+    var picked by remember { mutableIntStateOf(0) }
     var flags by remember { mutableStateOf(false) }
     val picks = Picks(dueSet, due, everySet, every, priority)
     val names = projects.map { it.name }
@@ -199,21 +203,25 @@ fun AddTaskContent(
             }
         }
         Spacer(Modifier.height(12.dp))
-        // What Enter will make, as chips that are also the pickers.
+        // What Enter will make, as chips that are also the pickers. Project is second (checker 2026-10-30: 4th, it sat off a
+        // 320 dp screen, so a pick was invisible) and the row scrolls to it after every pick.
         val chipsScroll = rememberScrollState()
+        val projectChip = remember { BringIntoViewRequester() }
+        LaunchedEffect(picked) { if (picked > 0) projectChip.bringIntoView() }
         Row(Modifier.fadeEnd({ chipsScroll.canScrollForward }, 48.dp).horizontalScroll(chipsScroll).padding(start = 16.dp, end = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GlassChip(TabIcons.Calendar, DatePick.dueText(plan.due, today).let { if (it == "Date" && !toToday) "Date" else it }, set = plan.due != null, description = "Date") { sheet = "date" }
+            val p = projects.firstOrNull { it.name == plan.project }
+            GlassChip(
+                TabIcons.forProject(plan.project), shortName(plan.project, p?.title ?: plan.project), set = true, description = "Project",
+                leading = { ProjectTile(plan.project, p?.color, p?.title ?: plan.project, size = 20.dp, icon = p?.icon) },
+                modifier = Modifier.bringIntoViewRequester(projectChip),
+            ) { sheet = "project" }
             Box {
                 GlassChip(if (priority != null) TabIcons.FlagFilled else TabIcons.Flag, "P${plan.priority + 1}", set = plan.priority != 2 || priority != null,
                     tint = PriorityColors[plan.priority.coerceIn(0, 3)], description = "Priority") { flags = true }
                 if (flags) GlassMenu(priorityItems(plan.priority), onPick = { priority = it; flags = false }, onDismiss = { flags = false })
             }
             GlassChip(TabIcons.Habits, plan.every?.let(Repeat::label) ?: "Repeat", set = plan.every != null, description = "Repeat") { sheet = "repeat" }
-            val p = projects.firstOrNull { it.name == plan.project }
-            GlassChip(
-                TabIcons.forProject(plan.project), shortName(plan.project, p?.title ?: plan.project), set = true, description = "Project",
-                leading = { ProjectTile(plan.project, p?.color, p?.title ?: plan.project, size = 20.dp) },
-            ) { sheet = "project" }
         }
         // slot: one fixed message line under the chips (spacing audit #11): the newest refused add, or the word
         // counter. The sheet sits on the keyboard, so a growing message moved the field while he typed.
@@ -226,7 +234,7 @@ fun AddTaskContent(
     when (sheet) {
         "date" -> DateSheet(plan.due, today, onPick = { dueSet = true; due = it }, onDismiss = { sheet = "" })
         "repeat" -> RepeatSheet(plan.every, onChange = { everySet = true; every = it }, onDismiss = { sheet = "" })
-        "project" -> ProjectSheet(projects, plan.project, onPick = { pick = it }, onDismiss = { sheet = "" }, picker = picker)
+        "project" -> ProjectSheet(projects, plan.project, onPick = { pick = it; picked++ }, onDismiss = { sheet = "" }, picker = picker)
     }
 }
 

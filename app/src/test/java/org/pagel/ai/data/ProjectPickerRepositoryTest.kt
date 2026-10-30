@@ -21,6 +21,10 @@ import org.pagel.ai.data.projects.ProjectRepository
 import org.pagel.ai.data.projects.SORT_GAP
 import org.pagel.ai.data.projects.sortBetween
 import org.pagel.ai.data.tasks.TaskRepository
+import org.pagel.ai.data.today.TodayRepository
+import org.pagel.ai.ui.projects.addPasted
+import org.pagel.ai.ui.projects.pastedLines
+import org.pagel.ai.ui.projects.undoPasted
 import org.robolectric.annotation.Config
 
 /** The picker's data rules: create once and select, no twin by name, Undo is a real write, a drag is one PATCH. */
@@ -106,6 +110,43 @@ class ProjectPickerRepositoryTest {
         val second = ops().single()
         assertEquals("/api/v1/projects/gamma", body(second)["path"]!!.jsonPrimitive.content)
         assertEquals(listOf("beta", "gamma", "alpha"), db.dao().projectsOnce().sortedBy { it.sort }.map { it.name })
+    }
+
+    /** Checker #7: a new project lands a gap after the last, so a later drop between it and its neighbour is one PATCH. */
+    @Test fun aNewProjectLeavesRoomSoADropIntoTheMiddleIsOnePatch() = runBlocking {
+        repo.create("Delta")
+        assertEquals(2 + SORT_GAP, db.dao().projectOnce("delta")!!.sort)
+        ops().forEach { db.dao().takeBackOp(it.id) } // pagel.uz has the POST
+        repo.place("alpha", after = "gamma", before = "delta")
+        val one = ops().single()
+        assertEquals("/api/v1/projects/alpha", body(one)["path"]!!.jsonPrimitive.content)
+        assertEquals(listOf("beta", "gamma", "alpha", "delta"), db.dao().projectsOnce().sortedBy { it.sort }.map { it.name })
+    }
+
+    /** Checker #6: an archived project is found by its name, so the picker offers Restore instead of a twin. */
+    @Test fun anArchivedNameIsFoundSoItCanBeRestored() = runBlocking {
+        repo.archive("beta", true)
+        assertTrue(repo.existing("Beta")!!.archived)
+        repo.archive("beta", false)
+        assertEquals(false, repo.byName("beta")!!.archived)
+    }
+
+    /** Paste a list: one task per line in the order pasted, blanks skipped, a long line whole in its note, one Undo takes all. */
+    @Test fun aPastedListAddsTasksInOrderAndOneUndoTakesThemAllBack() = runBlocking {
+        val today = TodayRepository(db.dao(), { }, { now })
+        val tasks = TaskRepository(db.dao(), { }, { now })
+        val long = (1..24).joinToString(" ") { "w$it" }
+        val lines = pastedLines("Lesson 1 Setup\n\n- Lesson 2 Scenes\n   \nLesson 3 Prefabs\n$long")
+        assertEquals(4, lines.size)
+        val ids = addPasted(today, tasks, "alpha", lines)
+        val adds = db.dao().waitingOutbox().filter { it.op == OutboxEntity.ADD }
+        assertEquals(ids, adds.map { it.taskId })
+        assertEquals(listOf("Lesson 1 Setup", "Lesson 2 Scenes", "Lesson 3 Prefabs"), ids.take(3).map { db.dao().taskOnce(it)!!.text })
+        val last = db.dao().taskOnce(ids[3])!!
+        assertEquals(long, last.text)
+        assertEquals((1..20).joinToString(" ") { "w$it" }, last.title)
+        undoPasted(tasks, ids)
+        assertTrue(ids.all { db.dao().taskOnce(it)!!.status == "dropped" })
     }
 
     @Test fun placeLastGoesAfterTheLastWithoutTouchingTheRest() = runBlocking {
