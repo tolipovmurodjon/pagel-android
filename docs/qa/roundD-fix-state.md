@@ -1,7 +1,16 @@
-# Round D fix · state when parked (2026-10-29, builder agent, branch `feat/roundD-fix`)
+# Round D fix · state (resumed 2026-10-30, builder agent, branch `feat/roundD-fix`)
 
-Parked on the coordinator's word (Boss: Projects first). Resume from here. The last pushed commit is a **WIP**:
-nothing after 6331656 has been compiled.
+## Resumed 2026-10-30
+- 8cf9113 = native-app 0.3.34 (projects + Namoz, Room v11) merged in. Rebased and resolved first, then recorded as a merge
+  on bbc3ba9 (same tree), so no force push. Namoz: `NamozGroup` is the Namoz team's own version; my one-row Namoz is dropped,
+  and the Namoz test follows theirs. `Chip` is internal + modifier. No Room change (v11 stays).
+- The WIP compiled at once; only `HabitLook.Anchor` in a test needed its full name (ddf3223).
+- 72a7fd3 note 5 pager: CI 40986443466 build ✅. The row-rhythm test judges only whole rows (the taller Namoz group pushed
+  the last row under the screen's edge at 1.5x).
+- 45f3007 notes 8 + 4: "+" New habit sheet (name, part chips, Add; Undo), drag-to-link (`LinkableRow`, `LinkDrag`,
+  `vm.link`, `HabitLook.stackOrder` + test). The walk covers swipe → Afternoon, + → Floss at night → POST, Undo → remove.
+- What's new lines live in the pagel.uz resource, not the app: the lead adds 0.3.35's "try this" lines.
+- Long-press on a row is now the drag lift (a tap still opens the page).
 
 ## CI so far
 - f301151 code fixes (checker 1-5, 7-10): CI 40864085315 **build ✅** (unit + Roborazzi), no smoke.

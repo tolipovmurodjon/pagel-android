@@ -1,6 +1,5 @@
 package org.pagel.ai.ui.habits
 
-import androidx.compose.foundation.ExperimentalLayoutApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -46,7 +45,6 @@ import org.pagel.ai.ui.glass.pressScale
  * A new habit in two taps from Habits (Boss's note 8): "+" → type the name → Add (or the keyboard's Done). It starts
  * today, every day, in the part of the day on screen; days, reminder, colour and stacking live behind the habit's ⋮.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun NewHabitSheet(part: Part, onAdd: (String, Part) -> Unit, onDismiss: () -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
