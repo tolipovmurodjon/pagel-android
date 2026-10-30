@@ -316,7 +316,7 @@ private fun AllToday(
                     translationY = if (lifted) dy else shift
                     if (lifted) { scaleX = 1.03f; scaleY = 1.03f; shadowElevation = 16.dp.toPx(); shape = RoundedCornerShape(16.dp); clip = true }
                 }
-                .background(if (lifted) Color.White.copy(alpha = 0.94f) else Color.Transparent)
+                .background(if (lifted) Color.White else Color.Transparent)
                 .pointerInput(row.id, i) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { from = i; slot = i; dy = 0f; haptics.performHapticFeedback(HapticFeedbackType.LongPress) },

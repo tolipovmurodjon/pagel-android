@@ -112,7 +112,7 @@ shot r4-all-today 2
 for t in "Call the bank about the report" "Weigh in" "Clean the desk" "Write the release note"; do
   grep -q "text=\"$t\"" "$OUT/$(printf '%02d' $N)-r4-all-today.xml" || { log "WALKTHROUGH: All today did not open in place (no \"$t\")"; exit 1; }
 done
-grep -q 'content-desc="Show 3"' "$OUT/$(printf '%02d' $N)-r4-all-today.xml" || { log "WALKTHROUGH: the open list has no Show 3 chevron"; exit 1; }
+# (Show 3 sits under the last row, below the fold on a 640 dp screen: it is tapped after the drag, scrolled to.)
 FROM=$(r4_centre "Clean the desk") || { log "WALKTHROUGH: no Clean the desk row to drag"; exit 1; }
 TO=$(r4_centre "Call the bank about the report") || { log "WALKTHROUGH: no first row to drop on"; exit 1; }
 set -- $FROM $TO
@@ -126,7 +126,8 @@ ORDERS=$(grep -c '"today_sort"' "$FAKE_LOG")
 log "   pagel.uz got ONE order PATCH: $(grep -o 'PATCH /api/v1/tasks/t_now1 {"today_sort":[^}]*}' "$FAKE_LOG" | head -1)"
 A=$(r4_centre "Clean the desk"); B=$(r4_centre "Call the bank about the report")
 [ -n "$A" ] && [ -n "$B" ] && [ "${A#* }" -lt "${B#* }" ] || { log "WALKTHROUGH: after the drag Clean the desk is not above Call the bank ($A vs $B)"; exit 1; }
-tap "Show 3" && shot r4-folded 2
+r4_tap "Show 3" || { log "WALKTHROUGH: the open list has no Show 3 chevron"; exit 1; }
+shot r4-folded 2
 grep -q 'text="Clean the desk"' "$OUT/$(printf '%02d' $N)-r4-folded.xml" || { log "WALKTHROUGH: the dragged task is not one of the 3 after folding"; exit 1; }
 grep -q 'text="Measure the drone' "$OUT/$(printf '%02d' $N)-r4-folded.xml" && { log "WALKTHROUGH: folded Today still shows a 4th task"; exit 1; }
 
@@ -167,7 +168,7 @@ MD=$(grep -c '"event":"micro_done"' "$FAKE_LOG"); log "   Focus: 4 ticks, micro_
 shot r4-focus-finished 2
 $T adb shell input keyevent 4; sleep 1.5
 front r4-back-on-today
-tap "Show 3" || true
+r4_tap "Show 3" || true
 shot r4-today-end 2
 $T adb logcat -d > "$OUT/logcat-r4.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-r4.txt" && { log "WALKTHROUGH: CRASH in core round 4 (see logcat-r4.txt)"; exit 1; }

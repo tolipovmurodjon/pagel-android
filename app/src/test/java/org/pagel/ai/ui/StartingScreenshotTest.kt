@@ -98,7 +98,7 @@ class StartingScreenshotTest {
 
     @Composable
     private fun Today(ui: TodayUiState, drag: Pair<Int, Int>? = null, onExpand: (Boolean) -> Unit = {}) =
-        TodayScreen(ui, pad, today = day, onWhatNow = {}, onExpand = onExpand, dragPreview = drag, dragPreviewDy = if (drag != null) -620f else 0f)
+        TodayScreen(ui, pad, today = day, onWhatNow = {}, onExpand = onExpand, dragPreview = drag, dragPreviewDy = if (drag != null) -660f else 0f)
 
     // ── Today ──────────────────────────────────────────────────────────────────────────────────────────────────────
 

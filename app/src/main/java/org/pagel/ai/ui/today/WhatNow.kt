@@ -130,7 +130,7 @@ private fun EnergyAsk(onEnergy: (Energy) -> Unit) {
                     .padding(vertical = Space.md),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
             ) {
-                Text(when (e) { Energy.LOW -> "🪫"; Energy.OK -> "🔋"; Energy.HIGH -> "⚡" }, style = MaterialTheme.typography.headlineSmall)
+                Text(when (e) { Energy.LOW -> "😴"; Energy.OK -> "🔋"; Energy.HIGH -> "⚡" }, style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(Space.xs))
                 Text(e.label, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1)
             }
