@@ -59,14 +59,20 @@ fun GuideScreen(card: Int, padding: PaddingValues, onTry: (GuideDestination) -> 
             Text("How it works", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, maxLines = 1, modifier = Modifier.semantics { heading() })
         }
         HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.Top, key = { cards[it].id }) { i ->
-            CardPage(cards[i], i, cards.size, onTry)
+            CardPage(cards[i], i, cards.size)
+        }
+        // Pinned under the pages, so Try it is on screen at any font size and never scrolls away with the card.
+        val now = cards[pager.currentPage]
+        Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalAlignment = Alignment.CenterHorizontally) {
+            MintButton("Try it", TabIcons.ArrowRight, Modifier.fillMaxWidth(), description = "Try it") { onTry(now.goes) }
+            Text(now.tryLabel, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, modifier = Modifier.padding(top = Space.sm))
         }
         Dots(pager.currentPage, cards.size)
     }
 }
 
 @Composable
-private fun CardPage(card: GuideCard, index: Int, total: Int, onTry: (GuideDestination) -> Unit) {
+private fun CardPage(card: GuideCard, index: Int, total: Int) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = Space.gutter)
             .semantics(mergeDescendants = false) { contentDescription = "Card ${index + 1} of $total" },
@@ -87,9 +93,6 @@ private fun CardPage(card: GuideCard, index: Int, total: Int, onTry: (GuideDesti
                 Fact("Don’t", card.dont, Glass.Risk)
             }
         }
-        Spacer(Modifier.height(Space.paneGap))
-        MintButton("Try it", TabIcons.ArrowRight, Modifier.fillMaxWidth(), description = "Try it") { onTry(card.goes) }
-        Text(card.tryLabel, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.fillMaxWidth().padding(top = Space.sm, bottom = Space.sm), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
