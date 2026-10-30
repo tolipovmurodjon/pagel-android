@@ -323,7 +323,13 @@ private fun Segmented(options: List<String>, chosen: Int, onPick: (Int) -> Unit)
  */
 @Composable
 fun TidySheet(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onDismiss: () -> Unit, onRetry: () -> Unit = {}) {
-    GlassSheet(onDismiss) { TidyContent(tidy, onSomeday, onDrop, onRetry); Spacer(Modifier.height(SheetBottom)) }
+    // Material's sheet keeps the height it opened with (CI 41084160574: it opened on "Looking…" and the found count's
+    // buttons stayed below the screen). A new state is a new sheet, opened at its own height; a tall one scrolls.
+    androidx.compose.runtime.key(tidy.loading, tidy.failed) {
+        GlassSheet(onDismiss) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { TidyContent(tidy, onSomeday, onDrop, onRetry); Spacer(Modifier.height(SheetBottom)) }
+        }
+    }
 }
 
 /**
@@ -346,16 +352,10 @@ fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onRetry: 
                 Text("$n saves older than ${OLD_DAYS} days", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs))
                 Text(if (tidy.bySource.isNotEmpty()) "Your whole Inbox, by where it came from:" else "By where they came from:", style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
                     modifier = Modifier.padding(start = Space.xs, top = Space.sm))
+                // One line, not a row per source: the sheet stays short enough that both moves show on a 640 dp phone.
                 Pane(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {
-                    Column(Modifier.padding(vertical = Space.xs)) {
-                        tidy.sources.forEachIndexed { i, (name, count) ->
-                            if (i > 0) HorizontalDivider(Modifier.padding(start = Space.lg), color = Glass.Ink.copy(alpha = 0.07f))
-                            Row(Modifier.fillMaxWidth().heightIn(min = Space.touch).padding(horizontal = Space.lg), verticalAlignment = Alignment.CenterVertically) {
-                                Text(name, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f), maxLines = 1)
-                                Text("$count", style = Glass.NumberText, color = Glass.Muted)
-                            }
-                        }
-                    }
+                    Text(tidy.sources.joinToString(" · ") { (name, count) -> "$name\u00A0$count" }, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink,
+                        modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.md))
                 }
                 Text("Nothing is sent for 5 seconds; one Undo stops all $n. None of it counts toward today's 20.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, bottom = Space.md))
                 PrimaryButton("Move all $n to Someday", TabIcons.Moon, enabled = true, color = Choice.SOMEDAY.look.color, onClick = onSomeday)

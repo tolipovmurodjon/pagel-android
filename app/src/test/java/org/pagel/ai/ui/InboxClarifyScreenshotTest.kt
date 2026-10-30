@@ -309,7 +309,7 @@ class InboxClarifyScreenshotTest {
         compose.onNodeWithText("412 saves older than 60 days").assertIsDisplayed()
         compose.onNodeWithContentDescription("Move all 412 to Someday").assertIsDisplayed()
         compose.onNodeWithContentDescription("Drop all 412").assertIsDisplayed()
-        compose.onNodeWithText("Telegram").assertIsDisplayed()
+        compose.onNodeWithText("Telegram", substring = true).assertIsDisplayed()
     }
 
     /** The quiet progress line while a bulk pages through: "120 of 412", in the counts' place, no spinner. */
