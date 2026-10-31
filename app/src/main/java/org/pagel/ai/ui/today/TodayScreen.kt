@@ -73,6 +73,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -486,6 +487,7 @@ private fun Note(title: String, line: String) {
  * One task: the ring, the title, then when + project. Ticked: the ring fills and pops, the tick draws itself, and
  * after 0.85 s the row folds in 0.38 s (the web's "finish moment"). A newly dealt row slides up into the free slot.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun TaskRow(
     row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boolean, onOpen: () -> Unit, hero: Boolean = false, onWhatNow: (() -> Unit)? = null, onTick: (Offset) -> Unit,
@@ -518,9 +520,9 @@ private fun TaskRow(
                 .padding(top = 12.dp, bottom = 10.dp),
         ) {
             if (hero) Text("Now", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
-            Text(row.title, style = if (hero) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.bodyLarge, color = titleColor, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(row.title, style = if (hero) MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp, lineHeight = 25.sp) else MaterialTheme.typography.bodyLarge, color = titleColor, maxLines = if (hero) 5 else 3, overflow = TextOverflow.Ellipsis)
             Meta(row, today)
-            if (hero && onWhatNow != null) Row(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            if (hero && onWhatNow != null) androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                 NowPill("Open", filled = true, onClick = onOpen)
                 NowPill("What now?", filled = false, onClick = onWhatNow)
             }

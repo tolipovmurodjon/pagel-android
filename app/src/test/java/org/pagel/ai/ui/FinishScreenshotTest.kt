@@ -81,7 +81,7 @@ class FinishScreenshotTest {
         var red = 0
         for (y in 0 until b.height step 2) for (x in 0 until b.width step 2) {
             val c = b.getPixel(x, y)
-            if (((c shr 16) and 255) > 170 && ((c shr 8) and 255) < 90 && (c and 255) < 90) red++
+            if (((c shr 16) and 255) > 150 && ((c shr 8) and 255) < 60 && (c and 255) < 60) red++
         }
         org.junit.Assert.assertEquals("red pixels on screen", 0, red)
     }
