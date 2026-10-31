@@ -56,10 +56,10 @@ class InboxDayTest {
         assertEquals(13, d.stateOnce()!!.sorted)
         // The GET that left at +1 s comes back with 12: the ring stays at 13.
         val fresh = InboxStateEntity(day = "2026-10-28", goal = 20, sorted = 12, keptToday = 2, cap = 5, minWords = 6, total = 1, fetchedAt = now + 3_000)
-        d.refresh(listOf(item("inbox/b.md")), fresh, startedAt = getLeft)
+        d.refresh(listOf(item("inbox/b.md")), fresh, startedAt = getLeft, pinTop = true)
         assertEquals(13, d.stateOnce()!!.sorted)
         // A GET that left after it is believed, even lower (the web undid one).
-        d.refresh(listOf(item("inbox/b.md")), fresh, startedAt = now + 4_000)
+        d.refresh(listOf(item("inbox/b.md")), fresh, startedAt = now + 4_000, pinTop = true)
         assertEquals(12, d.stateOnce()!!.sorted)
     }
 }
