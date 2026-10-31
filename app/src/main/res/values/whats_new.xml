@@ -8,7 +8,7 @@
 -->
 <resources>
     <string-array name="whats_new_items">
-        <item>#0.3.43 · Inbox</item>
+        <item>#0.3.45 · Inbox, capture and sort 5</item>
         <item>Tap + on Today or in the Inbox, type, press Enter|today</item>
         <item>Paste a list: one save each, one Undo|today</item>
         <item>Share a link from any app to PAGEL|more</item>
