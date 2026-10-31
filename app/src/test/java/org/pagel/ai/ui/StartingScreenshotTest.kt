@@ -197,6 +197,14 @@ class StartingScreenshotTest {
         shot("stuck-waiting", s)
     }
 
+    /** Boss 2026-10-31: the skeleton stays, with one small live line and a Stop; the chilies are drawn, never emoji. */
+    @Test fun makeItTinyWhileItWritesShowsTheLiveLineAndStop() {
+        show { Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Writing), spice = 2, liveStep = 1) } }
+        compose.onNodeWithContentDescription("Finding the first 30 seconds…").assertIsDisplayed()
+        compose.onNodeWithText("Stop").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/make-it-tiny-writing-360x800.png")
+    }
+
     @Test fun makeItTinyShowsTheSpiceAndTheSteps() = both({ Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Ready(task.micro.take(4))), spice = 2) } }) { s ->
         compose.onNodeWithContentDescription("Spice 2: Small steps").assertIsDisplayed()
         compose.onNodeWithContentDescription("Start focus").assertIsDisplayed()

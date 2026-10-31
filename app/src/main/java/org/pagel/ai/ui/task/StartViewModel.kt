@@ -77,6 +77,10 @@ class StartViewModel @Inject constructor(
 ) : ViewModel() {
     private val id = MutableStateFlow<String?>(null)
     private val tiny = MutableStateFlow<Tiny>(Tiny.Idle)
+    /** The sheet is open and watching: false after it was closed while the AI writes (the steps are then saved on arrival). */
+    private var watching = true
+    private var writing: kotlinx.coroutines.Job? = null
+    private var reopen: (String) -> Unit = {}
 
     val ui: StateFlow<StartUi> = id.flatMapLatest { taskId ->
         if (taskId == null) flowOf(StartUi())
@@ -93,15 +97,27 @@ class StartViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StartUi())
 
-    fun bind(taskId: String) { if (id.value != taskId) { id.value = taskId; tiny.value = Tiny.Idle } }
+    fun bind(taskId: String) { if (id.value != taskId) { id.value = taskId; tiny.value = Tiny.Idle }; watching = true }
+
+    /**
+     * The sheet closed. While the AI writes, the request keeps going (Boss 2026-10-31): the steps are saved to the task
+     * when they arrive, with a quiet "Tiny steps ready · Open". Any other state just clears.
+     */
+    fun leave(open: (String) -> Unit) {
+        if (tiny.value == Tiny.Writing) { watching = false; reopen = open } else tiny.value = Tiny.Idle
+    }
+
+    /** The small "Stop": the one way a closed or open sheet cancels the request. */
+    fun stop() { writing?.cancel(); writing = null; watching = true; tiny.value = Tiny.Idle }
 
     /** Asks pagel.uz's AI for 3-6 tiny steps at this spice (1 few … 3 tiny tiny). Never a spinner: skeleton lines. */
     fun propose(spice: Int) {
         val taskId = id.value ?: return
         tiny.value = Tiny.Writing
-        viewModelScope.launch {
+        writing?.cancel()
+        writing = viewModelScope.launch {
             val account = (accounts.load() as? AccountState.Paired)?.account ?: run { tiny.value = Tiny.Offline; return@launch }
-            tiny.value = when (val out = api.tiny(account.serverUrl, account.token, TinyBody(taskId, spice.coerceIn(1, 3)))) {
+            val result = when (val out = api.tiny(account.serverUrl, account.token, TinyBody(taskId, spice.coerceIn(1, 3)))) {
                 is Outcome.Ok -> out.value.steps.map(String::trim).filter(String::isNotEmpty).take(8).let { if (it.isEmpty()) Tiny.Failed("No steps came back") else Tiny.Ready(it) }
                 is Outcome.Failed -> when (val e = out.error) {
                     DataError.Network -> Tiny.Offline
@@ -109,6 +125,14 @@ class StartViewModel @Inject constructor(
                     else -> Tiny.Failed("pagel.uz could not write them")
                 }
             }
+            if (!watching && result is Tiny.Ready) {
+                // Closed while it worked: keep the steps on the task (PATCH {micro}), say so once, offer the task.
+                tasks.micro(taskId, result.steps)
+                tiny.value = Tiny.Idle
+                val open = reopen
+                toasts.show("Tiny steps ready", action = "Open") { open(taskId) }
+            } else if (!watching) tiny.value = Tiny.Idle
+            else tiny.value = result
         }
     }
 
