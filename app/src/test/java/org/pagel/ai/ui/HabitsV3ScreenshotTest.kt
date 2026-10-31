@@ -262,7 +262,7 @@ class HabitsV3ScreenshotTest {
     }
 
     @Test fun theTimerInTwoColours() {
-        show { HabitTimerView("Stretch for ten minutes", 10, null, 0, finished = false, look = TimerLook(colour = 0), startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = {}) }
+        show { HabitTimerView("Stretch for ten minutes", 10, null, 0, finished = false, look = TimerLook(colour = 0), startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = {}, live = false) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-timer-blue.png")
         compose.onNodeWithText("10:00").assertExists()
         compose.onNodeWithContentDescription("Start timer").assertExists()
@@ -271,7 +271,7 @@ class HabitsV3ScreenshotTest {
 
     @Test fun theTimerRunningInTheSecondColour() {
         val running = HabitTimer(startedAt = 0, spentMs = 0, day = today, minutes = 10)
-        show { HabitTimerView("Stretch for ten minutes", 10, running, 200_000, finished = false, look = TimerLook(colour = 2), startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = {}) }
+        show { HabitTimerView("Stretch for ten minutes", 10, running, 200_000, finished = false, look = TimerLook(colour = 2), startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = {}, live = false) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-timer-teal-running.png")
         // 200 s of 10 minutes are gone.
         compose.onNodeWithText("06:40").assertExists()
@@ -281,7 +281,7 @@ class HabitsV3ScreenshotTest {
 
     @Test fun theTimerSwipesItsColourAndRemembersIt() {
         var look by mutableStateOf(TimerLook())
-        show { HabitTimerView("Drink water", 5, null, 0, finished = false, look = look, startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = { look = it }) }
+        show { HabitTimerView("Drink water", 5, null, 0, finished = false, look = look, startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = { look = it }, live = false) }
         compose.onNodeWithTag("habit-timer").performTouchInput { swipeLeft() }
         compose.waitForIdle()
         assertEquals(1, look.colour)
@@ -289,14 +289,14 @@ class HabitsV3ScreenshotTest {
     }
 
     @Test fun theTimerAtLargeFontCutsNothing() {
-        show(1.5f) { HabitTimerView("Stretch for ten minutes", 10, null, 0, finished = false, look = TimerLook(colour = 1), startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = {}) }
+        show(1.5f) { HabitTimerView("Stretch for ten minutes", 10, null, 0, finished = false, look = TimerLook(colour = 1), startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = {}, live = false) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-timer-font-1.5.png")
         assertNoCutText("timer 1.5x")
     }
 
     private fun timerIn(name: String, page: Int) {
         val running = HabitTimer(startedAt = 0, spentMs = 0, day = today, minutes = 10)
-        show { HabitTimerView("Stretch for ten minutes", 10, running, 200_000, finished = false, look = TimerLook(colour = page), startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = {}) }
+        show { HabitTimerView("Stretch for ten minutes", 10, running, 200_000, finished = false, look = TimerLook(colour = page), startColour = 0, onStartPause = {}, onReset = {}, onFinish = {}, onBack = {}, onLook = {}, live = false) }
         compose.onNodeWithTag("habit-timer").assertExists()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-timer-colour-$name.png")
         assertNoRed("timer $name")
@@ -315,7 +315,7 @@ class HabitsV3ScreenshotTest {
     @Test fun theTimerFinishCountsTheHabitAndPausedTimeStillCounts() {
         var finishedTaps = 0
         val paused = HabitTimer(startedAt = null, spentMs = 240_000, day = today, minutes = 10)
-        show { HabitTimerView("Stretch for ten minutes", 10, paused, 0, finished = false, look = TimerLook(colour = 0), startColour = 0, onStartPause = {}, onReset = {}, onFinish = { finishedTaps++ }, onBack = {}, onLook = {}) }
+        show { HabitTimerView("Stretch for ten minutes", 10, paused, 0, finished = false, look = TimerLook(colour = 0), startColour = 0, onStartPause = {}, onReset = {}, onFinish = { finishedTaps++ }, onBack = {}, onLook = {}, live = false) }
         compose.onNodeWithText("06:00").assertExists()
         compose.onNodeWithContentDescription("Resume timer").assertExists()
         compose.onNodeWithContentDescription("Finish").performClick()
@@ -324,7 +324,7 @@ class HabitsV3ScreenshotTest {
     }
 
     @Test fun theSoundSheetListsSixSoundsWithTheChosenOneChecked() {
-        show { Box(Modifier.fillMaxSize().background(Color.White)) { Column { AmbientSheetContent(TimerLook(ambient = 2, volume = 0.6f), playing = true, onPick = {}, onVolume = {}, onVolumeDone = {}) } } }
+        show { Box(Modifier.fillMaxSize().background(Color.White)) { Column { AmbientSheetContent(TimerLook(ambient = 2, volume = 0.6f), playing = true, live = false, onPick = {}, onVolume = {}, onVolumeDone = {}) } } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-timer-sound-sheet.png")
         for (name in listOf("Silence", "Rain", "Forest", "Ocean", "Stream", "Wind", "Night")) compose.onNodeWithContentDescription(name).assertExists()
         compose.onNodeWithContentDescription("Ocean").assertStateDescription("On")

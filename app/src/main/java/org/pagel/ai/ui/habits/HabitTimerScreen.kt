@@ -171,6 +171,7 @@ fun HabitTimerScreen(id: String, onBack: () -> Unit, vm: HabitsViewModel = hiltV
 internal fun HabitTimerView(
     title: String, minutes: Int, timer: HabitTimer?, now: Long, finished: Boolean, look: TimerLook, startColour: Int,
     onStartPause: () -> Unit, onReset: () -> Unit, onFinish: () -> Unit, onBack: () -> Unit, onLook: (TimerLook) -> Unit,
+    live: Boolean = true,
 ) {
     val ctx = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -218,7 +219,7 @@ internal fun HabitTimerView(
     LaunchedEffect(running, timer?.startedAt, timer?.spentMs, total, done) {
         progress.floatValue = if (done) 1f else spent.toFloat() / total
         val began = timer?.startedAt
-        if (running && began != null && !reduce) {
+        if (running && began != null && !reduce && live) {
             val base = timer?.spentMs ?: 0L
             while (isActive) {
                 withFrameNanos { }
@@ -353,7 +354,7 @@ internal fun HabitTimerView(
     }
     if (soundSheet) GlassSheet(onDismiss = { soundSheet = false }) {
         AmbientSheetContent(
-            look, playing = wantSound, onPick = { onLook(look.copy(ambient = it)) },
+            look, playing = wantSound, live = live, onPick = { onLook(look.copy(ambient = it)) },
             onVolume = { player.setVolume(it) }, onVolumeDone = { onLook(look.copy(volume = it)) },
         )
         Spacer(Modifier.height(SheetBottom))
@@ -380,12 +381,12 @@ internal fun BellSheetContent(look: TimerLook, onLook: (TimerLook) -> Unit, onPr
  * on the chosen one and three moving bars while it plays (a sign of life, not a level meter), and a volume slider.
  */
 @Composable
-internal fun AmbientSheetContent(look: TimerLook, playing: Boolean, onPick: (Int) -> Unit, onVolume: (Float) -> Unit, onVolumeDone: (Float) -> Unit) {
+internal fun AmbientSheetContent(look: TimerLook, playing: Boolean, live: Boolean = true, onPick: (Int) -> Unit, onVolume: (Float) -> Unit, onVolumeDone: (Float) -> Unit) {
     SheetTitle("Sounds", null)
     Column(Modifier.padding(horizontal = Space.gutter)) {
         SoundRow("Silence", TabIcons.BellOff, look.ambient < 0, role = Role.RadioButton) { onPick(-1) }
         for ((i, s) in AmbientSounds.all.withIndex()) {
-            SoundRow(s.label, null, look.ambient == i, role = Role.RadioButton, iconName = s.icon, bars = look.ambient == i && playing) { onPick(i) }
+            SoundRow(s.label, null, look.ambient == i, role = Role.RadioButton, iconName = s.icon, bars = look.ambient == i && playing && live) { onPick(i) }
         }
         var vol by remember(look.volume) { mutableFloatStateOf(look.volume) }
         Row(Modifier.fillMaxWidth().heightIn(min = Space.row), verticalAlignment = Alignment.CenterVertically) {

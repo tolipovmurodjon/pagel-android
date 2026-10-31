@@ -67,6 +67,8 @@ android {
         unitTests.isReturnDefaultValues = true
         // Robolectric (Compose UI, Room and screenshot tests on the JVM) needs the merged resources.
         unitTests.isIncludeAndroidResources = true
+        // A failed assertion's own message in the CI log (it was only "AssertionError at line N").
+        unitTests.all { it.testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL; events("failed") } }
     }
 }
 
