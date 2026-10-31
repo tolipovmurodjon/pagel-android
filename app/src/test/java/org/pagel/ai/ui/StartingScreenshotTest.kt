@@ -146,6 +146,13 @@ class StartingScreenshotTest {
 
     private val pick = NowPick("n1", "Clean the desk", "UzCosmos", "Clear one corner of it, just one 🧽", "uzcosmos", null, 2)
 
+    /** The panel's Where row at 320 dp: the guess, and the one-tap correction's words. */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun theWhereRowShowsTheGuessAndTheChilliesAreDrawn() {
+        show { Box(Modifier.padding(top = 24.dp)) { org.pagel.ai.ui.task.StartRows(0, {}, {}, "Call the bank about the report", "me", null, {}) } }
+        compose.onNodeWithContentDescription("Where: Phone").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/gtd-where-row-320x640.png")
+    }
+
     @Test fun whatNowAsksWhereTimeAndEnergy() = both({ Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.ASK)) } }) { s ->
         compose.onNodeWithContentDescription("Where: Phone only").assertIsDisplayed()
         compose.onNodeWithContentDescription("Where: Resting").assertIsDisplayed()

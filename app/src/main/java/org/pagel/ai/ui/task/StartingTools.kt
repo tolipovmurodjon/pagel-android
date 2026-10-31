@@ -88,18 +88,16 @@ private val Divider = Glass.Ink.copy(alpha = 0.07f)
 
 /** "✨ Make it tiny" (or "Tiny steps · 4" once written) and "I'm stuck": the starting tools, in the task panel. */
 @Composable
-internal fun StartRows(micro: Int, onTiny: () -> Unit, onStuck: () -> Unit, taskId: String = "") {
+internal fun StartRows(micro: Int, onTiny: () -> Unit, onStuck: () -> Unit, title: String = "", project: String = "", context: String? = null, onWhere: (String?) -> Unit = {}) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Column(Modifier.padding(vertical = Space.xs)) {
             ToolRow(TabIcons.Sparkles, if (micro > 0) "Tiny steps · $micro" else "Make it tiny", if (micro > 0) "Focus" else "Funny small steps", onTiny)
             HorizontalDivider(Modifier.padding(start = Space.xxl + Space.xxl), color = Divider,
                 thickness = 1.dp)
             ToolRow(TabIcons.CircleHelp, "I'm stuck", "4 quick fixes", onStuck)
-            if (taskId.isNotEmpty()) {
-                HorizontalDivider(Modifier.padding(start = Space.xxl + Space.xxl), color = Divider,
-                    thickness = 1.dp)
-                WhereRow(taskId)
-            }
+            HorizontalDivider(Modifier.padding(start = Space.xxl + Space.xxl), color = Divider,
+                thickness = 1.dp)
+            WhereRow(title, project, context, onWhere)
         }
     }
 }
@@ -109,16 +107,12 @@ private val WHERE_CYCLE = listOf("phone" to "Phone", "laptop" to "Laptop", "home
 
 /** "Where": the task's context in one quiet row; a tap sets the next place (the inferred one is shown until then). */
 @Composable
-private fun WhereRow(taskId: String) {
-    val vm: StartViewModel = hiltViewModel(key = "start-$taskId")
-    LaunchedEffect(taskId) { vm.bind(taskId) }
-    val ui by vm.ui.collectAsStateWithLifecycle()
-    val inferred = org.pagel.ai.ui.today.inferContext(ui.title, ui.project)
-    val set = ui.context
+private fun WhereRow(title: String, project: String, set: String?, onWhere: (String?) -> Unit) {
+    val inferred = org.pagel.ai.ui.today.inferContext(title, project)
     val now = set ?: inferred
     val label = WHERE_CYCLE.firstOrNull { it.first == now }?.second ?: "Anywhere"
     val next = when (val i = WHERE_CYCLE.indexOfFirst { it.first == set }) { -1 -> WHERE_CYCLE[0].first; WHERE_CYCLE.lastIndex -> null; else -> WHERE_CYCLE[i + 1].first }
-    ToolRow(TabIcons.MapPin, "Where: $label", if (set == null) "Guessed from the words. Tap to set it" else "Tap for the next place", { vm.setContext(next) })
+    ToolRow(TabIcons.MapPin, "Where: $label", if (set == null) "Guessed from the words. Tap to set it" else "Tap for the next place", { onWhere(next) })
 }
 
 @Composable
@@ -179,13 +173,17 @@ private fun Chilies(count: Int, color: Color) {
         val w = 18.dp.toPx(); val gap = 4.dp.toPx(); val line = 1.75.dp.toPx()
         repeat(count) { k ->
             val x = k * (w + gap)
-            val body = androidx.compose.ui.graphics.Path().apply {
+            // A pod tapering to a curled tip, a flat cap and a short stem: reads as a chili, not a crescent.
+            val pod = androidx.compose.ui.graphics.Path().apply {
                 moveTo(x + 4.dp.toPx(), 7.dp.toPx())
-                cubicTo(x + 16.dp.toPx(), 6.dp.toPx(), x + 17.dp.toPx(), 17.dp.toPx(), x + 5.dp.toPx(), 22.dp.toPx())
-                cubicTo(x + 9.dp.toPx(), 16.dp.toPx(), x + 7.dp.toPx(), 11.dp.toPx(), x + 4.dp.toPx(), 7.dp.toPx())
+                cubicTo(x + 13.dp.toPx(), 5.dp.toPx(), x + 17.dp.toPx(), 12.dp.toPx(), x + 12.dp.toPx(), 22.dp.toPx())
+                cubicTo(x + 11.dp.toPx(), 15.dp.toPx(), x + 5.dp.toPx(), 13.dp.toPx(), x + 4.dp.toPx(), 7.dp.toPx())
+                close()
             }
-            drawPath(body, color, style = androidx.compose.ui.graphics.drawscope.Stroke(line, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-            drawLine(color, androidx.compose.ui.geometry.Offset(x + 4.dp.toPx(), 7.dp.toPx()), androidx.compose.ui.geometry.Offset(x + 6.dp.toPx(), 2.5.dp.toPx()), line, androidx.compose.ui.graphics.StrokeCap.Round)
+            val stroke = androidx.compose.ui.graphics.drawscope.Stroke(line, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
+            drawPath(pod, color, style = stroke)
+            drawLine(color, androidx.compose.ui.geometry.Offset(x + 2.dp.toPx(), 7.dp.toPx()), androidx.compose.ui.geometry.Offset(x + 8.dp.toPx(), 6.dp.toPx()), line, androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(color, androidx.compose.ui.geometry.Offset(x + 5.dp.toPx(), 6.5.dp.toPx()), androidx.compose.ui.geometry.Offset(x + 3.dp.toPx(), 2.dp.toPx()), line, androidx.compose.ui.graphics.StrokeCap.Round)
         }
     }
 }

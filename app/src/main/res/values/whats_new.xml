@@ -8,6 +8,10 @@
 -->
 <resources>
     <string-array name="whats_new_items">
+        <item>#0.3.43 · What now, the GTD way</item>
+        <item>What now asks where you are, how long, how much energy|today</item>
+        <item>Each task has a Where: guessed, one tap to set|today</item>
+        <item>Make it tiny keeps writing when you close it|today</item>
         <item>#0.3.42 · Today fixes</item>
         <item>Drag to reorder works on the top 3 and All today|today</item>
         <item>What now is its own card again, under the list|today</item>

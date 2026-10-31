@@ -149,6 +149,8 @@ data class PanelActions(
     val onTiny: () -> Unit = {},
     /** "I'm stuck": four plain reasons, each a fix in one tap. */
     val onStuck: () -> Unit = {},
+    /** The Where row (GTD context): sets the task's place; null = back to guessed. */
+    val onWhere: (String?) -> Unit = {},
 )
 
 /** "Won't do": the three real kinds of no, each with an example of a real reason (the web's STOP list). */
@@ -201,7 +203,7 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
                         onNotDoing = vm::notDoing, onDelete = { vm.delete(); onClose() }, onReopen = vm::reopen,
                         onTurnIntoProject = { vm.turnIntoProject { name -> onClose(); onOpenProject(name) } },
                         onOpenProject = { onOpenProject(ui.project) }, onMove = vm::moveTo, onClose = onClose,
-                        onTiny = { tool = "tiny" }, onStuck = { tool = "stuck" },
+                        onTiny = { tool = "tiny" }, onStuck = { tool = "stuck" }, onWhere = vm::context,
                     ),
                 )
             }
@@ -242,7 +244,7 @@ fun TaskPanelContent(
         Props(ui, today, a, onPick = { picker = it })
         // The starting tools sit under the props: on a 640 dp screen Priority stays above the fold (checker round 2 #6).
         Spacer(Modifier.height(Space.md))
-        StartRows(ui.microCount, a.onTiny, a.onStuck, ui.id)
+        StartRows(ui.microCount, a.onTiny, a.onStuck, ui.title, ui.project, ui.context, a.onWhere)
         // The note only when it says more than the title (Boss 2026-10-28: the pane repeated the title word for word).
         if (ui.text.trim() != ui.title.trim()) {
             Spacer(Modifier.height(12.dp))
