@@ -96,6 +96,9 @@ object HabitLook {
         return out
     }
 
+    /** A task whose due is its own series (a habit card or a prayer): Upcoming never carries it over or moves it. */
+    fun keepsItsOwnSeries(t: TaskEntity): Boolean = isNamoz(t) || isDailyHabit(t)
+
     /** A habit the Habits tab shows as a card: every day, weekdays or set weekdays; not a prayer. */
     fun isDailyHabit(t: TaskEntity): Boolean {
         val e = t.every.orEmpty()

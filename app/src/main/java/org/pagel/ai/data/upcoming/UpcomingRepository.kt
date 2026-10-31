@@ -90,7 +90,7 @@ class UpcomingRepository(
             val t = dao.taskOnce(id) ?: return@mapNotNull null
             if (t.every.isNullOrBlank()) return@mapNotNull reschedule(id, today)
             // A habit card keeps its own series on Habits: a due of today or earlier would undo today's tick on pagel.uz.
-            if (org.pagel.ai.data.habits.HabitLook.isDailyHabit(t)) return@mapNotNull null
+            if (org.pagel.ai.data.habits.HabitLook.keepsItsOwnSeries(t)) return@mapNotNull null
             val due = movedTo(t.due, today)
             if (due == t.due) return@mapNotNull null
             tasks.due(id, due)?.let { Moved(id, t.due, it) }
