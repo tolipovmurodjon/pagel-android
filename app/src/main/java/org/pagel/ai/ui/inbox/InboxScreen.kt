@@ -389,8 +389,6 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
                 // Never "Inbo / x": a word that does not fit gets a smaller size, not a break.
                 FitText(if (old) "Old pile" else "Inbox", MaterialTheme.typography.headlineLarge, Glass.Ink, minSize = 18.sp, modifier = Modifier.semantics { heading() })
             }
-            // At a large font the flame gives its room to the title (walk 59, run 41089220966).
-            if (!old && ui.streak > 0 && LocalDensity.current.fontScale < 1.3f) Streak(ui.streak)
             // Capture is one tap from the Inbox itself (Boss 2026-10-31); the mint plus is the only coloured icon here.
             if (!old) GlassIconButton(TabIcons.Plus, "Add to Inbox", tint = Glass.Primary, plain = true, onClick = actions.capture)
             if (old) GlassIconButton(TabIcons.CalendarRange, "Tidy old saves", plain = true, onClick = actions.tidy)
@@ -461,23 +459,6 @@ fun bulkLine(b: Bulk): String {
 fun countsLine(ui: InboxUi): String {
     val nb = "\u00A0"
     return if (ui.kept < 5) "${ui.kept}/5${nb}learned" else "${ui.kept}${nb}learned"
-}
-
-/** Sorted since the screen opened, the web's flame pill. Solid deep orange so the white number keeps 5:1. */
-@Composable
-private fun Streak(n: Int) {
-    val pop = remember { Animatable(1f) }
-    LaunchedEffect(n) { pop.snapTo(0.6f); pop.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = 600f)) }
-    Row(
-        Modifier.graphicsLayer { scaleX = pop.value; scaleY = pop.value }
-            .background(Color(0xFFB45309), CircleShape).padding(start = 7.dp, end = 10.dp, top = 4.dp, bottom = 4.dp)
-            .semantics(mergeDescendants = true) { contentDescription = "$n sorted since you opened the Inbox" },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(TabIcons.Flame, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-        Spacer(Modifier.width(3.dp))
-        Text("$n", style = Glass.NumberText.copy(fontSize = 13.sp), color = Color.White)
-    }
 }
 
 /**

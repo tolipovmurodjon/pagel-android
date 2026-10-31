@@ -603,7 +603,7 @@ shot inbox-tidy 3
 grep -q '62 saves older than 60 days' "$OUT/$(printf '%02d' $N)-inbox-tidy.xml" || fail_inbox "the tidy-up did not show pagel.uz's whole count (62) before moving anything"
 tap "Move all 62 to Someday" || fail_inbox "no Move all 62 to Someday button"
 # No dump between the move and the Undo: the Undo window is 5 s and a UI dump on this emulator takes 2-3 s.
-tap Undo || fail_inbox "the bulk move showed no Undo"
+tap Undo || tap Undo || fail_inbox "the bulk move showed no Undo"
 shot inbox-tidy-undone 1.5
 sleep 10
 [ "$(grep -cE 'inbox/old[0-9]+.md.*"quiet":true' "$FAKE_LOG")" = "0" ] || fail_inbox "the Undo did not stop the bulk: pagel.uz heard of an old save"

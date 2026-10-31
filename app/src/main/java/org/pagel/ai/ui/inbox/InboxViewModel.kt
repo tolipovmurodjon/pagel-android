@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -514,12 +515,13 @@ class InboxViewModel @Inject constructor(
         val what = if (choice == Choice.SOMEDAY) "to Someday" else "dropped"
         bulkJob = viewModelScope.launch {
             val done = t.items.map(InboxItemEntity::file).toMutableSet()
-            val first = repo.chooseMany(t.items, choice, "me")
+            // The toast comes first (respond first, save after): the 60 rows are written behind it, and the Undo waits for them.
+            val first = async { repo.chooseMany(t.items, choice, "me") }
             _bulk.value = Bulk(choice, done.size, total)
             toasts.show(if (choice == Choice.SOMEDAY) "$total moving to Someday" else "$total dropping", action = "Undo", millis = 5_000) {
                 bulkJob?.cancel()
                 _bulk.value = null
-                viewModelScope.launch { repo.undoMany(first) }
+                viewModelScope.launch { repo.undoMany(first.await()) }
             }
             delay(org.pagel.ai.data.tasks.UNDO_WINDOW_MS + 300)
             repo.sendNow()
