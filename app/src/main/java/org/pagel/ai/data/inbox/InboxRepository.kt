@@ -100,7 +100,8 @@ class InboxRepository(
                 val rows = b.items.map(::entity)
                 val here = captured.files.value
                 val current = rows.count { isCurrent(it, fresh.value, here) }
-                if (current < rows.size || rows.size < DECK) captured.oldLeft.value = (b.total - current).coerceAtLeast(0)                dao.refresh(newestFirst(b.items.map(::entity)), InboxStateEntity(day = b.day.ifEmpty { tashkentDay(clock()) }, goal = b.goal, sorted = b.sorted, keptToday = b.keptToday,
+                if (current < rows.size || rows.size < DECK) captured.oldLeft.value = (b.total - current).coerceAtLeast(0)
+                dao.refresh(newestFirst(b.items.map(::entity)), InboxStateEntity(day = b.day.ifEmpty { tashkentDay(clock()) }, goal = b.goal, sorted = b.sorted, keptToday = b.keptToday,
                     cap = b.cap, minWords = b.minWords, total = b.total, fetchedAt = clock()), startedAt = started)
                 Outcome.Ok(Unit)
             }

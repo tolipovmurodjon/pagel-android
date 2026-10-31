@@ -40,7 +40,7 @@ fun isCurrent(i: InboxItemEntity, freshFrom: String, captured: Set<String>): Boo
 fun oldPileDays(freshFrom: String, today: String): Int =
     (ChronoUnit.DAYS.between(lineDay(freshFrom), LocalDate.parse(today)) + 1).toInt().coerceAtLeast(0)
 
-private val BULLET = Regex("^([-*•]|\d{1,3}[.)])\s+")
+private val BULLET = Regex("""^([-*•]|\d{1,3}[.)])\s+""")
 
 /**
  * What one capture becomes: every non-empty line is its own save (a pasted list is many items, Boss 2026-10-31), with
