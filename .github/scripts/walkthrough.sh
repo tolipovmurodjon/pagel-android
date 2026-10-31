@@ -167,6 +167,8 @@ A=$(r4_centre "Clean the desk"); B=$(r4_centre "Record the fractions lesson")
 grep -q 'text="Measure the drone' "$OUT/$(printf '%02d' $N)-r4-folded.xml" && { log "WALKTHROUGH: folded Today still shows a 4th task"; exit 1; }
 
 log "-- What now: energy once, one pick (Clean the desk is first in Boss's order), Start · 10 min, the tick reaches pagel.uz"
+# What now is its own card under the list again: scroll it above the tab bar first.
+for k in 1 2; do $T adb shell input swipe 160 520 160 200 300; done; sleep 1
 r4_tap 'What now\?' || { log "WALKTHROUGH: no What now button on Today"; exit 1; }
 shot r4-energy 2
 tap "Energy: OK" || { log "WALKTHROUGH: What now did not ask for the energy"; exit 1; }
