@@ -456,10 +456,10 @@ class TaskSystemScreenshotTest {
         compose.onAllNodesWithText("0/3")[0].assertIsDisplayed()
         compose.onNodeWithContentDescription("Try: Drag to reorder works on the top 3 and All today").performClick()
         assertEquals("today", opened)
-        compose.onAllNodesWithContentDescription("Try: 🧭 Compass: goals only you can read").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Try: Compass: goals only you can read").assertCountEquals(0)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("0.3.30 · Compass"))
         compose.onNodeWithText("0.3.30 · Compass").performClick()
-        compose.onNodeWithContentDescription("Try: 🧭 Compass: goals only you can read").assertExists()
+        compose.onNodeWithContentDescription("Try: Compass: goals only you can read").assertExists()
     }
 
     private val manyLines = listOf("#0.3.40 · A long round") + (1..23).map { "Line $it: something to try in the app|today" }
