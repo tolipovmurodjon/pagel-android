@@ -85,6 +85,20 @@ internal object HabitClocks {
     }.toMap()
 }
 
+/** A habit's timer screen: which of the five colours (swipe), whether the goal rings, and which of the three soft sounds. */
+data class TimerLook(val colour: Int = -1, val bell: Boolean = true, val sound: Int = 0) {
+    fun encode() = "$colour|$bell|$sound"
+
+    companion object {
+        fun decode(text: String): TimerLook? {
+            val f = text.split('|')
+            if (f.size != 3) return null
+            return TimerLook(f[0].toIntOrNull() ?: return null, f[1].toBooleanStrictOrNull() ?: return null, f[2].toIntOrNull() ?: return null)
+        }
+        const val KEY = "timer-look-"
+    }
+}
+
 data class HabitsUi(
     val loading: Boolean = true,
     val today: String = "",
@@ -101,6 +115,7 @@ data class HabitsUi(
     val ticks: List<HabitTickEntity> = emptyList(),
     val prefs: Map<String, HabitPrefEntity> = emptyMap(),
     val freezes: List<HabitFreezeEntity> = emptyList(),
+    val timerLooks: Map<String, TimerLook> = emptyMap(),
 )
 
 /**
@@ -124,6 +139,7 @@ class HabitsViewModel @Inject constructor(
     private val selected = MutableStateFlow<LocalDate?>(null)
     private val chosenPart = MutableStateFlow<Part?>(null)
     private val timers = HabitClocks.all
+    private val timerLooks = MutableStateFlow<Map<String, TimerLook>>(emptyMap())
     private val clock = MutableStateFlow(System.currentTimeMillis())
     private val _celebrate = Channel<Unit>(Channel.BUFFERED)
     /** The day's last habit ticked: ding and confetti, once a day on this phone (the web's AllDone). */
@@ -138,7 +154,7 @@ class HabitsViewModel @Inject constructor(
     private val data = combine(repo.habits, repo.ticks(), prefsRepo.prefs, prefsRepo.freezes, finishing) { h, t, p, f, fin -> Data(h, t, p, f, fin) }
     private val view = combine(selected, chosenPart, timers, clock) { s, p, tm, now -> View(s, p, tm, now) }
 
-    val ui: StateFlow<HabitsUi> = combine(data, view, session.live, repo.reminderRows) { d, v, live, reminders ->
+    val ui: StateFlow<HabitsUi> = combine(data, view, session.live, repo.reminderRows, timerLooks) { d, v, live, reminders, looks ->
         val today = repo.today()
         val todayDate = LocalDate.parse(today)
         val day = v.selected?.takeIf { it != todayDate } ?: todayDate
@@ -157,6 +173,7 @@ class HabitsViewModel @Inject constructor(
             ticks = d.ticks,
             prefs = d.prefs.associateBy { it.taskId },
             freezes = d.freezes,
+            timerLooks = looks,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HabitsUi())
 
@@ -170,6 +187,12 @@ class HabitsViewModel @Inject constructor(
         viewModelScope.launch {
             withContext(io) { HabitClocks.load(prefsFile) }
             if (timers.value.values.any { it.running }) runTicker()
+        }
+        viewModelScope.launch {
+            val saved = withContext(io) {
+                prefsFile.all.mapNotNull { (k, v) -> if (k.startsWith(TimerLook.KEY) && v is String) TimerLook.decode(v)?.let { k.removePrefix(TimerLook.KEY) to it } else null }.toMap()
+            }
+            timerLooks.update { saved + it }
         }
         viewModelScope.launch { timers.collect { m -> if (HabitClocks.loaded) withContext(io) { HabitClocks.save(prefsFile, m) } } }
         viewModelScope.launch {
@@ -209,7 +232,7 @@ class HabitsViewModel @Inject constructor(
     fun tickOn(id: String, day: LocalDate) {
         val today = LocalDate.parse(repo.today())
         if (day != today) {
-            viewModelScope.launch { if (!repo.setDay(id, day.toString(), true)) toasts.show("Only the last 7 days") }
+            logPast(id, day, done = true)
             return
         }
         // The board shows the strip's day: its card only describes [day] when the two are the same.
@@ -225,7 +248,7 @@ class HabitsViewModel @Inject constructor(
             val said = when {
                 card != null && isNamoz(card.task) -> card.title
                 next != null -> "Next: $next"
-                last && card != null && card.streak + 1 > 1 -> "🔥 ${card.streak + 1} in a row"
+                last && card != null && card.streak + 1 > 1 -> "${card.streak + 1} in a row"
                 last -> "Done"
                 else -> "${(card?.taps ?: 0) + 1} of ${card?.times}"
             }
@@ -239,7 +262,52 @@ class HabitsViewModel @Inject constructor(
     /** The check of a done habit, or a long press on a count: one tap of that day taken off. */
     fun untick(id: String, onToday: Boolean = false) {
         val day = if (onToday) LocalDate.parse(repo.today()) else selectedDay()
-        viewModelScope.launch { if (repo.setDay(id, day.toString(), done = false)) toasts.show("Taken back") }
+        viewModelScope.launch {
+            // A day off is drawn as done, so its check takes the day off back (nothing was ticked).
+            if (ui.value.freezes.any { it.taskId == id && it.day == day.toString() }) { prefsRepo.unfreeze(id, day.toString()); toasts.show("Day off taken back"); return@launch }
+            if (repo.setDay(id, day.toString(), done = false)) toasts.show("Taken back")
+        }
+    }
+
+    /**
+     * A past day logged or taken back (Boss 2026-10-31: "for a missed day I can log and mark it"): the same habit log the
+     * tick writes, with that date, then an Undo that writes the inverse. A habit done 3 times a day gets every tap it
+     * lacks. pagel.uz takes a date up to [HabitsRepository.DOT_DAYS] days back; older days say so (SERVER NEEDED).
+     */
+    private fun logPast(id: String, day: LocalDate, done: Boolean) {
+        val t = ui.value.byId[id] ?: return
+        val times = t.times.coerceAtLeast(1)
+        val have = ui.value.ticks.firstOrNull { it.taskId == id && it.day == day.toString() }?.n ?: 0
+        val steps = if (done) times - have else have
+        if (steps <= 0) return
+        val said = day.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", java.util.Locale.UK))
+        viewModelScope.launch {
+            var n = 0
+            while (n < steps && repo.setDay(id, day.toString(), done)) n++
+            if (n == 0) { toasts.show("Only the last 7 days for now"); return@launch }
+            toasts.show(if (done) "Logged for $said" else "Taken back for $said", action = "Undo") {
+                viewModelScope.launch { repeat(n) { repo.setDay(id, day.toString(), !done) } }
+            }
+        }
+    }
+
+    /** A tap on a day of the habit page's calendar: log it, take it back, or take a day off back. */
+    fun toggleDay(id: String, day: LocalDate) {
+        val today = LocalDate.parse(repo.today())
+        if (day.isAfter(today)) { toasts.show("That day has not come yet"); return }
+        val t = ui.value.byId[id] ?: return
+        val have = ui.value.ticks.firstOrNull { it.taskId == id && it.day == day.toString() }?.n ?: 0
+        when {
+            ui.value.freezes.any { it.taskId == id && it.day == day.toString() } -> viewModelScope.launch { prefsRepo.unfreeze(id, day.toString()); toasts.show("Day off taken back") }
+            have >= t.times.coerceAtLeast(1) -> if (day == today) untick(id, onToday = true) else logPast(id, day, done = false)
+            day == today -> tickOn(id, day)
+            else -> logPast(id, day, done = true)
+        }
+    }
+
+    fun setTimerLook(id: String, look: TimerLook) {
+        timerLooks.update { it + (id to look) }
+        viewModelScope.launch(io) { prefsFile.edit().putString(TimerLook.KEY + id, look.encode()).apply() }
     }
 
     private fun undo(id: String, t: org.pagel.ai.data.habits.Ticked) {
@@ -289,7 +357,7 @@ class HabitsViewModel @Inject constructor(
         if (d.isAfter(today)) { toasts.show("Only today or a day before"); return }
         val day = d.toString()
         viewModelScope.launch {
-            if (prefsRepo.freeze(id, day)) toasts.show("Frozen. The chain holds") else toasts.show("No freezes left this month")
+            if (prefsRepo.freeze(id, day)) toasts.show("Day off. The chain holds") else toasts.show("No days off left this month")
         }
     }
 

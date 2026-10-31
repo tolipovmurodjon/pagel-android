@@ -21,6 +21,8 @@ import org.pagel.ai.ui.glass.TabIcons
 @Serializable data class ProjectPageRoute(val name: String) : NavKey
 /** One habit's page (round D): chain calendar, stats, emoji, stacking. */
 @Serializable data class HabitDetailRoute(val id: String) : NavKey
+/** A timed habit's full-screen timer (Habits 3.0): its colour, a big ring, Start. */
+@Serializable data class HabitTimerRoute(val id: String) : NavKey
 /** Habits' History (round D): Calendar · All habits · Achievements. */
 @Serializable data object HabitHistoryRoute : NavKey
 /** The Namoz page (2026-11): next prayer, five rows, his own counts, learning list, settings. Opened from Habits. */

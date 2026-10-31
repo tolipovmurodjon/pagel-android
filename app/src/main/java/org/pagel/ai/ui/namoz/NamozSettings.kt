@@ -119,7 +119,7 @@ private fun SwitchRow(label: String, emoji: String, meta: String, on: Boolean, o
             .padding(horizontal = Space.lg),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(painterResource(Emoji.res(emoji)), null, Modifier.size(22.dp))
+        androidx.compose.material3.Icon(org.pagel.ai.ui.glass.HabitIcons.vector(org.pagel.ai.ui.glass.HabitIcons.forEmoji(emoji)), null, tint = Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(Space.md))
         // The meta sits under the label: side by side they ran into each other at 360 dp ("Show on TodayNext prayer").
         Column(Modifier.weight(1f).padding(end = Space.md)) {

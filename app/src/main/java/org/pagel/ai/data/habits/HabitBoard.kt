@@ -4,7 +4,7 @@ import org.pagel.ai.data.db.HabitFreezeEntity
 import org.pagel.ai.data.db.HabitPrefEntity
 import org.pagel.ai.data.db.HabitTickEntity
 import org.pagel.ai.data.db.TaskEntity
-import org.pagel.ai.ui.glass.Emoji
+import org.pagel.ai.ui.glass.HabitIcons
 import org.pagel.ai.ui.glass.Repeat
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -197,9 +197,13 @@ data class HabitCard(
     val identity: String? = null,
     /** The tile colour Boss picked (one of HabitLook.COLOURS), else null = by what it is about. */
     val colour: String? = null,
+    /** This habit over the last 30 days, 0..1 (done or day-off days of the days it was due): the card's warmth. */
+    val heat: Float = 0f,
 ) {
     val times: Int get() = task.times.coerceAtLeast(1)
     val done: Boolean get() = mark == Mark.DONE
+    /** Done, or a day off: Boss 2026-10-31, a day off is kept as fully done and drawn like it, no ice, no mark. */
+    val finished: Boolean get() = done || mark == Mark.FROZEN
 }
 
 /**
@@ -223,9 +227,9 @@ data class HabitBoard(
     val chainOut: Boolean = false,
 ) {
     fun inPart(p: Part) = cards.filter { it.part == p || it.part == Part.ANYTIME }
-    val doneCount get() = cards.count { it.done }
+    val doneCount get() = cards.count { it.finished }
     val total get() = cards.size
-    val namozDone get() = namoz.count { it.done }
+    val namozDone get() = namoz.count { it.finished }
 }
 
 private fun titleOf(t: TaskEntity) = t.title?.takeIf(String::isNotBlank) ?: t.text.lineSequence().first().trim().removePrefix("#").trim()
@@ -268,13 +272,14 @@ fun habitBoard(
             else -> Part.ANYTIME
         }
         return HabitCard(
-            task = t, title = title, emoji = window?.prayer?.emoji ?: Emoji.keyFor(title, p?.emoji), part = part, taps = n,
+            task = t, title = title, emoji = window?.prayer?.emoji ?: HabitIcons.keyFor(title, p?.emoji), part = part, taps = n,
             mark = markOf(t, selected, today, n, selected.toString() in frozen),
             streak = chainStreak(t, done, frozen, today), best = chainBest(t, done, frozen, today),
             minutes = if (window != null) null else minutesOf(title, p?.minutes),
             neverMissTwice = selected == today && neverMissTwice(t, done, frozen, today),
             after = p?.after?.let { byId[it] }?.let(::titleOf), time = time, window = window, identity = p?.identity,
             colour = HabitLook.colourOf(p?.emoji),
+            heat = if (window != null) 0f else heatOf(t, done, frozen, today),
         )
     }
 
@@ -284,16 +289,49 @@ fun habitBoard(
     val cards = stack(dueThatDay.map(::card).sortedWith(order))
     val namoz = prayers.map(::card).sortedBy { it.window?.prayer?.ordinal ?: 9 }
 
-    val monday = selected.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
-    fun stripDay(d: LocalDate): StripDay {
+    val strip = StripContext(habits, ticks, freezes, today).week(selected.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)))
+    return HabitBoard(today, selected, strip.days, cards, namoz, freezesLeft(freezes, YearMonth.from(today)), strip.chainIn, strip.chainOut)
+}
+
+/** Done or day-off days of the last 30 days over the days the habit was due in them: 0 (none) to 1 (every one). */
+fun heatOf(t: TaskEntity, done: Set<String>, frozen: Set<String>, today: LocalDate): Float {
+    var due = 0
+    var held = 0
+    for (back in 0L..29L) {
+        val d = today.minusDays(back)
+        if (!repeatsOn(t, d)) continue
+        due++
+        val ymd = d.toString()
+        if (ymd in done || ymd in frozen) held++
+    }
+    return if (due == 0) 0f else (held.toFloat() / due).coerceIn(0f, 1f)
+}
+
+/** One week of the strip, and whether its chain runs on into the week before and the week after. */
+data class WeekStrip(val days: List<StripDay>, val chainIn: Boolean, val chainOut: Boolean)
+
+/**
+ * Any week of the all-habits chain, for the strip's pager (Boss 2026-10-31: the week swipes both ways, smooth): built once
+ * from the habits, ticks and freezes, then asked for a Monday.
+ */
+class StripContext(habits: List<TaskEntity>, ticks: List<HabitTickEntity>, freezes: List<HabitFreezeEntity>, private val today: LocalDate) {
+    private val others = habits.filterNot(::isNamoz)
+    private val taps = ticksByDay(ticks)
+    private val frozenOf = freezes.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
+    private val starts = startsOf(others, ticks, today)
+
+    private fun day(d: LocalDate): StripDay {
         val (held, due) = heldOf(others, taps, frozenOf, d, starts)
         return StripDay(d, clearOf(others, taps, frozenOf, d, today, starts), others.any { d.toString() in frozenOf[it.id].orEmpty() }, held, due)
     }
-    val week = (0L..6L).map { i -> stripDay(monday.plusDays(i)) }
-    // The chain runs off the strip's edge when it goes on into the week before or after (checker #9, the ref's 26).
-    val chainIn = week.first().clear == Clear.ALL && stripDay(monday.minusDays(1)).clear == Clear.ALL
-    val chainOut = week.last().clear == Clear.ALL && stripDay(monday.plusDays(7)).clear == Clear.ALL
-    return HabitBoard(today, selected, week, cards, namoz, freezesLeft(freezes, YearMonth.from(today)), chainIn, chainOut)
+
+    fun week(monday: LocalDate): WeekStrip {
+        val days = (0L..6L).map { i -> day(monday.plusDays(i)) }
+        // The chain runs off the strip's edge when it goes on into the week before or after (checker #9, the ref's 26).
+        val chainIn = days.first().clear == Clear.ALL && day(monday.minusDays(1)).clear == Clear.ALL
+        val chainOut = days.last().clear == Clear.ALL && day(monday.plusDays(7)).clear == Clear.ALL
+        return WeekStrip(days, chainIn, chainOut)
+    }
 }
 
 /** Puts each habit with an `after` right under the habit it follows (one level; a loop keeps the plain order). */
@@ -352,34 +390,4 @@ fun monthMarks(
             Clear.FUTURE -> Mark.FUTURE
         }
     }
-}
-
-/** A badge on the Achievements page: earned or locked, with its own emoji. */
-data class Achievement(val key: String, val emoji: String, val title: String, val line: String, val earned: Boolean)
-
-/** The badges (Boss's reference: "streak 7/30/100, first week cleared…"), from the habits' bests and ticks. */
-fun achievements(habits: List<TaskEntity>, ticks: List<HabitTickEntity>, freezes: List<HabitFreezeEntity>, today: LocalDate): List<Achievement> {
-    val byId = habits.associateBy { it.id }
-    val done = ticks.filter { it.n >= (byId[it.taskId]?.times ?: 1).coerceAtLeast(1) }
-    val doneOf = done.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
-    val frozen = freezes.groupBy({ it.taskId }, { it.day }).mapValues { it.value.toSet() }
-    val best = habits.maxOfOrNull { chainBest(it, doneOf[it.id].orEmpty(), frozen[it.id].orEmpty(), today) } ?: 0
-    val taps = ticksByDay(ticks)
-    val others = habits.filterNot(::isNamoz)
-    val starts = startsOf(others, ticks, today)
-    val clearedDays = (0L..400L).map { today.minusDays(it) }.filter { clearOf(others, taps, frozen, it, today, starts) == Clear.ALL }.map { it.toString() }.toSet()
-    val clearedWeek = (0L..400L).map { today.minusDays(it) }.any { end -> (0L..6L).all { (end.minusDays(it)).toString() in clearedDays } }
-    val namozDays = habits.filter(::isNamoz).let { p -> if (p.size < 5) emptySet() else (0L..60L).map { today.minusDays(it) }.filter { d -> p.all { d.toString() in doneOf[it.id].orEmpty() } }.toSet() }
-    return listOf(
-        Achievement("first", "seedling", "First tick", "Tick any habit once", done.isNotEmpty()),
-        Achievement("streak3", "fire", "3 in a row", "A 3-day chain", best >= 3),
-        Achievement("streak7", "link", "A week's chain", "A 7-day chain", best >= 7),
-        Achievement("cleared", "party", "Day cleared", "Every habit of a day", clearedDays.isNotEmpty()),
-        Achievement("week", "trophy", "Week cleared", "7 cleared days in a row", clearedWeek),
-        Achievement("streak30", "rocket", "30 in a row", "A 30-day chain", best >= 30),
-        Achievement("hundred", "target", "100 ticks", "100 done days in all", done.size >= 100),
-        Achievement("freeze", "ice", "Chain held", "A freeze kept a streak", freezes.isNotEmpty()),
-        Achievement("namoz", "mosque", "Five in a day", "All five prayers on one day", namozDays.isNotEmpty()),
-        Achievement("streak100", "tree", "100 in a row", "A 100-day chain", best >= 100),
-    )
 }

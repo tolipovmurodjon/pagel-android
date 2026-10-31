@@ -1,6 +1,20 @@
 package org.pagel.ai.ui.habits
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -26,13 +40,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,7 +57,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -56,9 +77,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.pagel.ai.data.db.HabitFreezeEntity
 import org.pagel.ai.data.db.HabitTickEntity
 import org.pagel.ai.data.db.TaskEntity
-import org.pagel.ai.data.habits.Achievement
+import org.pagel.ai.data.habits.HabitLook
+import org.pagel.ai.data.habits.habitBadges
 import org.pagel.ai.data.habits.Mark
-import org.pagel.ai.data.habits.achievements
 import org.pagel.ai.data.habits.chainBest
 import org.pagel.ai.data.habits.chainStreak
 import org.pagel.ai.data.habits.completion
@@ -68,6 +89,7 @@ import org.pagel.ai.data.habits.Namoz
 import org.pagel.ai.data.habits.monthMarks
 import org.pagel.ai.ui.glass.Emoji
 import org.pagel.ai.ui.glass.Glass
+import org.pagel.ai.ui.glass.HabitIcons
 import org.pagel.ai.ui.glass.GlassIconButton
 import org.pagel.ai.ui.glass.Pane
 import org.pagel.ai.ui.glass.Repeat
@@ -104,45 +126,77 @@ fun statsOf(habits: List<TaskEntity>, ticks: List<HabitTickEntity>, freezes: Lis
     )
 }
 
-/** Three glass stat cards side by side, scrolling sideways at 1.5x (the number in the number face). */
+/**
+ * Three gradient stat cards side by side that snap, one at a time, as the sideways row stops (Boss's reference: Current
+ * streak + Best, Habit finished + This week, Complete rate + n/n). Each card is a 2-stop OKLCH gradient in a tile
+ * colour (never red), the number in the number face.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun StatCards(s: HabitStats) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.md)) {
-        StatCard("fire", "Streak", "${s.streak}", "Best ${s.best}")
-        StatCard("check", "Finished", "${s.finished}", "This week ${s.thisWeek}")
-        StatCard("target", "Completion", "${s.rate}%", "${s.rateDone} of ${s.rateOf} · 30 days")
+    val state = rememberLazyListState()
+    LazyRow(
+        state = state, flingBehavior = rememberSnapFlingBehavior(state), contentPadding = PaddingValues(horizontal = Space.gutter),
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
+    ) {
+        item(key = "streak") { StatCard("blue", "Current streak", "${s.streak}", "Best ${s.best}") }
+        item(key = "finished") { StatCard("violet", "Habit finished", "${s.finished}", "This week ${s.thisWeek}") }
+        item(key = "rate") { StatCard("amber", "Complete rate", "${s.rate}%", "${s.rateDone}/${s.rateOf} in 30 days") }
     }
 }
 
 @Composable
-private fun StatCard(emoji: String, label: String, value: String, sub: String) {
-    Pane(Modifier.width(156.dp).semantics(mergeDescendants = true) { contentDescription = "$label $value, $sub" }) {
-        Column(Modifier.padding(Space.lg)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                EmojiTile(emoji, 28.dp)
-                Spacer(Modifier.width(Space.sm))
-                Text(label.uppercase(), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Spacer(Modifier.height(Space.md))
-            Text(value, style = Glass.NumberText.copy(fontSize = 34.sp, lineHeight = 38.sp), color = Glass.Ink, maxLines = 1)
-            Spacer(Modifier.height(Space.xs))
-            Text(sub, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+private fun StatCard(colour: String, label: String, value: String, sub: String) {
+    val look = cardColours(colour, 1f)
+    val shape = RoundedCornerShape(Space.xxl)
+    Column(
+        Modifier.width(176.dp).heightIn(min = 148.dp).clip(shape)
+            .background(Brush.linearGradient(listOf(look.a, look.b), start = androidx.compose.ui.geometry.Offset.Zero, end = androidx.compose.ui.geometry.Offset.Infinite))
+            .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.16f), Color.Transparent), endY = 160f))
+            .semantics(mergeDescendants = true) { contentDescription = "$label $value, $sub" }
+            .padding(Space.lg),
+    ) {
+        Text(label.uppercase(), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = look.content.copy(alpha = 0.9f), minLines = 2, maxLines = 2)
+        Spacer(Modifier.height(Space.sm))
+        Text(value, style = Glass.NumberText.copy(fontSize = 38.sp, lineHeight = 42.sp, fontWeight = FontWeight.Bold), color = look.content, maxLines = 1, softWrap = false)
+        Spacer(Modifier.height(Space.xs))
+        Text(sub, style = MaterialTheme.typography.labelMedium, color = look.content.copy(alpha = 0.85f), maxLines = 2)
     }
 }
 
-/** A month as a chain calendar, Monday first, with ‹ › to step months. */
+/** What the month shows: its title, its days with marks and each day's (done, due) count. */
+private data class MonthShown(val title: String, val days: List<Pair<LocalDate, Mark>>, val counts: List<Pair<Int, Int>>?)
+
+/**
+ * A month as a chain calendar, Monday first. Swipe it sideways or use the arrows: the new month slides in from the side
+ * it comes from on an ease-out curve (a sideways drag moves months only by 70 dp or a flick, never by a tap's wobble).
+ * With [onSelect] a tap on a day that can hold a tick logs it, or takes it back (Boss 2026-10-31: a missed day can be
+ * logged and marked); the chain re-joins by itself.
+ */
 @Composable
 internal fun MonthChain(
     title: String, days: List<Pair<LocalDate, Mark>>, today: LocalDate, onPrev: () -> Unit, onNext: (() -> Unit)?, counts: List<Pair<Int, Int>>? = null,
+    onSelect: ((LocalDate) -> Unit)? = null,
 ) {
-    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+    var dir by remember { mutableIntStateOf(1) }
+    val reduce = org.pagel.ai.ui.today.reducedMotion(LocalContext.current)
+    val haptics = LocalHapticFeedback.current
+    val prev by rememberUpdatedState(onPrev)
+    val next by rememberUpdatedState(onNext)
+    fun back() { dir = -1; haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); prev() }
+    fun forward() { if (next != null) { dir = 1; haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); next?.invoke() } }
+    Pane(
+        Modifier.fillMaxWidth().padding(horizontal = Space.gutter).testTag("month-chain").pointerInput(Unit) {
+            var dx = 0f
+            detectHorizontalDragGestures(onDragStart = { dx = 0f }, onDragEnd = { if (dx > 70f) back() else if (dx < -70f) forward() }) { change, d -> change.consume(); dx += d }
+        },
+    ) {
         Column(Modifier.fillMaxWidth().padding(vertical = Space.md, horizontal = Space.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                GlassIconButton(TabIcons.ChevronLeft, "Month before", size = Space.touch, plain = true, onClick = onPrev)
+                GlassIconButton(TabIcons.ChevronLeft, "Month before", size = Space.touch, plain = true, onClick = ::back)
                 Text(title, style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.weight(1f).semantics { heading() },
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                if (onNext != null) GlassIconButton(TabIcons.ChevronRight, "Month after", size = Space.touch, plain = true, onClick = onNext) else Spacer(Modifier.width(Space.touch))
+                if (onNext != null) GlassIconButton(TabIcons.ChevronRight, "Month after", size = Space.touch, plain = true, onClick = ::forward) else Spacer(Modifier.width(Space.touch))
             }
             Row(Modifier.fillMaxWidth()) {
                 val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
@@ -150,20 +204,39 @@ internal fun MonthChain(
                     maxLines = 1, softWrap = false, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.height(Space.xs))
-            // Week rows; the first starts at its weekday, so the chain runs Monday to Sunday on each row.
-            val lead = days.firstOrNull()?.first?.dayOfWeek?.value?.minus(1) ?: 0
-            var at = 0
-            var first = true
-            while (at < days.size) {
-                val slots = if (first) 7 - lead else 7
-                val row = days.subList(at, minOf(days.size, at + slots))
-                ChainRow(row, today, null, null, circle = 34.dp, slots = 7, startSlot = if (first) lead else 0, counts = counts?.subList(at, at + row.size))
-                at += slots
-                first = false
+            AnimatedContent(
+                targetState = MonthShown(title, days, counts), contentKey = { it.title },
+                transitionSpec = {
+                    if (reduce) fadeIn(tween(120)) togetherWith fadeOut(tween(120))
+                    else (fadeIn(tween(200, easing = EASE_OUT)) + slideInHorizontally(tween(240, easing = EASE_OUT)) { dir * it / 4 }) togetherWith
+                        (fadeOut(tween(140)) + slideOutHorizontally(tween(200, easing = EASE_OUT)) { -dir * it / 4 })
+                },
+                label = "month",
+            ) { shown ->
+                val marks = shown.days.toMap()
+                val tappable: ((LocalDate) -> Unit)? = onSelect?.let { pick ->
+                    { d -> if (marks[d].let { it != null && it != Mark.OFF && it != Mark.BEFORE && it != Mark.FUTURE }) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); pick(d) } }
+                }
+                Column {
+                    // Week rows; the first starts at its weekday, so the chain runs Monday to Sunday on each row.
+                    val lead = shown.days.firstOrNull()?.first?.dayOfWeek?.value?.minus(1) ?: 0
+                    var at = 0
+                    var first = true
+                    while (at < shown.days.size) {
+                        val slots = if (first) 7 - lead else 7
+                        val row = shown.days.subList(at, minOf(shown.days.size, at + slots))
+                        ChainRow(row, today, null, tappable, circle = 34.dp, slots = 7, startSlot = if (first) lead else 0, counts = shown.counts?.subList(at, at + row.size))
+                        at += slots
+                        first = false
+                    }
+                }
             }
         }
     }
 }
+
+/** Boss's ease-out for a thing arriving (emil-design-eng): fast start, soft landing. */
+private val EASE_OUT = CubicBezierEasing(0.23f, 1f, 0.32f, 1f)
 
 @Composable
 internal fun Chip(
@@ -196,7 +269,7 @@ internal fun Chip(
     }
 }
 
-// ── History ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+// ── History ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** History (Boss's reference): Calendar · All habits · Achievements, with the three stat cards for all habits. */
 @Composable
@@ -218,10 +291,8 @@ fun HabitHistory(ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit
             GlassIconButton(TabIcons.ArrowLeft, "Back", size = Space.touch, plain = true, onClick = onBack)
             Text("History", style = MaterialTheme.typography.headlineMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs).semantics { heading() })
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            for ((i, name) in listOf("Calendar", "All habits", "Badges").withIndex()) Chip(name, on = tab == i, modifier = Modifier.weight(1f)) { tab = i }
-        }
-        StatCards(statsOf(habits, ui.ticks, ui.freezes, today))
+        HistoryTabs(listOf("Calendar", "All habits", "Achievements"), tab) { tab = it }
+        if (tab != 2) StatCards(statsOf(habits, ui.ticks, ui.freezes, today))
         when (tab) {
             0 -> {
                 if (prayers.isNotEmpty()) Row(Modifier.padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -252,37 +323,38 @@ fun HabitHistory(ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit
                                 .padding(horizontal = Space.lg),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            EmojiTile(Namoz.prayerOf(title)?.emoji ?: Emoji.keyFor(title, ui.prefs[h.id]?.emoji), 36.dp)
+                            EmojiTile(Namoz.prayerOf(title)?.emoji ?: HabitIcons.keyFor(title, ui.prefs[h.id]?.emoji), 36.dp, colour = HabitLook.colourOf(ui.prefs[h.id]?.emoji))
                             Spacer(Modifier.width(Space.md))
                             Text(title, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            Text("🔥${s.streak}  ${s.rate}%", style = Glass.NumberText, color = Glass.Muted)
+                            Icon(TabIcons.Flame, null, tint = Glass.Muted, modifier = Modifier.size(14.dp))
+                            Text("${s.streak}  ${s.rate}%", style = Glass.NumberText, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
                         }
                     }
                 }
             }
-            else -> {
-                val list = achievements(all, ui.ticks, ui.freezes, today)
-                Column(Modifier.padding(horizontal = Space.gutter), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    for (row in list.chunked(2)) Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                        for (a in row) Badge(a, Modifier.weight(1f))
-                        if (row.size == 1) Spacer(Modifier.weight(1f))
-                    }
-                }
+            else -> AchievementsPage(habitBadges(all, ui.ticks, ui.freezes, today))
+        }
+    }
+}
+
+/** Plain words with a mint underline (Boss's reference): they scroll sideways when a large font needs the room. */
+@Composable
+private fun HistoryTabs(names: List<String>, at: Int, onPick: (Int) -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.xl)) {
+        for ((i, name) in names.withIndex()) {
+            val on = i == at
+            val press = remember { MutableInteractionSource() }
+            Column(
+                Modifier.heightIn(min = Space.touch).pressScale(press)
+                    .selectable(on, press, indication = null, role = Role.Tab) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick(i) }
+                    .semantics { contentDescription = name },
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+            ) {
+                Text(name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium), color = if (on) Glass.Ink else Glass.Muted, maxLines = 1, softWrap = false)
+                Spacer(Modifier.height(Space.xs))
+                Box(Modifier.size(width = 22.dp, height = 3.dp).background(if (on) Glass.Primary else Color.Transparent, CircleShape))
             }
         }
     }
 }
-
-@Composable
-private fun Badge(a: Achievement, modifier: Modifier) {
-    Pane(modifier.semantics(mergeDescendants = true) { contentDescription = "${a.title}, ${if (a.earned) "earned" else "not yet"}" }) {
-        Column(Modifier.fillMaxWidth().padding(Space.lg), horizontalAlignment = Alignment.CenterHorizontally) {
-            EmojiTile(a.emoji, 52.dp, quiet = !a.earned)
-            Spacer(Modifier.height(Space.sm))
-            Text(a.title, style = MaterialTheme.typography.titleSmall, color = if (a.earned) Glass.Ink else Glass.Muted, maxLines = 1)
-            Text(a.line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, minLines = 2, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        }
-    }
-}
-
-

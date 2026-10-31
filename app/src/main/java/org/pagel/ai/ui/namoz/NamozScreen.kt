@@ -114,7 +114,7 @@ private fun NextPane(ui: NamozUi) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         // "Next · Asr", "15:42", "in 1 h 03 m"; the countdown changes once a minute, never per second.
         Row(Modifier.fillMaxWidth().padding(Space.lg).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(Emoji.res(ui.next.prayer.emoji)), null, Modifier.size(48.dp))
+            androidx.compose.material3.Icon(org.pagel.ai.ui.glass.HabitIcons.vector(org.pagel.ai.ui.glass.HabitIcons.forEmoji(ui.next.prayer.emoji)), null, tint = Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(48.dp))
             Spacer(Modifier.width(Space.lg))
             Column(Modifier.weight(1f)) {
                 Text("Next · ${ui.next.prayer.uz}", style = MaterialTheme.typography.labelLarge, color = Glass.Muted, maxLines = 1)
@@ -170,7 +170,7 @@ private fun PrayerRows(ui: NamozUi, onTap: (Namoz.Prayer) -> Unit, onMark: (Namo
                         if (done) androidx.compose.material3.Icon(TabIcons.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
                     }
                     Spacer(Modifier.width(Space.md))
-                    Image(painterResource(Emoji.res(p.emoji)), null, Modifier.size(22.dp))
+                    androidx.compose.material3.Icon(org.pagel.ai.ui.glass.HabitIcons.vector(org.pagel.ai.ui.glass.HabitIcons.forEmoji(p.emoji)), null, tint = Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(Space.sm))
                     Column(Modifier.weight(1f)) {
                         Text(p.uz, style = MaterialTheme.typography.bodyLarge, color = if (done) Glass.Muted else Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)

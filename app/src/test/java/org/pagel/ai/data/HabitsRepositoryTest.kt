@@ -234,6 +234,20 @@ class HabitsRepositoryTest {
         assertEquals(listOf("""t_h {"done":true,"day":"2026-10-25","n":1}""", """t_h {"done":false,"day":"2026-10-25"}"""), patches)
     }
 
+    /** Habits 3.0 (Boss 2026-10-31): a missed day is logged for its own date, and the Undo writes the inverse for that date. */
+    @Test fun aMissedDayIsLoggedForItsDateAndItsUndoWritesTheInverse() = runBlocking {
+        seed()
+        val r = repo()
+        assertTrue(r.setDay("t_h", "2026-10-25", true))
+        assertEquals(listOf(HabitTickEntity("2026-10-25", "t_h")), db.dao().habitTicksOf("t_h"))
+        assertTrue(r.setDay("t_h", "2026-10-25", false))
+        val bodies = db.dao().waitingOutbox().map { it.body }
+        assertTrue(bodies.toString(), bodies.any { it.contains("\"done\":true") && it.contains("\"day\":\"2026-10-25\"") })
+        assertTrue(bodies.toString(), bodies.any { it.contains("\"done\":false") && it.contains("\"day\":\"2026-10-25\"") })
+        // The habit's date never moves for a past day.
+        assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_h")!!.due)
+    }
+
     @Test fun takingTodaysTapOffAfterTheHabitMovedOnBringsItBackToToday() = runBlocking {
         seed()
         val r = repo()

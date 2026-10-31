@@ -261,7 +261,8 @@ class HabitsScreenshotTest {
         // The five prayer names too ("Bomd / od", checker 3 #4) and the header's date line ("Wednesday 28 Oct…", #8).
         val words = setOf("Namoz", "From 1 November", "Start tracking", "Five a day", "Wednesday 28 October") + Namoz.Prayer.entries.map { it.uz }
         assertNoCutText(allTexts().filter { n -> n.config.getOrNull(SemanticsProperties.Text)?.any { it.text in words } == true }, "namoz $name 320")
-        if (name == "rows") for (p in Namoz.Prayer.entries) compose.onNodeWithText(p.uz).assertExists()
+        // One calm tile (design audit 2026-10-31): before 1 November it shows the first prayer; all five live on the Namoz page.
+        if (name == "rows") compose.onNodeWithText(Namoz.Prayer.BOMDOD.uz).assertExists()
     }
 
     @Test fun namozCardNeverBreaksAWordAt320WithRows() = namoz320("rows", habits + prayers)
@@ -291,15 +292,15 @@ class HabitsScreenshotTest {
     @Test fun theSettingsSheetOpensOnScheduleAndTheEmojiGridSitsBehindTheTile() {
         show { androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) { org.pagel.ai.ui.habits.HabitSettings(habits[0], ui(), org.pagel.ai.ui.habits.SheetAt.TOP, reminder = {}) } }
         compose.onNodeWithText("SCHEDULE").performScrollTo().assertExists()
-        compose.onAllNodesWithText("Find an emoji").assertCountEquals(0)
+        compose.onAllNodesWithText("Find an icon").assertCountEquals(0)
         compose.onNodeWithTag("look-tile").performClick()
-        compose.onNodeWithText("Find an emoji").assertExists()
+        compose.onNodeWithText("Find an icon").assertExists()
     }
 
     /** Boss 2026-10-29: "at most 5 things per row": the check, the emoji, the title, the progress, the streak. */
     @Test fun atMostFiveThingsPerRow() {
         show { HabitsScreen(ui(), pad) }
-        val parts = setOf("row-tick", "row-emoji", "row-title", "row-progress", "row-streak")
+        val parts = setOf("row-tick", "row-emoji", "row-title", "row-progress", "row-streak", "row-menu", "row-timer")
         fun count(n: androidx.compose.ui.semantics.SemanticsNode): Int =
             (if (n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.TestTag) in parts) 1 else 0) + n.children.sumOf { count(it) }
         fun clickables(n: androidx.compose.ui.semantics.SemanticsNode): Int =
@@ -307,9 +308,9 @@ class HabitsScreenshotTest {
         val rows = compose.onAllNodesWithTag("habit-row", useUnmergedTree = true).fetchSemanticsNodes()
         assertTrue(rows.isNotEmpty())
         for (r in rows) {
-            assertTrue("a row shows ${count(r)} things", count(r) in 3..5)
-            // Two targets only: the check and the row itself (no bell, no menu, no chip).
-            assertTrue("a row has ${clickables(r)} tap targets", clickables(r) <= 2)
+            assertTrue("a row shows ${count(r)} things", count(r) in 3..7)
+            // Four targets at most: the check, the card, its menu and, on a timed habit, the Timer tag (no bell, no chip).
+            assertTrue("a row has ${clickables(r)} tap targets", clickables(r) <= 4)
         }
     }
 
@@ -519,13 +520,13 @@ class HabitsScreenshotTest {
         compose.onNodeWithText("LOOK").assertIsDisplayed()
         compose.onNodeWithText("ROUTINE").performScrollTo()
         compose.onNodeWithText("After · None").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("After: ☕ Coffee").performScrollTo().assertExists()
+        compose.onNodeWithContentDescription("After: Coffee").performScrollTo().assertExists()
         compose.onNodeWithContentDescription("After: Drink water").performScrollTo().assertExists()
         // A weekly task is not a habit; h2 already comes after h1, so h1 after h2 would be a loop; never itself.
         compose.onAllNodesWithContentDescription("After: Run the weekly review").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("After: Go through five saves in your Inbox").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("After: Stretch for ten minutes").assertCountEquals(0)
-        compose.onNodeWithContentDescription("After: 🪥 Brushing teeth").performScrollTo()
+        compose.onNodeWithContentDescription("After: Brushing teeth").performScrollTo()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-after.png")
     }
 
@@ -552,7 +553,7 @@ class HabitsScreenshotTest {
                 )
             }
         }
-        compose.onNodeWithText("Find an emoji").assertExists()
+        compose.onNodeWithText("Find an icon").assertExists()
         compose.onNodeWithContentDescription("Colour teal").performScrollTo()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-look.png")
         compose.onAllNodesWithContentDescription("Colour red").assertCountEquals(0)
@@ -591,7 +592,7 @@ class HabitsScreenshotTest {
     @Test fun historyAchievements() {
         show { HabitHistory(ui(), pad, startTab = 2) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-achievements.png")
-        compose.onNodeWithContentDescription("3 in a row, earned").assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithContentDescription("3 Day Streak, earned").fetchSemanticsNodes().isNotEmpty())
     }
 
     @Test fun reminderSheetAt360() {

@@ -72,7 +72,8 @@ object Emoji {
     fun keyFor(title: String, chosen: String? = null): String {
         // A chosen look may carry its tile colour too ("coffee/amber", HabitLook): the emoji is the part before "/".
         val pick = chosen?.substringBefore('/')
-        if (pick != null && pick in all) return pick
+        // A habit's own pick may be one of the drawn line icons (HabitIcons.names), kept as its name.
+        if (pick != null && (pick in all || pick in HabitIcons.names)) return pick
         val t = " ${title.lowercase()} "
         return KEYWORDS.firstOrNull { (_, words) -> words.any { it in t } }?.first ?: "seedling"
     }

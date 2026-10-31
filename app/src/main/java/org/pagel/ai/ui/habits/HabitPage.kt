@@ -75,6 +75,7 @@ import org.pagel.ai.data.habits.monthMarks
 import org.pagel.ai.data.habits.partAt
 import org.pagel.ai.ui.glass.Emoji
 import org.pagel.ai.ui.glass.Glass
+import org.pagel.ai.ui.glass.HabitIcons
 import org.pagel.ai.ui.glass.GlassIconButton
 import org.pagel.ai.ui.glass.GlassSheet
 import org.pagel.ai.ui.glass.Pane
@@ -101,7 +102,7 @@ enum class SheetAt { TOP, REMINDER, LOOK }
  * action and every setting sits behind ⋮ (and the tile, and the bell chip, which open the same sheet).
  */
 @Composable
-fun HabitDetailRoute(id: String, contentPadding: PaddingValues, onBack: () -> Unit, vm: HabitsViewModel = hiltViewModel()) {
+fun HabitDetailRoute(id: String, contentPadding: PaddingValues, onBack: () -> Unit, onOpenTimer: (() -> Unit)? = null, vm: HabitsViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val t = ui.byId[id]
     val ctx = LocalContext.current
@@ -111,7 +112,7 @@ fun HabitDetailRoute(id: String, contentPadding: PaddingValues, onBack: () -> Un
     if (t == null) { Box(Modifier.fillMaxSize().padding(contentPadding)); return }
     val today = LocalDate.parse(ui.today)
     HabitDetail(
-        t, ui, contentPadding, onBack = onBack, onEdit = { openTask(id) },
+        t, ui, contentPadding, onBack = onBack, onEdit = { openTask(id) }, onToggleDay = { vm.toggleDay(id, it) }, onOpenTimer = onOpenTimer,
         onShare = {
             val s = statsOf(listOf(t), ui.ticks, ui.freezes, today)
             val text = "${titleOf(t)}: ${s.streak} in a row (best ${s.best}), ${s.rate}% of the last 30 days."
@@ -144,13 +145,13 @@ fun HabitDetailRoute(id: String, contentPadding: PaddingValues, onBack: () -> Un
 @Composable
 fun HabitDetail(
     t: TaskEntity, ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit = {}, onEdit: () -> Unit = {}, onShare: () -> Unit = {},
-    onSettings: (SheetAt) -> Unit = {},
+    onSettings: (SheetAt) -> Unit = {}, onToggleDay: ((LocalDate) -> Unit)? = null, onOpenTimer: (() -> Unit)? = null,
 ) {
     val today = runCatching { LocalDate.parse(ui.today) }.getOrElse { LocalDate.now() }
     var month by remember { mutableStateOf(YearMonth.from(today)) }
     val pref = ui.prefs[t.id]
     val title = titleOf(t)
-    val emoji = Namoz.prayerOf(title)?.emoji ?: Emoji.keyFor(title, pref?.emoji)
+    val emoji = Namoz.prayerOf(title)?.emoji ?: HabitIcons.keyFor(title, pref?.emoji)
     val weeks = remember(t, ui.ticks, ui.freezes, today) { habitWeeks(t, ui.ticks, ui.freezes, today) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(contentPadding).padding(bottom = Space.xxl), verticalArrangement = Arrangement.spacedBy(Space.paneGap)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = Space.sm, vertical = Space.xs), verticalAlignment = Alignment.CenterVertically) {
@@ -188,31 +189,31 @@ fun HabitDetail(
                 ) { onSettings(SheetAt.REMINDER) }
             }
             minutesOf(title, pref?.minutes)?.let { Chip("$it min") }
+            if (onOpenTimer != null && minutesOf(title, pref?.minutes) != null) Chip("Timer", icon = TabIcons.Clock, iconTint = Glass.Primary, description = "Open timer") { onOpenTimer() }
             if (t.times > 1) Chip("${t.times}× a day")
         }
+        StatCards(statsOf(listOf(t), ui.ticks, ui.freezes, today))
         StatsCard(weeks)
         val marks = monthMarks(emptyList(), ui.ticks, ui.freezes, month, today, t)
         val taps = ui.ticks.filter { it.taskId == t.id }.associate { it.day to it.n }
         MonthChain(month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.UK)), marks, today, onPrev = { month = month.minusMonths(1) },
             onNext = if (month < YearMonth.from(today)) ({ month = month.plusMonths(1) }) else null,
-            counts = marks.map { (d, _) -> (taps[d.toString()] ?: 0) to t.times.coerceAtLeast(1) })
+            counts = marks.map { (d, _) -> (taps[d.toString()] ?: 0) to t.times.coerceAtLeast(1) }, onSelect = onToggleDay)
     }
 }
 
-/** "After ☕ coffee → 🧘 Floor routine", from the habit's anchor; null without one. */
+/** "After coffee → Floor routine", from the habit's anchor; null without one. */
 internal fun recipeOf(t: TaskEntity, ui: HabitsUi): String? {
     val anchor = HabitLook.anchorOf(ui.prefs[t.id]?.after)
-    val anchorTitle = (anchor as? HabitLook.Anchor.Habit)?.let { a -> ui.byId[a.id] }?.let { a ->
-        Emoji.glyph(Emoji.keyFor(titleOf(a), ui.prefs[a.id]?.emoji)) + " " + titleOf(a)
-    }
-    return HabitLook.recipe(anchor, anchorTitle, Emoji.glyph(Emoji.keyFor(titleOf(t), ui.prefs[t.id]?.emoji)), titleOf(t))
+    val anchorTitle = (anchor as? HabitLook.Anchor.Habit)?.let { a -> ui.byId[a.id] }?.let(::titleOf)
+    return HabitLook.recipe(anchor, anchorTitle, titleOf(t))
 }
 
 // ── Stats ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * One compact glass card (Boss 2026-10-29: the six "0 / 0" week rows and the three stretched cards were "trash"): a
- * strip of three numbers (🔥 Streak · ✓ This week · 🎯 Best) over a 12-week bar chart in the glass chart kit's style
+ * One compact glass card under the three gradient stat cards (Boss 2026-10-29: the six "0 / 0" week rows were "trash"):
+ * a 12-week bar chart in the glass chart kit's style
  * (thin rounded bars, radius min(6, 0.3 × width), mono 11 sp labels, no grid). Never a week before the habit started;
  * under 2 weeks it says when the chart comes. Tap a bar: that week's days in the line above the chart.
  */
@@ -221,21 +222,13 @@ internal fun StatsCard(w: HabitWeeks) {
     var picked by remember(w) { mutableStateOf<Int?>(null) }
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter).testTag("habit-stats")) {
         Column(Modifier.fillMaxWidth().padding(vertical = Space.md)) {
-            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
-                StatColumn("🔥 Streak", "${w.streak}", Modifier.weight(1f))
-                Divider()
-                StatColumn("✓ Week", w.thisWeek?.let { "${it.done}/${it.target}" } ?: "0/0", Modifier.weight(1f))
-                Divider()
-                StatColumn("🎯 Best", "${w.best}", Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(Space.md))
             // One line above the chart, always there (no jump): the picked week's days, the empty state, or the summary.
             val fmt = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
             val line = when {
                 w.tooNew -> "Stats show up after a week · ${(7 - w.daysTracked).coerceAtLeast(1)} ${if (7 - w.daysTracked == 1) "day" else "days"} to go"
                 picked != null -> w.bars[picked!!].let { b ->
                     b.monday.format(fmt) + ": " + b.days.joinToString(" ") { (d, m) ->
-                        d.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.UK) + when (m) { Mark.DONE -> "✓"; Mark.FROZEN -> "❄"; Mark.MISSED -> "·"; else -> "" }
+                        d.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.UK) + when (m) { Mark.DONE, Mark.FROZEN -> "✓"; Mark.MISSED -> "·"; else -> "" }
                     }
                 }
                 else -> "Average ${w.average} % · Best week ${w.bestWeek} %"
@@ -246,20 +239,6 @@ internal fun StatsCard(w: HabitWeeks) {
             WeekBars(w, picked) { picked = if (picked == it) null else it }
         }
     }
-}
-
-@Composable
-private fun StatColumn(label: String, value: String, modifier: Modifier) {
-    Column(modifier.semantics(mergeDescendants = true) {}, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, softWrap = false)
-        Spacer(Modifier.height(Space.xs))
-        Text(value, style = Glass.NumberText.copy(fontSize = 22.sp), color = Glass.Ink, maxLines = 1)
-    }
-}
-
-@Composable
-private fun Divider() {
-    Box(Modifier.width(1.dp).height(32.dp).background(Glass.Ink.copy(alpha = 0.10f)))
 }
 
 /** The bars: 12 slots, the oldest left; done share in mint, the rest a soft track, this week stronger + its label. */
@@ -393,24 +372,26 @@ internal fun HabitSettings(
     }
 }
 
-/** The emoji search, the grid and the colours: opened by the tile, so the sheet starts on Schedule and Actions. */
+/** The icon search, the grid and the colours: opened by the tile, so the sheet starts on Schedule and Actions. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LookPicker(emoji: String, colour: String?, onEmoji: (String?) -> Unit, onColour: (String?) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
             var find by remember { mutableStateOf("") }
-            OutlinedTextField(find, { find = it.take(20) }, Modifier.fillMaxWidth().padding(horizontal = Space.gutter), label = { Text("Find an emoji") }, singleLine = true)
+            // What the habit wears now, as a set name (an old picture key maps to its nearest line icon).
+            val now = HabitIcons.forEmoji(emoji)
+            OutlinedTextField(find, { find = it.take(20) }, Modifier.fillMaxWidth().padding(horizontal = Space.gutter), label = { Text("Find an icon") }, singleLine = true)
             FlowRow(Modifier.padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                for (k in Emoji.all.keys.filter { find.isBlank() || it.contains(find.trim().lowercase()) }) {
-                    val on = k == emoji
+                for (k in HabitIcons.names.filter { find.isBlank() || it.replace('-', ' ').contains(find.trim().lowercase()) }) {
+                    val on = k == now
                     val p = remember(k) { MutableInteractionSource() }
                     Box(
                         Modifier.size(Space.touch).clip(RoundedCornerShape(14.dp)).background(if (on) Glass.PrimarySoft else Color.White.copy(alpha = 0.5f))
                             .border(if (on) 1.5.dp else 0.dp, if (on) Glass.Primary else Color.Transparent, RoundedCornerShape(14.dp))
                             .pressScale(p).clickable(p, indication = null, role = Role.RadioButton) { onEmoji(k) }
-                            .semantics { contentDescription = "Emoji $k"; selected = on },
+                            .semantics { contentDescription = "Icon $k"; selected = on },
                         contentAlignment = Alignment.Center,
-                    ) { Image(painterResource(Emoji.res(k)), null, Modifier.size(32.dp)) }
+                    ) { Icon(HabitIcons.vector(k), null, tint = if (on) Glass.PrimaryInk else Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(26.dp)) }
                 }
             }
             FlowRow(Modifier.padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
@@ -432,8 +413,8 @@ private fun LookPicker(emoji: String, colour: String?, onEmoji: (String?) -> Uni
 }
 
 /**
- * "After": None, the daily moments (☕ Coffee, 🕌 Fajr, …, or his own words), then real habits only, by part of the day,
- * each with its colour tile, emoji and full name (2 lines, never cut mid-word). Itself and loops are never offered.
+ * "After": None, the daily moments (Coffee, Fajr, ..., or his own words), then real habits only, by part of the day,
+ * each with its colour tile, icon and full name (2 lines, never cut mid-word). Itself and loops are never offered.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -444,23 +425,21 @@ private fun AnchorPicker(t: TaskEntity, ui: HabitsUi, onAnchor: (HabitLook.Ancho
         Column {
             val label = when (now) {
                 null -> "None"
-                // The moment's words; its picture is drawn in the list below (a font may not have 🪥).
-                is HabitLook.Anchor.Moment -> now.text.let { m -> if (Emoji.keyOfGlyph(m.substringBefore(' ')) != null) m.substringAfter(' ') else m }
+                    is HabitLook.Anchor.Moment -> HabitLook.plain(now.text)
                 is HabitLook.Anchor.Habit -> ui.byId[now.id]?.let(::titleOf) ?: "None"
             }
             MenuRow(TabIcons.CornerDownLeft, "After · $label") { open = !open }
             if (!open) return@Column
             AnchorRow("None", null, null, now == null) { onAnchor(null) }
             for (m in HabitLook.MOMENTS) {
-                val key = Emoji.keyOfGlyph(m.substringBefore(' '))
-                AnchorRow(if (key != null) m.substringAfter(' ') else m, key, null, (now as? HabitLook.Anchor.Moment)?.text == m, said = m, tile = false) {
+                AnchorRow(HabitLook.plain(m), null, null, (now as? HabitLook.Anchor.Moment)?.text == m, said = HabitLook.plain(m), tile = false) {
                     onAnchor(HabitLook.Anchor.Moment(m))
                 }
             }
             var own by remember { mutableStateOf("") }
             Row(Modifier.fillMaxWidth().padding(horizontal = Space.md), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(own, { own = it.take(40) }, Modifier.weight(1f), label = { Text("✏️ Your own moment") }, singleLine = true)
-                if (own.isNotBlank()) Chip("Use", on = true, modifier = Modifier.padding(start = Space.sm)) { onAnchor(HabitLook.Anchor.Moment("✏️ " + own.trim())) }
+                OutlinedTextField(own, { own = it.take(40) }, Modifier.weight(1f), label = { Text("Your own moment") }, singleLine = true)
+                if (own.isNotBlank()) Chip("Use", on = true, modifier = Modifier.padding(start = Space.sm)) { onAnchor(HabitLook.Anchor.Moment(own.trim())) }
             }
             val choices = HabitLook.anchorChoices(t.id, ui.byId.values, ui.prefs)
             for (p in listOf(Part.MORNING, Part.AFTERNOON, Part.EVENING, Part.ANYTIME)) {
@@ -468,7 +447,7 @@ private fun AnchorPicker(t: TaskEntity, ui: HabitsUi, onAnchor: (HabitLook.Ancho
                 if (inPart.isEmpty()) continue
                 Text(p.label, style = MaterialTheme.typography.labelMedium, color = Glass.Muted, modifier = Modifier.padding(start = Space.lg, top = Space.sm))
                 for (c in inPart) {
-                    val e = Emoji.keyFor(titleOf(c), ui.prefs[c.id]?.emoji)
+                    val e = HabitIcons.keyFor(titleOf(c), ui.prefs[c.id]?.emoji)
                     AnchorRow(titleOf(c), e, HabitLook.colourOf(ui.prefs[c.id]?.emoji), (now as? HabitLook.Anchor.Habit)?.id == c.id) { onAnchor(HabitLook.Anchor.Habit(c.id)) }
                 }
             }
@@ -485,8 +464,6 @@ private fun AnchorRow(text: String, emoji: String?, colour: String?, on: Boolean
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (emoji != null && tile) { EmojiTile(emoji, 32.dp, colour = colour); Spacer(Modifier.width(Space.md)) }
-        // A moment: the bundled picture alone, as the words' own emoji (its glyph would need the font).
-        if (emoji != null && !tile) { Image(painterResource(Emoji.res(emoji)), null, Modifier.size(24.dp)); Spacer(Modifier.width(Space.sm)) }
         Text(text, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         if (on) Icon(TabIcons.Check, null, tint = Glass.Primary, modifier = Modifier.size(20.dp))
     }

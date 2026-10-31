@@ -566,6 +566,78 @@ grep -q 'text="2 / 3"' "$OUT/$(printf '%02d' $((N - 1)))-habit-3x-2.xml" || log 
 for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] && break; sleep 1; done
 [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] || { log "WALKTHROUGH: the 3x habit's taps did not all reach pagel.uz"; grep "t_h4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   3 taps reached pagel.uz after ~${i} s"
+log "-- Habits 3.0 (Boss 2026-10-31): the week swipes back and forward, a missed day is logged for its own date and its Undo writes the inverse, a day off is drawn as done, the timer opens full screen"
+# The centre of the first node whose content-desc starts with $1, as "x y".
+habit_xy() {
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  local b; b=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n' | grep -F "content-desc=\"$1" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+  [ -n "$b" ] || { log "   (no content-desc \"$1...\" on screen)"; return 1; }
+  set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
+  echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
+}
+$T adb shell input swipe 160 200 160 700 400; sleep 1
+TODAY_WD=$(TZ=Asia/Tashkent date +'%A %-d %B')
+YDATE=$(TZ=Asia/Tashkent date -d yesterday +%Y-%m-%d)
+YESTERDAY_WD=$(TZ=Asia/Tashkent date -d yesterday +'%A %-d %B')
+STRIP_XY=$(habit_xy "$TODAY_WD") || { log "WALKTHROUGH: Habits' week strip has no \"$TODAY_WD\""; exit 1; }
+set -- $STRIP_XY; SY=$2
+# Android's own frame stats for just the swipes: the janky share is logged (JankStats' number, from gfxinfo).
+$T adb shell dumpsys gfxinfo "$PKG" reset > /dev/null
+$T adb shell input swipe 120 "$SY" 900 "$SY" 250
+sleep 1
+shot habits-week-back 1.5
+grep -q 'looking back' "$OUT/$(printf '%02d' $N)-habits-week-back.xml" || { log "WALKTHROUGH: a swipe right on the week strip did not bring the week before"; exit 1; }
+$T adb shell input swipe 900 "$SY" 120 "$SY" 250
+sleep 1
+shot habits-week-forward 1.5
+grep -qF "text=\"$TODAY_WD\"" "$OUT/$(printf '%02d' $N)-habits-week-forward.xml" || { log "WALKTHROUGH: a swipe left on the week strip did not bring this week and today back"; exit 1; }
+# A swipe further forward has no week to go to: today stays today.
+$T adb shell input swipe 900 "$SY" 120 "$SY" 250
+sleep 1
+shot habits-week-no-further 1.5
+grep -qF "text=\"$TODAY_WD\"" "$OUT/$(printf '%02d' $N)-habits-week-no-further.xml" || { log "WALKTHROUGH: a swipe left past this week moved the day"; exit 1; }
+$T adb shell dumpsys gfxinfo "$PKG" > "$OUT/gfxinfo-week-swipe.txt"
+JANK=$(grep -E "Janky frames:" "$OUT/gfxinfo-week-swipe.txt" | head -1)
+log "   JANK on the week swipes (target < 5 % on a phone; an emulator draws in software): ${JANK:-unknown}"
+log "-- a missed day: tap yesterday on the strip, tick a habit for it, see pagel.uz get that date, Undo writes the inverse"
+if [ "$(TZ=Asia/Tashkent date +%u)" = "1" ]; then $T adb shell input swipe 120 "$SY" 900 "$SY" 250; sleep 1; fi
+tap "$YESTERDAY_WD" && shot habits-yesterday 1.5 || { log "WALKTHROUGH: no \"$YESTERDAY_WD\" on the strip to tap"; exit 1; }
+$T adb shell input swipe 160 460 160 260 400; sleep 1
+tap "Done: Drink water" && shot habits-yesterday-logged 1
+HY="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$YDATE\",\"n\":1}"
+for i in $(seq 1 30); do grep -qF "$HY" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$HY" "$FAKE_LOG" || { log "WALKTHROUGH: ticking yesterday never reached pagel.uz as $HY"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   yesterday's tick reached pagel.uz with its own date after ~${i} s"
+tap Undo && shot habits-yesterday-undone 1 || log "   (WARN: no Undo on the toast)"
+HU="PATCH /api/v1/tasks/t_h3 {\"done\":false,\"day\":\"$YDATE\"}"
+for i in $(seq 1 30); do grep -qF "$HU" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$HU" "$FAKE_LOG" || { log "WALKTHROUGH: the Undo of yesterday's tick never reached pagel.uz as $HU"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   the Undo wrote the inverse for that date after ~${i} s"
+tap "Back to today" && sleep 1
+log "-- a day off: the card menu, Take a day off; the card reads Finished (drawn as done), the strip joins it like a done day"
+$T adb shell input swipe 160 460 160 260 400; sleep 1
+tap "Habit menu: Read 10 pages" && shot habit-card-menu 1 || { log "WALKTHROUGH: no card menu on \"Read 10 pages\""; exit 1; }
+tap "Take a day off" && shot habit-day-off 0.6 || { log "WALKTHROUGH: the card menu has no \"Take a day off\""; exit 1; }
+sleep 2
+shot habit-day-off-settled 1
+grep -q 'Frozen\|snowflake' "$OUT/$(printf '%02d' $N)-habit-day-off-settled.xml" && { log "WALKTHROUGH: a day off is marked frozen on screen (Boss: keep it as fully done)"; exit 1; }
+log "-- the full-screen timer: open it from the card's Timer tag, swipe its colour, start and pause"
+$T adb shell input swipe 160 200 160 700 400; sleep 1
+for k in 1 2 3 4 5; do
+  onscreen "Open timer: Stretch for ten minutes" && break
+  $T adb shell input swipe 160 460 160 300 400; sleep 1
+done
+tap "Open timer: Stretch for ten minutes" && shot habit-timer-screen 1.5 || { log "WALKTHROUGH: the Stretch card has no Timer tag to open"; exit 1; }
+grep -qE 'content-desc="(Start|Resume|Pause) timer"' "$OUT/$(printf '%02d' $N)-habit-timer-screen.xml" || { log "WALKTHROUGH: the timer screen has no Start pill"; exit 1; }
+$T adb shell input swipe 900 1100 150 1100 250
+sleep 1
+shot habit-timer-colour 1
+$T adb shell input swipe 900 1100 150 1100 250
+sleep 1
+shot habit-timer-colour-2 1
+if tap "Resume timer" || tap "Start timer"; then sleep 3; shot habit-timer-running 0.5; grep -q 'content-desc="Pause timer"' "$OUT/$(printf '%02d' $N)-habit-timer-running.xml" || { log "WALKTHROUGH: the timer did not start from its Start pill"; exit 1; }; tap "Pause timer" && sleep 1; fi
+$T adb shell input keyevent 4; sleep 1
+front habits-after-timer
 log "-- Namoz (Boss 2026-10-28): Start tracking adds the five prayers as daily habits in the group namoz, from 1 November"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 tap "Start tracking" && shot namoz-started 3
