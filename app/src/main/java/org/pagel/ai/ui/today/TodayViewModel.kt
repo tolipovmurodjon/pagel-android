@@ -51,16 +51,16 @@ data class NowPick(
 /** What now's sheet, one stage at a time: the energy tap (once a day), the pick, nothing fits, the running start. */
 data class WhatNowUi(
     val stage: Stage = Stage.CLOSED,
-    /** The three answers the sheet shows chosen (remembered for the session). */
-    val where: Where = Where.LAPTOP,
-    val time: Int = 15,
-    val energy: Energy = Energy.OK,
     val pick: NowPick? = null,
     /** Picks shown so far (at most [MAX_PICKS]). */
     val shown: Int = 0,
     /** When "Start · 10 min" was tapped (ms); the clock runs from it. */
     val startedAt: Long = 0,
     val minutes: Int = START_MINUTES,
+    /** The three answers the ask sheet shows chosen (remembered for the session). */
+    val where: Where = Where.LAPTOP,
+    val time: Int = 15,
+    val energy: Energy = Energy.OK,
 ) {
     enum class Stage { CLOSED, ASK, PICK, NONE, TIMER }
 }
@@ -212,7 +212,7 @@ class TodayViewModel @Inject constructor(
     /** The What now card: the GTD sheet opens with the session's last answers chosen (Where, Time, Energy), then one pick. */
     fun openWhatNow() {
         skipped.clear()
-        _now.value = WhatNowUi(WhatNowUi.Stage.ASK, answers.first, answers.second, answers.third)
+        _now.value = WhatNowUi(WhatNowUi.Stage.ASK, where = answers.first, time = answers.second, energy = answers.third)
     }
 
     /** "Find one": the three answers, remembered for the session, then the best task by context, time, energy, priority. */
