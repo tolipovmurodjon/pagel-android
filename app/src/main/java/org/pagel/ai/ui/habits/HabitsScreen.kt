@@ -228,7 +228,8 @@ fun HabitsScreen(
     val today = runCatching { LocalDate.parse(ui.today) }.getOrNull()
     // One timed card open at a time: its Timer and Finish buttons sit under it (Boss 2026-10-31).
     var expandedId by remember { mutableStateOf<String?>(null) }
-    val intention = remember { org.pagel.ai.data.habits.NamozIntention.load(androidx.compose.ui.platform.LocalContext.current) }
+    val intentionContext = androidx.compose.ui.platform.LocalContext.current
+    val intention = remember { org.pagel.ai.data.habits.NamozIntention.load(intentionContext) }
     val strip = remember(ui.byId, ui.ticks, ui.freezes, today) { today?.let { StripContext(ui.byId.values.toList(), ui.ticks, ui.freezes, it) } }
 
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
