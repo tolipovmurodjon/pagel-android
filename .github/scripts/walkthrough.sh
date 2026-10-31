@@ -137,6 +137,8 @@ log "   pagel.uz got ONE order PATCH: $(grep -o 'PATCH /api/v1/tasks/t_now1 {"to
 A=$(r4_centre "Clean the desk"); B=$(r4_centre "Call the bank about the report")
 [ -n "$A" ] && [ -n "$B" ] && [ "${A#* }" -lt "${B#* }" ] || { log "WALKTHROUGH: after the drag Clean the desk is not above Call the bank ($A vs $B)"; exit 1; }
 r4_tap "Show 3" || { log "WALKTHROUGH: the open list has no Show 3 chevron"; exit 1; }
+# The list is taller than the screen now (the Now card + the bottom inset): back to the top for the Now card.
+sleep 1; for k in 1 2 3 4; do $T adb shell input swipe 160 260 160 520 300; done; sleep 1
 shot r4-folded 2
 grep -q 'text="Clean the desk"' "$OUT/$(printf '%02d' $N)-r4-folded.xml" || { log "WALKTHROUGH: the dragged task is not one of the 3 after folding"; exit 1; }
 grep -q 'text="Measure the drone' "$OUT/$(printf '%02d' $N)-r4-folded.xml" && { log "WALKTHROUGH: folded Today still shows a 4th task"; exit 1; }
