@@ -209,6 +209,8 @@ fun HabitsScreen(
     onOpenNamoz: () -> Unit = {},
     qaza: Set<String> = emptySet(),
     onPrayedLater: (String) -> Unit = {},
+    /** The clock the prayer rows read (tests fix it); the phone's own Tashkent time when null. */
+    prayerClock: LocalTime? = null,
     onNew: () -> Unit = {},
     onLink: (String, String) -> Unit = { _, _ -> },
     onDayOff: (String, Boolean) -> Unit = { _, _ -> },
@@ -249,7 +251,14 @@ fun HabitsScreen(
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot() }) {
         // One spacing rhythm (Boss 2026-10-29: "the spacing is different for all"): every block and every habit row sits
         // Space.paneGap apart, every row has the same height (HabitsScreenshotTest.rowsHaveOneHeightAndOneGap).
-        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.paneGap)) {
+        // Browsing another day shows the Today pill above the bar. The list ends above it (its viewport is shortened by the pill and
+        // a gap), so a card can never sit under the pill (Boss ledger 4); the bar's own clearance moves from the list to that strip.
+        val browsing = board != null && board.selected != board.today
+        val listPadding = if (browsing) PaddingValues(top = contentPadding.calculateTopPadding()) else contentPadding
+        LazyColumn(
+            Modifier.fillMaxSize().then(if (browsing) Modifier.padding(bottom = contentPadding.calculateBottomPadding() + Space.md + Space.touch + Space.sm) else Modifier),
+            state = list, contentPadding = listPadding, verticalArrangement = Arrangement.spacedBy(Space.paneGap),
+        ) {
             item(key = "head", contentType = "head") { Header(ui, board, onHistory, onNew) }
             if (ui.loading || board == null || strip == null) {
                 item(key = "loading", contentType = "note") { Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) { SkeletonRows(3, Modifier.padding(vertical = Space.sm)) } }
@@ -282,7 +291,7 @@ fun HabitsScreen(
                     }
                     for (c in prayers) key("prayer-${c.task.id}") {
                         PrayerRow(
-                            c, board.selected == today, NamozQaza.key(today.toString(), c.task.id) in qaza, intention,
+                            c, board.selected == today, NamozQaza.key(today.toString(), c.task.id) in qaza, intention, prayerClock,
                             onTick = ::tick, onUntick = onUntick, onOpenPage = onOpenNamoz, onPrayedLater = onPrayedLater,
                             onCentre = { if (current) centres[c.task.id] = it },
                         )
@@ -290,8 +299,7 @@ fun HabitsScreen(
                 }
             }
             // The glass bar must never sit on the last card: its own clearance, then the page's edge fade takes over.
-            // Browsing another day shows the Today pill above the bar: the list leaves it its own strip, so it never covers a card.
-            item(key = "end", contentType = "end") { Spacer(Modifier.height(Space.xxl + if (board != null && board.selected != board.today) Space.touch + Space.md else 0.dp)) }
+            item(key = "end", contentType = "end") { Spacer(Modifier.height(Space.xxl)) }
         }
         // Browsing another day: one pill back to today (Boss's reference "Today").
         if (board != null && board.selected != board.today) {
@@ -1089,10 +1097,10 @@ private fun NamozGroup(
  */
 @Composable
 private fun PrayerRow(
-    c: HabitCard, isToday: Boolean, prayedLater: Boolean, intention: String, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpenPage: () -> Unit,
+    c: HabitCard, isToday: Boolean, prayedLater: Boolean, intention: String, clock: LocalTime?, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpenPage: () -> Unit,
     onPrayedLater: (String) -> Unit, onCentre: (Offset) -> Unit,
 ) {
-    val nowT = LocalTime.now(ZoneId.of("Asia/Tashkent"))
+    val nowT = clock ?: LocalTime.now(ZoneId.of("Asia/Tashkent"))
     val w = c.window
     val current = c.mark != Mark.BEFORE && isToday && w != null && isNow(w, nowT) && !c.done
     val counts = c.mark != Mark.BEFORE && c.mark != Mark.FUTURE

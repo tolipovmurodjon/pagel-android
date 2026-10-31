@@ -654,9 +654,11 @@ week_whole() {
     grep -q "content-desc=.$d " "$x" || { log "WALKTHROUGH: after $1 the week strip has no $d (stuck half-way)"; exit 1; }
   done
 }
-$T adb shell input swipe 40 "$SY" 280 "$SY" 900; sleep 1; shot habits-week-slow-back 1; week_whole habits-week-slow-back
+# The Today pill (shown while another day is open) must never sit over a card or any text.
+pill_clear() { python3 .github/scripts/pill-clear.py "$OUT/$(printf '%02d' $N)-$1.xml" || { log "WALKTHROUGH: after $1 the Today pill covers text"; exit 1; }; }
+$T adb shell input swipe 40 "$SY" 280 "$SY" 900; sleep 1; shot habits-week-slow-back 1; week_whole habits-week-slow-back; pill_clear habits-week-slow-back
 $T adb shell input swipe 40 "$SY" 280 "$SY" 120; sleep 1; shot habits-week-fast-back 1; week_whole habits-week-fast-back
-$T adb shell input swipe 280 "$SY" 40 "$SY" 300; sleep 1; shot habits-week-forward-1 1; week_whole habits-week-forward-1
+$T adb shell input swipe 280 "$SY" 40 "$SY" 300; sleep 1; shot habits-week-forward-1 1; week_whole habits-week-forward-1; pill_clear habits-week-forward-1
 $T adb shell input swipe 280 "$SY" 40 "$SY" 300; sleep 1; shot habits-week-forward-2 1; week_whole habits-week-forward-2
 $T adb shell dumpsys gfxinfo "$PKG" > "$OUT/gfxinfo-week-swipe.txt"
 JANK=$(grep -E "Janky frames:" "$OUT/gfxinfo-week-swipe.txt" | head -1)

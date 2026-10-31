@@ -430,10 +430,27 @@ class HabitsScreenshotTest {
         )
         show { HabitsScreen(u, pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-3-of-5.png")
-        // Evening holds Shom and Xufton only; Bomdod sits in Morning.
+        // Evening holds Shom and Xufton only; Bomdod sits in Morning. (The row text is the same at any hour; "Prayed later" below has its own fixed clock.)
         compose.onNodeWithText("Shom").assertIsDisplayed()
         compose.onNodeWithText("Xufton").assertIsDisplayed()
         compose.onAllNodesWithText("Bomdod").assertCountEquals(0)
+    }
+
+    /** A window that ended unticked stays neutral and offers a quiet "Prayed later" (no missed, no red); the clock is fixed at 19:00 on 2 November. */
+    @Test fun aPrayerWhoseWindowEndedOffersPrayedLaterAndNothingJudges() {
+        val day = "2026-11-02"
+        val h = habits + prayers
+        val u = HabitsUi(
+            loading = false, today = day, day = habitsDay(h, emptyList(), day), board = habitBoard(h, emptyList(), emptyList(), emptyList(), LocalDate.parse(day)),
+            part = Part.EVENING, byId = h.associateBy { it.id }, ticks = emptyList(),
+        )
+        var later = ""
+        show { HabitsScreen(u, pad, prayerClock = java.time.LocalTime.of(19, 0), onPrayedLater = { later = it }) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-prayed-later.png")
+        compose.onNodeWithText("Prayed later").assertIsDisplayed()
+        compose.onAllNodesWithText("Missed", substring = true, ignoreCase = true).assertCountEquals(0)
+        compose.onNodeWithText("Prayed later").performClick()
+        assertEquals("n_SHOM", later)
     }
 
     @Test fun namozNotStartedYetOffersOneButton() {

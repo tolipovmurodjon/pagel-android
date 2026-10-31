@@ -22,6 +22,7 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -421,6 +422,29 @@ class HabitsV3ScreenshotTest {
         show(1.5f) { HabitHistory(ui(), pad, startTab = 2) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-v3-achievements-font-1.5.png")
         assertNoCutText("achievements 1.5x")
+    }
+
+    @Test fun theAchievementsAt320() {
+        show { Box(Modifier.width(320.dp)) { HabitHistory(ui(), pad, startTab = 2) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-v3-achievements-320.png")
+        assertNoCutText("achievements 320")
+    }
+
+    @Test fun theAchievementsAt320AndLargeFont() {
+        show(1.5f) { Box(Modifier.width(320.dp)) { HabitHistory(ui(), pad, startTab = 2) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-v3-achievements-320-font-1.5.png")
+        assertNoCutText("achievements 320 1.5x")
+    }
+
+    @Test fun theBadgeMomentShowsTheCardAndBothActions() {
+        val earned = badges().first { it.earned }
+        show { org.pagel.ai.ui.habits.BadgeMoment(earned) {} }
+        // The moment is a full-screen dialog: its own root.
+        compose.onNodeWithContentDescription("Share").assertExists()
+        compose.onNodeWithContentDescription("Save image").assertExists()
+        compose.onNodeWithContentDescription("Close").assertExists()
+        compose.onNodeWithText("Achieved on", substring = true).assertExists()
+        compose.onAllNodes(isRoot()).onLast().captureRoboImage("build/outputs/roborazzi/habit-badge-moment.png")
     }
 
     private fun badges() = habitBadges(habits, ticks, freezes, LocalDate.parse(today))
