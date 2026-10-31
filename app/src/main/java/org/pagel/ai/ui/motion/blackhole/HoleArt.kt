@@ -56,7 +56,7 @@ internal fun DrawScope.drawCore(s: HoleShape) {
  * The shade's strength: soft on the light page (a smudge at 0.24, checker 2026-10-30), and it leaves with the ring, so
  * the closed capsule does not sit in a grey cloud.
  */
-internal fun shadeOf(s: HoleShape): Float = s.alpha * (0.3f + 0.7f * s.ring)
+internal fun shadeOf(s: HoleShape): Float = s.alpha * (0.08f + 0.92f * s.ring)
 
 /**
  * API 26-32 (and when AGSL fails to compile): a soft radial shade and two sweep-gradient arcs turning the opposite
@@ -116,7 +116,7 @@ internal object AgslRing {
             float f1 = fibre(fract(a + spin + twist), 48.0);
             float f2 = fibre(fract(a - spin * 1.4 + twist * 1.7), 96.0);
             float fib = 0.55 * f1 + 0.45 * f2;
-            float bx = (x - 1.08) / 0.17;
+            float bx = (x - 1.07) / 0.12;
             float hx = (x - 1.0) / 0.75;
             float band = exp(-bx * bx);
             float halo = exp(-hx * hx) * 0.42;
@@ -124,7 +124,7 @@ internal object AgslRing {
             half3 gold = half3(0.949, 0.710, 0.290);
             half3 mint = half3(0.400, 0.867, 0.659);
             half3 hot = half3(1.0, 0.94, 0.78);
-            half3 col = mix(hot, gold, half(smoothstep(1.0, 1.25, x)));
+            half3 col = mix(hot, gold, half(smoothstep(1.05, 1.5, x)));
             col = mix(col, mint, half(smoothstep(1.4, 2.2, x)));
             float fall = 1.0 - smoothstep(0.9, 3.0, x);
             float s = shade * 0.12 * fall * fall;
