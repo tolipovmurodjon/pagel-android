@@ -289,11 +289,14 @@ internal fun NextTimedRow(time: String, title: String, modifier: Modifier = Modi
     ) {
         Icon(TabIcons.Clock, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(Space.md))
-        Text("Next", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
-        Spacer(Modifier.width(Space.sm))
-        Text(time, style = Glass.NumberText, color = Glass.Ink, maxLines = 1)
-        Spacer(Modifier.width(Space.sm))
-        Text(title, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Next", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
+                Spacer(Modifier.width(Space.sm))
+                Text(time, style = Glass.NumberText, color = Glass.Ink, maxLines = 1)
+            }
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 4)
+        }
     }
 }
 
