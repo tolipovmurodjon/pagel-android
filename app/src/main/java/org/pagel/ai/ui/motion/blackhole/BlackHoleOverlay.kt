@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import android.view.PixelCopy
 import android.view.HapticFeedbackConstants
 import android.view.View
@@ -50,7 +51,7 @@ import androidx.core.view.WindowInsetsCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import timber.log.Timber
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -66,6 +67,8 @@ class BlackHoleRun(
     val pieces: List<PieceRect>,
     val timing: BlackHoleTiming,
 )
+
+private const val COPY_WAIT_MS = 300L
 
 /** The system's animator duration scale: 0 when Boss turned animations off (reduced motion). */
 fun animatorScale(context: Context): Float =
@@ -208,7 +211,8 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
                 copying = true
                 withFrameNanos { it }
                 withFrameNanos { it }
-                backdrop = copyWindowHalf(view)
+                // A copy that never answers must not hold the effect: 300 ms, then the shade alone.
+                backdrop = withTimeoutOrNull(COPY_WAIT_MS) { copyWindowHalf(view) }
                 copying = false
             }
             val made = runCatching {
@@ -216,7 +220,8 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
             }.getOrNull()
             if (made != null) {
                 scene = made
-                Timber.i("BlackHole run %d: radius %d px, lens %s", run.id, geometry.radius.toInt(), if (backdrop != null) "on" else "off")
+                // Log, not Timber: the app plants no tree, and the smoke step reads this line.
+                Log.i("BlackHole", "BlackHole run ${run.id}: radius ${geometry.radius.toInt()} px, lens ${if (backdrop != null) "on" else "off"}")
                 iconsOnDark = true
                 view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                 val watch = BudgetWatch()
