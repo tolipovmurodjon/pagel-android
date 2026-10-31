@@ -715,6 +715,7 @@ else
   log "   (WARN: no Prayer: Asr row after the tick)"
 fi
 front habits-after-asr
+$T adb shell input swipe 160 200 160 600 400; sleep 1
 tap History && shot habits-history 2
 $T adb shell input keyevent 4; sleep 1
 tap Morning && sleep 1
