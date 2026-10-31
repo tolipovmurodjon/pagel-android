@@ -297,11 +297,11 @@ class HabitPanelScreenshotTest {
         var colour = ""
         show { Column { HabitLookContent(habitPanel(habits[0]).state, HabitPanelActions(onIcon = { icon = it }, onColour = { colour = it })) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-look-sheet.png")
-        // The old saved lotus/teal look shows as the person icon in teal.
-        compose.onNodeWithContentDescription("Icon person").assertIsSelected()
+        // The old saved lotus/teal look shows as the flower icon in teal.
+        compose.onNodeWithContentDescription("Icon flower-2").assertIsSelected()
         compose.onNodeWithContentDescription("Colour teal").assertIsSelected()
-        compose.onNodeWithContentDescription("Icon water").performClick()
-        assertEquals("water", icon)
+        compose.onNodeWithContentDescription("Icon glass-water").performClick()
+        assertEquals("glass-water", icon)
         compose.onNodeWithContentDescription("Colour amber").performClick()
         assertEquals("amber", colour)
         compose.onAllNodesWithContentDescription("Colour red").assertCountEquals(0)
