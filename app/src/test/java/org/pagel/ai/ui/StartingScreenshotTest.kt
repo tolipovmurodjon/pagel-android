@@ -17,6 +17,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -198,6 +200,44 @@ class StartingScreenshotTest {
     }
 
     /** Boss 2026-10-31: the skeleton stays, with one small live line and a Stop; the chilies are drawn, never emoji. */
+    private fun shot320(name: String, scale: Float) =
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/v2-$name-320x640" + (if (scale > 1f) "-font-1.5" else "") + ".png")
+
+    /** The glass tab bar of the shell, 64 dp + its 16 dp gap, as a stand-in the list must end above. */
+    private val barDp = 80.dp
+
+    /** 0.3.42 checker: at 320x640 Today folded shows the Now card, two rows, All today and What now, at both font sizes. */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun todayFoldedWithWhatNowAt320x640() {
+        for (s in listOf(1f, 1.5f)) {
+            if (s == 1f) show(1f) { Today(folded) } else { scale = s; compose.waitForIdle() }
+            compose.onNodeWithContentDescription("All today · 6").assertExists()
+            compose.onNodeWithContentDescription("What now?").assertExists()
+            shot320("today-folded", s)
+        }
+    }
+
+    /** At the end of the scroll the What now card sits fully above the glass tab bar (not under it), at both font sizes. */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun todayScrolledToTheBottomShowsWhatNowAboveTheBar() {
+        for (s in listOf(1f, 1.5f)) {
+            if (s == 1f) show(1f) { Today(folded) } else { scale = s; compose.waitForIdle() }
+            compose.onNodeWithContentDescription("What now?").assertExists()
+            repeat(3) { compose.onRoot().performTouchInput { swipeUp() } }
+            compose.waitForIdle()
+            val card = compose.onNodeWithContentDescription("What now?").getBoundsInRoot()
+            val root = compose.onRoot().getBoundsInRoot()
+            assertTrue("${s}x: What now's bottom ${card.bottom} must be above the bar's top ${root.bottom - barDp}", card.bottom <= root.bottom - barDp)
+            shot320("today-bottom", s)
+        }
+    }
+
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun makeItTinyWritingAt320x640() {
+        for (s in listOf(1f, 1.5f)) {
+            if (s == 1f) show(1f) { Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Writing), spice = 2, liveStep = 2) } } else { scale = s; compose.waitForIdle() }
+            compose.onNodeWithContentDescription("Cutting it into bites…").assertIsDisplayed()
+            shot320("tiny-writing", s)
+        }
+    }
+
     @Test fun makeItTinyWhileItWritesShowsTheLiveLineAndStop() {
         show { Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Writing), spice = 2, liveStep = 1) } }
         compose.onNodeWithContentDescription("Finding the first 30 seconds…").assertIsDisplayed()
