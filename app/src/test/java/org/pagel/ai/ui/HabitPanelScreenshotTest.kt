@@ -302,7 +302,7 @@ class HabitPanelScreenshotTest {
         compose.onNodeWithContentDescription("Colour teal").assertIsSelected()
         compose.onNodeWithContentDescription("Icon glass-water").performClick()
         assertEquals("glass-water", icon)
-        compose.onNodeWithContentDescription("Colour amber").performClick()
+        compose.onNodeWithContentDescription("Colour amber").performScrollTo().performClick()
         assertEquals("amber", colour)
         compose.onAllNodesWithContentDescription("Colour red").assertCountEquals(0)
         judge("look sheet")
