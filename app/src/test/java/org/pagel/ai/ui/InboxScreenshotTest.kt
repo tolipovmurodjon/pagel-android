@@ -107,7 +107,7 @@ class InboxScreenshotTest {
     @Test fun cardWithPictureAt360() {
         show { screen(ui(listOf(ig, meme))) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-card-360.png")
-        compose.onNodeWithContentDescription("AI pick: Learn").assertIsDisplayed()
+        compose.onNodeWithContentDescription("AI pick: Remember").assertIsDisplayed()
         compose.onNodeWithContentDescription("The post's picture").assertIsDisplayed()
         compose.onNodeWithContentDescription("7 of 20 sorted today").assertIsDisplayed()
         oneWholeLine("Inbox")
@@ -124,8 +124,8 @@ class InboxScreenshotTest {
         oneWholeLine("Drop")
         oneWholeLine("Later")
         // The AI's pick stays on the 780 dp screen at 1.5x (checker 2026-10-28 #1).
-        compose.onNodeWithContentDescription("AI pick: Learn").assertIsDisplayed()
-        val pick = compose.onNodeWithContentDescription("AI pick: Learn").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithContentDescription("AI pick: Remember").assertIsDisplayed()
+        val pick = compose.onNodeWithContentDescription("AI pick: Remember").fetchSemanticsNode().boundsInRoot
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
         org.junit.Assert.assertTrue("the AI's pick ends at ${pick.bottom} px of ${root.bottom}: under the 96 dp the tab bar takes", pick.bottom <= root.bottom - 96 * 3f)
     }
@@ -175,7 +175,7 @@ class InboxScreenshotTest {
             val b = compose.onNodeWithText(n, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             org.junit.Assert.assertTrue("\"$n\" ends at ${b.bottom} px, the bar starts at $barTop px", b.bottom <= barTop - 12 * px + 1f)
         }
-        val pick = compose.onNodeWithContentDescription("AI pick: Learn").fetchSemanticsNode().boundsInRoot
+        val pick = compose.onNodeWithContentDescription("AI pick: Remember").fetchSemanticsNode().boundsInRoot
         org.junit.Assert.assertTrue("the AI's pick ends at ${pick.bottom} px, the bar starts at $barTop px", pick.bottom <= barTop - 12 * px + 1f)
     }
 
@@ -185,7 +185,7 @@ class InboxScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-360x800.png")
         dockClearsTheBar(listOf("Action", "Note", "Do now", "Later", "Drop"))
         // The pick is one row tall (64 dp), not a slab.
-        val pick = compose.onNodeWithContentDescription("AI pick: Learn").fetchSemanticsNode().boundsInRoot
+        val pick = compose.onNodeWithContentDescription("AI pick: Remember").fetchSemanticsNode().boundsInRoot
         val px = compose.onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
         assertEquals(64f, pick.height / px, 1f)
         // The caption leaves out the claim it starts with.
