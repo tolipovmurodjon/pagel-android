@@ -291,7 +291,9 @@ fun HabitHistory(ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit
             GlassIconButton(TabIcons.ArrowLeft, "Back", size = Space.touch, plain = true, onClick = onBack)
             Text("History", style = MaterialTheme.typography.headlineMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs).semantics { heading() })
         }
-        HistoryTabs(listOf("Calendar", "All habits", "Achievements"), tab) { tab = it }
+        // At a large font three long names do not fit a 320 dp phone: shorter words and a smaller face, never a clipped tab.
+        val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+        HistoryTabs(if (big) listOf("Calendar", "Habits", "Badges") else listOf("Calendar", "All habits", "Achievements"), tab, big) { tab = it }
         if (tab != 2) StatCards(statsOf(habits, ui.ticks, ui.freezes, today))
         when (tab) {
             0 -> {
@@ -339,9 +341,9 @@ fun HabitHistory(ui: HabitsUi, contentPadding: PaddingValues, onBack: () -> Unit
 
 /** Plain words with a mint underline (Boss's reference): they scroll sideways when a large font needs the room. */
 @Composable
-private fun HistoryTabs(names: List<String>, at: Int, onPick: (Int) -> Unit) {
+private fun HistoryTabs(names: List<String>, at: Int, big: Boolean, onPick: (Int) -> Unit) {
     val haptics = LocalHapticFeedback.current
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.xl)) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(if (big) Space.md else Space.xl)) {
         for ((i, name) in names.withIndex()) {
             val on = i == at
             val press = remember { MutableInteractionSource() }
@@ -351,7 +353,7 @@ private fun HistoryTabs(names: List<String>, at: Int, onPick: (Int) -> Unit) {
                     .semantics { contentDescription = name },
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
             ) {
-                Text(name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium), color = if (on) Glass.Ink else Glass.Muted, maxLines = 1, softWrap = false)
+                Text(name, style = (if (big) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium).copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium), color = if (on) Glass.Ink else Glass.Muted, maxLines = 1, softWrap = false)
                 Spacer(Modifier.height(Space.xs))
                 Box(Modifier.size(width = 22.dp, height = 3.dp).background(if (on) Glass.Primary else Color.Transparent, CircleShape))
             }

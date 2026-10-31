@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -431,9 +432,15 @@ class HabitsV3ScreenshotTest {
     }
 
     @Test fun theAchievementsAt320AndLargeFont() {
-        show(1.5f) { Box(Modifier.width(320.dp)) { HabitHistory(ui(), pad, startTab = 2) } }
+        show(1.5f) { Box(Modifier.width(320.dp).testTag("phone-320")) { HabitHistory(ui(), pad, startTab = 2) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-v3-achievements-320-font-1.5.png")
         assertNoCutText("achievements 320 1.5x")
+        // The tab row: every tab sits whole inside the 320 dp phone (it scrolls on a phone, but a label must never start cut off).
+        val phone = compose.onNodeWithTag("phone-320").fetchSemanticsNode().boundsInRoot
+        for (name in listOf("Calendar", "Habits", "Badges")) {
+            val tab = compose.onNodeWithContentDescription(name).fetchSemanticsNode().boundsInRoot
+            assertTrue("tab $name ends at ${tab.right} px, the phone at ${phone.right} px", tab.right <= phone.right + 1f)
+        }
     }
 
     @Test fun theBadgeMomentShowsTheCardAndBothActions() {
