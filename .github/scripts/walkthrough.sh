@@ -960,6 +960,9 @@ MON_SPOKEN=$(LC_ALL=C date -d "$MON" '+%A %-d %B'); SUN_SPOKEN=$(LC_ALL=C date -
 NEXT_THU=$(date -d "$MON +10 days" +%F); NEXT_THU_SPOKEN=$(LC_ALL=C date -d "$NEXT_THU" '+%A %-d %B')
 NEXT_SUN=$(date -d "$MON +13 days" +%F); NEXT_MON_SPOKEN=$(LC_ALL=C date -d "$MON +7 days" '+%A %-d %B')
 pick_view Week 3 || { log "WALKTHROUGH: no Week in the view menu"; exit 1; }
+# On a Sunday (Tashkent) the day tapped earlier ("tomorrow") is next week's Monday, and the Week opens there: back to today first.
+shot cal4-week-open 1
+grep -q 'content-desc="Back to today"' "$(cal_xml cal4-week-open)" && { tap "Back to today"; sleep 1; }
 shot cal4-week 2
 grep -qF "content-desc=\"$MON_SPOKEN\"" "$(cal_xml cal4-week)" && grep -qF "content-desc=\"$SUN_SPOKEN\"" "$(cal_xml cal4-week)" \
   || { log "WALKTHROUGH: the Week is not Monday to Sunday ($MON_SPOKEN to $SUN_SPOKEN)"; exit 1; }
