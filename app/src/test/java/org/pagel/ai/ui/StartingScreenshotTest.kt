@@ -144,10 +144,15 @@ class StartingScreenshotTest {
 
     private val pick = NowPick("n1", "Clean the desk", "UzCosmos", "Clear one corner of it, just one 🧽", "uzcosmos", null, 2)
 
-    @Test fun whatNowAsksTheEnergyOnce() = both({ Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.ENERGY)) } }) { s ->
+    @Test fun whatNowAsksWhereTimeAndEnergy() = both({ Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.ASK)) } }) { s ->
+        compose.onNodeWithContentDescription("Where: Phone only").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Where: Resting").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Time: 5 min").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Time: 60+ min").assertIsDisplayed()
         compose.onNodeWithContentDescription("Energy: Low").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Find one").assertIsDisplayed()
         assertNoCutText(s)
-        shot("what-now-energy", s)
+        shot("what-now-gtd-ask", s)
     }
 
     @Test fun whatNowShowsOnePickWithWhyAndTheFirstStep() = both({ Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.PICK, pick, shown = 1)) } }) { s ->

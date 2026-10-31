@@ -126,7 +126,7 @@ fun TodayRoute(
     // What now's "✨ Make it tiny" (a task with no steps): the sheet closes, the tiny sheet opens; its Start opens Focus.
     var tinyFor by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val focus = org.pagel.ai.ui.task.LocalFocusOpener.current
-    WhatNowSheet(now, onEnergy = vm::energy, onStart = vm::startNow, onNotThis = vm::notThis, onFinish = { vm.finishNow() }, onUndo = vm::undo, onClose = vm::closeWhatNow,
+    WhatNowSheet(now, onAsk = vm::ask, onStart = vm::startNow, onNotThis = vm::notThis, onFinish = { vm.finishNow() }, onUndo = vm::undo, onClose = vm::closeWhatNow,
         onTiny = { id -> vm.closeWhatNow(); tinyFor = id })
     tinyFor?.let { id -> org.pagel.ai.ui.task.TinySheet(id, onClose = { tinyFor = null }, onFocus = focus) }
 }
@@ -289,23 +289,6 @@ internal fun WhatNowButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
             Text("One thing for right now", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.92f), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Icon(TabIcons.ChevronRight, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-    }
-}
-
-/** The Now card's one pill: Open (filled mint); 48 dp to touch. */
-@Composable
-private fun NowPill(label: String, onClick: () -> Unit) {
-    val press = remember { MutableInteractionSource() }
-    Box(
-        Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label, style = MaterialTheme.typography.labelLarge, color = Color.White, maxLines = 1,
-            modifier = Modifier.background(Glass.Primary, CircleShape)
-                .padding(horizontal = Space.lg, vertical = Space.sm),
-        )
     }
 }
 
@@ -573,7 +556,6 @@ private fun TaskRow(
             if (hero) Text("Now", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
             Text(row.title, style = if (hero) MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp, lineHeight = 25.sp) else MaterialTheme.typography.bodyLarge, color = titleColor, maxLines = if (hero) 5 else 3, overflow = TextOverflow.Ellipsis)
             Meta(row, today)
-            if (hero) Row(Modifier.padding(top = Space.sm)) { NowPill("Open", onClick = onOpen) }
         }
     }
 }

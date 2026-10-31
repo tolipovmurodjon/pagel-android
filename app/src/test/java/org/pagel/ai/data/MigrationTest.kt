@@ -406,4 +406,34 @@ class MigrationTest {
             db.close()
         }
     }
+
+    /** v13 → v14 (Today GTD): a task keeps its fields and gets no context (inferred until Boss or pagel.uz sets one). */
+    @Test fun thirteenToFourteenAddsAnEmptyContext() = runBlocking {
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val name = "migrate-${System.nanoTime()}.db"
+        val file = ctx.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val schema = Json.parseToJsonElement(File("schemas/org.pagel.ai.data.db.PagelDatabase/13.json").readText()).jsonObject["database"]!!.jsonObject
+        assertEquals(13, schema["version"]!!.jsonPrimitive.content.toInt())
+        SQLiteDatabase.openOrCreateDatabase(file, null).use { old ->
+            for (e in schema["entities"]!!.jsonArray) {
+                val t = e.jsonObject
+                val table = t["tableName"]!!.jsonPrimitive.content
+                old.execSQL(t["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table))
+                t["indices"]?.jsonArray?.forEach { i -> old.execSQL(i.jsonObject["createSql"]!!.jsonPrimitive.content.replace("\${TABLE_NAME}", table)) }
+            }
+            schema["setupQueries"]!!.jsonArray.forEach { old.execSQL(it.jsonPrimitive.content) }
+            old.execSQL("INSERT INTO tasks (id, project, phase, sort, text, title, status, priority, star, due, every, doneWhen, doneAt, updatedAt, serverVersion, syncStatus, lastModified) " +
+                "VALUES ('t_1', 'me', 'Now', 1.0, 'Call the bank', NULL, 'open', 2, 1, NULL, NULL, NULL, NULL, '2026-10-31T05:00:00Z', 1, 'synced', 0)")
+            old.version = 13
+        }
+        val db = Room.databaseBuilder(ctx, PagelDatabase::class.java, name).allowMainThreadQueries().build()
+        try {
+            val t = db.dao().taskOnce("t_1")!!
+            assertEquals("Call the bank", t.text)
+            assertNull(t.context)
+            assertEquals(PagelDatabase.VERSION, db.openHelper.readableDatabase.version)
+        } finally {
+            db.close()
+        }
+    }
 }

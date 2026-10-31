@@ -171,7 +171,11 @@ log "-- What now: energy once, one pick (Clean the desk is first in Boss's order
 for k in 1 2; do $T adb shell input swipe 160 520 160 200 300; done; sleep 1
 r4_tap 'What now\?' || { log "WALKTHROUGH: no What now button on Today"; exit 1; }
 shot r4-energy 2
+# GTD's questions (Where, Time, Energy): at home, 30 minutes, OK energy, the first fitting task in Boss's order is Clean the desk.
+tap "Where: Home" || { log "WALKTHROUGH: What now did not ask where he is"; exit 1; }
+tap "Time: 30 min" || { log "WALKTHROUGH: What now did not ask the time"; exit 1; }
 tap "Energy: OK" || { log "WALKTHROUGH: What now did not ask for the energy"; exit 1; }
+tap "Find one" || { log "WALKTHROUGH: What now has no Find one"; exit 1; }
 shot r4-what-now 2
 grep -q 'content-desc="Start 10 minutes: Clean the desk"' "$OUT/$(printf '%02d' $N)-r4-what-now.xml" || { log "WALKTHROUGH: What now did not pick Clean the desk with Start · 10 min"; exit 1; }
 # Clean the desk has no steps: the first step is the plain 30-second start, and the card offers Make it tiny (checker round 2 #1).
@@ -184,6 +188,27 @@ tap "Done: Clean the desk" && shot r4-what-now-done 0.5
 r4_wait 'PATCH /api/v1/tasks/t_now1 {"done":true}' 30 || { log "WALKTHROUGH: What now's tick never reached pagel.uz"; grep t_now1 "$FAKE_LOG" | tail -3 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   What now: picked, started, ticked; pagel.uz has t_now1 done"
 shot r4-after-what-now 2
+
+log "-- GTD What now: Phone only + 15 min picks the call; Make it tiny from it, sheet closed while it writes -> PATCH {micro} + a toast"
+MICRO0=$(grep -cE 'PATCH /api/v1/tasks/[A-Za-z0-9_]+ \{"micro":\["Stand up' "$FAKE_LOG")
+for k in 1 2; do $T adb shell input swipe 160 520 160 200 300; done; sleep 1
+r4_tap 'What now\?' || { log "WALKTHROUGH: no What now card for the GTD check"; exit 1; }
+sleep 1
+tap "Where: Phone only" || { log "WALKTHROUGH: no Phone only"; exit 1; }
+tap "Time: 15 min" || { log "WALKTHROUGH: no 15 min"; exit 1; }
+tap "Find one" || { log "WALKTHROUGH: no Find one the second time"; exit 1; }
+shot r4-gtd-pick 2
+grep -q 'Call the bank about the report' "$OUT/$(printf '%02d' $N)-r4-gtd-pick.xml" || { log "WALKTHROUGH: Phone only + 15 min did not pick the call"; exit 1; }
+tap "Make it tiny" || { log "WALKTHROUGH: the phone pick has no Make it tiny"; exit 1; }
+sleep 1
+tap "Write tiny steps" || { log "WALKTHROUGH: no Write tiny steps on the phone pick"; exit 1; }
+sleep 1
+$T adb shell input keyevent 4
+r4_wait_micro() { for i in $(seq 1 40); do [ "$(grep -cE 'PATCH /api/v1/tasks/[A-Za-z0-9_]+ \{"micro":\["Stand up' "$FAKE_LOG")" -gt "$MICRO0" ] && return 0; sleep 1; done; return 1; }
+r4_wait_micro || { log "WALKTHROUGH: closing the sheet while it wrote lost the steps (no PATCH {micro})"; exit 1; }
+shot r4-tiny-toast 1.5
+grep -q 'Tiny steps ready' "$OUT/$(printf '%02d' $N)-r4-tiny-toast.xml" || { log "WALKTHROUGH: no 'Tiny steps ready' toast after the sheet was closed"; exit 1; }
+log "   closed while it wrote: pagel.uz got PATCH {micro} and the toast said Tiny steps ready"
 
 log "-- Make it tiny: open Write the release note, spice 2, 4 funny steps from pagel.uz, Start -> Focus 1 of 4 -> tick all -> done"
 $T adb shell input swipe 160 460 160 260 300; sleep 1

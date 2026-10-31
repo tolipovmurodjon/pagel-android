@@ -88,15 +88,36 @@ private val Divider = Glass.Ink.copy(alpha = 0.07f)
 
 /** "✨ Make it tiny" (or "Tiny steps · 4" once written) and "I'm stuck": the starting tools, in the task panel. */
 @Composable
-internal fun StartRows(micro: Int, onTiny: () -> Unit, onStuck: () -> Unit) {
+internal fun StartRows(micro: Int, onTiny: () -> Unit, onStuck: () -> Unit, taskId: String = "") {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Column(Modifier.padding(vertical = Space.xs)) {
             ToolRow(TabIcons.Sparkles, if (micro > 0) "Tiny steps · $micro" else "Make it tiny", if (micro > 0) "Focus" else "Funny small steps", onTiny)
             HorizontalDivider(Modifier.padding(start = Space.xxl + Space.xxl), color = Divider,
                 thickness = 1.dp)
             ToolRow(TabIcons.CircleHelp, "I'm stuck", "4 quick fixes", onStuck)
+            if (taskId.isNotEmpty()) {
+                HorizontalDivider(Modifier.padding(start = Space.xxl + Space.xxl), color = Divider, thickness = 1.dp)
+                WhereRow(taskId)
+            }
         }
     }
+}
+
+/** The places a task can need, in the order one tap walks them; after "Anywhere" it goes back to inferred. */
+private val WHERE_CYCLE = listOf("phone" to "Phone", "laptop" to "Laptop", "home" to "Home", "out" to "Out", "any" to "Anywhere")
+
+/** "Where": the task's context in one quiet row; a tap sets the next place (the inferred one is shown until then). */
+@Composable
+private fun WhereRow(taskId: String) {
+    val vm: StartViewModel = hiltViewModel(key = "start-$taskId")
+    LaunchedEffect(taskId) { vm.bind(taskId) }
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val inferred = org.pagel.ai.ui.today.inferContext(ui.title, ui.project)
+    val set = ui.context
+    val now = set ?: inferred
+    val label = WHERE_CYCLE.firstOrNull { it.first == now }?.second ?: "Anywhere"
+    val next = when (val i = WHERE_CYCLE.indexOfFirst { it.first == set }) { -1 -> WHERE_CYCLE[0].first; WHERE_CYCLE.lastIndex -> null; else -> WHERE_CYCLE[i + 1].first }
+    ToolRow(TabIcons.MapPin, "Where: $label", if (set == null) "Guessed from the words. Tap to set it" else "Tap for the next place", { vm.setContext(next) })
 }
 
 @Composable

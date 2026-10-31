@@ -242,7 +242,7 @@ fun TaskPanelContent(
         Props(ui, today, a, onPick = { picker = it })
         // The starting tools sit under the props: on a 640 dp screen Priority stays above the fold (checker round 2 #6).
         Spacer(Modifier.height(Space.md))
-        StartRows(ui.microCount, a.onTiny, a.onStuck)
+        StartRows(ui.microCount, a.onTiny, a.onStuck, ui.id)
         // The note only when it says more than the title (Boss 2026-10-28: the pane repeated the title word for word).
         if (ui.text.trim() != ui.title.trim()) {
             Spacer(Modifier.height(12.dp))

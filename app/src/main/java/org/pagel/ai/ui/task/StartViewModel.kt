@@ -49,6 +49,8 @@ data class StartUi(
     val micro: List<String> = emptyList(),
     val doneWhen: String = "",
     val tiny: Tiny = Tiny.Idle,
+    /** The context Boss set (null = inferred from the words and the project). */
+    val context: String? = null,
 )
 
 /** The four plain reasons a task is stuck (core round 4), each a fix in one tap; the event carries the word only. */
@@ -91,7 +93,7 @@ class StartViewModel @Inject constructor(
                 StartUi(
                     loading = false, id = t.id, title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text), project = t.project,
                     projectLabel = shortName(t.project, p?.title ?: t.project), projectColor = p?.color, open = t.status == "open",
-                    micro = microOf(t.micro), doneWhen = t.doneWhen.orEmpty(), tiny = proposal,
+                    micro = microOf(t.micro), doneWhen = t.doneWhen.orEmpty(), tiny = proposal, context = t.context,
                 )
             }
         }
@@ -145,6 +147,9 @@ class StartViewModel @Inject constructor(
             then()
         }
     }
+
+    /** The panel's Where row: one tap sets the context (null = back to inferred); Room first, PATCH {context} behind. */
+    fun setContext(context: String?) { val taskId = id.value ?: return; viewModelScope.launch { tasks.context(taskId, context) } }
 
     fun clearProposal() { tiny.value = Tiny.Idle }
 

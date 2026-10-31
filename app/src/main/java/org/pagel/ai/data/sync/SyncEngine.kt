@@ -147,7 +147,7 @@ fun org.pagel.ai.data.api.SyncTaskDto.toEntity(now: Long) = TaskEntity(
     status = status, priority = priority, star = star, due = due, every = every,
     doneWhen = doneWhen, doneAt = doneAt, updatedAt = updatedAt, serverVersion = version, lastModified = now,
     phaseSort = phaseSort, phaseNow = phaseNow, times = times.coerceIn(1, 12), habitGroup = group, milestone = milestone,
-    micro = microJson(micro),
+    micro = microJson(micro), context = context,
 )
 
 fun org.pagel.ai.data.api.SyncTaskDto.stepEntities() = steps.mapIndexed { i, s -> StepEntity(id, i, s.text, s.title, s.done) }

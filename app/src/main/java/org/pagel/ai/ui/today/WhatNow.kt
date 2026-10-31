@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,7 +64,7 @@ import org.pagel.ai.ui.glass.pressScale
 /** What now's sheet: shown while its stage is not CLOSED. The tick plays the finish moment, then the sheet closes. */
 @Composable
 fun WhatNowSheet(
-    ui: WhatNowUi, onEnergy: (Energy) -> Unit, onStart: () -> Unit, onNotThis: () -> Unit,
+    ui: WhatNowUi, onAsk: (Where, Int, Energy) -> Unit, onStart: () -> Unit, onNotThis: () -> Unit,
     onFinish: () -> String?, onUndo: (String) -> Unit, onClose: () -> Unit, onTiny: (String) -> Unit = {},
 ) {
     if (ui.stage == WhatNowUi.Stage.CLOSED) return
@@ -73,7 +74,7 @@ fun WhatNowSheet(
     val toasts = LocalToasts.current
     var finishing by remember { mutableStateOf(false) }
     GlassSheet(onClose) {
-        WhatNowContent(ui, finishing = finishing, onEnergy = onEnergy, onStart = onStart, onNotThis = onNotThis, onClose = onClose,
+        WhatNowContent(ui, finishing = finishing, onAsk = onAsk, onStart = onStart, onNotThis = onNotThis, onClose = onClose,
             onTiny = { ui.pick?.id?.let(onTiny) }, onFinish = {
             // The finish moment: Confirm haptic, the ding, the ring pops and draws its tick; then the sheet folds away.
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -94,12 +95,12 @@ fun WhatNowSheet(
 @Composable
 fun WhatNowContent(
     ui: WhatNowUi, finishing: Boolean = false, clock: () -> Long = System::currentTimeMillis,
-    onEnergy: (Energy) -> Unit = {}, onStart: () -> Unit = {}, onNotThis: () -> Unit = {}, onFinish: () -> Unit = {}, onClose: () -> Unit = {},
+    onAsk: (Where, Int, Energy) -> Unit = { _, _, _ -> }, onStart: () -> Unit = {}, onNotThis: () -> Unit = {}, onFinish: () -> Unit = {}, onClose: () -> Unit = {},
     onTiny: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth().padding(start = Space.gutter, end = Space.gutter, bottom = SheetBottom)) {
         when (ui.stage) {
-            WhatNowUi.Stage.ENERGY -> EnergyAsk(onEnergy)
+            WhatNowUi.Stage.ASK -> GtdAsk(ui.where, ui.time, ui.energy, onAsk)
             WhatNowUi.Stage.PICK -> ui.pick?.let { PickCard(it, ui.shown, onStart, onNotThis, onTiny) }
             WhatNowUi.Stage.TIMER -> ui.pick?.let { RunningStart(it, ui.startedAt, ui.minutes, finishing, clock, onFinish) }
             WhatNowUi.Stage.NONE -> NothingFits(onClose)
@@ -114,27 +115,48 @@ private fun SheetTitle(text: String, sub: String? = null) {
     if (sub != null) Text(sub, style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, modifier = Modifier.padding(top = Space.xs))
 }
 
-/** 🔋 low / ok / high, asked once a day: the pick follows it. */
+/**
+ * GTD's four questions in its own order: WHERE you are (what tools you have), TIME you have, ENERGY you have; priority is
+ * Today's order. Three one-tap rows, the session's last answers chosen, one pill to find the task.
+ */
 @Composable
-private fun EnergyAsk(onEnergy: (Energy) -> Unit) {
-    val haptics = LocalHapticFeedback.current
-    SheetTitle("How's your energy?", "Once a day. It picks the right size of task.")
+private fun GtdAsk(where0: Where, time0: Int, energy0: Energy, onAsk: (Where, Int, Energy) -> Unit) {
+    var where by remember { mutableStateOf(where0) }
+    var time by remember { mutableStateOf(time0) }
+    var energy by remember { mutableStateOf(energy0) }
+    SheetTitle("What now?", "Where are you, how long, how much energy?")
+    Spacer(Modifier.height(Space.md))
+    AskRow("Where", Where.entries.map { it.label }, Where.entries.indexOf(where)) { where = Where.entries[it] }
+    Spacer(Modifier.height(Space.md))
+    AskRow("Time", TIME_CHOICES.map { if (it >= 60) "60+ min" else "$it min" }, TIME_CHOICES.indexOf(time).coerceAtLeast(0)) { time = TIME_CHOICES[it] }
+    Spacer(Modifier.height(Space.md))
+    AskRow("Energy", Energy.entries.map { it.label }, Energy.entries.indexOf(energy)) { energy = Energy.entries[it] }
     Spacer(Modifier.height(Space.lg))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-        for (e in Energy.entries) {
+    PrimaryPill("Find one", "Find one", { onAsk(where, time, energy) })
+}
+
+/** One question: a label and its answers as capsules that wrap, the chosen one filled mint; each 48 dp to touch. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun AskRow(label: String, options: List<String>, chosen: Int, onPick: (Int) -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    Text(label, style = MaterialTheme.typography.labelLarge, color = Glass.Muted)
+    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+        options.forEachIndexed { i, text ->
+            val on = i == chosen
             val press = remember { MutableInteractionSource() }
-            Column(
-                Modifier.weight(1f).heightIn(min = 88.dp).pressScale(press)
-                    .background(Color.White.copy(alpha = 0.78f), RoundedCornerShape(20.dp))
-                    .border(1.dp, Glass.Aurora1.copy(alpha = 0.55f), RoundedCornerShape(20.dp))
-                    .clickable(press, indication = null, role = Role.Button) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onEnergy(e) }
-                    .semantics(mergeDescendants = true) { contentDescription = "Energy: ${e.label}" }
-                    .padding(vertical = Space.md),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+            Box(
+                Modifier.heightIn(min = Space.touch).pressScale(press)
+                    .clickable(press, indication = null, role = Role.RadioButton) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onPick(i) }
+                    .semantics(mergeDescendants = true) { contentDescription = "$label: $text"; selected = on },
+                contentAlignment = Alignment.Center,
             ) {
-                Text(when (e) { Energy.LOW -> "😴"; Energy.OK -> "🔋"; Energy.HIGH -> "⚡" }, style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.height(Space.xs))
-                Text(e.label, style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1)
+                Text(
+                    text, style = MaterialTheme.typography.labelLarge, color = if (on) Color.White else Glass.Ink, maxLines = 1,
+                    modifier = Modifier.background(if (on) Glass.Primary else Color.White.copy(alpha = 0.78f), CircleShape)
+                        .border(1.dp, if (on) Glass.Primary else Glass.Aurora1.copy(alpha = 0.55f), CircleShape)
+                        .padding(horizontal = Space.lg, vertical = Space.sm),
+                )
             }
         }
     }
@@ -168,9 +190,9 @@ private fun PickCard(p: NowPick, shown: Int, onStart: () -> Unit, onNotThis: () 
         }
     }
     Spacer(Modifier.height(Space.lg))
-    PrimaryPill("Start · $START_MINUTES min", "Start $START_MINUTES minutes: ${p.title}", onStart)
+    PrimaryPill("Do it · $START_MINUTES min", "Start $START_MINUTES minutes: ${p.title}", onStart)
     Spacer(Modifier.height(Space.xs))
-    QuietButton(if (shown >= MAX_PICKS) "Not this · last one" else "Not this", onNotThis)
+    QuietButton(if (shown >= MAX_PICKS) "Another one · last" else "Another one", onNotThis)
 }
 
 /** "✨ Make it tiny": a quiet text link (no fill, no rim), a full touch target, under the first step. */

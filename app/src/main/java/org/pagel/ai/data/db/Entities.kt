@@ -80,6 +80,11 @@ data class TaskEntity(
      * the GTD [StepEntity] steps: disposable scaffolding for Focus mode, never shown in lists; synced as `micro`.
      */
     @ColumnInfo(defaultValue = "'[]'") val micro: String = "[]",
+    /**
+     * Where the task can be done (v14, GTD context): phone | laptop | home | out | any; null = not set, What now infers it
+     * from the words and the project. Synced as `context` (PATCH {context}); an older pagel.uz keeps it phone-only.
+     */
+    @ColumnInfo(defaultValue = "NULL") val context: String? = null,
 )
 
 @Entity(tableName = "steps", primaryKeys = ["taskId", "position"], indices = [Index("taskId")])
