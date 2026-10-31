@@ -457,10 +457,10 @@ class TaskSystemScreenshotTest {
         compose.onAllNodesWithText("0/7").onFirst().assertIsDisplayed()
         compose.onNodeWithContentDescription("Try: Swipe the week back and forward").performClick()
         assertEquals("habits", opened)
-        compose.onAllNodesWithContentDescription("Try: 🧭 Compass: goals only you can read").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Try: Compass: goals only you can read").assertCountEquals(0)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("0.3.30 · Compass"))
         compose.onNodeWithText("0.3.30 · Compass").performClick()
-        compose.onNodeWithContentDescription("Try: 🧭 Compass: goals only you can read").assertExists()
+        compose.onNodeWithContentDescription("Try: Compass: goals only you can read").assertExists()
     }
 
     private val manyLines = listOf("#0.3.40 · A long round") + (1..23).map { "Line $it: something to try in the app|today" }
