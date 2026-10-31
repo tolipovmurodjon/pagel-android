@@ -85,15 +85,21 @@ internal object HabitClocks {
     }.toMap()
 }
 
-/** A habit's timer screen: which of the five colours (swipe), whether the goal rings, and which of the three soft sounds. */
-data class TimerLook(val colour: Int = -1, val bell: Boolean = true, val sound: Int = 0) {
-    fun encode() = "$colour|$bell|$sound"
+/**
+ * A habit's timer screen: which colour (swipe), whether the goal rings and which of the three soft chimes, and the
+ * ambient sound (an index into [AmbientSounds.all], -1 = none) with its volume. Older saves have the first three fields.
+ */
+data class TimerLook(val colour: Int = -1, val bell: Boolean = true, val sound: Int = 0, val ambient: Int = -1, val volume: Float = 0.6f) {
+    fun encode() = "$colour|$bell|$sound|$ambient|$volume"
 
     companion object {
         fun decode(text: String): TimerLook? {
             val f = text.split('|')
-            if (f.size != 3) return null
-            return TimerLook(f[0].toIntOrNull() ?: return null, f[1].toBooleanStrictOrNull() ?: return null, f[2].toIntOrNull() ?: return null)
+            if (f.size !in 3..5) return null
+            return TimerLook(
+                f[0].toIntOrNull() ?: return null, f[1].toBooleanStrictOrNull() ?: return null, f[2].toIntOrNull() ?: return null,
+                f.getOrNull(3)?.toIntOrNull() ?: -1, (f.getOrNull(4)?.toFloatOrNull() ?: 0.6f).coerceIn(0f, 1f),
+            )
         }
         const val KEY = "timer-look-"
     }

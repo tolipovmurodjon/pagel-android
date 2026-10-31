@@ -130,7 +130,7 @@ class HabitsScreenshotTest {
     @Test fun morningAtLargeFont() {
         show(1.5f) { HabitsScreen(ui(), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-360x800-font-1.5.png")
-        compose.onNodeWithContentDescription("Start: Stretch for ten minutes").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Done: Stretch for ten minutes").assertIsDisplayed()
     }
 
     @Test fun afternoonWithACountHabitAndARunningTimer() {
@@ -149,17 +149,33 @@ class HabitsScreenshotTest {
         compose.onNodeWithText("3:20 / 10 min").assertIsDisplayed()
     }
 
-    @Test fun theCheckTicksThePlayRingRunsTheClockAndTheRowOpensThePage() {
+    /** Boss 2026-10-31: a timed habit never needs the clock. Its check ticks it; its card opens Timer and Finish. */
+    @Test fun aTimedHabitIsTickedByItsCheckAndItsCardOpensTimerAndFinish() {
         var ticked = ""
         var timed = ""
         var opened = ""
-        show { HabitsScreen(ui(), pad, onTick = { ticked = it }, onTimer = { id, m -> timed = "$id $m" }, onOpen = { opened = it }) }
+        show { HabitsScreen(ui(), pad, onTick = { ticked = it }, onOpen = { opened = it }, onOpenTimer = { timed = it }) }
         compose.onNodeWithContentDescription("Done: Drink water").performClick()
         assertEquals("h5", ticked)
-        compose.onNodeWithContentDescription("Start: Stretch for ten minutes").performClick()
-        assertEquals("h1 10", timed)
+        compose.onNodeWithContentDescription("Done: Stretch for ten minutes").performClick()
+        assertEquals("h1", ticked)
+        ticked = ""
+        compose.onAllNodesWithContentDescription("Finish").assertCountEquals(0)
         compose.onNodeWithText("Stretch for ten minutes").performClick()
-        assertEquals("h1", opened)
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-expanded-timer-finish.png")
+        compose.onNodeWithContentDescription("Timer").performClick()
+        assertEquals("h1", timed)
+        compose.onNodeWithContentDescription("Finish").performClick()
+        assertEquals("h1", ticked)
+        assertEquals("", opened)
+    }
+
+    @Test fun aPlainHabitCardOpensItsPage() {
+        var opened = ""
+        show { HabitsScreen(ui(), pad, onOpen = { opened = it }) }
+        compose.onNodeWithText("Drink water").performClick()
+        assertEquals("h5", opened)
     }
 
     /**
@@ -309,8 +325,8 @@ class HabitsScreenshotTest {
         assertTrue(rows.isNotEmpty())
         for (r in rows) {
             assertTrue("a row shows ${count(r)} things", count(r) in 3..7)
-            // Four targets at most: the check, the card, its menu and, on a timed habit, the Timer tag (no bell, no chip).
-            assertTrue("a row has ${clickables(r)} tap targets", clickables(r) <= 4)
+            // Three targets at most: the check, the card and its menu (a timed habit's Timer and Finish open under it on a tap).
+            assertTrue("a row has ${clickables(r)} tap targets", clickables(r) <= 3)
         }
     }
 

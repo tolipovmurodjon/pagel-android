@@ -72,7 +72,9 @@ internal fun AchievementsPage(badges: List<HabitBadge>) {
     var open by remember { mutableStateOf<HabitBadge?>(null) }
     val earned = badges.filter { it.earned }
     val recent = earned.sortedWith(compareByDescending<HabitBadge> { it.earnedOn }.thenByDescending { it.n }).take(3)
-    val look = cardColours("mint", 1f)
+    // The mint card keeps its dark end light enough for ink words (4.5:1 all across).
+    val (mintA, mintB) = org.pagel.ai.ui.glass.TileColors.stops("", "mint")
+    val look = CardColours(mintA, androidx.compose.ui.graphics.lerp(mintB, mintA, 0.5f), Glass.Ink)
     Column(verticalArrangement = Arrangement.spacedBy(Space.paneGap)) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = Space.gutter).clip(RoundedCornerShape(Space.xxl))
@@ -140,7 +142,7 @@ private fun BadgeCell(b: HabitBadge, modifier: Modifier, art: Dp, textColour: Co
     ) {
         BadgeArt(b.kind, b.n, b.earned, art)
         Spacer(Modifier.height(Space.xs))
-        Text(b.title, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold), color = textColour, textAlign = TextAlign.Center, minLines = 2, maxLines = 3)
+        Text(b.title, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = textColour, textAlign = TextAlign.Center, minLines = 2, maxLines = 3)
     }
 }
 

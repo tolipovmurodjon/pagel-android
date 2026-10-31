@@ -1,7 +1,12 @@
 package org.pagel.ai.ui.habits
 
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -65,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -167,7 +173,7 @@ fun HabitsRoute(
     HabitsScreen(
         ui, contentPadding, reselect, celebrate = celebrate, finished = finished,
         onTick = vm::tick, onUntick = vm::untick, onOpen = onOpenHabit,
-        onSelectDay = vm::selectDay, onSelectPart = vm::selectPart, onTimer = vm::toggleTimer, onHistory = onHistory,
+        onSelectDay = vm::selectDay, onSelectPart = vm::selectPart, onHistory = onHistory,
         onStartNamoz = vm::startNamoz, onNamozMenu = { namozSheet = true }, onOpenNamoz = onOpenNamoz,
         onNew = { adding = true }, onLink = vm::link,
         onDayOff = { id, off -> if (off) vm.unfreeze(id) else vm.freeze(id) }, onEdit = openTask, onOpenTimer = onOpenTimer,
@@ -195,7 +201,6 @@ fun HabitsScreen(
     onOpen: (String) -> Unit = {},
     onSelectDay: (LocalDate?) -> Unit = {},
     onSelectPart: (Part) -> Unit = {},
-    onTimer: (String, Int) -> Unit = { _, _ -> },
     onHistory: () -> Unit = {},
     onStartNamoz: () -> Unit = {},
     onNamozMenu: () -> Unit = {},
@@ -217,6 +222,8 @@ fun HabitsScreen(
     val list = rememberLazyListState()
     val board = ui.board
     val today = runCatching { LocalDate.parse(ui.today) }.getOrNull()
+    // One timed card open at a time: its Timer and Finish buttons sit under it (Boss 2026-10-31).
+    var expandedId by remember { mutableStateOf<String?>(null) }
     val strip = remember(ui.byId, ui.ticks, ui.freezes, today) { today?.let { StripContext(ui.byId.values.toList(), ui.ticks, ui.freezes, it) } }
 
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
@@ -227,6 +234,7 @@ fun HabitsScreen(
     LaunchedEffect(celebrate) { if (celebrate > 0) burstAt(rootAt + Offset(540f, 600f)) }
     LaunchedEffect(finished) { finished?.first?.let { id -> centres[id]?.let(::burstAt) } }
     fun tick(id: String) {
+        if (expandedId == id) expandedId = null
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
         centres[id]?.let(::burstAt)
         onTick(id)
@@ -258,9 +266,10 @@ fun HabitsScreen(
                     for ((c, depth) in org.pagel.ai.data.habits.HabitLook.stackOrder(cards, { it.task.id }, ui.prefs)) key(c.task.id) { LinkableRow(c.task.id, links, onLink) {
                         HabitCardRow(
                             c, depth = depth.coerceAtMost(2), finishing = c.task.id in ui.finishing, timer = ui.timers[c.task.id], now = ui.now,
-                            onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onTimer = onTimer,
+                            onTick = ::tick, onUntick = onUntick, onOpen = onOpen,
                             onCentre = { if (current) centres[c.task.id] = it },
                             onDayOff = onDayOff, onEdit = onEdit, onOpenTimer = onOpenTimer,
+                            expanded = expandedId == c.task.id, onExpand = { expandedId = if (expandedId == it) null else it },
                         ) }
                     }
                 }
@@ -715,10 +724,10 @@ internal data class CardColours(val a: Color, val b: Color, val content: Color)
 
 internal fun cardColours(colour: String, heat: Float): CardColours {
     val (la, lb) = TileColors.stops("", colour)
-    val grey = Color(0xFF8D96A8)
-    val k = 0.30f * (1f - heat.coerceIn(0f, 1f))
-    val a = androidx.compose.ui.graphics.lerp(androidx.compose.ui.graphics.lerp(la, Color.Black, 0.10f), grey, k)
-    val b = androidx.compose.ui.graphics.lerp(androidx.compose.ui.graphics.lerp(lb, Color.Black, 0.18f), grey, k)
+    val grey = Color(0xFFA9B1C2)
+    val k = 0.26f * (1f - heat.coerceIn(0f, 1f))
+    val a = androidx.compose.ui.graphics.lerp(androidx.compose.ui.graphics.lerp(la, Color.Black, 0.04f), grey, k)
+    val b = androidx.compose.ui.graphics.lerp(androidx.compose.ui.graphics.lerp(lb, Color.Black, 0.12f), grey, k)
     return CardColours(a, b, readableOn(a, b))
 }
 
@@ -777,17 +786,18 @@ internal object RowPart {
  * left; inside, a white line icon, the name (two lines, never cut), the progress and the streak, and a menu. The colour
  * is a 2-stop OKLCH gradient and warms with how many of the last 30 days were done (a missed day is only lighter, never
  * a mark). Done: the check fills with the card's colour and the card settles to 55 % with a spring. A tap opens the
- * habit's page; the menu holds Take a day off, Timer and Edit. A habit with minutes has a play ring for a check (tap =
- * run the clock) and the menu opens the full-screen timer. Every card is one height: two title lines, one
- * progress line.
+ * habit's page; the menu holds Take a day off, Timer and Edit. A habit with minutes is ticked by its check like any other
+ * (the clock is never required); a tap on its card opens Timer and Finish under it (Boss 2026-10-31, as his reference),
+ * Finish counts it done at once with whatever time was spent. Every card is one height: two title lines, one progress line.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun HabitCardRow(
     c: HabitCard, finishing: Boolean, timer: HabitTimer?, now: Long, depth: Int = 0,
     onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpen: (String) -> Unit,
-    onTimer: (String, Int) -> Unit, onCentre: (Offset) -> Unit, modifier: Modifier = Modifier,
+    onCentre: (Offset) -> Unit, modifier: Modifier = Modifier,
     onDayOff: (String, Boolean) -> Unit = { _, _ -> }, onEdit: (String) -> Unit = {}, onOpenTimer: (String) -> Unit = {},
+    expanded: Boolean = false, onExpand: (String) -> Unit = {},
 ) {
     val haptics = LocalHapticFeedback.current
     val reduce = org.pagel.ai.ui.today.reducedMotion(LocalContext.current)
@@ -795,34 +805,33 @@ internal fun HabitCardRow(
     val id = c.task.id
     val tickable = c.mark != Mark.FUTURE && c.mark != Mark.BEFORE && c.mark != Mark.OFF
     val minutes = c.minutes
-    val timed = minutes != null && !done && tickable
+    // A timed habit opens its Timer and Finish buttons on a tap; every other card opens its page.
+    val expandable = minutes != null && !done && tickable
     val look = cardColours(c.colour ?: tileOf(c.emoji), c.heat)
     val shape = RoundedCornerShape(Space.xl)
     // Done settles the card back to 55 %: a critically damped spring (no bounce: nothing here carried momentum).
     val dim by animateFloatAsState(if (done) 0.55f else 1f, if (reduce) snap() else spring(dampingRatio = 1f, stiffness = 420f), label = "dim")
-    Row(modifier.fillMaxWidth().padding(start = Space.sm, end = Space.gutter).testTag(RowPart.ROW), verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier.fillMaxWidth().padding(start = Space.sm, end = Space.gutter).testTag(RowPart.ROW)) {
+      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         CheckCircle(
-            c, done, enabled = tickable, timer = if (timed) timer else null, now = now, timed = timed, fill = look.a to look.b, tick = look.content,
-            onClick = {
-                when {
-                    done -> onUntick(id)
-                    timed && minutes != null -> { haptics.performHapticFeedback(HapticFeedbackType.ContextClick); onTimer(id, minutes) }
-                    else -> onTick(id)
-                }
-            },
+            c, done, enabled = tickable, fill = look.a to look.b, tick = look.content,
+            onClick = { if (done) onUntick(id) else onTick(id) },
             modifier = Modifier.testTag(RowPart.TICK).onGloballyPositioned { onCentre(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) },
         )
         val press = remember { MutableInteractionSource() }
         Box(
             // A stacked habit's card steps in; its check stays in the one check column.
+            // The dim is one layer over card and shadow together (a dimmed card used to show its own shadow through itself).
             Modifier.weight(1f).padding(start = Space.lg * depth).pressScale(press)
+                .graphicsLayer { alpha = dim }
                 .shadow(8.dp, shape, ambientColor = look.b.copy(alpha = 0.18f), spotColor = look.b.copy(alpha = 0.30f))
                 .clip(shape)
-                .graphicsLayer { alpha = dim }
                 .background(Brush.linearGradient(listOf(look.a, look.b), start = Offset.Zero, end = Offset.Infinite))
                 // The one light, top-left: a soft highlight so the card reads as a lit object, not a flat slab.
                 .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.18f), Color.Transparent), endY = 120f))
-                .combinedClickable(press, indication = null, onClickLabel = "Open") { onOpen(id) },
+                .combinedClickable(press, indication = null, onClickLabel = if (expandable) "Show Timer and Finish" else "Open") {
+                    if (expandable) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onExpand(id) } else onOpen(id)
+                },
         ) {
             Row(Modifier.fillMaxWidth().padding(start = Space.md, top = Space.md, bottom = Space.md), verticalAlignment = Alignment.CenterVertically) {
                 if (depth > 0) {
@@ -864,15 +873,48 @@ internal fun HabitCardRow(
                         }
                     }
                 }
-                CardMenu(c, look.content, done, onDayOff, onEdit, onOpenTimer)
+                CardMenu(c, look.content, done, onDayOff, onEdit, onOpenTimer, onOpen)
             }
         }
+      }
+      // Under the card, two calm buttons side by side (his reference): Timer opens the full-screen timer, Finish counts it done.
+      AnimatedVisibility(
+        expanded && expandable,
+        enter = if (reduce) fadeIn() else expandVertically(spring(dampingRatio = 1f, stiffness = 500f)) + fadeIn(),
+        exit = if (reduce) fadeOut() else shrinkVertically(spring(dampingRatio = 1f, stiffness = 500f)) + fadeOut(),
+      ) {
+        Row(Modifier.fillMaxWidth().padding(start = Space.touch + Space.lg * depth, top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+            ExpandedButton("Timer", TabIcons.Clock, filled = false, modifier = Modifier.weight(1f)) { onOpenTimer(id) }
+            ExpandedButton("Finish", TabIcons.Check, filled = true, modifier = Modifier.weight(1f)) { onTick(id) }
+        }
+      }
+    }
+}
+
+/** One of the two buttons under an opened timed card: Finish is the mint one, Timer the quiet glass one. */
+@Composable
+private fun ExpandedButton(label: String, icon: ImageVector, filled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(Space.lg)
+    Row(
+        modifier.heightIn(min = Space.row).pressScale(press).clip(shape)
+            .then(
+                if (filled) Modifier.background(Brush.horizontalGradient(listOf(Glass.Aurora2, Glass.Aurora1)))
+                else Modifier.background(Color.White.copy(alpha = 0.72f)).border(1.dp, Glass.Ink.copy(alpha = 0.10f), shape),
+            )
+            .clickable(press, indication = null, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, null, tint = Glass.Ink, modifier = Modifier.size(22.dp).clearAndSetSemantics {})
+        Spacer(Modifier.width(Space.sm))
+        Text(label, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Glass.Ink, maxLines = 1, modifier = Modifier.clearAndSetSemantics {})
     }
 }
 
 /** The card's menu: Take a day off (or take it back), Timer, Edit. It opens from its own button. */
 @Composable
-private fun CardMenu(c: HabitCard, tint: Color, done: Boolean, onDayOff: (String, Boolean) -> Unit, onEdit: (String) -> Unit, onOpenTimer: (String) -> Unit) {
+private fun CardMenu(c: HabitCard, tint: Color, done: Boolean, onDayOff: (String, Boolean) -> Unit, onEdit: (String) -> Unit, onOpenTimer: (String) -> Unit, onOpen: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val press = remember { MutableInteractionSource() }
     val id = c.task.id
@@ -882,6 +924,8 @@ private fun CardMenu(c: HabitCard, tint: Color, done: Boolean, onDayOff: (String
             add(MenuItem(TabIcons.Sofa, if (off) "Take the day off back" else "Take a day off") to { onDayOff(id, off) })
         }
         if (c.minutes != null && !done) add(MenuItem(TabIcons.Clock, "Timer") to { onOpenTimer(id) })
+        // A timed card opens its buttons on a tap, so its page opens from here.
+        if (c.minutes != null && !done) add(MenuItem(TabIcons.ArrowUpRight, "Open page") to { onOpen(id) })
         add(MenuItem(TabIcons.StickyNote, "Edit") to { onEdit(id) })
     }
     Box {
@@ -897,25 +941,21 @@ private fun CardMenu(c: HabitCard, tint: Color, done: Boolean, onDayOff: (String
 
 /**
  * The check outside the card: a ring that fills with the card's colour and a tick, arcs for a count habit, faint for a day
- * it cannot be ticked. A day off is drawn as done. A habit with minutes shows a play mark and its clock's ring instead (tap
- * = run or pause). 48 dp target, 28 dp drawn. [fill] and [tick] default to the app's mint and ink (the Namoz rows).
+ * it cannot be ticked. A day off is drawn as done. A habit with minutes is ticked here like any other. 48 dp target, 28 dp drawn. [fill] and [tick] default to the app's mint and ink (the Namoz rows).
  */
 @Composable
 private fun CheckCircle(
     c: HabitCard, done: Boolean, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier,
-    timer: HabitTimer? = null, now: Long = 0, timed: Boolean = false,
     fill: Pair<Color, Color> = Glass.Aurora2 to Glass.Aurora1, tick: Color = Glass.Ink,
 ) {
     val press = remember { MutableInteractionSource() }
     val reduce = org.pagel.ai.ui.today.reducedMotion(LocalContext.current)
     val pop by animateFloatAsState(if (done) 1f else 0f, if (reduce) snap() else spring(dampingRatio = 0.8f, stiffness = 500f), label = "pop")
-    val running = timer?.running == true
-    val clock = if (timed) ((timer?.spent(now) ?: 0L) / ((c.minutes ?: 1) * 60_000f)).coerceIn(0f, 1f) else 0f
     Box(
         modifier.size(Space.touch).pressScale(press)
-            .clickable(press, indication = null, enabled = enabled, role = if (timed) Role.Button else Role.Checkbox, onClick = onClick)
+            .clickable(press, indication = null, enabled = enabled, role = Role.Checkbox, onClick = onClick)
             .semantics {
-                contentDescription = when { !timed -> "Done: ${c.title}"; running -> "Pause: ${c.title}"; else -> "Start: ${c.title}" }
+                contentDescription = "Done: ${c.title}"
                 stateDescription = if (done) "Done" else if (c.times > 1) "${c.taps} of ${c.times}" else markWord(c.mark)
             },
         contentAlignment = Alignment.Center,
@@ -927,17 +967,6 @@ private fun CheckCircle(
             when {
                 done -> drawCircle(Brush.linearGradient(listOf(fill.first, fill.second)), r)
                 !enabled -> drawCircle(Glass.Ink.copy(alpha = 0.18f), r - line / 2, style = Stroke(1.5.dp.toPx()))
-                timed -> {
-                    drawCircle(Glass.Ink.copy(alpha = 0.18f), r - line / 2, style = Stroke(line))
-                    drawArc(Glass.Primary, -90f, 360f * clock, false, topLeft = Offset(line / 2, line / 2), size = Size(size.width - line, size.height - line), style = Stroke(line, cap = StrokeCap.Round))
-                    if (running) {
-                        drawRoundRect(Glass.Ink, Offset(7f * u, 6.5f * u), Size(2.2f * u, 7f * u), CornerRadius(u))
-                        drawRoundRect(Glass.Ink, Offset(10.8f * u, 6.5f * u), Size(2.2f * u, 7f * u), CornerRadius(u))
-                    } else {
-                        val tri = androidx.compose.ui.graphics.Path().apply { moveTo(8f * u, 6f * u); lineTo(14.5f * u, 10f * u); lineTo(8f * u, 14f * u); close() }
-                        drawPath(tri, Glass.Ink)
-                    }
-                }
                 // A count habit (checker #10: the dashed ring read as a spinner): the plain ring with one dot per tap inside.
                 c.times > 1 -> {
                     drawCircle(Glass.Ink.copy(alpha = 0.55f), r - line / 2, style = Stroke(line))
@@ -975,7 +1004,7 @@ private fun NamozGroup(
             val started = Namoz.counts(board.selected.toString())
             // A small tonal button, never the heaviest thing on screen (the namaz row weight). At a large font it sits
             // under the title: beside it, it took the whole row and "Namoz" broke one letter per line (1.5x shot).
-            val bigFont = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f || androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 400
+            val bigFont = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f || androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 340
             val StartPill: @Composable (Modifier) -> Unit = { m ->
                 val press = remember { MutableInteractionSource() }
                 Box(

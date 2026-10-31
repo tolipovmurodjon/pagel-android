@@ -552,11 +552,21 @@ H3="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$TODAY\",\"if_due\":\"$TOD
 for i in $(seq 1 30); do grep -qF "$H3" "$FAKE_LOG" && break; sleep 1; done
 grep -qF "$H3" "$FAKE_LOG" || { log "WALKTHROUGH: the habit tick never reached pagel.uz as $H3"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   habit tick reached pagel.uz after ~${i} s"
-log "-- a timed habit: Stretch's play ring runs its 10-minute clock (the row itself opens the habit's page)"
-tap "Start: Stretch for ten minutes" && shot habit-timer 3
-grep -q 'text="0:0[1-9] / 10 min"\|text="0:1[0-9] / 10 min"' "$OUT/$(printf '%02d' $N)-habit-timer.xml" || log "   (WARN: the timer shows no running seconds)"
-grep -q 'content-desc="Reminder: \|content-desc="More: ' "$OUT/$(printf '%02d' $N)-habit-timer.xml" && { log "WALKTHROUGH: a habit row still has a bell or a menu (Boss 2026-10-29: minimal rows)"; exit 1; }
-tap "Pause: Stretch for ten minutes" && sleep 1
+log "-- a timed habit never needs its clock (Boss 2026-10-31): tap the card, Timer and Finish open under it; Finish ticks it; Undo writes the inverse"
+tap "Stretch for ten minutes" && shot habit-expanded 1.5 || { log "WALKTHROUGH: the Stretch card did not take a tap"; exit 1; }
+grep -q 'content-desc="Finish"' "$OUT/$(printf '%02d' $N)-habit-expanded.xml" || { log "WALKTHROUGH: tapping a timed card did not open Finish"; exit 1; }
+grep -q 'content-desc="Timer"' "$OUT/$(printf '%02d' $N)-habit-expanded.xml" || { log "WALKTHROUGH: tapping a timed card did not open Timer"; exit 1; }
+grep -q 'content-desc="Reminder: \|content-desc="More: ' "$OUT/$(printf '%02d' $N)-habit-expanded.xml" && { log "WALKTHROUGH: a habit row still has a bell or a menu (Boss 2026-10-29: minimal rows)"; exit 1; }
+H1_BEFORE=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")
+H1_UNDO_BEFORE=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":false' "$FAKE_LOG")
+tap "Finish" && tap Undo
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_BEFORE" ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_BEFORE" ] || { log "WALKTHROUGH: Finish never ticked Stretch at pagel.uz (no clock was run)"; grep t_h1 "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   Finish ticked the timed habit without its clock after ~${i} s"
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":false' "$FAKE_LOG")" -gt "$H1_UNDO_BEFORE" ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":false' "$FAKE_LOG")" -gt "$H1_UNDO_BEFORE" ] || { log "WALKTHROUGH: the Undo after Finish never wrote the inverse"; grep t_h1 "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   Undo wrote the inverse after ~${i} s"
+shot habit-after-finish-undo 1.5
 log "-- a 3x habit (round B): Log food tapped 3 times in Afternoon; pagel.uz gets 3 ticks"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 tap Afternoon && sleep 1
@@ -603,12 +613,12 @@ log "-- a missed day: tap yesterday on the strip, tick a habit for it, see pagel
 if [ "$(TZ=Asia/Tashkent date +%u)" = "1" ]; then $T adb shell input swipe 40 "$SY" 280 "$SY" 300; sleep 1; fi
 tap "$YESTERDAY_WD" && shot habits-yesterday 1.5 || { log "WALKTHROUGH: no \"$YESTERDAY_WD\" on the strip to tap"; exit 1; }
 $T adb shell input swipe 160 460 160 260 400; sleep 1
-tap "Done: Drink water" && shot habits-yesterday-logged 1
+tap "Done: Drink water" && tap Undo
+shot habits-yesterday-undone 1
 HY="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$YDATE\",\"n\":1}"
 for i in $(seq 1 30); do grep -qF "$HY" "$FAKE_LOG" && break; sleep 1; done
 grep -qF "$HY" "$FAKE_LOG" || { log "WALKTHROUGH: ticking yesterday never reached pagel.uz as $HY"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   yesterday's tick reached pagel.uz with its own date after ~${i} s"
-tap Undo && shot habits-yesterday-undone 1 || log "   (WARN: no Undo on the toast)"
 HU="PATCH /api/v1/tasks/t_h3 {\"done\":false,\"day\":\"$YDATE\"}"
 for i in $(seq 1 30); do grep -qF "$HU" "$FAKE_LOG" && break; sleep 1; done
 grep -qF "$HU" "$FAKE_LOG" || { log "WALKTHROUGH: the Undo of yesterday's tick never reached pagel.uz as $HU"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
@@ -642,8 +652,16 @@ $T adb shell input swipe 280 400 40 400 300
 sleep 1
 shot habit-timer-colour-2 1
 if tap "Resume timer" || tap "Start timer"; then sleep 3; shot habit-timer-running 0.5; grep -q 'content-desc="Pause timer"' "$OUT/$(printf '%02d' $N)-habit-timer-running.xml" || { log "WALKTHROUGH: the timer did not start from its Start pill"; exit 1; }; tap "Pause timer" && sleep 1; fi
+# Finish on the timer page counts the habit done with the time so far; then back, and the card's check takes it back.
+H1_T=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")
+tap "Finish" && shot habit-timer-finished 2
+grep -q 'text="Done"' "$OUT/$(printf '%02d' $N)-habit-timer-finished.xml" || log "   (WARN: the timer page does not say Done after Finish)"
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_T" ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_T" ] || { log "WALKTHROUGH: Finish on the timer page never ticked Stretch"; exit 1; }
+log "   Finish on the timer page ticked Stretch after ~${i} s"
 $T adb shell input keyevent 4; sleep 1
 front habits-after-timer
+tap "Done: Stretch for ten minutes" && sleep 1
 log "-- Namoz (Boss 2026-10-28): Start tracking adds the five prayers as daily habits in the group namoz, from 1 November"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 tap "Start tracking" && shot namoz-started 3
@@ -665,7 +683,7 @@ for k in 1 2 3 4 5; do
   [ -n "$SB" ] && [ "$SB" -lt 480 ] && break
   $T adb shell input swipe 160 460 160 300 400; sleep 1
 done
-tap "Stretch for ten minutes" && shot habit-page 2.5
+tap "Habit menu: Stretch for ten minutes" && tap "Open page" && shot habit-page 2.5
 # The page is mainly stats (Boss 2026-10-29); every setting sits behind ⋮.
 grep -q 'content-desc="Habit settings"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no ⋮ settings"; exit 1; }
 grep -q 'text="Reminder · off"' "$OUT/$(printf '%02d' $N)-habit-page.xml" && { log "WALKTHROUGH: the reminder card is still on the page body"; exit 1; }

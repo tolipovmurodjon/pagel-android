@@ -20,6 +20,7 @@ import org.pagel.ai.data.habits.habitBoard
 import org.pagel.ai.data.habits.heatOf
 import org.pagel.ai.ui.glass.Emoji
 import org.pagel.ai.ui.glass.HabitIcons
+import org.pagel.ai.ui.habits.HabitTimer
 import org.pagel.ai.ui.habits.TimerLook
 import org.robolectric.annotation.Config
 import java.io.File
@@ -145,5 +146,36 @@ class HabitsV3LogicTest {
         assertEquals(look, TimerLook.decode(look.encode()))
         assertNull(TimerLook.decode("garbage"))
         assertEquals(TimerLook(-1, true, 0), TimerLook.decode(TimerLook().encode()))
+    }
+
+    @Test fun theTimerLookRemembersTheAmbientSoundAndItsVolume() {
+        val look = TimerLook(colour = 4, bell = true, sound = 1, ambient = 5, volume = 0.25f)
+        assertEquals(look, TimerLook.decode(look.encode()))
+        // A save from before the ambient sounds (three fields) still opens, with no sound.
+        assertEquals(TimerLook(2, false, 1, -1, 0.6f), TimerLook.decode("2|false|1"))
+        // A volume outside 0..1 is pulled back into range.
+        assertEquals(1f, TimerLook.decode("0|true|0|1|7.5")!!.volume, 0f)
+        assertNull(TimerLook.decode("0|true"))
+    }
+
+    @Test fun theTimerStateMachineStartPauseResumeFinish() {
+        val idle = HabitTimer(day = "2026-10-31", minutes = 10)
+        assertEquals(false, idle.running)
+        assertEquals(0L, idle.spent(5_000))
+        // Start at t=1000: it runs and counts from there.
+        val running = idle.copy(startedAt = 1_000)
+        assertEquals(true, running.running)
+        assertEquals(4_000L, running.spent(5_000))
+        // Pause at t=5000: the time so far is kept and the clock stands still.
+        val paused = running.copy(startedAt = null, spentMs = running.spent(5_000))
+        assertEquals(false, paused.running)
+        assertEquals(4_000L, paused.spent(60_000))
+        // Resume at t=60000: the paused time carries on, nothing is lost or counted twice.
+        val resumed = paused.copy(startedAt = 60_000)
+        assertEquals(4_000L + 3_000L, resumed.spent(63_000))
+        // Finish early (4 of 10 minutes) still counts: whatever was spent stays on the clock until it is cleared.
+        val early = HabitTimer(startedAt = null, spentMs = 240_000, day = "2026-10-31", minutes = 10)
+        assertEquals(240_000L, early.spent(0))
+        assertEquals(true, early.spent(0) < early.minutes * 60_000L)
     }
 }
