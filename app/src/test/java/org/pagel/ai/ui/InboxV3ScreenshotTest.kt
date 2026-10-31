@@ -158,6 +158,15 @@ class InboxV3ScreenshotTest {
         assertNoCutText("v3 header 320 dp 1.5x", headerWords)
     }
 
+    /** The checker's leftover: at 320 dp and 1.5x the card's claim was cut ("The IT Park grant round" and no more). It fits whole now. */
+    @Test fun theClaimFitsWholeAt320dpAnd15xFont() {
+        show(1.5f) { Box(Modifier.width(320.dp).height(640.dp)) { screen(ui(grant)) } }
+        val claim = compose.onNodeWithText("The IT Park grant round closes on 15 November", useUnmergedTree = true).fetchSemanticsNode()
+        val l = layoutOf(claim)!!
+        assertTrue("the claim overflows its box (${l.lineCount} lines, ${l.size.height} px)", !l.hasVisualOverflow)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-claim-320-font-1.5.png")
+    }
+
     @Test fun tappingTheOldPileRowOpensIt() {
         var opened = 0
         show { screen(ui(grant), onOld = { opened++ }) }

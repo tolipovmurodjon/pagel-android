@@ -797,14 +797,16 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
     val captionLines = when { scale >= 1.3f || room < 380.dp -> 1; showPicture -> 2; else -> 3 }
     // A short phone (the 320x640 test screen): the claim and the links first; the caption waits behind "Read all".
     val tight = room < 300.dp
+    // A short screen at a large font: the claim comes first. The date, the project and the AI's reason leave until it fits.
+    val crowded = scale >= 1.3f && room < 340.dp
     var cut by remember(card.file) { mutableStateOf(false) }
     Pane(Modifier.fillMaxWidth().heightIn(max = room)) {
         Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 8.dp)) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SitePill(card.site, card.siteName)
                 card.author?.let { Text(it, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                card.posted?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.Muted) }
-                if (card.project != "all") Row(verticalAlignment = Alignment.CenterVertically) {
+                card.posted?.takeIf { !crowded }?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.Muted) }
+                if (card.project != "all" && !crowded) Row(verticalAlignment = Alignment.CenterVertically) {
                     ProjectTile(card.project, card.projectColor, card.projectTitle ?: card.project, size = 16.dp)
                     Spacer(Modifier.width(5.dp))
                     Text(card.projectTitle ?: card.project.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
@@ -820,10 +822,9 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
             )
             // The claim comes first: on a short screen at a large font the AI's reason leaves, or the claim got no room at all
             // (320 dp at 1.5x, walk 98: the title was gone and the reason sat clipped at the card's foot).
-            val crowded = scale >= 1.3f && room < 340.dp
             card.why?.takeIf { !crowded }?.let {
                 Spacer(Modifier.height(4.dp))
-                FitText(it, MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), Glass.Primary, maxLines = if (tight || scale >= 1.3f) 1 else 3, minSize = 11.sp)
+                FitText(it, MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), Glass.Primary, maxLines = if (tight) 2 else 3, minSize = 11.sp)
             }
             if (showPicture) {
                 val bmp = pictures[card.file]
