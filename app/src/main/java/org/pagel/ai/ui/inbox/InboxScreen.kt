@@ -468,7 +468,7 @@ private fun headerNote(ui: InboxUi, big: Boolean) = if (ui.sorted < ui.goal) "To
 private fun FitText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier, maxLines: Int = 1, minSize: TextUnit = 10.sp) {
     var size by remember(text, style) { mutableStateOf(style.fontSize) }
     Text(
-        text, style = style.copy(fontSize = size), color = color, maxLines = maxLines, softWrap = maxLines > 1, overflow = TextOverflow.Clip,
+        text, style = style.copy(fontSize = size, lineHeight = if (style.lineHeight.isSp && style.fontSize.isSp) (style.lineHeight.value * size.value / style.fontSize.value).sp else style.lineHeight), color = color, maxLines = maxLines, softWrap = maxLines > 1, overflow = TextOverflow.Clip,
         onTextLayout = {
             val wide = maxLines == 1 && it.multiParagraph.intrinsics.maxIntrinsicWidth > it.size.width + 1f
             if ((it.hasVisualOverflow || wide) && size.value * 0.92f >= minSize.value) size = (size.value * 0.92f).sp
