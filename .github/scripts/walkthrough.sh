@@ -107,7 +107,10 @@ r4_centre() {
 }
 r4_wait() { for i in $(seq 1 "${2:-30}"); do grep -qF "$1" "$FAKE_LOG" && return 0; sleep 1; done; return 1; }
 r4_tap() { for k in 1 2 3; do tap "$1" && return 0; $T adb shell input swipe 160 460 160 260 300; sleep 1; done; return 1; }
+# The Now card makes the folded list taller: scroll the All today row above the tab bar, tap it, then back to the top.
+$T adb shell input swipe 160 460 160 260 300; sleep 1
 tap 'All today · [0-9]+' || { log "WALKTHROUGH: Today has no All today row"; exit 1; }
+sleep 1; $T adb shell input swipe 160 260 160 520 300; $T adb shell input swipe 160 260 160 520 300; sleep 1
 shot r4-all-today 2
 for t in "Call the bank about the report" "Weigh in" "Clean the desk" "Write the release note"; do
   grep -q "text=\"$t\"" "$OUT/$(printf '%02d' $N)-r4-all-today.xml" || { log "WALKTHROUGH: All today did not open in place (no \"$t\")"; exit 1; }
