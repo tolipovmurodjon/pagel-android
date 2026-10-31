@@ -46,6 +46,10 @@ object Rituals {
         return ChronoUnit.DAYS.between(last, LocalDate.parse(today)) >= REVIEW_DAYS
     }
 
+    /** The Today pill for the weekly review: due AND a Sunday (any other day it lives in More only; Boss 2026-10-31). */
+    fun reviewPill(lastReview: String?, today: String): Boolean =
+        reviewDue(lastReview, today) && LocalDate.parse(today).dayOfWeek == java.time.DayOfWeek.SUNDAY
+
     /** The later of two ritual days (pagel.uz's and the phone's own), so neither side steps the other back. */
     fun later(a: String?, b: String?): String? = listOfNotNull(a, b).maxOrNull()
 

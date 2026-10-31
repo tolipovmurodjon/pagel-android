@@ -69,6 +69,15 @@ class TodayDealTest {
         assertEquals("15:00", org.pagel.ai.ui.today.todayMeta("2026-10-27 15:00", today)!!.text)
     }
 
+    @Test fun todaysTopThreeNeverHoldsATaskDueTomorrowUnlessItIsStarred() {
+        fun t(id: String, due: String?, star: Boolean) = task(id).copy(due = due, star = star)
+        val list = listOf(t("late", "2026-10-25", false), t("tmrw", "2026-10-28", false), t("tmrwStar", "2026-10-28 09:00", true), t("none", null, false), t("now", "2026-10-27", false))
+        val d = dealToday(list, emptySet(), today = "2026-10-27")
+        assertEquals(listOf("late", "tmrwStar", "none"), d.visible.map { it.id })
+        assertEquals(1, d.waiting)
+        assertFalse(d.allDone)
+    }
+
     @Test fun theNextTimedThingIsTheFirstOpenOneWithATimeToday() {
         val today = LocalDate.of(2026, 10, 27)
         fun row(id: String, due: String?) = org.pagel.ai.ui.today.TodayRow(id, "T$id", 1, due, null, "p", "P", null, false)

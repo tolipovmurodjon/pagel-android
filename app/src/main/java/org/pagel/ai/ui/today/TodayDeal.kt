@@ -15,10 +15,19 @@ data class Dealt(val visible: List<TaskEntity>, val waiting: Int, val allDone: B
  * Deals today's tasks like today-list.tsx: open tasks in pagel.uz's order, [SHOWN_AT_ONCE] at a time. A task being
  * ticked ([finishing]) keeps its slot until its fold ends, then the next one slides into the free slot.
  */
-fun dealToday(tasks: List<TaskEntity>, finishing: Set<String>, cap: Int = SHOWN_AT_ONCE): Dealt {
-    val queue = tasks.filter { it.status == "open" || it.id in finishing }
+fun dealToday(tasks: List<TaskEntity>, finishing: Set<String>, cap: Int = SHOWN_AT_ONCE, today: String? = null): Dealt {
+    val queue = tasks.filter { (it.status == "open" || it.id in finishing) && belongsToday(it, today) }
     val visible = queue.take(cap)
     return Dealt(visible, queue.size - visible.size, allDone = tasks.isNotEmpty() && queue.isEmpty())
+}
+
+/**
+ * A task due after [today] belongs on Today only when Boss starred it; a late, today's or undated one always does.
+ * [today] null = no date known (a test or the widget): everything belongs.
+ */
+fun belongsToday(t: TaskEntity, today: String?): Boolean {
+    val due = t.due?.takeIf { it.length >= 10 }?.take(10) ?: return true
+    return today == null || t.star || due <= today
 }
 
 /** The short line a task shows, as the web's lib/headline.ts: links read as their label, cut at the first sentence. */

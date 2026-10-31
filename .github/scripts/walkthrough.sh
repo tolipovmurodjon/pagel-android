@@ -107,10 +107,17 @@ r4_centre() {
 }
 r4_wait() { for i in $(seq 1 "${2:-30}"); do grep -qF "$1" "$FAKE_LOG" && return 0; sleep 1; done; return 1; }
 r4_tap() { for k in 1 2 3; do tap "$1" && return 0; $T adb shell input swipe 160 460 160 260 300; sleep 1; done; return 1; }
-# The Now card makes the folded list taller: scroll the All today row above the tab bar, tap it, then back to the top.
-$T adb shell input swipe 160 460 160 260 300; sleep 1
+# The Now card makes the folded list taller: scroll to the end, and the All today row must sit above the tab bar (not under it or the +).
+for k in 1 2 3; do $T adb shell input swipe 160 520 160 200 300; done; sleep 1
+R4X=$(r4_xml | tr '>' '
+')
+ROW_B=$(echo "$R4X" | grep -E 'content-desc="All today · [0-9]+"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | sed -n 4p)
+NAV_T=$(echo "$R4X" | grep -E 'text="Inbox"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | sed -n 2p)
+[ -n "$ROW_B" ] && [ -n "$NAV_T" ] || { log "WALKTHROUGH: no All today row ($ROW_B) or tab bar ($NAV_T) to measure"; exit 1; }
+[ "$ROW_B" -le "$NAV_T" ] || { log "WALKTHROUGH: All today sits under the tab bar (row bottom $ROW_B, tab bar top $NAV_T)"; exit 1; }
+log "   All today's bottom $ROW_B is above the tab bar's top $NAV_T"
 tap 'All today · [0-9]+' || { log "WALKTHROUGH: Today has no All today row"; exit 1; }
-sleep 1; $T adb shell input swipe 160 260 160 520 300; $T adb shell input swipe 160 260 160 520 300; sleep 1
+sleep 1; for k in 1 2 3 4; do $T adb shell input swipe 160 260 160 520 300; done; sleep 1
 shot r4-all-today 2
 for t in "Call the bank about the report" "Weigh in" "Clean the desk" "Write the release note"; do
   grep -q "text=\"$t\"" "$OUT/$(printf '%02d' $N)-r4-all-today.xml" || { log "WALKTHROUGH: All today did not open in place (no \"$t\")"; exit 1; }
@@ -742,6 +749,21 @@ W=$($T adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | cut -dx -f1); H=
 $T adb shell input swipe "$(( W * 85 / 100 ))" "$(( H / 2 ))" "$(( W * 12 / 100 ))" "$(( H / 2 ))" 300
 shot cal4-next-week 2
 grep -qF "content-desc=\"$NEXT_MON_SPOKEN\"" "$(cal_xml cal4-next-week)" || { log "WALKTHROUGH: the swipe did not turn the Week to $NEXT_MON_SPOKEN"; exit 1; }
+# Boss 2026-10-31: "swiping the week back glitches" and "I could not swipe right". Back x2 and forward x2, slow then fast, on
+# the grid and on the dates; the week must follow both ways, and Android's frame stats for just these swipes go to steps.txt.
+$T adb shell dumpsys gfxinfo "$PKG" reset > /dev/null
+SW_L=$(( W * 12 / 100 )); SW_R=$(( W * 85 / 100 )); SW_Y=$(( H / 2 ))
+$T adb shell input swipe "$SW_L" "$SW_Y" "$SW_R" "$SW_Y" 900; sleep 1
+shot cal-swipe-back-1 2
+grep -qF "content-desc=\"$MON_SPOKEN\"" "$(cal_xml cal-swipe-back-1)" || { log "WALKTHROUGH: swiping the Week back (right) did not turn it to $MON_SPOKEN"; exit 1; }
+$T adb shell input swipe "$SW_L" "$SW_Y" "$SW_R" "$SW_Y" 150; sleep 1
+$T adb shell input swipe "$SW_R" "$SW_Y" "$SW_L" "$SW_Y" 900; sleep 1
+$T adb shell input swipe "$SW_R" "$SW_Y" "$SW_L" "$SW_Y" 150; sleep 1
+shot cal-swipe-fwd-2 2
+grep -qF "content-desc=\"$NEXT_MON_SPOKEN\"" "$(cal_xml cal-swipe-fwd-2)" || { log "WALKTHROUGH: after back x2 and forward x2 the Week is not $NEXT_MON_SPOKEN again"; exit 1; }
+$T adb shell dumpsys gfxinfo "$PKG" > "$OUT/gfxinfo-week-swipe.txt"
+log "   week swipe (back x2, forward x2, slow and fast): $(grep -E 'Total frames rendered|Janky frames' "$OUT/gfxinfo-week-swipe.txt" | tr '
+' ' ')"
 # Next Sunday's 10:00 block: the grid to its top through the hour column (no block there), then 10:00 under the dates.
 GX=$(dp 26)
 for k in 1 2 3; do $T adb shell input swipe "$GX" "$(( H * 35 / 100 ))" "$GX" "$(( H * 80 / 100 ))" 120; sleep 0.4; done
@@ -955,9 +977,14 @@ grep -qF 'content-desc="Weekly review is due"' "$OUT/$(printf '%02d' $N)-p5-toda
 HOUR=$(TZ=Asia/Tashkent date +%-H)
 EVENING_NOW=0; { [ "$HOUR" -ge 18 ] || [ "$HOUR" -lt 5 ]; } && EVENING_NOW=1
 log "   Tashkent hour $HOUR (evening: $EVENING_NOW)"
-for want in 'content-desc="Empty your head"' 'content-desc="Weekly review is due"'; do
-  grep -qF "$want" "$OUT/$(printf '%02d' $N)-p5-today.xml" || { log "WALKTHROUGH: Today has no $want"; exit 1; }
-done
+# The weekly review is a Sunday pill on Today; any other day it lives in More only (Boss 2026-10-31).
+SUNDAY_NOW=0; [ "$(TZ=Asia/Tashkent date +%u)" = 7 ] && SUNDAY_NOW=1
+grep -qF 'content-desc="Empty your head"' "$OUT/$(printf '%02d' $N)-p5-today.xml" || { log "WALKTHROUGH: Today has no Empty your head"; exit 1; }
+if [ "$SUNDAY_NOW" = 1 ]; then
+  grep -qF 'content-desc="Weekly review is due"' "$OUT/$(printf '%02d' $N)-p5-today.xml" || { log "WALKTHROUGH: no review pill on Sunday"; exit 1; }
+else
+  grep -qF 'content-desc="Weekly review is due"' "$OUT/$(printf '%02d' $N)-p5-today.xml" && { log "WALKTHROUGH: the review pill shows on a day that is not Sunday"; exit 1; }
+fi
 if [ "$EVENING_NOW" = 1 ]; then
   grep -qF 'content-desc="Close the day"' "$OUT/$(printf '%02d' $N)-p5-today.xml" || { log "WALKTHROUGH: no Close the day pill in the evening"; exit 1; }
 else
@@ -1034,7 +1061,7 @@ if [ "$EVENING_NOW" = 1 ]; then
 fi
 
 log "-- the weekly review: 4 steps, Finish -> the review event"
-tap "Weekly review is due" && shot p5-review 2.5 || exit 1
+if [ "$SUNDAY_NOW" = 1 ]; then tap "Weekly review is due" && shot p5-review 2.5 || exit 1; else tap More && tap "Weekly review" && shot p5-review 2.5 || { log "WALKTHROUGH: no Weekly review in More"; exit 1; }; fi
 grep -q 'content-desc="Step 1: Inbox"' "$OUT/$(printf '%02d' $N)-p5-review.xml" || { log "WALKTHROUGH: the review has no steps"; exit 1; }
 tap_scroll Next && tap_scroll Next && shot p5-review-next-steps 1.5 || exit 1
 grep -q 'Labs' "$OUT/$(printf '%02d' $N)-p5-review-next-steps.xml" || { log "WALKTHROUGH: the stuck project Labs is not asked for a next step"; exit 1; }

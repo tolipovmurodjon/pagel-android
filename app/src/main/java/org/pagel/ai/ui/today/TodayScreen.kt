@@ -192,7 +192,9 @@ fun TodayScreen(
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot(); overlayWidth = it.size.width.toFloat() }) {
         // One gap between all blocks (spacing audit #19: 16 under the header, 12 under the bar, 8 under the pills).
-        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
+        LazyColumn(Modifier.fillMaxSize(), state = list,
+            // The last row clears the tab bar and the + (56 dp + its gap): "All today" never ends under them (Boss 2026-10-31).
+            contentPadding = PaddingValues(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding() + 72.dp), verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
             if (compassLine != null) item(key = "compass", contentType = "compass") { org.pagel.ai.ui.compass.CompassTodayLine(compassLine) }
             if (namozLine != null) item(key = "namoz", contentType = "namoz") { org.pagel.ai.ui.namoz.NamozTodayLine(namozLine) }
             item(key = "head", contentType = "head") {
@@ -434,10 +436,20 @@ internal fun WaitingChip(n: Int, modifier: Modifier = Modifier, onClick: () -> U
 @Composable
 internal fun DayProgressBar(p: DayProgress, nudge: String?, modifier: Modifier = Modifier) {
     val grown by androidx.compose.animation.core.animateFloatAsState(p.fraction, spring(dampingRatio = 0.8f, stiffness = 300f), label = "progress")
+    // The edge brightens for ~270 ms when a task is ticked (not at the first frame, not with reduced motion).
+    val ctx = LocalContext.current
+    val flash = remember { Animatable(0f) }
+    var lastDone by remember { mutableStateOf(p.done) }
+    LaunchedEffect(p.done) {
+        if (p.done > lastDone && !reducedMotion(ctx)) { flash.animateTo(1f, tween(90, easing = EaseOutStrong)); flash.animateTo(0f, tween(180)) }
+        lastDone = p.done
+    }
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.semantics(mergeDescendants = true) { contentDescription = "${p.done} of ${p.total} done today" }, verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f).height(14.dp).background(Color.White.copy(alpha = 0.6f), CircleShape).border(1.dp, Color.White.copy(alpha = 0.8f), CircleShape)) {
-                Box(Modifier.fillMaxWidth(grown.coerceIn(0f, 1f)).height(14.dp).background(Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)), CircleShape))
+                Box(Modifier.fillMaxWidth(grown.coerceIn(0f, 1f)).height(14.dp).background(Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)), CircleShape)) {
+                    Box(Modifier.matchParentSize().graphicsLayer { alpha = flash.value * 0.55f }.background(Color.White, CircleShape))
+                }
             }
             Spacer(Modifier.width(10.dp))
             // slot: tabular figures in a fixed least width, so "9 of 10 ✓" and "1 of 6 ✓" never change the bar's length (#22).
