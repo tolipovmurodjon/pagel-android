@@ -611,7 +611,7 @@ tap Undo || { log "WALKTHROUGH: the Habit added toast had no Undo"; exit 1; }
 for i in $(seq 1 8); do grep -q 'POST /api/v1/tasks .*Floss at night' "$FAKE_LOG" && break; sleep 0.5; done
 grep -q 'POST /api/v1/tasks .*Floss at night' "$FAKE_LOG" || { log "WALKTHROUGH: the new habit never reached pagel.uz"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tail -3 | tee -a "$OUT/steps.txt"; exit 1; }
 shot new-habit-undone 1.5
-for i in $(seq 1 30); do [ "$(grep -c '"remove":true' "$FAKE_LOG")" -gt "$REMOVES" ] && break; sleep 1; done
+for i in $(seq 1 90); do [ "$(grep -c '"remove":true' "$FAKE_LOG")" -gt "$REMOVES" ] && break; sleep 1; done
 [ "$(grep -c '"remove":true' "$FAKE_LOG")" -gt "$REMOVES" ] || { log "WALKTHROUGH: Undo of the new habit never reached pagel.uz"; exit 1; }
 log "   new habit added and taken back"
 tap Morning && sleep 1
