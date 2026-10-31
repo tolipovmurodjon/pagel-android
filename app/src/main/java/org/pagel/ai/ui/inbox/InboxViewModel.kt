@@ -88,6 +88,49 @@ data class InboxCard(
     val note: String,
 )
 
+/** The Inbox's order (Boss 2026-10-31): newest first by default, oldest first, or a random deal per visit. */
+enum class InboxOrder(val label: String) {
+    NEWEST("Newest first"), OLDEST("Oldest first"), SHUFFLE("Shuffle");
+
+    fun next() = entries[(ordinal + 1) % entries.size]
+}
+
+/** One source chip: "Instagram · 9". */
+data class SourceCount(val key: String, val label: String, val count: Int)
+
+/** The chip a save belongs to: Instagram, X, LinkedIn, Telegram, Your notes (typed captures) or Links (any other site). */
+fun sourceChip(source: String): Pair<String, String> {
+    val (site, name) = siteOf(source)
+    return when (site) {
+        Site.INSTAGRAM -> "instagram" to "Instagram"
+        Site.X -> "x" to "X"
+        Site.LINKEDIN -> "linkedin" to "LinkedIn"
+        Site.NOTE -> "note" to "Your notes"
+        Site.WEB -> if (name.contains("t.me") || name.contains("telegram")) "telegram" to "Telegram" else "web" to "Links"
+    }
+}
+
+fun sourceCounts(items: List<InboxItemEntity>): List<SourceCount> =
+    items.groupBy { sourceChip(it.source) }.map { (k, v) -> SourceCount(k.first, k.second, v.size) }.sortedByDescending { it.count }
+
+/** The sorts that count toward the day's goal: Do (and its forms), Note, Waiting, Drop. Later, Someday and quiet tidy moves never do. */
+val COUNTED = setOf("act", "now", "note", "keep", "waiting", "drop", "project", "calendar")
+
+/** Boss's one daily goal (2026-10-31): five sorted. */
+const val GOAL = org.pagel.ai.data.inbox.INBOX_GOAL
+
+fun goalCount(rows: List<org.pagel.ai.data.db.InboxSortedEntity>): Int = rows.count { it.action in COUNTED }
+
+/** What the visit looks like: the order, the chip, the seed of this visit's random deal, and the saves skipped today. */
+data class ViewPrefs(val order: InboxOrder = InboxOrder.NEWEST, val source: String? = null, val seed: Long = 0, val skipped: Set<String> = emptySet())
+
+/** The deck in the chosen order: Shuffle deals a stable random order for the visit, the last shown and today's skips at the back. */
+fun applyOrder(items: List<InboxItemEntity>, v: ViewPrefs, shown: List<String>): List<InboxItemEntity> = when (v.order) {
+    InboxOrder.NEWEST -> items
+    InboxOrder.OLDEST -> items.filter { it.later == null }.reversed() + items.filter { it.later != null }
+    InboxOrder.SHUFFLE -> org.pagel.ai.data.inbox.openOrder(items, (shown + v.skipped).distinct(), v.seed)
+}
+
 data class InboxUi(
     val loading: Boolean = true,
     val cards: List<InboxCard> = emptyList(),
@@ -101,6 +144,10 @@ data class InboxUi(
     val projects: List<ProjectEntity> = emptyList(),
     /** pagel.uz's AI is reading the next unread saves (asked from here); their picks come with the next deck. */
     val reading: Boolean = false,
+    /** The source chips of the current Inbox with their counts, the chosen one (null = All) and the order. */
+    val sources: List<SourceCount> = emptyList(),
+    val source: String? = null,
+    val order: InboxOrder = InboxOrder.NEWEST,
     /** The Old pile (saves from before the fresh start): how many are left (null = not known yet), and whether it is open. */
     val old: Int? = null,
     val oldMode: Boolean = false,
@@ -193,16 +240,23 @@ class InboxViewModel @Inject constructor(
     private val session: Session,
     private val where: org.pagel.ai.data.inbox.WhereItWent,
     private val projects: org.pagel.ai.data.projects.ProjectRepository,
+    private val habits: org.pagel.ai.data.habits.HabitsRepository,
+    private val tasks: org.pagel.ai.data.tasks.TaskRepository,
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
     private val prefs = appContext.getSharedPreferences("pagel-inbox", android.content.Context.MODE_PRIVATE)
     private val oldMode = MutableStateFlow(false)
     private val doneShown = MutableStateFlow(runCatching { prefs.getBoolean(OLD_DONE_SHOWN, false) }.getOrDefault(false))
+    private val order = MutableStateFlow(runCatching { InboxOrder.valueOf(prefs.getString(ORDER, InboxOrder.NEWEST.name).orEmpty()) }.getOrDefault(InboxOrder.NEWEST))
+    private val sourceFilter = MutableStateFlow<String?>(null)
+    private val visitSeed = MutableStateFlow(System.currentTimeMillis())
+    private val skipped = MutableStateFlow(skippedToday())
+    private val viewPrefs = combine(order, sourceFilter, visitSeed, skipped) { o, s, seed, k -> ViewPrefs(o, s, seed, k) }
     private var oldLoading = false
     private var oldMisses = 0
-    private data class OldView(val fresh: String, val captured: Set<String>, val total: Int?, val leaving: Int, val mode: Boolean, val doneShown: Boolean)
-    private val oldView = combine(repo.freshFrom, repo.captured.files, repo.oldTotal, repo.leavingOld, combine(oldMode, doneShown) { m, d -> m to d }) { f, c, t, l, md ->
-        OldView(f, c, t, l, md.first, md.second)
+    private data class OldView(val fresh: String, val captured: Set<String>, val total: Int?, val leaving: Int, val mode: Boolean, val doneShown: Boolean, val view: ViewPrefs)
+    private val oldView = combine(repo.freshFrom, repo.captured.files, repo.oldTotal, repo.leavingOld, combine(oldMode, doneShown, viewPrefs) { m, d, v -> Triple(m, d, v) }) { f, c, t, l, md ->
+        OldView(f, c, t, l, md.first, md.second, md.third)
     }
     private val _open = kotlinx.coroutines.channels.Channel<InboxOpen>(kotlinx.coroutines.channels.Channel.BUFFERED)
     /** A toast's Open: the shell pushes the project page or its notes. */
@@ -238,12 +292,21 @@ class InboxViewModel @Inject constructor(
     private var nextLeave = 1L
     private var refreshing = false
 
-    val ui: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), combine(combine(streak, reading, gone) { a, b, c -> Triple(a, b, c) }, oldView) { t, o -> t to o }) { deck, state, _, projects, (t, old) ->
+    private val baseUi: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), combine(combine(streak, reading, gone) { a, b, c -> Triple(a, b, c) }, oldView) { t, o -> t to o }) { deck, state, _, projects, (t, old) ->
         val (run, aiReading, hidden) = t
         // The Inbox is the current saves; the Old pile is the rest, shown only while it is open.
         val pool = deck.filter { isCurrent(it, old.fresh, old.captured) != old.mode }
-        build(visibleDeck(pool, hidden), state, projects, run, deck.isEmpty(), old).copy(reading = aiReading)
+        val chips = if (old.mode) emptyList() else sourceCounts(pool)
+        // A chip that no longer has saves (its last one was sorted) falls back to All instead of showing an empty Inbox.
+        val chosen = old.view.source?.takeIf { k -> chips.any { it.key == k } }
+        val filtered = if (old.mode || chosen == null) pool else pool.filter { sourceChip(it.source).first == chosen }
+        val ordered = if (old.mode) filtered else applyOrder(filtered, old.view, repo.captured.shown)
+        build(visibleDeck(ordered, hidden), state, projects, run, deck.isEmpty(), old).copy(reading = aiReading, sources = chips, source = chosen, order = old.view.order)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
+
+    /** Boss's one goal: five sorted a day, counted on the phone from what he sorted today (Do, Note, Waiting, Drop; never Later or tidy moves). */
+    val ui: StateFlow<InboxUi> = combine(baseUi, where.sortedToday()) { u, rows -> u.copy(sorted = goalCount(rows), goal = GOAL) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     init {
         refresh()
@@ -300,19 +363,46 @@ class InboxViewModel @Inject constructor(
         viewModelScope.launch {
             ui.map { it.oldMode to it.cards.size }.distinctUntilChanged().collect { (open, shown) -> if (open && shown < 2) loadOld() }
         }
-        // The goal crossed here gets the finish moment once, as on the web (learn-client.tsx goalBar).
+        // Five sorted: a calm "Done for today" (he may keep sorting), and his habit ticks itself; sorting one back below five
+        // takes the tick back.
         viewModelScope.launch {
             var was: Int? = null
-            repo.state.collect { s ->
-                if (s == null) return@collect
+            where.sortedToday().map(::goalCount).distinctUntilChanged().collect { n ->
                 val before = was
-                was = s.sorted
-                if (before != null && before < s.goal && s.sorted >= s.goal) {
-                    toasts.show("${s.goal} sorted today. Goal done")
-                    _cheer.update { it + 1 }
-                }
+                was = n
+                if (before != null && before < GOAL && n >= GOAL) toasts.show("Done for today")
+                syncHabit(n)
             }
         }
+    }
+
+    private val goalHabit = org.pagel.ai.data.inbox.InboxGoalHabit(habits, tasks, prefs) { org.pagel.ai.data.inbox.tashkentDay(System.currentTimeMillis()) }
+
+    /** The habit "Sort 5 saves in your Inbox" follows the goal (see [org.pagel.ai.data.inbox.InboxGoalHabit]). */
+    private suspend fun syncHabit(n: Int) { goalHabit.sync(n) }
+
+    /** A chip filters the deck to its source; null = All. Remembered for this visit. */
+    fun setSource(key: String?) { sourceFilter.value = key }
+
+    /** The order pill: Newest first, Oldest first, Shuffle. Remembered across visits; a new Shuffle is a new deal. */
+    fun cycleOrder() {
+        val next = order.value.next()
+        order.value = next
+        prefs.edit().putString(ORDER, next.name).apply()
+        if (next == InboxOrder.SHUFFLE) visitSeed.value = System.currentTimeMillis()
+    }
+
+    private fun skippedToday(): Set<String> {
+        val day = org.pagel.ai.data.inbox.tashkentDay(System.currentTimeMillis())
+        return if (prefs.getString(SKIPPED_DAY, "") == day) prefs.getStringSet(SKIPPED, emptySet()).orEmpty().toSet() else emptySet()
+    }
+
+    /** A save skipped by shuffling means "not now": it goes to the back of the deck for the rest of today, kept across restarts. */
+    private fun markSkipped(file: String) {
+        val day = org.pagel.ai.data.inbox.tashkentDay(System.currentTimeMillis())
+        val all = (skippedToday() + file)
+        prefs.edit().putString(SKIPPED_DAY, day).putStringSet(SKIPPED, all).apply()
+        skipped.value = all
     }
 
     /** Pulls the next cards; a failure (offline) is silent: the saved deck stays and sorting goes on. */
@@ -360,6 +450,8 @@ class InboxViewModel @Inject constructor(
         // Newest first is the default order (Boss 2026-10-31); a random deal is the Shuffle order's job, which deals the
         // card that was on top when he left last (repo.refresh(reshuffle = true)). The order control itself is not built yet.
         if (!on && visible.value) ui.value.cards.firstOrNull()?.let { repo.markShown(it.file) }
+        // A new visit deals a new Shuffle.
+        if (on && !visible.value) visitSeed.value = System.currentTimeMillis()
         visible.value = on
     }
 
@@ -412,6 +504,7 @@ class InboxViewModel @Inject constructor(
     fun shuffle(card: InboxCard, thrown: Throw): Boolean {
         if (ui.value.cards.size < 2 || ui.value.oldMode) return false
         _leaving.value = Leaving(nextLeave++, card, Choice.LATER, thrown, shuffled = true)
+        markSkipped(card.file)
         hide(card.file)
         viewModelScope.launch {
             repo.shuffle(card.file)
@@ -681,6 +774,9 @@ class InboxViewModel @Inject constructor(
     }
 
     companion object {
+        private const val ORDER = "order"
+        private const val SKIPPED = "skipped_files"
+        private const val SKIPPED_DAY = "skipped_day"
         private const val OLD_SEEN = "old_pile_seen"
         private const val OLD_DONE_SHOWN = "old_pile_done_shown"
         /** Cards whose pictures are fetched ahead of time. */

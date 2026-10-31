@@ -244,7 +244,6 @@ class InboxScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-empty.png")
         compose.onNodeWithText("Nothing waiting").assertIsDisplayed()
         compose.onNodeWithText("Capture something").assertIsDisplayed()
-        compose.onNodeWithText("3 learned today.").assertIsDisplayed()
     }
 
     /** Offline after the saved deck ran out: no "214 left" over "Inbox zero" (checker 2026-10-28 #8). */
@@ -270,7 +269,6 @@ class InboxScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-ring-20.png")
         compose.onNodeWithContentDescription("20 of 20 sorted today").captureRoboImage("build/outputs/roborazzi/inbox-ring-20-closeup.png")
         // Five kept today: the big button offers a Note in Learn's place, as the web does.
-        compose.onNodeWithText("5 learned").assertIsDisplayed()
     }
 
     @Test fun keepsFullTurnALearnIntoANote() {

@@ -386,6 +386,37 @@ tap Today; sleep 1
 log "-- the Inbox (Phase 2): sort 5 saves with no network, come back online, pagel.uz gets all 5 in the order made"
 tap Inbox && shot inbox 3
 grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbox.xml" || { log "WALKTHROUGH: the Inbox shows no card from pagel.uz"; exit 1; }
+log "-- Inbox v3 chips and order: Instagram -> only Instagram cards; All resets; the pill flips Newest/Oldest/Shuffle and the choice is kept"
+texts_of() { tr '>' '\n' < "$1" | grep -oE 'text="[^"]{12,}"' | grep -vE 'Old pile|Newest first|Oldest first|Instagram ·|LinkedIn ·|Your notes ·|Links ·|All ·|X ·|Telegram ·' | head -3 | md5sum; }
+tap 'Instagram · [0-9]+' || { log "WALKTHROUGH: no Instagram chip with its count"; exit 1; }
+sleep 1.5; shot inbox-chip-instagram 1.5
+CX="$OUT/$(printf '%02d' $N)-inbox-chip-instagram.xml"
+grep -q 'text="Instagram"' "$CX" || { log "WALKTHROUGH: the Instagram chip did not show an Instagram card"; exit 1; }
+grep -qE 'text="(LinkedIn|X)"' "$CX" && { log "WALKTHROUGH: the Instagram chip still shows another source's card"; exit 1; }
+tap 'All · [0-9]+' || { log "WALKTHROUGH: no All chip"; exit 1; }
+sleep 1.5
+tap "Newest first" || { log "WALKTHROUGH: no order pill"; exit 1; }
+sleep 1.5; shot inbox-order-oldest 1.5
+OX="$OUT/$(printf '%02d' $N)-inbox-order-oldest.xml"
+grep -q 'text="Oldest first"' "$OX" || { log "WALKTHROUGH: the pill did not say Oldest first"; exit 1; }
+grep -q 'text="10 AI tools lists are mostly ads"' "$OX" && { log "WALKTHROUGH: Oldest first still shows the newest card on top"; exit 1; }
+tap "Oldest first" || { log "WALKTHROUGH: no order pill the second time"; exit 1; }
+sleep 1.5; shot inbox-order-shuffle 1.5
+SX="$OUT/$(printf '%02d' $N)-inbox-order-shuffle.xml"
+grep -q 'text="Shuffle"' "$SX" || { log "WALKTHROUGH: the pill did not say Shuffle"; exit 1; }
+FIRST=$(texts_of "$SX")
+$T adb shell input keyevent 3; sleep 2
+$T adb shell am start -n "$PKG/.MainActivity" > /dev/null; sleep 4
+front inbox-reopened
+shot inbox-reopened 2
+RX="$OUT/$(printf '%02d' $N)-inbox-reopened.xml"
+grep -q 'text="Shuffle"' "$RX" || { log "WALKTHROUGH: reopening lost the chosen order"; exit 1; }
+[ "$(texts_of "$RX")" != "$FIRST" ] || { log "WALKTHROUGH: Shuffle showed the same first card after reopening"; exit 1; }
+tap "Shuffle" || { log "WALKTHROUGH: no order pill to go back to Newest first"; exit 1; }
+sleep 1.5
+shot inbox-order-newest 1.5
+grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbox-order-newest.xml" || { log "WALKTHROUGH: Newest first did not bring the newest card back"; exit 1; }
+log "   chips filter by source, All resets, Oldest first flips the deck, Shuffle deals a new first card on reopen and the order is kept"
 # Offline for real: the app's only road to the fake pagel.uz is adb reverse, so removing it refuses every call.
 $T adb reverse --remove tcp:8799
 log "   offline (adb reverse removed)"
@@ -421,7 +452,7 @@ for c in Action Note Remember "Do now" Later Drop "AI pick: [A-Za-z ]+"; do
 done
 [ "$CHECKED" -ge 6 ] || { log "WALKTHROUGH: only $CHECKED choices on screen, wanted the pick + 5"; exit 1; }
 log "   the dock's $CHECKED choices all end above the bar (top y=$BAR)"
-RING=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$XML" | grep -oE '[0-9]+' | head -1)
+RING=$(grep -oE 'content-desc="[0-9]+ of 5 sorted today"' "$XML" | grep -oE '[0-9]+' | head -1)
 [ -n "$RING" ] || { log "WALKTHROUGH: the Inbox ring says nothing"; exit 1; }
 # Boss's swipe map (2026-10-28): up shuffles, down drops, left learns, right makes an Action, a hold is Do now. Each
 # swipe is 220 dp from the claim's centre over 400 ms, kept inside the 320x640 screen. CI 40654453531: a 150-px swipe in
@@ -456,9 +487,9 @@ swipe_card() { # $1 claim, $2 direction, $3 what shows once it worked (text or c
   fi
   log "   (no \"$3\" after the swipe $2 on \"$1\")"
 }
-swipe_card "10 AI tools lists are mostly ads" down "$((RING + 1)) of 20 sorted today"; shot inbox-swiped-down-drop 1.5
-grep -q "content-desc=\"$((RING + 1)) of 20 sorted today\"" "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" \
-  || { log "WALKTHROUGH: the ring did not go $RING -> $((RING + 1)) after one sort"; grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" | tee -a "$OUT/steps.txt"; exit 1; }
+swipe_card "10 AI tools lists are mostly ads" down "$((RING + 1)) of 5 sorted today"; shot inbox-swiped-down-drop 1.5
+grep -q "content-desc=\"$((RING + 1)) of 5 sorted today\"" "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" \
+  || { log "WALKTHROUGH: the ring did not go $RING -> $((RING + 1)) after one sort"; grep -oE 'content-desc="[0-9]+ of 5 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   the ring went $RING -> $((RING + 1))"
 # Later stays a button in the dock (up is the shuffle now).
 tap Later && shot inbox-later-button 1.5
@@ -505,6 +536,8 @@ shot inbox-online 2
 
 log "-- Inbox clarify (Boss 2026-10-30): the two GTD groups, Someday in one tap, Waiting, Project + its first step, Calendar, and the bulk tidy-up of old saves with one Undo"
 # Wait up to 90 s for a POST (the sender holds a Drop or a Someday for 5 s, then WorkManager retries).
+# Drop is guarded (Boss 2026-10-31): the first tap arms it ("Again"), the second drops.
+drop_tap() { tap Drop && sleep 1 && tap Drop; }
 wait_re() { for i in $(seq 1 90); do grep -qE "$1" "$FAKE_LOG" && return 0; sleep 1; done; return 1; }
 fail_inbox() { log "WALKTHROUGH: $1"; grep -E "/api/v1/(inbox|projects)" "$FAKE_LOG" | tail -8 | tee -a "$OUT/steps.txt"; exit 1; }
 # Undo straight after a choice (no dump in between: the hold is 5 s): the card comes back on top and, because the
@@ -532,7 +565,7 @@ grep -q 'Someday ·' "$OUT/$(printf '%02d' $N)-inbox-someday.xml" || fail_inbox 
 wait_re 'POST /api/v1/inbox \{"action":"act","file":"inbox/ib7.md","sentence":"Order the battery on Uzum","project":"me","someday":true\}' || fail_inbox "Someday never reached pagel.uz as an act with someday:true"
 log "   Someday reached pagel.uz as an act with someday:true"
 # ib7 left: three newer saves arrive on top. Drop whatever older card is in the way (each Drop refreshes the deck).
-for k in 1 2 3 4; do onscreen "Chase the signed grant form from Aziz" && break; tap Drop; sleep 3; done
+for k in 1 2 3 4; do onscreen "Chase the signed grant form from Aziz" && break; drop_tap; sleep 3; done
 onscreen "Chase the signed grant form from Aziz" || fail_inbox "the new saves never reached the top of the Inbox"
 # Waiting: who is optional; the check day is 3 days on.
 tap Waiting || fail_inbox "no Waiting choice"
@@ -601,9 +634,9 @@ grep -q 'text="Old pile"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_
 grep -qE 'text="64.{1,2}left"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile does not say 64 left"
 grep -q 'An old save' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile shows no old save"
 # Sort two old saves with the same dock: the pile's own count goes 64 -> 62.
-tap Drop || fail_inbox "no Drop in the Old pile"
+drop_tap || fail_inbox "no Drop in the Old pile"
 sleep 2
-tap Drop || fail_inbox "no Drop the second time in the Old pile"
+drop_tap || fail_inbox "no Drop the second time in the Old pile"
 sleep 2
 shot inbox-old-sorted-two 2
 grep -qE 'text="62.{1,2}left"' "$OUT/$(printf '%02d' $N)-inbox-old-sorted-two.xml" || fail_inbox "after two old saves were sorted the Old pile does not say 62 left"
@@ -624,7 +657,7 @@ sleep 10
 [ "$(grep -cE 'inbox/old[0-9]+.md.*"quiet":true' "$FAKE_LOG")" = "0" ] || fail_inbox "the Undo did not stop the bulk: pagel.uz heard of an old save"
 log "   one Undo stopped all 62 before pagel.uz heard of them"
 shot inbox-before-bulk 1
-RING_B=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-before-bulk.xml" | grep -oE '[0-9]+' | head -1)
+RING_B=$(grep -oE 'content-desc="[0-9]+ of 5 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-before-bulk.xml" | grep -oE '[0-9]+' | head -1)
 [ -n "$RING_B" ] || fail_inbox "the ring says nothing before the bulk"
 tap "Tidy old saves" || fail_inbox "no Tidy old saves button the second time"
 shot inbox-tidy-again 2
@@ -635,7 +668,7 @@ for i in $(seq 1 180); do [ "$(grep -cE "$BULK_RE" "$FAKE_LOG")" = "62" ] && bre
 [ "$(grep -cE "$BULK_RE" "$FAKE_LOG")" = "62" ] || fail_inbox "the bulk move did not reach pagel.uz as 62 quiet acts with someday:true (got $(grep -cE "$BULK_RE" "$FAKE_LOG"))"
 log "   the bulk Someday reached pagel.uz: 62 quiet acts over two pages, after ~${i} s"
 shot inbox-clarify-done 3
-RING_A=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-clarify-done.xml" | grep -oE '[0-9]+' | head -1)
+RING_A=$(grep -oE 'content-desc="[0-9]+ of 5 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-clarify-done.xml" | grep -oE '[0-9]+' | head -1)
 [ "$RING_A" = "$RING_B" ] || fail_inbox "the bulk moved the ring: $RING_B before, $RING_A after (a tidy-up never counts toward the day's 20)"
 log "   the ring stayed at $RING_A/20 through the bulk move"
 tap "Back to Inbox" || fail_inbox "no way back from the emptied Old pile"
@@ -667,6 +700,11 @@ if tap "Bring back"; then shot someday-bring-back 2; $T adb shell input keyevent
 $T adb shell input keyevent 4; sleep 1
 tap Inbox && sleep 2
 
+# One goal of 5, counted on the phone: five sorted (Later and the quiet tidy moves do not count) tick the habit by themselves.
+for i in $(seq 1 30); do grep -q 'PATCH /api/v1/tasks/t_h5 {"done":true' "$FAKE_LOG" && break; sleep 1; done
+grep -q 'PATCH /api/v1/tasks/t_h5 {"done":true' "$FAKE_LOG" || { log "WALKTHROUGH: five sorted never ticked the habit Sort 5 saves in your Inbox"; grep "t_h5" "$FAKE_LOG" | tail -3 | tee -a "$OUT/steps.txt"; exit 1; }
+grep -q 't_h5.*Sort 5 saves in your Inbox' "$FAKE_LOG" && log "   the habit was renamed to Sort 5 saves in your Inbox" || log "   (no rename PATCH for the habit in the fake log)"
+log "   five sorted ticked the habit on pagel.uz"
 log "-- Inbox v3 capture: + in the Inbox header -> three lines, Enter after each -> pagel.uz gets three adds in order -> three current saves"
 tap Inbox && sleep 2
 tap "Add to Inbox" || fail_inbox "no Add to Inbox button in the Inbox header"

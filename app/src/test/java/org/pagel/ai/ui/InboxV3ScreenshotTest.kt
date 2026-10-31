@@ -131,7 +131,7 @@ class InboxV3ScreenshotTest {
         return red
     }
 
-    private val headerWords = listOf("Inbox", "Today's 20", "Old pile · 912", "2/5 learned")
+    private val headerWords = listOf("Inbox", "Today's 20", "Old pile · 912")
 
     @Test fun currentInboxWithOneQuietOldPileRow() {
         show { screen(ui(grant)) }

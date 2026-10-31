@@ -79,7 +79,8 @@ TRIAGED = set()  # saves the AI has read since the phone asked (POST {action: "t
 # Habits (Phase 3): repeating tasks in /sync, due today; a tick (PATCH done:true) moves the date a day on and counts the
 # day; an Undo (PATCH {due: the old date, undo: true}) takes the day out (dashboard task-store.ts, habits-api.ts).
 HABITS = [("t_h1", "Stretch for ten minutes", "07:30"), ("t_h2", "Read 10 pages", "21:30"), ("t_h3", "Drink water", None),
-          ("t_h4", "Log food", "13:00")]
+          ("t_h4", "Log food", "13:00"),
+          ("t_h5", "Go through five saves in your Inbox", None)]
 # Round B: "Log food" is done 3 times a day; each tap is one tick, the 3rd moves it on (task-store.ts habitTaps).
 HABIT_TIMES = {"t_h4": 3}
 HABIT_DUE = {}

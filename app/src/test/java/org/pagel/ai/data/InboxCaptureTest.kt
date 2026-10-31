@@ -263,4 +263,65 @@ class InboxCaptureTest {
         assertEquals(android.media.AudioAttributes.USAGE_MEDIA, a.usage)
         assertEquals(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION, a.contentType)
     }
+
+    private fun sorted(file: String, action: String) = org.pagel.ai.data.db.InboxSortedEntity(file, "2026-11-02", action, "c", null, null, null, 1L, 1L)
+
+    @Test fun onlyDoNoteWaitingAndDropCountTowardTheGoalOfFive() {
+        val rows = listOf("act", "now", "note", "waiting", "drop", "later", "someday").mapIndexed { i, a -> sorted("inbox/s$i.md", a) }
+        assertEquals("Later and Someday never count", 5, org.pagel.ai.ui.inbox.goalCount(rows))
+        assertEquals(5, org.pagel.ai.ui.inbox.GOAL)
+        assertEquals(0, org.pagel.ai.ui.inbox.goalCount(listOf(sorted("inbox/l.md", "later"), sorted("inbox/m.md", "someday"))))
+    }
+
+    private fun habitRepo() = org.pagel.ai.data.habits.HabitsRepository(db.dao(), api, { kicks++ }, { }, clock = { now })
+
+    private fun inboxHabit(day: String = "2026-10-31") = org.pagel.ai.data.db.TaskEntity(
+        id = "t_h5", project = "me", phase = "Now", sort = 1.0, text = "Go through five saves in your Inbox", title = null, status = "open", priority = 2, star = false,
+        due = day, every = "day", doneWhen = null, doneAt = null, updatedAt = "2026-10-27T05:00:00Z", serverVersion = 1, lastModified = 0,
+    )
+
+    @Test fun fiveSortedTicksTheHabitAndSortingOneBackTakesTheTickBack() = runBlocking {
+        db.dao().upsertTasks(listOf(inboxHabit()))
+        val tasks = org.pagel.ai.data.tasks.TaskRepository(db.dao(), { })
+        val goal = org.pagel.ai.data.inbox.InboxGoalHabit(habitRepo(), tasks, null) { "2026-10-31" }
+        assertFalse("four is not enough", goal.sync(4))
+        assertEquals(0, habitRepo().tapsToday("t_h5"))
+        assertTrue("five ticks it", goal.sync(5))
+        assertEquals(1, habitRepo().tapsToday("t_h5"))
+        assertFalse("six does not tick it twice", goal.sync(6))
+        assertEquals(1, habitRepo().tapsToday("t_h5"))
+        assertTrue("an Undo below five takes the tick back", goal.sync(4))
+        assertEquals(0, habitRepo().tapsToday("t_h5"))
+        assertEquals("it was renamed once", "Sort 5 saves in your Inbox", db.dao().taskOnce("t_h5")!!.text)
+    }
+
+    @Test fun aTickBossMadeInHabitsIsNeverTakenBack() = runBlocking {
+        db.dao().upsertTasks(listOf(inboxHabit()))
+        habitRepo().tick("t_h5")
+        val goal = org.pagel.ai.data.inbox.InboxGoalHabit(habitRepo(), org.pagel.ai.data.tasks.TaskRepository(db.dao(), { }), null) { "2026-10-31" }
+        assertFalse(goal.sync(2))
+        assertEquals(1, habitRepo().tapsToday("t_h5"))
+    }
+
+    @Test fun chipsCountTheSourcesAndFilterTheDeckAndTheOrderPillFlips() {
+        fun e(i: Int, src: String) = row("inbox/c$i.md", "2026-11-02").copy(source = src, text = "t$i")
+        val items = listOf(e(1, "https://www.instagram.com/p/1/"), e(2, "https://x.com/a/status/2"), e(3, "https://www.instagram.com/p/3/"), e(4, ""), e(5, "https://example.com/p"))
+        val chips = org.pagel.ai.ui.inbox.sourceCounts(items)
+        assertEquals(listOf("instagram" to 2, "x" to 1, "note" to 1, "web" to 1).toSet(), chips.map { it.key to it.count }.toSet())
+        assertEquals("Instagram first, the biggest", "instagram", chips.first().key)
+        val v = org.pagel.ai.ui.inbox.ViewPrefs()
+        assertEquals(items.map { it.file }, org.pagel.ai.ui.inbox.applyOrder(items, v, emptyList()).map { it.file })
+        assertEquals(items.map { it.file }.reversed(), org.pagel.ai.ui.inbox.applyOrder(items, v.copy(order = org.pagel.ai.ui.inbox.InboxOrder.OLDEST), emptyList()).map { it.file })
+        assertEquals(org.pagel.ai.ui.inbox.InboxOrder.NEWEST, org.pagel.ai.ui.inbox.InboxOrder.SHUFFLE.next())
+    }
+
+    @Test fun shuffleDealsTheLastShownAndTodaysSkipsAtTheBack() {
+        val items = (1..8).map { row("inbox/h$it.md", "2026-11-02") }
+        val v = org.pagel.ai.ui.inbox.ViewPrefs(order = org.pagel.ai.ui.inbox.InboxOrder.SHUFFLE, seed = 7, skipped = setOf("inbox/h2.md"))
+        val first = org.pagel.ai.ui.inbox.applyOrder(items, v, emptyList())
+        assertEquals("a skipped save is dealt last", "inbox/h2.md", first.last().file)
+        val again = org.pagel.ai.ui.inbox.applyOrder(items, v.copy(seed = 8), listOf(first.first().file))
+        assertTrue("the card shown last time does not open the next visit", again.first().file != first.first().file)
+        assertEquals("a refresh inside one visit keeps the order", first.map { it.file }, org.pagel.ai.ui.inbox.applyOrder(items.reversed(), v, emptyList()).map { it.file })
+    }
 }

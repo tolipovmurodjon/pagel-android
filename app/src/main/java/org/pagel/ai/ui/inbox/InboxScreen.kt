@@ -32,6 +32,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import org.pagel.ai.ui.glass.GlassChip
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -272,6 +274,9 @@ data class InboxActions(
     /** Open the Old pile (the saves from before the fresh start) and come back from it. */
     val openOld: () -> Unit = {},
     val closeOld: () -> Unit = {},
+    /** A source chip (null = All) and the order pill. */
+    val setSource: (String?) -> Unit = {},
+    val cycleOrder: () -> Unit = {},
 )
 
 @Composable
@@ -297,7 +302,7 @@ fun InboxRoute(
     }
     InboxScreen(
         ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer, sortedCount = sortedToday.size, bulk = bulk,
-        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy, repeat = vm::repeat, capture = onCapture, openOld = vm::openOld, closeOld = vm::closeOld),
+        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy, repeat = vm::repeat, capture = onCapture, openOld = vm::openOld, closeOld = vm::closeOld, setSource = vm::setSource, cycleOrder = vm::cycleOrder),
     )
     tidy?.let { t -> TidySheet(t, onSomeday = { vm.tidyAll(Choice.SOMEDAY) }, onDrop = { vm.tidyAll(Choice.DROP) }, onDismiss = vm::closeTidy, onRetry = vm::openTidy, onGroup = vm::dropGroup) }
     form?.let { f -> ChoiceFormSheet(f, ui, onEdit = vm::editForm, onSubmit = vm::submit, onDismiss = vm::closeForm, withPicture = pictures[f.card.file] != null) }
@@ -399,10 +404,29 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
         }
         // Always there, so the deck never moves when the first decision lands (RULES.md Layout 1).
         Row(Modifier.heightIn(min = Space.touch), verticalAlignment = Alignment.CenterVertically) {
-            val line = bulk?.let(::bulkLine) ?: if (old) oldLeftLine(ui) else countsLine(ui)
-            Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
+            val line = bulk?.let(::bulkLine) ?: if (old) oldLeftLine(ui) else null
+            if (line != null) Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
+            else if (ui.sources.isNotEmpty()) SourceChips(ui, actions, Modifier.weight(1f))
+            else Spacer(Modifier.weight(1f))
             if (!old) OldPileRow(ui, actions.openOld)
         }
+    }
+}
+
+/**
+ * The source chips and the order pill in one scrolling row (they never cut): "All", then each source that has saves with
+ * its count, then one pill that cycles Newest first, Oldest first, Shuffle. Only the current Inbox has them.
+ */
+@Composable
+private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier = Modifier) {
+    Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
+        val all = ui.sources.sumOf { it.count }
+        GlassChip(TabIcons.Inbox, "All \u00B7 $all", set = ui.source == null, description = "All \u00B7 $all") { actions.setSource(null) }
+        for (s in ui.sources) {
+            val icon = when (s.key) { "note" -> TabIcons.StickyNote; "web" -> TabIcons.ArrowUpRight; else -> TabIcons.Sparkles }
+            GlassChip(icon, "${s.label} \u00B7 ${s.count}", set = ui.source == s.key, description = "${s.label} \u00B7 ${s.count}") { actions.setSource(s.key) }
+        }
+        GlassChip(TabIcons.Clock, ui.order.label, set = ui.order != InboxOrder.NEWEST, description = ui.order.label) { actions.cycleOrder() }
     }
 }
 
@@ -500,10 +524,6 @@ private fun Empty(ui: InboxUi, actions: InboxActions) {
                 when { waiting -> "${ui.left} more when online"; ui.loading -> "Opening your Inbox"; ui.oldMode -> "Old pile is clear"; else -> "Nothing waiting" },
                 style = MaterialTheme.typography.headlineSmall, color = Glass.Ink,
             )
-            if (!ui.oldMode && !ui.loading && ui.kept > 0) {
-                Spacer(Modifier.height(4.dp))
-                Text("${ui.kept} learned today.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
-            }
             if (!ui.loading) {
                 Spacer(Modifier.height(Space.lg))
                 if (ui.oldMode) SolidButton("Back to Inbox", TabIcons.ArrowLeft, actions.closeOld) else SolidButton("Capture something", TabIcons.Plus, actions.capture)
@@ -817,7 +837,7 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
             // clipped claim ("Quizzes beat rereading:" and no more, walk 78) is a cut text.
             // With a picture the picture takes what the words leave, so the claim keeps its line count and shrinks by it instead.
             FitText(
-                card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = if (!showPicture) 8 else if (room < 380.dp) 4 else 6, minSize = 15.sp,
+                card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = if (!showPicture) 8 else if (room < 380.dp) 4 else 6, minSize = if (crowded) 11.sp else 15.sp,
                 modifier = if (showPicture) Modifier else Modifier.weight(1f, fill = false),
             )
             // The claim comes first: on a short screen at a large font the AI's reason leaves, or the claim got no room at all
@@ -931,11 +951,22 @@ private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
         if (!tipUsed) { tipUsed = true; runCatching { prefs.edit().putBoolean(HOLD_TIP_USED, true).apply() } }
         actions.repeat(card, c)
     }
+    // Drop needs a deliberate second tap (or a hold, which repeats): a stray tap must never lose a save (Boss 2026-10-31).
+    var armed by remember(card.file) { mutableStateOf(false) }
+    LaunchedEffect(armed) { if (armed) { delay(6_000); armed = false } }
+    // The first time a choice is the AI's pick, the big button shows one example of it instead of its hint.
+    val explained = remember { mutableStateOf(runCatching { prefs.getStringSet(EXPLAINED, emptySet()).orEmpty().toSet() }.getOrDefault(emptySet())) }
+    val used = { c: Choice ->
+        if (c.name !in explained.value) {
+            explained.value = explained.value + c.name
+            runCatching { prefs.edit().putStringSet(EXPLAINED, explained.value).apply() }
+        }
+    }
     // The Later row under the grid is paid for by the grid itself (no top gap, no padding round each choice), so the
     // card keeps the room its picture needs at 360x780.
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         val guess = card.guess
-        if (guess != null) GuessButton(card, guess, ui) { actions.choose(card, guess, Throw.None) }
+        if (guess != null) GuessButton(card, guess, ui, firstUse = guess.name !in explained.value) { used(guess); actions.choose(card, guess, Throw.None) }
         else AiReading(ui.reading)
         Text(
             "Can I do something about it?", style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -957,7 +988,9 @@ private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
                             val c = group.getOrNull(slot)
                             if (c == null) Spacer(Modifier.weight(1f))
                             else ChoiceIcon(c, enabled = !(c == Choice.KEEP && ui.full), picked = c == guess, labelSize = labelSize, modifier = Modifier.weight(1f),
-                                onLongClick = { repeat(c) }) { actions.choose(card, c, Throw.None) }
+                                label = if (c == Choice.DROP && armed) "Again" else null, onLongClick = { repeat(c) }) {
+                                if (c == Choice.DROP && !armed) armed = true else { armed = false; used(c); actions.choose(card, c, Throw.None) }
+                            }
                         }
                     }
                 }
@@ -998,6 +1031,7 @@ private const val DOCK_SLOTS = 5
 private val DOCK_LINK_ROW = 20.dp
 private const val DOCK_PREFS = "pagel-inbox"
 private const val HOLD_TIP_USED = "hold_tip_used"
+private const val EXPLAINED = "explained_choices"
 
 /**
  * The No/Yes column's width (the wider word, measured) and the one word size for the whole grid: the largest step from
@@ -1027,12 +1061,12 @@ private fun dockSizes(width: Dp): Pair<Dp, androidx.compose.ui.unit.TextUnit> {
  * today's keeps full, a Learn becomes a Note and says why, as on the web.
  */
 @Composable
-private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, onClick: () -> Unit) {
+private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, firstUse: Boolean = false, onClick: () -> Unit) {
     val look = guess.look
     val press = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(18.dp)
     // The hint alone, in full white (the .92 white measured 4.36:1 on Learn's light end); "AI's pick" is the sparkle.
-    val sub = if (guess != card.pick) "${ui.cap}/${ui.cap} learned · one line" else look.hint
+    val sub = if (guess != card.pick) "${ui.cap}/${ui.cap} remembered · one line" else if (firstUse) "e.g. " + look.eg else look.hint
     // One row tall (64 dp, Boss 2026-10-28: the pill read as a slab); it grows only when 1.3x+ text needs two lines.
     Row(
         Modifier.fillMaxWidth().then(if (LocalDensity.current.fontScale <= 1.2f) Modifier.height(64.dp) else Modifier.heightIn(min = 64.dp)).pressScale(press)
@@ -1067,7 +1101,7 @@ private fun lerp(a: Color, b: Color, t: Float) = Color(a.red + (b.red - a.red) *
 @Composable
 private fun ChoiceIcon(
     choice: Choice, enabled: Boolean, modifier: Modifier, picked: Boolean = false, labelSize: androidx.compose.ui.unit.TextUnit = 12.5.sp,
-    onLongClick: () -> Unit = {}, onClick: () -> Unit,
+    label: String? = null, onLongClick: () -> Unit = {}, onClick: () -> Unit,
 ) {
     val look = choice.look
     val press = remember { MutableInteractionSource() }
@@ -1075,7 +1109,7 @@ private fun ChoiceIcon(
         // combinedClickable gives the long-press its own haptic.
         modifier.heightIn(min = TouchMin).pressScale(press).graphicsLayer { alpha = if (enabled) 1f else 0.4f }
             .combinedClickable(press, indication = null, enabled = enabled, role = Role.Button, onLongClickLabel = "Repeat ${look.label} as last time",
-                onLongClick = onLongClick, onClick = onClick),
+                onLongClick = onLongClick, onClick = onClick).semantics { contentDescription = look.label },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // 30 dp discs (were 32): with no padding round each choice, the grid pays for the Later line under it.
@@ -1087,7 +1121,7 @@ private fun ChoiceIcon(
         ) { Icon(look.icon, contentDescription = null, tint = if (picked) Glass.Primary else Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(18.dp)) }
         Spacer(Modifier.height(2.dp))
         androidx.compose.foundation.text.BasicText(
-            look.label,
+            label ?: look.label,
             style = MaterialTheme.typography.labelSmall.copy(color = Glass.Ink.copy(alpha = 0.86f), fontSize = labelSize, textAlign = androidx.compose.ui.text.style.TextAlign.Center),
             maxLines = 1,
             softWrap = false,
