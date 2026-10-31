@@ -117,9 +117,9 @@ internal object AgslRing {
             float f2 = fibre(fract(a - spin * 1.4 + twist * 1.7), 96.0);
             float fib = 0.55 * f1 + 0.45 * f2;
             float bx = (x - 1.07) / 0.12;
-            float hx = (x - 1.0) / 0.75;
+            float hx = (x - 1.0) / 0.42;
             float band = exp(-bx * bx);
-            float halo = exp(-hx * hx) * 0.42;
+            float halo = exp(-hx * hx) * 0.26;
             float ring = clamp((band * (0.35 + 0.65 * fib * fib * 1.6) + halo) * strength, 0.0, 1.0);
             half3 gold = half3(0.949, 0.710, 0.290);
             half3 mint = half3(0.400, 0.867, 0.659);
@@ -130,7 +130,7 @@ internal object AgslRing {
             float s = shade * 0.12 * fall * fall;
             // Faint spiral arms in the shade: the space around the hole looks drawn in (implied, not a real lens).
             float arm = 0.5 + 0.5 * sin(6.0 * (a + spin * 0.5) * 6.2831853 * 0.5 - 7.0 * x);
-            float streak = shade * 0.10 * arm * fall * smoothstep(1.1, 1.3, x);
+            float streak = shade * 0.07 * arm * fall * smoothstep(1.1, 1.3, x);
             float alpha = clamp(ring + s + streak, 0.0, 1.0);
             return half4(col * half(ring + streak), half(alpha));
         }
