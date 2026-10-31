@@ -119,10 +119,12 @@ internal fun AchievementsPage(badges: List<HabitBadge>) {
                     )
                     Text("${of.count { it.earned }}/${of.size} earned", style = Glass.NumberText, color = Glass.Muted)
                     Spacer(Modifier.height(Space.lg))
-                    for (row in of.chunked(3)) {
+                    // A large font gets two to a row: "Perfect" must stay one whole word.
+                    val cols = if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) 2 else 3
+                    for (row in of.chunked(cols)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
                             for (b in row) BadgeCell(b, Modifier.weight(1f), art = 64.dp, textColour = if (b.earned) Glass.Ink else Glass.Muted) { open = b }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                            repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                         Spacer(Modifier.height(Space.lg))
                     }
