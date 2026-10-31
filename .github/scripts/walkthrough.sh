@@ -606,9 +606,11 @@ REMOVES=$(grep -c '"remove":true' "$FAKE_LOG")
 tap "New habit" && shot new-habit-sheet 1.5 || { log "WALKTHROUGH: Habits has no + New habit"; exit 1; }
 $T adb shell "input text 'Floss%sat%snight'"; sleep 0.5
 tap "Add habit" || { log "WALKTHROUGH: the New habit sheet has no Add habit"; exit 1; }
+# The toast lives 5 s: take it back at once; the add still leaves first (the outbox keeps its order), then the remove.
+tap Undo || { log "WALKTHROUGH: the Habit added toast had no Undo"; exit 1; }
 for i in $(seq 1 8); do grep -q 'POST /api/v1/tasks .*Floss at night' "$FAKE_LOG" && break; sleep 0.5; done
 grep -q 'POST /api/v1/tasks .*Floss at night' "$FAKE_LOG" || { log "WALKTHROUGH: the new habit never reached pagel.uz"; grep "POST /api/v1/tasks" "$FAKE_LOG" | tail -3 | tee -a "$OUT/steps.txt"; exit 1; }
-tap Undo && shot new-habit-undone 1.5 || { log "WALKTHROUGH: the Habit added toast had no Undo"; exit 1; }
+shot new-habit-undone 1.5
 for i in $(seq 1 30); do [ "$(grep -c '"remove":true' "$FAKE_LOG")" -gt "$REMOVES" ] && break; sleep 1; done
 [ "$(grep -c '"remove":true' "$FAKE_LOG")" -gt "$REMOVES" ] || { log "WALKTHROUGH: Undo of the new habit never reached pagel.uz"; exit 1; }
 log "   new habit added and taken back"
@@ -623,11 +625,21 @@ H3="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$TODAY\",\"if_due\":\"$TOD
 for i in $(seq 1 30); do grep -qF "$H3" "$FAKE_LOG" && break; sleep 1; done
 grep -qF "$H3" "$FAKE_LOG" || { log "WALKTHROUGH: the habit tick never reached pagel.uz as $H3"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   habit tick reached pagel.uz after ~${i} s"
-log "-- a timed habit: Stretch's play ring runs its 10-minute clock (the row itself opens the habit's page)"
-tap "Start: Stretch for ten minutes" && shot habit-timer 3
-grep -q 'text="0:0[1-9] / 10 min"\|text="0:1[0-9] / 10 min"' "$OUT/$(printf '%02d' $N)-habit-timer.xml" || log "   (WARN: the timer shows no running seconds)"
-grep -q 'content-desc="Reminder: \|content-desc="More: ' "$OUT/$(printf '%02d' $N)-habit-timer.xml" && { log "WALKTHROUGH: a habit row still has a bell or a menu (Boss 2026-10-29: minimal rows)"; exit 1; }
-tap "Pause: Stretch for ten minutes" && sleep 1
+log "-- a timed habit never needs its clock (Boss 2026-10-31): tap the card, Timer and Finish open under it; Finish ticks it; Undo writes the inverse"
+tap "Stretch for ten minutes" && shot habit-expanded 1.5 || { log "WALKTHROUGH: the Stretch card did not take a tap"; exit 1; }
+grep -q 'content-desc="Finish"' "$OUT/$(printf '%02d' $N)-habit-expanded.xml" || { log "WALKTHROUGH: tapping a timed card did not open Finish"; exit 1; }
+grep -q 'content-desc="Timer"' "$OUT/$(printf '%02d' $N)-habit-expanded.xml" || { log "WALKTHROUGH: tapping a timed card did not open Timer"; exit 1; }
+grep -q 'content-desc="Reminder: \|content-desc="More: ' "$OUT/$(printf '%02d' $N)-habit-expanded.xml" && { log "WALKTHROUGH: a habit row still has a bell or a menu (Boss 2026-10-29: minimal rows)"; exit 1; }
+H1_BEFORE=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")
+H1_UNDO_BEFORE=$(grep -c 'PATCH /api/v1/tasks/t_h1 .*"undo":true' "$FAKE_LOG")
+tap "Finish" && tap Undo
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_BEFORE" ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_BEFORE" ] || { log "WALKTHROUGH: Finish never ticked Stretch at pagel.uz (no clock was run)"; grep t_h1 "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   Finish ticked the timed habit without its clock after ~${i} s"
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 .*"undo":true' "$FAKE_LOG")" -gt "$H1_UNDO_BEFORE" ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 .*"undo":true' "$FAKE_LOG")" -gt "$H1_UNDO_BEFORE" ] || { log "WALKTHROUGH: the Undo after Finish never wrote the inverse"; grep t_h1 "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   Undo wrote the inverse after ~${i} s"
+shot habit-after-finish-undo 1.5
 log "-- a 3x habit (round B): Log food tapped 3 times in Afternoon; pagel.uz gets 3 ticks"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 tap Afternoon && sleep 1
@@ -637,6 +649,106 @@ grep -q 'text="2 / 3"' "$OUT/$(printf '%02d' $((N - 1)))-habit-3x-2.xml" || log 
 for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] && break; sleep 1; done
 [ "$(grep -c 'PATCH /api/v1/tasks/t_h4 {"done":true' "$FAKE_LOG")" -ge 3 ] || { log "WALKTHROUGH: the 3x habit's taps did not all reach pagel.uz"; grep "t_h4" "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   3 taps reached pagel.uz after ~${i} s"
+log "-- Habits 3.0 (Boss 2026-10-31): the week swipes back and forward, a missed day is logged for its own date and its Undo writes the inverse, a day off is drawn as done, the timer opens full screen"
+# The centre of the first node whose content-desc starts with $1, as "x y".
+habit_xy() {
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  local b; b=$(timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | tr '>' '\n' | grep -F "content-desc=\"$1" | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"')
+  [ -n "$b" ] || { log "   (no content-desc \"$1...\" on screen)"; return 1; }
+  set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
+  echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
+}
+$T adb shell input swipe 160 200 160 600 400; sleep 1
+TODAY_WD=$(TZ=Asia/Tashkent date +'%A %-d %B')
+YDATE=$(TZ=Asia/Tashkent date -d yesterday +%Y-%m-%d)
+YESTERDAY_WD=$(TZ=Asia/Tashkent date -d yesterday +'%A %-d %B')
+STRIP_XY=$(habit_xy "$TODAY_WD") || { log "WALKTHROUGH: Habits' week strip has no \"$TODAY_WD\""; exit 1; }
+set -- $STRIP_XY; SY=$2
+# Android's own frame stats for just the swipes: the janky share is logged (JankStats' number, from gfxinfo).
+$T adb shell dumpsys gfxinfo "$PKG" reset > /dev/null
+$T adb shell input swipe 40 "$SY" 280 "$SY" 300
+sleep 1
+shot habits-week-back 1.5
+grep -q 'looking back' "$OUT/$(printf '%02d' $N)-habits-week-back.xml" || { log "WALKTHROUGH: a swipe right on the week strip did not bring the week before"; exit 1; }
+$T adb shell input swipe 280 "$SY" 40 "$SY" 300
+sleep 1
+shot habits-week-forward 1.5
+grep -qF "text=\"$TODAY_WD\"" "$OUT/$(printf '%02d' $N)-habits-week-forward.xml" || { log "WALKTHROUGH: a swipe left on the week strip did not bring this week and today back"; exit 1; }
+# A swipe further forward has no week to go to: today stays today.
+$T adb shell input swipe 280 "$SY" 40 "$SY" 300
+sleep 1
+shot habits-week-no-further 1.5
+grep -qF "text=\"$TODAY_WD\"" "$OUT/$(printf '%02d' $N)-habits-week-no-further.xml" || { log "WALKTHROUGH: a swipe left past this week moved the day"; exit 1; }
+# Boss 2026-10-31 (0.3.41): a swipe back left the strip half empty. After a slow back, a fast back and two forward swipes the
+# strip must show one whole week: all 7 weekdays on screen.
+week_whole() {
+  local x; x="$OUT/$(printf '%02d' $N)-$1.xml"
+  for d in Monday Tuesday Wednesday Thursday Friday Saturday Sunday; do
+    grep -q "content-desc=.$d " "$x" || { log "WALKTHROUGH: after $1 the week strip has no $d (stuck half-way)"; exit 1; }
+  done
+}
+# The Today pill (shown while another day is open) must never sit over a card or any text.
+pill_clear() { python3 .github/scripts/pill-clear.py "$OUT/$(printf '%02d' $N)-$1.xml" || { log "WALKTHROUGH: after $1 the Today pill covers text"; exit 1; }; }
+$T adb shell input swipe 40 "$SY" 280 "$SY" 900; sleep 1; shot habits-week-slow-back 1; week_whole habits-week-slow-back; pill_clear habits-week-slow-back
+$T adb shell input swipe 40 "$SY" 280 "$SY" 120; sleep 1; shot habits-week-fast-back 1; week_whole habits-week-fast-back
+$T adb shell input swipe 280 "$SY" 40 "$SY" 300; sleep 1; shot habits-week-forward-1 1; week_whole habits-week-forward-1; pill_clear habits-week-forward-1
+$T adb shell input swipe 280 "$SY" 40 "$SY" 300; sleep 1; shot habits-week-forward-2 1; week_whole habits-week-forward-2
+$T adb shell dumpsys gfxinfo "$PKG" > "$OUT/gfxinfo-week-swipe.txt"
+JANK=$(grep -E "Janky frames:" "$OUT/gfxinfo-week-swipe.txt" | head -1)
+log "   JANK on the week swipes (target < 5 % on a phone; an emulator draws in software): ${JANK:-unknown}"
+log "-- a missed day: tap yesterday on the strip, tick a habit for it, see pagel.uz get that date, Undo writes the inverse"
+if [ "$(TZ=Asia/Tashkent date +%u)" = "1" ]; then $T adb shell input swipe 40 "$SY" 280 "$SY" 300; sleep 1; fi
+tap "$YESTERDAY_WD" && shot habits-yesterday 1.5 || { log "WALKTHROUGH: no \"$YESTERDAY_WD\" on the strip to tap"; exit 1; }
+$T adb shell input swipe 160 460 160 260 400; sleep 1
+tap "Done: Drink water" && tap Undo
+shot habits-yesterday-undone 1
+HY="PATCH /api/v1/tasks/t_h3 {\"done\":true,\"day\":\"$YDATE\",\"n\":1}"
+for i in $(seq 1 30); do grep -qF "$HY" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$HY" "$FAKE_LOG" || { log "WALKTHROUGH: ticking yesterday never reached pagel.uz as $HY"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   yesterday's tick reached pagel.uz with its own date after ~${i} s"
+HU="PATCH /api/v1/tasks/t_h3 {\"done\":false,\"day\":\"$YDATE\"}"
+for i in $(seq 1 30); do grep -qF "$HU" "$FAKE_LOG" && break; sleep 1; done
+grep -qF "$HU" "$FAKE_LOG" || { log "WALKTHROUGH: the Undo of yesterday's tick never reached pagel.uz as $HU"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+log "   the Undo wrote the inverse for that date after ~${i} s"
+tap "Back to today" && sleep 1
+log "-- a day off: the card menu, Take a day off; the card reads Finished (drawn as done), the strip joins it like a done day"
+$T adb shell input swipe 160 200 160 600 400; sleep 1
+tap All && sleep 1
+for k in 1 2 3 4 5; do
+  onscreen "Habit menu: Read 10 pages" && break
+  $T adb shell input swipe 160 460 160 300 400; sleep 1
+done
+tap "Habit menu: Read 10 pages" && shot habit-card-menu 1 || { log "WALKTHROUGH: no card menu on \"Read 10 pages\""; exit 1; }
+tap "Take a day off" && shot habit-day-off 0.6 || { log "WALKTHROUGH: the card menu has no \"Take a day off\""; exit 1; }
+sleep 2
+shot habit-day-off-settled 1
+grep -q 'Frozen\|snowflake' "$OUT/$(printf '%02d' $N)-habit-day-off-settled.xml" && { log "WALKTHROUGH: a day off is marked frozen on screen (Boss: keep it as fully done)"; exit 1; }
+log "-- the full-screen timer: open it from the card's menu, swipe its colour, start and pause"
+$T adb shell input swipe 160 200 160 600 400; sleep 1
+for k in 1 2 3 4 5; do
+  onscreen "Habit menu: Stretch for ten minutes" && break
+  $T adb shell input swipe 160 460 160 300 400; sleep 1
+done
+tap "Habit menu: Stretch for ten minutes" || { log "WALKTHROUGH: the Stretch card has no menu"; exit 1; }
+tap "Timer" && shot habit-timer-screen 1.5 || { log "WALKTHROUGH: the Stretch card menu has no Timer"; exit 1; }
+grep -qE 'content-desc="(Start|Resume|Pause) timer"' "$OUT/$(printf '%02d' $N)-habit-timer-screen.xml" || { log "WALKTHROUGH: the timer screen has no Start pill"; exit 1; }
+$T adb shell input swipe 280 400 40 400 300
+sleep 1
+shot habit-timer-colour 1
+$T adb shell input swipe 280 400 40 400 300
+sleep 1
+shot habit-timer-colour-2 1
+if tap "Resume timer" || tap "Start timer"; then sleep 3; shot habit-timer-running 0.5; grep -q 'content-desc="Pause timer"' "$OUT/$(printf '%02d' $N)-habit-timer-running.xml" || { log "WALKTHROUGH: the timer did not start from its Start pill"; exit 1; }; tap "Pause timer" && sleep 1; fi
+# Finish on the timer page counts the habit done with the time so far; then back, and the card's check takes it back.
+H1_T=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")
+tap "Finish" && shot habit-timer-finished 2
+grep -q 'text="Done"' "$OUT/$(printf '%02d' $N)-habit-timer-finished.xml" || log "   (WARN: the timer page does not say Done after Finish)"
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_T" ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_T" ] || { log "WALKTHROUGH: Finish on the timer page never ticked Stretch"; exit 1; }
+log "   Finish on the timer page ticked Stretch after ~${i} s"
+$T adb shell input keyevent 4; sleep 1
+front habits-after-timer
+tap "Done: Stretch for ten minutes" && sleep 1
 log "-- Namoz (Boss 2026-10-28): Start tracking adds the five prayers as daily habits in the group namoz, from 1 November"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
 tap "Start tracking" && shot namoz-started 3
@@ -645,6 +757,25 @@ for i in $(seq 1 30); do [ "$(grep -c 'POST /api/v1/tasks .*"group":"namoz"' "$F
 log "   5 prayers reached pagel.uz after ~${i} s"
 shot namoz-group 2
 grep -q 'text="Bomdod"' "$OUT/$(printf '%02d' $N)-namoz-group.xml" || log "   (WARN: the Namoz group shows no Bomdod row yet)"
+log "-- each prayer sits in its time of day: Afternoon holds Asr; its tick is its own, the Namoz page opens from its row"
+tap Afternoon && shot namoz-afternoon 1.5
+grep -q 'content-desc="Prayer: Asr"' "$OUT/$(printf '%02d' $N)-namoz-afternoon.xml" || { log "WALKTHROUGH: Afternoon has no Asr prayer row"; exit 1; }
+# Before 1 November the prayers are not counted yet, so the tick waits; the row still opens the Namoz page. Scroll the row above the bar first.
+$T adb shell input swipe 160 460 160 260 400; sleep 1
+shot namoz-asr-ticked 1
+# The tap may have opened the Namoz page (the row is one target next to the tick): either way the page must come back to Habits.
+if grep -q 'text="My plan"' "$OUT/$(printf '%02d' $N)-namoz-asr-ticked.xml"; then
+  log "   the Asr tap opened the Namoz page (My plan is on it)"
+  $T adb shell input keyevent 4; sleep 1
+elif tap "Prayer: Asr"; then
+  shot namoz-page-after-asr 2.5
+  grep -q 'text="My plan"' "$OUT/$(printf '%02d' $N)-namoz-page-after-asr.xml" || log "   (WARN: the Namoz page shows no My plan)"
+  $T adb shell input keyevent 4; sleep 1
+else
+  log "   (WARN: no Prayer: Asr row after the tick)"
+fi
+front habits-after-asr
+$T adb shell input swipe 160 200 160 600 400; sleep 1
 tap History && shot habits-history 2
 $T adb shell input keyevent 4; sleep 1
 tap Morning && sleep 1
@@ -658,20 +789,48 @@ for k in 1 2 3 4 5; do
   [ -n "$SB" ] && [ "$SB" -lt 480 ] && break
   $T adb shell input swipe 160 460 160 300 400; sleep 1
 done
-tap "Stretch for ten minutes" && shot habit-page 2.5
-# The page is mainly stats (Boss 2026-10-29); every setting sits behind ⋮.
-grep -q 'content-desc="Habit settings"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no ⋮ settings"; exit 1; }
+tap "Habit menu: Stretch for ten minutes" && tap "Open page" && shot habit-page 2.5
+# The page is mainly stats (Boss 2026-10-29); the ⋮ opens the task panel, the one editor for a habit (Boss 2026-10-31).
+grep -q 'content-desc="Edit habit"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no ⋮ edit"; exit 1; }
 grep -q 'text="Reminder · off"' "$OUT/$(printf '%02d' $N)-habit-page.xml" && { log "WALKTHROUGH: the reminder card is still on the page body"; exit 1; }
-# Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
+# Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the panel stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
 ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")
-tap "Habit settings" && shot reminder-sheet 2.5
-# The Reminder block sits under Look and Schedule in the sheet: scroll until its switch is on screen.
-for k in 1 2 3 4 5; do onscreen "Remind me" && break; $T adb shell input swipe 160 500 160 220 400; sleep 1; done
+hide_keyboard() { $T adb shell dumpsys input_method 2>/dev/null | grep -q 'mInputShown=true' && $T adb shell input keyevent 4; return 0; }
+tap "Edit habit" && shot habit-panel 2.5
+PANEL="$OUT/$(printf '%02d' $N)-habit-panel.xml"
+for want in 'Time: ' 'Repeat: ' 'Reminder: ' 'After: '; do
+  grep -q "content-desc=\"$want" "$PANEL" || { log "WALKTHROUGH: the habit's panel has no \"$want\" row"; exit 1; }
+done
+grep -q 'content-desc="Priority: \|content-desc="Pin to Today' "$PANEL" && { log "WALKTHROUGH: a habit's panel still shows Priority or Pin to Today"; exit 1; }
+grep -q 'content-desc="Time wheel' "$PANEL" && { log "WALKTHROUGH: the time wheel is open before any row was tapped"; exit 1; }
+log "-- the title is edited in place: tap it, type, Done; pagel.uz gets one PATCH title"
+TITLES=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"title"' "$FAKE_LOG")
+tap "Title" || { log "WALKTHROUGH: the habit panel has no Title field"; exit 1; }
+sleep 1; $T adb shell input keycombination 113 29; $T adb shell "input text 'Stretch%sfor%sten%sminutes%s2'"; shot habit-title-edit 1; tap "Who you are becoming"; sleep 1; hide_keyboard
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"title"' "$FAKE_LOG")" -gt "$TITLES" ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"title"' "$FAKE_LOG")" -gt "$TITLES" ] || { log "WALKTHROUGH: the habit's new title never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+# Put the name back, so the steps after this one still find "Stretch for ten minutes".
+tap "Title"; sleep 1; $T adb shell input keycombination 113 29; $T adb shell "input text 'Stretch%sfor%sten%sminutes'"; tap "Who you are becoming"; sleep 1; hide_keyboard
+log "-- Repeat → Every weekday: one PATCH every"
+tap 'Repeat: [^"]*' && shot habit-repeat-sheet 2
+tap "Every weekday" || { log "WALKTHROUGH: the Repeat sheet has no Every weekday"; exit 1; }
+for i in $(seq 1 30); do grep -qF 'PATCH /api/v1/tasks/t_h1 {"every":"weekday"}' "$FAKE_LOG" && break; sleep 1; done
+grep -qF 'PATCH /api/v1/tasks/t_h1 {"every":"weekday"}' "$FAKE_LOG" || { log "WALKTHROUGH: the habit's Repeat never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+tap "Every day" || true
+$T adb shell input keyevent 4; sleep 1
+log "-- Reminder on: the wheel shows only now, with the time it will ring"
 tap "Remind me" && shot reminder-on 1.5
 front reminder-on
-# The sheet reads the grant when it opens (checker #7): the walk granted it, so no "Exact time · Allow" row.
-grep -q 'content-desc="Exact time · Allow"' "$OUT/$(printf '%02d' $N)-reminder-on.xml" && { log "WALKTHROUGH: the sheet still says exact alarms are off after the grant"; exit 1; }
+RON="$OUT/$(printf '%02d' $N)-reminder-on.xml"
+grep -q 'content-desc="Time wheel 07:30"' "$RON" || { log "WALKTHROUGH: no time wheel at 07:30 once the reminder is on"; exit 1; }
+# The panel reads the grant when it opens (checker #7): the walk granted it, so no "Exact time · Allow" row.
+grep -q 'content-desc="Exact time · Allow"' "$RON" && { log "WALKTHROUGH: the panel still says exact alarms are off after the grant"; exit 1; }
+log "-- Freeze today, then Unfreeze (the Today card)"
+for k in 1 2 3 4 5; do onscreen 'Freeze today[^"]*' && break; $T adb shell input swipe 160 500 160 220 400; sleep 1; done
+tap 'Freeze today[^"]*' && shot habit-frozen 1.5
+onscreen "Unfreeze today" || { log "WALKTHROUGH: Freeze today did not turn into Unfreeze today"; exit 1; }
+tap "Unfreeze today" && shot habit-unfrozen 1.5
 $T adb shell input keyevent 4; shot reminder-closed 1.5
 # Proof the reminder is on AlarmManager (checker #7: the old grep for the data URI read 0 and was never asserted).
 sleep 2
@@ -1334,9 +1493,14 @@ $T adb shell "date -u 111211102026.00" > /dev/null || { log "WALKTHROUGH: could 
 $T adb reverse tcp:8799 tcp:8799
 $T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
 front namoz-start
+# The cold start draws Today's glass on a software GPU (frames of 3-4 s on this emulator): a tap sent into that first frame
+# waits 5 s for the main thread and Android shows "isn't responding". Let the first frame finish before touching anything.
+for k in $(seq 1 20); do onscreen 'Today' && break; sleep 1; done
+sleep 8
 for k in 1 2 3; do tap Habits && break; $T adb shell input keyevent 4; sleep 1; done
 sleep 2
-for k in 1 2 3; do tap Namoz && break; $T adb shell input swipe 160 200 160 600 400; sleep 1; done
+# The Namoz page opens from a prayer row (each prayer sits in its time of day now; the one Namoz card is gone once tracking runs).
+for k in 1 2 3 4; do tap 'Prayer: [^"]*' && break; $T adb shell input swipe 160 460 160 260 400; sleep 1; done
 shot namoz-page 3
 grep -q 'text="Next · ' "$(last namoz-page)" || { log "WALKTHROUGH: the Namoz page did not open (no Next · line)"; exit 1; }
 grep -q 'text="Tracking starts 1 November"' "$(last namoz-page)" && { log "WALKTHROUGH: on 12 November the page still waits for 1 November"; exit 1; }

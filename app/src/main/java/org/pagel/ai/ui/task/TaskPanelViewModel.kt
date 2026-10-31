@@ -58,6 +58,8 @@ data class PanelUi(
     val context: String? = null,
     /** Its project holds lessons (a course): the panel offers Lesson steps as a chip ([looksLikeLessons]). */
     val lessons: Boolean = false,
+    /** A daily habit: the panel edits it with the habit rows (Time, Repeat, Reminder, After) instead of Date and Priority. */
+    val habit: Boolean = false,
 )
 
 /** The web's rule: at most 3 tasks pinned to Today by hand (a date puts more there by itself). */
@@ -87,6 +89,7 @@ class TaskPanelViewModel @Inject constructor(
                     due = t.due, every = t.every, priority = t.priority, star = t.star, open = t.status == "open", doneAt = t.doneAt,
                     steps = steps.map { PanelStep(it.text, it.done) }, held = held > 0, pinned = pinned, times = t.times,
                     microCount = org.pagel.ai.data.sync.microOf(t.micro).size, context = t.context,
+                    habit = org.pagel.ai.data.habits.HabitLook.isDailyHabit(t),
                 )
             }
         }

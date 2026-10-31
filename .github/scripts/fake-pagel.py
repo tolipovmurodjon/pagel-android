@@ -215,9 +215,9 @@ class H(BaseHTTPRequestHandler):
             dot = b.get("day") and b["day"] >= (datetime.now(TASHKENT) - timedelta(days=7)).strftime("%Y-%m-%d") and \
                 (b.get("done") is False or b["day"] < habit_due(tid, at)[:10])
             if dot and not moved:
-                if b["done"] is True and taps(b["day"]) < times:
+                if b.get("done") is True and taps(b["day"]) < times:
                     HABIT_TICKS.append((b["day"], tid))
-                elif b["done"] is False and taps(b["day"]) > 0:
+                elif b.get("done") is False and taps(b["day"]) > 0:
                     if b["day"] == day and taps(day) == times and habit_due(tid, at)[:10] > day:
                         HABIT_DUE[tid] = day + (f" {at}" if at else "")
                     HABIT_TICKS.remove((b["day"], tid))

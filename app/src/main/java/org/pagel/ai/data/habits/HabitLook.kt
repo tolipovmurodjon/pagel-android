@@ -102,18 +102,18 @@ object HabitLook {
         return !isNamoz(t) && (e == "day" || e == "weekday" || Repeat.daysOf(e).isNotEmpty())
     }
 
-    /** "After ☕ coffee → 🧘 Floor routine": the recipe line under a habit's name; null without an anchor. */
-    fun recipe(anchor: Anchor?, anchorTitle: String?, selfGlyph: String, selfTitle: String): String? {
+    /** A stored moment's words without the picture glyph it was saved with ("☕ Coffee" -> "Coffee"): the app draws no emoji. */
+    fun plain(moment: String): String = moment.dropWhile { !it.isLetterOrDigit() }.trim()
+
+    /** "After coffee → Floor routine": the recipe line under a habit's name; null without an anchor. */
+    fun recipe(anchor: Anchor?, anchorTitle: String?, selfTitle: String): String? {
         val first = when (anchor) {
             null -> return null
-            is Anchor.Moment -> anchor.text.lowercase().replaceFirstChar { it.uppercase() }.let { m ->
-                // "☕ Coffee" -> "☕ coffee": the moment reads as part of the sentence.
-                val sp = m.indexOf(' ')
-                if (sp > 0) m.substring(0, sp + 1) + m.substring(sp + 1).lowercase() else m
-            }
+            // "Coffee" -> "coffee": the moment reads as part of the sentence.
+            is Anchor.Moment -> plain(anchor.text).lowercase()
             is Anchor.Habit -> anchorTitle ?: return null
         }
-        return "After $first → $selfGlyph $selfTitle".trim()
+        return "After $first → $selfTitle".trim()
     }
 }
 

@@ -62,7 +62,7 @@ fun NamozTodayLine(line: NamozLine, modifier: Modifier = Modifier) {
         modifier.fillMaxWidth().padding(start = Space.textEdge, end = Space.gutter, top = Space.headerTop).semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Image(painterResource(Emoji.res(line.emoji)), null, Modifier.size(16.dp))
+        androidx.compose.material3.Icon(org.pagel.ai.ui.glass.HabitIcons.vector(org.pagel.ai.ui.glass.HabitIcons.forEmoji(line.emoji)), null, tint = Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(Space.sm))
         Text(line.text, style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
