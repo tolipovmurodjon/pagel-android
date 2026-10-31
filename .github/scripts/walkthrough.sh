@@ -388,11 +388,12 @@ tap Inbox && shot inbox 3
 grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbox.xml" || { log "WALKTHROUGH: the Inbox shows no card from pagel.uz"; exit 1; }
 log "-- Inbox v3 chips and order: Instagram -> only Instagram cards; All resets; the pill flips Newest/Oldest/Shuffle and the choice is kept"
 texts_of() { tr '>' '\n' < "$1" | grep -oE 'text="[^"]{12,}"' | grep -vE 'Old pile|Newest first|Oldest first|Instagram ·|LinkedIn ·|Your notes ·|Links ·|All ·|X ·|Telegram ·' | head -3 | md5sum; }
-tap 'Instagram · [0-9]+' || { log "WALKTHROUGH: no Instagram chip with its count"; exit 1; }
+tap 'Instagram · [0-9]+' || { $T adb shell input swipe 280 118 40 118 300; sleep 1; tap 'Instagram · [0-9]+'; } || { log "WALKTHROUGH: no Instagram chip with its count"; exit 1; }
 sleep 1.5; shot inbox-chip-instagram 1.5
 CX="$OUT/$(printf '%02d' $N)-inbox-chip-instagram.xml"
 grep -q 'text="Instagram"' "$CX" || { log "WALKTHROUGH: the Instagram chip did not show an Instagram card"; exit 1; }
 grep -qE 'text="(LinkedIn|X)"' "$CX" && { log "WALKTHROUGH: the Instagram chip still shows another source's card"; exit 1; }
+$T adb shell input swipe 40 118 280 118 300; sleep 1
 tap 'All · [0-9]+' || { log "WALKTHROUGH: no All chip"; exit 1; }
 sleep 1.5
 tap "Newest first" || { log "WALKTHROUGH: no order pill"; exit 1; }
