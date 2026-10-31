@@ -23,7 +23,8 @@ private val byUrgency = compareBy<TaskEntity>({ it.priority }, { it.due.orEmpty(
 fun upcomingView(open: List<TaskEntity>, today: LocalDate, days: Int = 7, from: LocalDate = today): UpcomingView {
     val dated = open.filter { it.status == "open" && (it.due?.length ?: 0) >= 10 }
     val t = today.toString()
-    val overdue = dated.filter { it.due!!.take(10) < t }.sortedBy { it.due }
+    // A daily habit card lives on Habits (its due is its series and a missed day is not "carried over"); other repeats are listed.
+    val overdue = dated.filter { it.due!!.take(10) < t && !org.pagel.ai.data.habits.HabitLook.isDailyHabit(it) }.sortedBy { it.due }
     val list = (0 until days).map { i ->
         val day = from.plusDays(i.toLong())
         val d = day.toString()
