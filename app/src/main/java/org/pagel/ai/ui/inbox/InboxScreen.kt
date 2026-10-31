@@ -385,7 +385,6 @@ fun InboxScreen(
 @Composable
 private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit, bulk: Bulk? = null) {
     val old = ui.oldMode
-    val tight = LocalDensity.current.fontScale >= 1.3f && LocalConfiguration.current.screenHeightDp < 700
     Column(Modifier.fillMaxWidth().padding(start = if (old) 8.dp else 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (old) GlassIconButton(TabIcons.ArrowLeft, "Back to Inbox", plain = true, onClick = actions.closeOld)
@@ -407,22 +406,22 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
         Row(Modifier.heightIn(min = Space.touch), verticalAlignment = Alignment.CenterVertically) {
             val line = bulk?.let(::bulkLine) ?: if (old) oldLeftLine(ui) else null
             if (line != null) Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
-            else if (ui.sources.isNotEmpty()) SourceChips(ui, actions, Modifier.weight(1f)) { if (tight && !old) OldPileRow(ui, actions.openOld) }
+            else if (!old) SourceChips(ui, actions, Modifier.weight(1f)) { OldPileRow(ui, actions.openOld) }
             else Spacer(Modifier.weight(1f))
         }
-        // The Old pile has its own line, so the chips keep the whole width and never sit under it. On a short screen at a large
-        // font that line is too dear (the claim needs it): the Old pile is then the last item of the chips row.
-        if (!old && !tight) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { OldPileRow(ui, actions.openOld) }
     }
 }
 
 /**
- * The source chips and the order pill in one scrolling row (they never cut): "All", then each source that has saves with
- * its count, then one pill that cycles Newest first, Oldest first, Shuffle. Only the current Inbox has them.
+ * The Old pile button, the order pill (Newest first, Oldest first, Shuffle) and the source chips in one scrolling row (they
+ * never cut): "All", then each source that has saves with its count. Only the current Inbox has them.
  */
 @Composable
-private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier = Modifier, trailing: @Composable () -> Unit = {}) {
+private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier = Modifier, leading: @Composable () -> Unit = {}) {
     Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
+        // The Old pile leads: one button, always in sight, and the chips scroll behind it.
+        leading()
+        if (ui.sources.isEmpty()) return@Row
         // The order pill leads, so it is always in reach; the chips scroll behind it.
         GlassChip(TabIcons.Clock, ui.order.label, set = ui.order != InboxOrder.NEWEST, description = ui.order.label) { actions.cycleOrder() }
         val all = ui.sources.sumOf { it.count }
@@ -431,7 +430,6 @@ private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier =
             val icon = when (s.key) { "note" -> TabIcons.StickyNote; "web" -> TabIcons.ArrowUpRight; else -> TabIcons.Sparkles }
             GlassChip(icon, "${s.label} \u00B7 ${s.count}", set = ui.source == s.key, description = "${s.label} \u00B7 ${s.count}") { actions.setSource(s.key) }
         }
-        trailing()
     }
 }
 
