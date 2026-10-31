@@ -9,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -122,7 +123,7 @@ private fun CuesPane(on: Boolean, onChange: (Boolean) -> Unit) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         androidx.compose.foundation.layout.Row(
             Modifier.fillMaxWidth().heightIn(min = Space.row).padding(horizontal = Space.lg)
-                .androidx_toggle(press, on, onChange).semantics { contentDescription = "Calm cues at prayer time" },
+                .toggleable(value = on, interactionSource = press, indication = null, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onChange).semantics { contentDescription = "Calm cues at prayer time" },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -133,9 +134,6 @@ private fun CuesPane(on: Boolean, onChange: (Boolean) -> Unit) {
         }
     }
 }
-
-private fun Modifier.androidx_toggle(press: androidx.compose.foundation.interaction.MutableInteractionSource, on: Boolean, onChange: (Boolean) -> Unit) =
-    androidx.compose.foundation.selection.toggleable(this, value = on, interactionSource = press, indication = null, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onChange)
 
 /** His own plan, one line he writes once ("When I hear the time for Asr, I stand up, make wudu and pray"); it is shown back at prayer time. */
 @Composable
