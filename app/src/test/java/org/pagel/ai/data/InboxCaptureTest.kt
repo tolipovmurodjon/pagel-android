@@ -257,4 +257,10 @@ class InboxCaptureTest {
         assertTrue(org.pagel.ai.ui.inbox.formReady(f, 6))
         assertFalse("Remember still asks for 6 words", org.pagel.ai.ui.inbox.formReady(f.copy(choice = Choice.KEEP), 6))
     }
+
+    @Test fun theChoiceSoundsUseTheMediaStreamSoSilentModeDoesNotMuteThem() {
+        val a = org.pagel.ai.ui.inbox.ChoiceSound.attributes()
+        assertEquals(android.media.AudioAttributes.USAGE_MEDIA, a.usage)
+        assertEquals(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION, a.contentType)
+    }
 }

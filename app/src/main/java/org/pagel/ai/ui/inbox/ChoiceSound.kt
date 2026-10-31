@@ -49,14 +49,22 @@ object ChoiceSound {
         return ShortArray(out.size) { (out[it] / peak * Short.MAX_VALUE).toInt().toShort() }
     }
 
+    /**
+     * The MEDIA stream, as Ding: Boss's phone is usually on silent and the sonification stream is muted then, so the
+     * choices were silent. "Follow silent mode" in More keeps them quiet on silent, as it does for Ding.
+     */
+    internal fun attributes(): AudioAttributes =
+        AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+
     /** A missing audio device never blocks a choice: the motion and the haptic still play. */
     @Synchronized
-    fun play(choice: Choice) {
+    fun play(ctx: android.content.Context, choice: Choice) {
+        if (!org.pagel.ai.ui.today.FinishSound.allowed(ctx)) return
         runCatching {
             val t = tracks[choice] ?: run {
                 val data = pcm(NOTES.getValue(choice))
                 AudioTrack.Builder()
-                    .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                    .setAudioAttributes(attributes())
                     .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
                     .setTransferMode(AudioTrack.MODE_STATIC)
                     .setBufferSizeInBytes(data.size * 2)

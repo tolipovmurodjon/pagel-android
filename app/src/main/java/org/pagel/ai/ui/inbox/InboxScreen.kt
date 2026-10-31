@@ -343,7 +343,7 @@ fun InboxScreen(
     LaunchedEffect(leaving?.id) {
         val l = leaving ?: return@LaunchedEffect
         haptics.performHapticFeedback(l.choice.haptic())
-        scope.launch(Dispatchers.Default) { ChoiceSound.play(l.choice) }
+        scope.launch(Dispatchers.Default) { ChoiceSound.play(ctx.applicationContext, l.choice) }
     }
     // A keep's milestone or the day's 20: the finish moment from the ring (Today's ding and confetti).
     LaunchedEffect(cheer) {
