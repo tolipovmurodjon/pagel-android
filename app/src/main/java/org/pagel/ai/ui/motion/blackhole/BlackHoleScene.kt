@@ -21,6 +21,11 @@ class BlackHoleScene private constructor(
     private val flow: FlowTable,
     private val sharpPaint: Paint,
     private val softPaint: Paint,
+    /** The whole window at half size (API 33+), sampled by the lens; null: the shade only. */
+    val lensBackdrop: Shader?,
+    /** Where this scene's box sits in the window, px: the lens reads the backdrop in window px. */
+    val shiftX: Float,
+    val shiftY: Float,
 ) {
     val vertexCount: Int get() = mesh.vertexCount
 
@@ -52,9 +57,13 @@ class BlackHoleScene private constructor(
         /**
          * [snapshot] covers the overlay's whole box at 1x (its pixel (x, y) is the screen point (x, y) of the box);
          * [pieces] are the parts that fly; the hole is [geometry] in that box's px (its camera may sit above the box);
-         * [cell] is the mesh cell in px.
+         * [cell] is the mesh cell in px. [backdrop] is the window at half size for the lens, [shiftX], [shiftY] the box's
+         * place in that window.
          */
-        fun prepare(snapshot: Bitmap, pieces: List<PieceRect>, geometry: HoleGeometry, cell: Float, timing: BlackHoleTiming): BlackHoleScene {
+        fun prepare(
+            snapshot: Bitmap, pieces: List<PieceRect>, geometry: HoleGeometry, cell: Float, timing: BlackHoleTiming,
+            backdrop: Bitmap? = null, shiftX: Float = 0f, shiftY: Float = 0f,
+        ): BlackHoleScene {
             // A GraphicsLayer snapshot is a HARDWARE bitmap: copy it once so it can be scaled.
             val readable = if (snapshot.config == Bitmap.Config.HARDWARE) snapshot.copy(Bitmap.Config.ARGB_8888, false) else snapshot
             // Read before any recycle below (checker: the sizes were read from a recycled bitmap).
@@ -74,6 +83,8 @@ class BlackHoleScene private constructor(
                 timing, geometry, mesh, flow,
                 shaderPaint(small, fullW / small.width, fullH / small.height),
                 shaderPaint(blurred, fullW / blurred.width, fullH / blurred.height),
+                backdrop?.let { b -> BitmapShader(b, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply { setLocalMatrix(Matrix().apply { setScale(2f, 2f) }) } },
+                shiftX, shiftY,
             )
         }
 

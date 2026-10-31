@@ -50,6 +50,7 @@ import org.pagel.ai.ui.glass.Space
 import timber.log.Timber
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /** A fixed moment for the frame-series tests: [BlackHoleFrame] shows the run at [t] s instead of playing it. */
@@ -179,17 +180,24 @@ fun BlackHoleLab(padding: PaddingValues, jank: String?, onFirstFrame: (Float) ->
 
 /**
  * One still frame of the effect on a whole-screen stage (the frame-series tests): the sample rows under a [camera]
- * capsule at the top, the hole at [still].t. The camera is in px of the stage.
+ * capsule at the top, the hole at [still].t. The camera is in px of the stage; [page] is a stand-in for the window
+ * the lens copies (drawn live behind, and copied at half size for the lens).
  */
 @Composable
-fun BlackHoleFrame(still: LabStill, camera: Capsule) {
+fun BlackHoleFrame(still: LabStill, camera: Capsule, page: Bitmap? = null) {
     val density = LocalDensity.current.density
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val width = constraints.maxWidth
         val geo = remember(width, density) { LabGeometry(width, density, top = camera.bottom + 4f * density) }
         val rows = remember(geo) { sampleRows(geo, density) }
         val scene = remember(geo, camera, still.timing) {
-            BlackHoleScene.prepare(rows, geo.rows, holeGeometry(camera, width.toFloat()), geo.cell, still.timing)
+            val backdrop = page?.let { Bitmap.createScaledBitmap(it, max(1, it.width / 2), max(1, it.height / 2), true) }
+            BlackHoleScene.prepare(rows, geo.rows, holeGeometry(camera, width.toFloat()), geo.cell, still.timing, backdrop)
+        }
+        // The live page under the effect: the same pixels the lens copied, so only the bend shows.
+        if (page != null) {
+            val image = remember(page) { page.asImageBitmap() }
+            Spacer(Modifier.fillMaxSize().drawBehind { drawImage(image) })
         }
         BlackHoleCanvas(scene, { still.t }, shaderRing = still.shaderRing)
     }

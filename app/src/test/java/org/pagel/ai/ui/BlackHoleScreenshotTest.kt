@@ -66,6 +66,26 @@ class BlackHoleScreenshotTest {
         }
     }
 
+    /** A stand-in page: a mint grid with dark bars, so a bend shows as curved lines. */
+    private fun gridPage(width: Int, height: Int): android.graphics.Bitmap {
+        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(bitmap)
+        c.drawColor(android.graphics.Color.rgb(246, 250, 248))
+        val line = android.graphics.Paint().apply { color = android.graphics.Color.rgb(40, 160, 120); strokeWidth = 6f }
+        val bar = android.graphics.Paint().apply { color = android.graphics.Color.rgb(30, 40, 50) }
+        for (x in 0 until width step 90) c.drawLine(x.toFloat(), 0f, x.toFloat(), height.toFloat(), line)
+        for (y in 0 until height step 90) { c.drawLine(0f, y.toFloat(), width.toFloat(), y.toFloat(), line); c.drawRect(0f, y + 30f, width * 0.6f, y + 52f, bar) }
+        return bitmap
+    }
+
+    /** The lens at t = 0.8 s: the grid under the hole bends toward it and twists; far away it is straight. */
+    @Test fun theLensBendsThePageAtPointEight() {
+        val page = gridPage(1080, 2400)
+        compose.setContent { GlassTheme { BlackHoleFrame(LabStill(0.8f), camera, page) } }
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/black-hole-lens-t080.png")
+    }
+
     @Test fun clearAllFrameSeriesOnTheAgslRing() = series(moments, shaderRing = true, prefix = "black-hole")
 
     @Test fun clearAllFrameSeriesOnTheCanvasFallback() = series(listOf(0.4f, 0.8f, 1.2f), shaderRing = false, prefix = "black-hole-fallback")

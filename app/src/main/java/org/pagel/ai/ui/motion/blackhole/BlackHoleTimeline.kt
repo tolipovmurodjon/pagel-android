@@ -30,6 +30,8 @@ object BlackHole {
     const val VANISH = 1.03f
     /** The AGSL ring runs only in a box this many radii wide around the hole, at half resolution. */
     const val RING_BOX = 4f
+    /** The lens runs in a box this many radii wide (it bends within 1.6 r), at half resolution. */
+    const val LENS_BOX = 3.6f
     /** Reduced motion, or the phone could not keep up: the rows fade out in this long instead. */
     const val FADE_MS = 120L
     /** How long the swallow takes to engage once it starts (rows near the hole do not start half faded). */

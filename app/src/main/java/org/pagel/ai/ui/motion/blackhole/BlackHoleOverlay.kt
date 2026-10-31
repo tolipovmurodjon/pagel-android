@@ -5,7 +5,10 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
+import android.view.PixelCopy
 import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.ViewGroup
@@ -45,7 +48,10 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import timber.log.Timber
+import kotlin.coroutines.resume
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -89,6 +95,22 @@ internal fun cameraCapsule(view: View, density: Float): Capsule {
 }
 
 /**
+ * The whole window, copied once at half size (PixelCopy, API 26+), for the lens. Null when the copy fails: the hole then
+ * draws its shade only.
+ */
+private suspend fun copyWindowHalf(view: View): Bitmap? {
+    val window = view.context.findActivity()?.window ?: return null
+    val w = max(1, view.rootView.width / 2)
+    val h = max(1, view.rootView.height / 2)
+    val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    return suspendCancellableCoroutine { cont ->
+        val listener = PixelCopy.OnPixelCopyFinishedListener { result -> if (cont.isActive) cont.resume(if (result == PixelCopy.SUCCESS) bitmap else null) }
+        runCatching { PixelCopy.request(window, bitmap, listener, Handler(Looper.getMainLooper())) }
+            .onFailure { if (cont.isActive) cont.resume(null) }
+    }
+}
+
+/**
  * One frame of a prepared [scene] at [time] s: the pieces, the ring (AGSL on API 33+ when [shaderRing], else the
  * canvas fallback), the black core on top. The frame-series tests call it with a fixed time.
  */
@@ -97,6 +119,8 @@ fun BlackHoleCanvas(scene: BlackHoleScene, time: () -> Float, modifier: Modifier
     // The process's one ring shader (BlackHolePrewarm built it when the screen opened; a test builds it here).
     val agsl: Any? = remember(shaderRing) { if (shaderRing && Build.VERSION.SDK_INT >= 33) AgslRing.get() else null }
     Box(modifier.fillMaxSize()) {
+        // The lens first: the page bends under everything else (API 33+, when the window was copied).
+        if (Build.VERSION.SDK_INT >= 33 && shaderRing && scene.lensBackdrop != null) AgslLens.get()?.let { AgslLens.Layer(it, scene, time) }
         Spacer(Modifier.fillMaxSize().drawBehind { drawIntoCanvas { scene.drawPieces(it.nativeCanvas, time()) } })
         if (agsl != null && Build.VERSION.SDK_INT >= 33) {
             AgslRing.Layer(agsl as android.graphics.RuntimeShader, scene, time)
@@ -159,6 +183,8 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
     // Where the snapshot's box sits in the window: the hole's place is worked out in window px, then moved into the box.
     var origin by remember(run.id) { mutableStateOf(Offset.Zero) }
     var iconsOnDark by remember(run.id) { mutableStateOf(false) }
+    // The layer is clear while the window is copied, so the copy holds the page and not the flying pieces.
+    var copying by remember(run.id) { mutableStateOf(false) }
     val time = remember(run.id) { mutableFloatStateOf(0f) }
     val fadeAlpha = remember(run.id) { mutableFloatStateOf(1f) }
     DisposableEffect(iconsOnDark) {
@@ -177,11 +203,20 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
             val box = origin
             val window = holeGeometry(cameraCapsule(view, density.density), view.rootView.width.toFloat())
             val geometry = window.shifted(-box.x, -box.y)
+            var backdrop: Bitmap? = null
+            if (Build.VERSION.SDK_INT >= 33) {
+                copying = true
+                withFrameNanos { it }
+                withFrameNanos { it }
+                backdrop = copyWindowHalf(view)
+                copying = false
+            }
             val made = runCatching {
-                withContext(Dispatchers.Default) { BlackHoleScene.prepare(run.snapshot, run.pieces, geometry, cell, run.timing) }
+                withContext(Dispatchers.Default) { BlackHoleScene.prepare(run.snapshot, run.pieces, geometry, cell, run.timing, backdrop, box.x, box.y) }
             }.getOrNull()
             if (made != null) {
                 scene = made
+                Timber.i("BlackHole run %d: radius %d px, lens %s", run.id, geometry.radius.toInt(), if (backdrop != null) "on" else "off")
                 iconsOnDark = true
                 view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                 val watch = BudgetWatch()
@@ -230,7 +265,7 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
     val boxWidth = with(density) { run.snapshot.width.toDp() }
     val boxHeight = with(density) { run.snapshot.height.toDp() }
     WindowLayer {
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = fadeAlpha.floatValue }) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (copying) 0f else fadeAlpha.floatValue }) {
             Box(Modifier.offset { IntOffset(origin.x.roundToInt(), origin.y.roundToInt()) }.size(boxWidth, boxHeight)) {
                 val s = scene
                 if (s == null) {

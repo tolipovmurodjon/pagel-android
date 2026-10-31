@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -471,7 +472,9 @@ private fun TitleCapsule(title: String, visible: Boolean, backdrop: Backdrop, mo
 internal fun BoxScope.BottomActions(toasts: ToastCenter, backdrop: Backdrop, bottom: Dp, showFab: Boolean, toastOnTop: Boolean, onAdd: () -> Unit) {
     val density = LocalDensity.current
     var toastH by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val under = toasts.sheets == 0 && !toastOnTop && toastH > 0
+    val current by toasts.current.collectAsState()
+    val topToast = toastOnTop || current?.top == true
+    val under = toasts.sheets == 0 && !topToast && toastH > 0
     val lift by androidx.compose.animation.core.animateDpAsState(
         if (under) with(density) { toastH.toDp() } + 10.dp else 0.dp, spring(dampingRatio = 0.8f, stiffness = 420f), label = "fab",
     )
@@ -486,7 +489,7 @@ internal fun BoxScope.BottomActions(toasts: ToastCenter, backdrop: Backdrop, bot
     if (toasts.sheets == 0) {
         ToastHost(
             toasts,
-            if (toastOnTop) Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(start = Space.gutter, end = Space.gutter, top = Space.sm)
+            if (topToast) Modifier.align(Alignment.TopCenter).windowInsetsPadding(WindowInsets.statusBars).padding(start = Space.gutter, end = Space.gutter, top = Space.sm)
             else Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(start = Space.gutter, end = Space.gutter, bottom = bottom)
                 .onSizeChanged { toastH = it.height },
             backdrop = backdrop,

@@ -111,6 +111,7 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val toasts = org.pagel.ai.ui.glass.LocalToasts.current
     var hole by remember { mutableStateOf<BlackHoleRun?>(null) }
     // Laboratory → Black hole → "Use in the app" (on by default): off, and the rows just leave.
     val holeOn by remember { org.pagel.ai.ui.lab.Experiments.isOn(context, org.pagel.ai.ui.lab.Experiments.BLACK_HOLE) }.collectAsStateWithLifecycle(initialValue = true)
@@ -124,6 +125,8 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
             val info = list.layoutInfo
             val pieces = donePieces(info, with(density) { STRIP.toPx() })
             val shot = withTimeoutOrNull(SNAPSHOT_WAIT_MS) { runCatching { layer.toImageBitmap().asAndroidBitmap() }.getOrNull() }
+            // The Undo toast of this clear shows under the camera, where the hole just closed.
+            if (holeOn) toasts.topNext = true
             onClearDone()
             holeStop = false
             if (holeOn && shot != null && pieces.isNotEmpty()) hole = BlackHoleRun(System.nanoTime(), shot, pieces, BlackHoleTiming.ClearAll)

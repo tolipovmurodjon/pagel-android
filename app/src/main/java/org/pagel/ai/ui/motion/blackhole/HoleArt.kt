@@ -195,6 +195,81 @@ internal object AgslRing {
 }
 
 /**
+ * API 33+: the real lens. The whole window was copied once at the start (half size); inside 1.6 radii of the hole each
+ * pixel shows what lay farther out along its ray, so the page is drawn toward the hole, twisted a little as it nears
+ * the horizon. Outside 1.6 radii the sample is the pixel's own place, so the edge blends into the live page. Same
+ * half-resolution box trick as the ring. The page behind the rows, glass and header all bend; the rows fly by mesh.
+ */
+@RequiresApi(33)
+internal object AgslLens {
+    private const val SOURCE = """
+        uniform shader backdrop;
+        uniform float2 center;
+        uniform float radius;
+        uniform float2 shift;
+        uniform float amount;
+        half4 main(float2 p) {
+            float2 d = p - center;
+            float x = length(d) / max(radius, 1.0);
+            float k = amount * pow(1.0 - smoothstep(0.9, 1.6, x), 2.0);
+            float ang = 0.7 * k;
+            float cs = cos(ang);
+            float sn = sin(ang);
+            float2 q = float2(d.x * cs - d.y * sn, d.x * sn + d.y * cs) * (1.0 + 0.5 * k);
+            return backdrop.eval((center + q) * 2.0 + shift);
+        }
+    """
+
+    @Volatile private var shader: RuntimeShader? = null
+    @Volatile private var brush: ShaderBrush? = null
+    @Volatile private var failed = false
+
+    /** The one lens shader; null when AGSL does not compile here (the shade alone is drawn). */
+    fun get(): RuntimeShader? {
+        shader?.let { return it }
+        if (failed) return null
+        synchronized(this) {
+            shader?.let { return it }
+            val made = runCatching { RuntimeShader(SOURCE) }.getOrNull()
+            if (made == null) failed = true else { shader = made; brush = ShaderBrush(made) }
+            return made
+        }
+    }
+
+    @Composable
+    fun Layer(shader: RuntimeShader, scene: BlackHoleScene, time: () -> Float) {
+        val backdrop = scene.lensBackdrop ?: return
+        val side = scene.radius * BlackHole.LENS_BOX
+        val left = scene.cx - side / 2f
+        val top = scene.cy - side / 2f
+        val halfDp = with(LocalDensity.current) { (side / 2f).toDp() }
+        val ink = brush ?: ShaderBrush(shader).also { brush = it }
+        Box(
+            Modifier
+                .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
+                .size(halfDp)
+                .graphicsLayer {
+                    transformOrigin = TransformOrigin(0f, 0f)
+                    scaleX = 2f
+                    scaleY = 2f
+                    compositingStrategy = CompositingStrategy.Offscreen
+                }
+                .drawBehind {
+                    val s = scene.hole(time())
+                    val amount = s.ring * s.alpha
+                    if (amount <= 0.01f) return@drawBehind
+                    shader.setInputShader("backdrop", backdrop)
+                    shader.setFloatUniform("center", size.width / 2f + (s.cx - scene.cx) / 2f, size.height / 2f + (s.cy - scene.cy) / 2f)
+                    shader.setFloatUniform("radius", s.ringRadius / 2f)
+                    shader.setFloatUniform("shift", scene.shiftX + left, scene.shiftY + top)
+                    shader.setFloatUniform("amount", amount)
+                    drawRect(ink)
+                },
+        )
+    }
+}
+
+/**
  * Put on a screen that can play the hole (Completed, the Lab): builds the ring shader off the main thread when the
  * screen opens and draws it once, invisibly, so the first run opens without a compile hitch. Below API 33: nothing.
  */
@@ -202,6 +277,6 @@ internal object AgslRing {
 fun BlackHolePrewarm() {
     if (Build.VERSION.SDK_INT < 33) return
     var ready by remember { mutableStateOf<RuntimeShader?>(null) }
-    LaunchedEffect(Unit) { ready = withContext(Dispatchers.Default) { AgslRing.get() } }
+    LaunchedEffect(Unit) { ready = withContext(Dispatchers.Default) { AgslLens.get(); AgslRing.get() } }
     ready?.let { AgslRing.WarmUp(it) }
 }

@@ -70,6 +70,8 @@ data class ToastData(
     val action: String? = null,
     val millis: Long = 4_000,
     val onAction: (() -> Unit)? = null,
+    /** Shown just under the camera, at the top (the black hole's clear), not at the bottom. */
+    val top: Boolean = false,
 )
 
 /**
@@ -85,8 +87,13 @@ class ToastCenter @Inject constructor() {
     /** How many glass sheets are open: the top one shows the toast, the shell's stays hidden under the scrim. */
     var sheets by mutableIntStateOf(0)
 
+    /** Set by a black-hole clear: the next toast shows under the camera, once. */
+    @Volatile var topNext = false
+
     fun show(message: String, good: Boolean = true, action: String? = null, millis: Long = 4_000, onAction: (() -> Unit)? = null) {
-        _current.value = ToastData(next++, message, good, action, millis, onAction)
+        val top = topNext
+        topNext = false
+        _current.value = ToastData(next++, message, good, action, millis, onAction, top)
     }
 
     fun dismiss(id: Long) = _current.update { if (it?.id == id) null else it }

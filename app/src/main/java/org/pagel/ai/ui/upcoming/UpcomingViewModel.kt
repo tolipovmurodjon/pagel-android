@@ -220,7 +220,7 @@ class CompletedViewModel @Inject constructor(
         viewModelScope.launch {
             val cleared = repo.clearDone(ids)
             if (cleared.isEmpty()) return@launch
-            val words = if (cleared.size == 1) "Cleared 1 done task" else "Cleared ${cleared.size} done tasks"
+            val words = "${cleared.size} cleared"
             toasts.show(words, action = "Undo", millis = CLEAR_UNDO_MS) {
                 clearUndone.update { it + 1 }
                 clearedHere.value = false

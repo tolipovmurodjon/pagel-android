@@ -890,8 +890,42 @@ grep -qF "$WANT" "$FAKE_LOG" || { log "WALKTHROUGH: the untick never reached pag
 log "   pagel.uz got the untick (restore) after ~${i} s"
 tap "Write the IT Park report" && shot completed-panel 2.5
 grep -q 'content-desc="Reopen"' "$OUT/$(printf '%02d' $N)-completed-panel.xml" || { log "WALKTHROUGH: a done task's panel has no Reopen"; exit 1; }
-# Back closes the panel, then leaves Completed for More (its bar), where the walk goes on.
-$T adb shell input keyevent 4; sleep 1; $T adb shell input keyevent 4; sleep 1
+# Back closes the panel and leaves us on the Completed list.
+$T adb shell input keyevent 4; sleep 1
+
+log "-- Black hole v2: Clear done -> the hole runs out of the camera -> pagel.uz hears the deletes -> the toast under the camera -> Undo -> the inverse writes (restore + done)"
+REM0=$(grep -cE '"remove": ?true' "$FAKE_LOG")
+RES0=$(grep -cE '"restore": ?true' "$FAKE_LOG")
+tap "Clear done" || { log "WALKTHROUGH: Completed has no Clear done"; exit 1; }
+sleep 0.7; $T adb exec-out screencap -p > "$OUT/hole-run-a.png"
+sleep 0.5; $T adb exec-out screencap -p > "$OUT/hole-run-b.png"
+sleep 3
+$T adb logcat -d | grep -q "BlackHole run" || { log "WALKTHROUGH: Clear done played no black hole (no 'BlackHole run' in the log)"; exit 1; }
+log "   $($T adb logcat -d | grep 'BlackHole run' | tail -1 | cut -c1-140)"
+shot hole-after 1
+UB=$(tr '>' '\n' < "$(xml_of hole-after)" | grep -E 'text="Undo"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tail -1)
+[ -n "$UB" ] && [ "$UB" -lt 500 ] || { log "WALKTHROUGH: the clear's Undo toast is not just under the camera (Undo top y=${UB:-none})"; exit 1; }
+grep -qE 'text="[0-9]+ cleared"' "$(xml_of hole-after)" || { log "WALKTHROUGH: the toast does not say 'N cleared'"; exit 1; }
+log "   the toast says N cleared, Undo at y=$UB (under the camera)"
+wait_picker '"remove": ?true' || { log "WALKTHROUGH: the clear never reached pagel.uz as a remove"; exit 1; }
+sleep 3
+REM1=$(grep -cE '"remove": ?true' "$FAKE_LOG")
+GONE=$((REM1 - REM0))
+[ "$GONE" -ge 1 ] || { log "WALKTHROUGH: no deletes reached the fake log"; exit 1; }
+log "   pagel.uz got $GONE deletes"
+shot hole-cleared 1
+grep -q 'text="Write the IT Park report"' "$(xml_of hole-cleared)" && { log "WALKTHROUGH: a cleared task is still on Completed"; exit 1; }
+tap Undo || { log "WALKTHROUGH: the clear's toast has no Undo"; exit 1; }
+for i in $(seq 1 30); do [ "$(( $(grep -cE '"restore": ?true' "$FAKE_LOG") - RES0 ))" -ge "$GONE" ] && break; sleep 1; done
+BACK=$(( $(grep -cE '\{"restore": ?true, ?"done": ?true\}' "$FAKE_LOG") ))
+[ "$(( $(grep -cE '"restore": ?true' "$FAKE_LOG") - RES0 ))" -ge "$GONE" ] || { log "WALKTHROUGH: Undo sent fewer restores than deletes ($GONE)"; grep -E 'restore|remove' "$FAKE_LOG" | tail -8 | tee -a "$OUT/steps.txt"; exit 1; }
+[ "$BACK" -ge "$GONE" ] || { log "WALKTHROUGH: the restores did not carry done:true"; exit 1; }
+log "   Undo sent $GONE inverse writes (restore + done)"
+shot hole-restored 2
+grep -q 'text="Write the IT Park report"' "$(xml_of hole-restored)" || { log "WALKTHROUGH: after Undo the cleared tasks are not back on Completed"; exit 1; }
+sleep 1
+# Leave Completed for More (its bar), where the walk goes on.
+$T adb shell input keyevent 4; sleep 1
 front after-phase4
 tap Today && shot today-after-inbox 1.5
 $T adb shell input swipe 540 1700 540 600 300; shot today-scrolled
