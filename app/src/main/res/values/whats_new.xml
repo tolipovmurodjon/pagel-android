@@ -8,6 +8,14 @@
 -->
 <resources>
     <string-array name="whats_new_items">
+        <item>#0.3.42 · Habits v3</item>
+        <item>Tap a timed habit: Timer or Finish, no clock needed|habits</item>
+        <item>Swipe the week back and forward|habits</item>
+        <item>Tap a past day to log what you missed, Undo is there|habits</item>
+        <item>Open the timer, swipe its colour, pick a sound|habits</item>
+        <item>Take a day off from the card menu|habits</item>
+        <item>Open a habit: stats cards and a swipeable calendar|habits</item>
+        <item>History: see your Achievements|habits</item>
         <item>#0.3.41 · Today v2</item>
         <item>The top task is a Now card: Open or What now?|today</item>
         <item>One big count that drops as you tick|today</item>
