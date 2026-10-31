@@ -199,7 +199,15 @@ tap "Time: 15 min" || { log "WALKTHROUGH: no 15 min"; exit 1; }
 tap "Find one" || { log "WALKTHROUGH: no Find one the second time"; exit 1; }
 shot r4-gtd-pick 2
 grep -q 'Call the bank about the report' "$OUT/$(printf '%02d' $N)-r4-gtd-pick.xml" || { log "WALKTHROUGH: Phone only + 15 min did not pick the call"; exit 1; }
-tap "Make it tiny" || { log "WALKTHROUGH: the phone pick has no Make it tiny"; exit 1; }
+# The call already has steps (no Make it tiny there): close, ask again for the laptop, 30 minutes: a task with no steps comes up.
+$T adb shell input keyevent 4; sleep 1.5
+r4_tap 'What now\?' || { log "WALKTHROUGH: no What now card for the laptop pick"; exit 1; }
+sleep 1
+tap "Where: Laptop" || { log "WALKTHROUGH: no Laptop"; exit 1; }
+tap "Time: 30 min" || { log "WALKTHROUGH: no 30 min"; exit 1; }
+tap "Find one" || { log "WALKTHROUGH: no Find one for the laptop"; exit 1; }
+shot r4-gtd-laptop 2
+tap "Make it tiny" || { log "WALKTHROUGH: the laptop pick has no Make it tiny"; exit 1; }
 sleep 1
 tap "Write tiny steps" || { log "WALKTHROUGH: no Write tiny steps on the phone pick"; exit 1; }
 sleep 1
