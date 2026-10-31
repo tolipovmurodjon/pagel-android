@@ -31,16 +31,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.unit.Density
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.pagel.ai.ui.glass.Space
-import org.pagel.ai.ui.motion.blackhole.BlackHole
 import org.pagel.ai.ui.motion.blackhole.BlackHoleOverlay
 import org.pagel.ai.ui.motion.blackhole.BlackHolePrewarm
 import org.pagel.ai.ui.motion.blackhole.BlackHoleRun
@@ -108,7 +105,7 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
     val list = rememberLazyListState()
     val openTask = LocalTaskOpener.current
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
-    // "Clear done" (black-hole brief): the list is recorded into a layer as it draws, so a tap can snapshot it before
+    // "Clear done" (black-hole brief; v2: the hole opens out of the camera): the list is recorded into a layer as it draws, so a tap can snapshot it before
     // the rows leave Room; the black hole then plays over that snapshot while the data is already gone.
     val layer = rememberGraphicsLayer()
     val scope = rememberCoroutineScope()
@@ -123,11 +120,10 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             val info = list.layoutInfo
             val pieces = donePieces(info, with(density) { STRIP.toPx() })
-            val centre = holeCentre(info, density)
             val shot = withTimeoutOrNull(SNAPSHOT_WAIT_MS) { runCatching { layer.toImageBitmap().asAndroidBitmap() }.getOrNull() }
             onClearDone()
             holeStop = false
-            if (shot != null && pieces.isNotEmpty()) hole = BlackHoleRun(System.nanoTime(), shot, pieces, centre.x, centre.y, BlackHoleTiming.ClearAll)
+            if (shot != null && pieces.isNotEmpty()) hole = BlackHoleRun(System.nanoTime(), shot, pieces, BlackHoleTiming.ClearAll)
         }
     }
     Box(Modifier.fillMaxSize()) {
@@ -200,14 +196,6 @@ internal fun donePieces(info: LazyListLayoutInfo, stripPx: Float): List<PieceRec
         val h = (bottom - top) / n
         (0 until n).map { k -> PieceRect(0f, top + k * h, width, top + (k + 1) * h) }
     }
-}
-
-/** The hole opens where "Clear done" sits (the button becomes the hole); scrolled away, at the list's top right. */
-private fun holeCentre(info: LazyListLayoutInfo, density: Density): Offset = with(density) {
-    val head = info.visibleItemsInfo.firstOrNull { it.key == "head" }
-    val x = info.viewportSize.width - (Space.textEdge + 56.dp).toPx()
-    val y = if (head != null) (head.offset - info.viewportStartOffset) + head.size / 2f + Space.sm.toPx() else -info.viewportStartOffset + BlackHole.RADIUS_DP.dp.toPx()
-    Offset(x, y)
 }
 
 /** "Clear done": a mint pill with the bin; the whole 48 dp is the touch box. */

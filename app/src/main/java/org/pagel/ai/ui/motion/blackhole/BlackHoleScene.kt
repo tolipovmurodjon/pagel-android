@@ -16,9 +16,7 @@ import kotlin.math.roundToInt
  */
 class BlackHoleScene private constructor(
     val timing: BlackHoleTiming,
-    val cx: Float,
-    val cy: Float,
-    val radius: Float,
+    val geometry: HoleGeometry,
     private val mesh: HoleMesh,
     private val flow: FlowTable,
     private val sharpPaint: Paint,
@@ -27,11 +25,15 @@ class BlackHoleScene private constructor(
     val vertexCount: Int get() = mesh.vertexCount
 
     private var holeT = Float.NaN
-    private var holeLast = holeAt(0f, timing, radius)
+    private var holeLast = holeAt(0f, timing, geometry)
+
+    val cx: Float get() = geometry.cx
+    val cy: Float get() = geometry.cy
+    val radius: Float get() = geometry.radius
 
     /** The hole at [t]; the ring, the shade and the core all ask for the same frame, so it is worked out once. */
     fun hole(t: Float): HoleShape {
-        if (t != holeT) { holeLast = holeAt(t, timing, radius); holeT = t }
+        if (t != holeT) { holeLast = holeAt(t, timing, geometry); holeT = t }
         return holeLast
     }
 
@@ -49,10 +51,10 @@ class BlackHoleScene private constructor(
     companion object {
         /**
          * [snapshot] covers the overlay's whole box at 1x (its pixel (x, y) is the screen point (x, y) of the box);
-         * [pieces] are the parts that fly; the hole sits at ([cx], [cy]) with radius [radius] px; [cell] is the mesh
-         * cell in px.
+         * [pieces] are the parts that fly; the hole is [geometry] in that box's px (its camera may sit above the box);
+         * [cell] is the mesh cell in px.
          */
-        fun prepare(snapshot: Bitmap, pieces: List<PieceRect>, cx: Float, cy: Float, radius: Float, cell: Float, timing: BlackHoleTiming): BlackHoleScene {
+        fun prepare(snapshot: Bitmap, pieces: List<PieceRect>, geometry: HoleGeometry, cell: Float, timing: BlackHoleTiming): BlackHoleScene {
             // A GraphicsLayer snapshot is a HARDWARE bitmap: copy it once so it can be scaled.
             val readable = if (snapshot.config == Bitmap.Config.HARDWARE) snapshot.copy(Bitmap.Config.ARGB_8888, false) else snapshot
             // Read before any recycle below (checker: the sizes were read from a recycled bitmap).
@@ -65,11 +67,11 @@ class BlackHoleScene private constructor(
             val blurred = Bitmap.createScaledBitmap(half, max(1, half.width / 2), max(1, half.height / 2), true)
             if (half !== small && half !== blurred) half.recycle()
             if (readable !== snapshot && readable !== small) readable.recycle()
-            val mesh = HoleMesh(pieces, cx, cy, cell)
-            val flow = FlowTable.build(mesh.maxStart, radius, timing.swallow)
+            val mesh = HoleMesh(pieces, geometry.cx, geometry.cy, cell)
+            val flow = FlowTable.build(mesh.maxStart, geometry.radius, timing.swallow)
             mesh.bind(flow)
             return BlackHoleScene(
-                timing, cx, cy, radius, mesh, flow,
+                timing, geometry, mesh, flow,
                 shaderPaint(small, fullW / small.width, fullH / small.height),
                 shaderPaint(blurred, fullW / blurred.width, fullH / blurred.height),
             )

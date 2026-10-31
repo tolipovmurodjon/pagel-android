@@ -44,10 +44,10 @@ internal object HoleColors {
 }
 
 /** The black capsule, on top of everything: the rows dive under its edge. */
-internal fun DrawScope.drawCore(cx: Float, cy: Float, s: HoleShape) {
+internal fun DrawScope.drawCore(s: HoleShape) {
     if (s.alpha <= 0f) return
     drawRoundRect(
-        HoleColors.Core, topLeft = Offset(cx - s.width / 2f, cy - s.height / 2f), size = Size(s.width, s.height),
+        HoleColors.Core, topLeft = Offset(s.cx - s.width / 2f, s.cy - s.height / 2f), size = Size(s.width, s.height),
         cornerRadius = CornerRadius(s.height / 2f), alpha = s.alpha,
     )
 }
@@ -72,10 +72,10 @@ private object FallbackArt {
     val thin = Stroke(width = 0.08f)
 }
 
-internal fun DrawScope.drawFallbackRing(cx: Float, cy: Float, s: HoleShape, t: Float) {
+internal fun DrawScope.drawFallbackRing(s: HoleShape, t: Float) {
     if (s.alpha <= 0f) return
     val r = s.ringRadius
-    translate(cx, cy) {
+    translate(s.cx, s.cy) {
         scale(r * 3.5f, Offset.Zero) { drawCircle(FallbackArt.shade, radius = 1f, center = Offset.Zero, alpha = shadeOf(s)) }
         if (s.ring > 0.01f) scale(r, Offset.Zero) {
             rotate(t * 140f, Offset.Zero) { drawCircle(FallbackArt.sweep, radius = 1.12f, center = Offset.Zero, style = FallbackArt.wide, alpha = s.ring * s.alpha) }
@@ -116,14 +116,16 @@ internal object AgslRing {
             float f1 = fibre(fract(a + spin + twist), 48.0);
             float f2 = fibre(fract(a - spin * 1.4 + twist * 1.7), 96.0);
             float fib = 0.55 * f1 + 0.45 * f2;
-            float bx = (x - 1.10) / 0.20;
-            float hx = (x - 1.0) / 0.55;
+            float bx = (x - 1.08) / 0.17;
+            float hx = (x - 1.0) / 0.75;
             float band = exp(-bx * bx);
-            float halo = exp(-hx * hx) * 0.25;
+            float halo = exp(-hx * hx) * 0.42;
             float ring = clamp((band * (0.35 + 0.65 * fib * fib * 1.6) + halo) * strength, 0.0, 1.0);
             half3 gold = half3(0.949, 0.710, 0.290);
             half3 mint = half3(0.400, 0.867, 0.659);
-            half3 col = mix(gold, mint, half(smoothstep(1.0, 1.7, x)));
+            half3 hot = half3(1.0, 0.94, 0.78);
+            half3 col = mix(hot, gold, half(smoothstep(1.0, 1.25, x)));
+            col = mix(col, mint, half(smoothstep(1.4, 2.2, x)));
             float fall = 1.0 - smoothstep(0.9, 3.0, x);
             float s = shade * 0.12 * fall * fall;
             float alpha = clamp(ring + s, 0.0, 1.0);
@@ -176,7 +178,8 @@ internal object AgslRing {
                     val t = time()
                     val s = scene.hole(t)
                     if (s.alpha <= 0f) return@drawBehind
-                    drawRing(shader, size.width / 2f, size.height / 2f, s.ringRadius / 2f, t, s.ring * s.alpha, shadeOf(s))
+                    // The box is centred on the circle's end place; the ring follows the capsule's own centre.
+                    drawRing(shader, size.width / 2f + (s.cx - scene.cx) / 2f, size.height / 2f + (s.cy - scene.cy) / 2f, s.ringRadius / 2f, t, s.ring * s.alpha, shadeOf(s))
                 },
         )
     }

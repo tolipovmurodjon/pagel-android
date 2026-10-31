@@ -7,14 +7,17 @@ import org.junit.Test
 import org.pagel.ai.ui.motion.blackhole.BlackHole
 import org.pagel.ai.ui.motion.blackhole.BlackHoleTiming
 import org.pagel.ai.ui.motion.blackhole.BudgetWatch
+import org.pagel.ai.ui.motion.blackhole.Capsule
 import org.pagel.ai.ui.motion.blackhole.FlowTable
 import org.pagel.ai.ui.motion.blackhole.FrameStep
 import org.pagel.ai.ui.motion.blackhole.HoleMesh
 import org.pagel.ai.ui.motion.blackhole.HoleMode
 import org.pagel.ai.ui.motion.blackhole.PieceRect
 import org.pagel.ai.ui.motion.blackhole.chooseMode
+import org.pagel.ai.ui.motion.blackhole.holeGeometry
 import org.pagel.ai.ui.motion.blackhole.holeAt
 import org.pagel.ai.ui.motion.blackhole.shadeOf
+import kotlin.math.max
 
 /**
  * The black hole's maths (black-hole brief, "Prove it"): the flow table is monotonic and the farthest point reaches the
@@ -89,25 +92,60 @@ class BlackHoleTimelineTest {
         assertEquals(0.08f, BlackHoleTiming.ClearAll.swallowStart, 1e-4f)
     }
 
-    @Test fun theHoleOpensAsACapsuleBecomesACircleAndOnlyBulgesOutward() {
+    // A 360 x 800 dp phone at xxhdpi (3x), the camera a 36 x 36 px punch hole 40 px below the top, top centre.
+    private val screenW = 1080f
+    private val camera = Capsule(540f, 58f, 36f, 36f)
+    private val geo = holeGeometry(camera, screenW)
+
+    @Test fun theHoleIsBiggerThanTheSourceAndCentredOnTheCamera() {
+        assertTrue("radius at least 0.27 of the width: ${geo.radius}", geo.radius >= 0.27f * screenW)
+        assertEquals(camera.cx, geo.cx, 0.01f)
+        // The circle's top is above the screen edge, as in the demo: the hole comes OUT of the top.
+        assertTrue(geo.cy - geo.radius < 0f)
+    }
+
+    @Test fun theHoleOpensOutOfTheCameraAndTouchesItAtEveryMoment() {
         val t = BlackHoleTiming.ClearAll
-        val start = holeAt(0.02f, t, radius)
-        assertTrue("a capsule first", start.width > start.height * 2f)
-        val open = holeAt(t.open, t, radius)
-        assertEquals(2f * radius, open.width, 1f)
-        assertEquals(2f * radius, open.height, 1f)
-        val closed = holeAt(t.closeEnd, t, radius)
+        val first = holeAt(0f, t, geo)
+        assertEquals(camera.width, first.width, 0.5f)
+        assertEquals(camera.height, first.height, 0.5f)
+        var peak = 0f
+        for (k in 0..190) {
+            val s = holeAt(t.total * k / 190f, t, geo)
+            assertTrue("t=${t.total * k / 190f}: the hole holds the camera top", s.cy - s.height / 2f <= camera.top + 0.5f)
+            assertTrue("the hole holds the camera bottom", s.cy + s.height / 2f >= camera.bottom - 0.5f)
+            assertTrue("the hole holds the camera sides", s.cx - s.width / 2f <= camera.left + 0.5f && s.cx + s.width / 2f >= camera.right - 0.5f)
+            peak = max(peak, s.width / 2f)
+        }
+        assertTrue("peak radius $peak is at least 0.27 w", peak >= 0.27f * screenW)
+    }
+
+    @Test fun theHoleBecomesACircleThenShrinksBackIntoTheCameraAndOnlyBulgesOutward() {
+        val t = BlackHoleTiming.ClearAll
+        val open = holeAt(t.open, t, geo)
+        assertEquals(2f * geo.radius, open.width, 1f)
+        assertEquals(2f * geo.radius, open.height, 1f)
+        val closed = holeAt(t.closeEnd, t, geo)
+        assertEquals(camera.width, closed.width, 0.5f)
+        assertEquals(camera.cy, closed.cy, 0.5f)
         for (k in 1..10) {
-            val b = holeAt(t.closeEnd + t.bulge * k / 10f, t, radius)
+            val b = holeAt(t.closeEnd + t.bulge * k / 10f, t, geo)
             assertTrue("bulge $k is outward", b.width >= closed.width - 0.01f)
         }
-        assertEquals(0f, holeAt(t.total, t, radius).alpha, 1e-4f)
+        assertEquals(0f, holeAt(t.total, t, geo).alpha, 1e-4f)
+    }
+
+    @Test fun withNoCameraTheSameGeometryWorksFromTheStatusBarEdge() {
+        val bar = Capsule(540f, 72f, 120f, 48f)
+        val g = holeGeometry(bar, screenW)
+        val s = holeAt(BlackHoleTiming.ClearAll.open, BlackHoleTiming.ClearAll, g)
+        assertTrue(s.cy - s.height / 2f <= bar.top)
     }
 
     @Test fun theShadeLeavesWithTheRingSoTheClosedHoleSitsInNoGreyCloud() {
         val t = BlackHoleTiming.ClearAll
-        val open = holeAt(t.open, t, radius)
-        val closed = holeAt(t.closeEnd + t.bulge / 2f, t, radius)
+        val open = holeAt(t.open, t, geo)
+        val closed = holeAt(t.closeEnd + t.bulge / 2f, t, geo)
         assertTrue(shadeOf(closed) < 0.5f * shadeOf(open))
     }
 

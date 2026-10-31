@@ -1,8 +1,5 @@
 package org.pagel.ai.ui.motion.blackhole
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -50,7 +47,7 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.roundToInt
 
-/** A fixed moment for the frame-series tests: the lab shows the run at [t] s instead of playing it. */
+/** A fixed moment for the frame-series tests: [BlackHoleFrame] shows the run at [t] s instead of playing it. */
 data class LabStill(val t: Float, val timing: BlackHoleTiming = BlackHoleTiming.ClearAll, val shaderRing: Boolean = true)
 
 private val SAMPLE_ROWS = listOf(
@@ -58,15 +55,11 @@ private val SAMPLE_ROWS = listOf(
     "Call the bank about the report", "Record the fractions lesson", "Weigh in",
 )
 
-/** The lab's stage in px: the hole near the top, six sample rows under it. */
-internal class LabGeometry(val width: Int, density: Float) {
-    val radius = BlackHole.RADIUS_DP * density
+/** The lab's stage in px: six sample rows from [top] down (the hole is not here: it opens out of the camera). */
+internal class LabGeometry(val width: Int, density: Float, top: Float = Space.lg.value * density) {
     val cell = BlackHole.CELL_DP * density
-    val cx = width / 2f
-    val cy = Space.lg.value * density + radius
     private val rowH = 48f * density
     private val gap = Space.sm.value * density
-    private val top = cy + radius + (Space.xxxl.value + Space.lg.value) * density
     val rows = SAMPLE_ROWS.indices.map { i -> PieceRect(0f, top + i * (rowH + gap), width.toFloat(), top + i * (rowH + gap) + rowH) }
     val height = (rows.last().bottom + Space.lg.value * density).roundToInt()
 }
@@ -103,7 +96,7 @@ fun BlackHoleLabScreen(padding: PaddingValues) {
 }
 
 @Composable
-fun BlackHoleLab(padding: PaddingValues, jank: String?, still: LabStill? = null, onRunStart: () -> Unit = {}, onRunEnd: () -> Unit = {}) {
+fun BlackHoleLab(padding: PaddingValues, jank: String?, onRunStart: () -> Unit = {}, onRunEnd: () -> Unit = {}) {
     val density = LocalDensity.current.density
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(bottom = Space.xl)) {
         Column(Modifier.padding(start = Space.textEdge, end = Space.textEdge, top = Space.headerTop)) {
@@ -116,11 +109,11 @@ fun BlackHoleLab(padding: PaddingValues, jank: String?, still: LabStill? = null,
             val rows = remember(geo) { sampleRows(geo, density) }
             val image = remember(rows) { rows.asImageBitmap() }
             var run by remember { mutableStateOf<BlackHoleRun?>(null) }
-            var gone by remember(still) { mutableStateOf(if (still != null) geo.rows.indices.toSet() else emptySet()) }
+            var gone by remember { mutableStateOf<Set<Int>>(emptySet()) }
             var next by remember { mutableLongStateOf(1L) }
             // The rows come back a moment after a run, ready for the next one.
             LaunchedEffect(run, gone) {
-                if (still == null && run == null && gone.isNotEmpty()) { delay(700); gone = emptySet() }
+                if (run == null && gone.isNotEmpty()) { delay(700); gone = emptySet() }
             }
             Column {
                 val stageDp = with(LocalDensity.current) { geo.height.toDp() }
@@ -134,23 +127,18 @@ fun BlackHoleLab(padding: PaddingValues, jank: String?, still: LabStill? = null,
                             }
                         },
                     )
-                    if (still != null) {
-                        val scene = remember(geo, still) { BlackHoleScene.prepare(rows, geo.rows, geo.cx, geo.cy, geo.radius, geo.cell, still.timing) }
-                        BlackHoleCanvas(scene, { still.t }, shaderRing = still.shaderRing)
-                    } else {
-                        BlackHoleOverlay(run, onEnd = { run = null; onRunEnd() }, Modifier.fillMaxSize())
-                        BlackHolePrewarm()
-                    }
+                    BlackHoleOverlay(run, onEnd = { run = null; onRunEnd() }, Modifier.fillMaxSize())
+                    BlackHolePrewarm()
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
                     for ((label, timing) in listOf("Delete one" to BlackHoleTiming.Single, "Clear all" to BlackHoleTiming.ClearAll)) {
                         Button(
                             onClick = {
-                                if (run == null && still == null) {
+                                if (run == null) {
                                     val pieces = if (timing == BlackHoleTiming.Single) listOf(geo.rows.first()) else geo.rows
                                     gone = if (timing == BlackHoleTiming.Single) setOf(0) else geo.rows.indices.toSet()
                                     onRunStart()
-                                    run = BlackHoleRun(next++, rows, pieces, geo.cx, geo.cy, timing)
+                                    run = BlackHoleRun(next++, rows, pieces, timing)
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Glass.Primary),
@@ -167,6 +155,24 @@ fun BlackHoleLab(padding: PaddingValues, jank: String?, still: LabStill? = null,
             style = MaterialTheme.typography.bodyMedium, color = if (jank == null) Glass.Muted else Glass.Ink,
             modifier = Modifier.padding(start = Space.textEdge, end = Space.textEdge, top = Space.md),
         )
+    }
+}
+
+/**
+ * One still frame of the effect on a whole-screen stage (the frame-series tests): the sample rows under a [camera]
+ * capsule at the top, the hole at [still].t. The camera is in px of the stage.
+ */
+@Composable
+fun BlackHoleFrame(still: LabStill, camera: Capsule) {
+    val density = LocalDensity.current.density
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val width = constraints.maxWidth
+        val geo = remember(width, density) { LabGeometry(width, density, top = camera.bottom + 4f * density) }
+        val rows = remember(geo) { sampleRows(geo, density) }
+        val scene = remember(geo, camera, still.timing) {
+            BlackHoleScene.prepare(rows, geo.rows, holeGeometry(camera, width.toFloat()), geo.cell, still.timing)
+        }
+        BlackHoleCanvas(scene, { still.t }, shaderRing = still.shaderRing)
     }
 }
 
@@ -208,10 +214,4 @@ private fun rememberJankMeter(): JankMeter {
         onDispose { stats?.isTrackingEnabled = false }
     }
     return meter
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }

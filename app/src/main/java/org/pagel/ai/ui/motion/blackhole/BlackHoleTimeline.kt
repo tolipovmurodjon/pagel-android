@@ -13,8 +13,13 @@ import kotlin.math.sin
 
 /** The effect's sizes, in one place so Boss can tune them on his A05s. */
 object BlackHole {
-    /** The hole's radius when fully open (90 dp across). */
-    const val RADIUS_DP = 45f
+    /**
+     * The hole's radius when fully open, as a share of the screen's width. The source's 90 pt on a 393 pt phone is 0.23;
+     * Boss asked for bigger (2026-10-31), so 0.28: a hole 0.56 of the screen wide.
+     */
+    const val RADIUS_FRACTION = 0.28f
+    /** The circle's centre sits this many radii below the camera's centre, so its top is cut by the screen edge as in the demo. */
+    const val CENTRE_DROP = 0.25f
     /** The mesh cell: a 72 x 360 dp row is 6 x 30 cells (iOS uses 6 pt; 12 dp is a quarter of the cells). */
     const val CELL_DP = 12f
     /** A list snapshot is kept at 0.75x: it blurs near the hole anyway. */
@@ -83,30 +88,53 @@ object HoleEase {
     fun bulge(u: Float): Float = max(0f, 0.35f * sin(PI.toFloat() * u.coerceIn(0f, 1f)) * exp(-2.2f * u.coerceIn(0f, 1f)))
 }
 
-/** The hole at one moment: a capsule [width] x [height] px, its opacity, and how bright the ring is (0..1). */
-data class HoleShape(val width: Float, val height: Float, val alpha: Float, val ring: Float) {
+/** The camera cut-out (or its stand-in under the status bar) as a capsule, in px of one coordinate space. */
+data class Capsule(val cx: Float, val cy: Float, val width: Float, val height: Float) {
+    val left: Float get() = cx - width / 2f
+    val right: Float get() = cx + width / 2f
+    val top: Float get() = cy - height / 2f
+    val bottom: Float get() = cy + height / 2f
+}
+
+/** Where the hole comes from ([capsule]) and where it ends up: a circle of [radius] at ([cx], [cy]). */
+data class HoleGeometry(val capsule: Capsule, val radius: Float, val cx: Float, val cy: Float) {
+    /** The same geometry in another coordinate space whose origin is ([dx], [dy]) away. */
+    fun shifted(dx: Float, dy: Float) = HoleGeometry(capsule.copy(cx = capsule.cx + dx, cy = capsule.cy + dy), radius, cx + dx, cy + dy)
+}
+
+/** The hole for a screen [screenWidth] px wide whose camera is [capsule]: out of the camera, big, a little lower. */
+fun holeGeometry(capsule: Capsule, screenWidth: Float): HoleGeometry {
+    val r = BlackHole.RADIUS_FRACTION * screenWidth
+    return HoleGeometry(capsule, r, capsule.cx.coerceIn(0.6f * r, screenWidth - 0.6f * r), capsule.cy + BlackHole.CENTRE_DROP * r)
+}
+
+/** The hole at one moment: a capsule [width] x [height] px centred ([cx], [cy]), its opacity, and the ring's brightness (0..1). */
+data class HoleShape(val width: Float, val height: Float, val cx: Float, val cy: Float, val alpha: Float, val ring: Float) {
     /** The radius the ring circles at: the capsule's mean half size. */
     val ringRadius: Float get() = (width + height) / 4f
 }
 
 private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
-/** The hole at time [t] s for radius [r] px: opens as a capsule growing into a circle, closes back, bulges, fades. */
-fun holeAt(t: Float, timing: BlackHoleTiming, r: Float): HoleShape {
+/**
+ * The hole at time [t] s: the camera's capsule grows into the big circle (and its centre slides down to it), and on the
+ * close it shrinks back INTO the camera, then a small outward bulge and the fade. The shape always contains the camera.
+ */
+fun holeAt(t: Float, timing: BlackHoleTiming, g: HoleGeometry): HoleShape {
     val o = HoleEase.soft(t / timing.open)
     val c = if (t <= timing.closeStart) 0f else HoleEase.outCubic((t - timing.closeStart) / timing.close)
-    var w = 2f * r * lerp(0.55f, 1f, o)
-    var h = 2f * r * lerp(0.12f, 1f, o)
-    w = lerp(w, 2f * r * 0.42f, c)
-    h = lerp(h, 2f * r * 0.10f, c)
+    val k = o * (1f - c)
+    val cap = g.capsule
+    var w = lerp(cap.width, 2f * g.radius, k)
+    var h = lerp(cap.height, 2f * g.radius, k)
     if (t > timing.closeEnd && timing.bulge > 0f) {
-        val b = 1f + HoleEase.bulge((t - timing.closeEnd) / timing.bulge)
-        w *= b
-        h *= b
+        val b = HoleEase.bulge((t - timing.closeEnd) / timing.bulge)
+        w += 2f * g.radius * 0.3f * b
+        h += 2f * g.radius * 0.3f * b
     }
     val fadeIn = HoleEase.smoothstep(t / (timing.open * 0.25f))
     val fadeOut = if (timing.tail > 0f) 1f - HoleEase.smoothstep((t - timing.bulgeEnd) / timing.tail) else if (t >= timing.bulgeEnd) 0f else 1f
-    return HoleShape(w, h, fadeIn * fadeOut, o * (1f - c))
+    return HoleShape(w, h, lerp(cap.cx, g.cx, k), lerp(cap.cy, g.cy, k), fadeIn * fadeOut, k)
 }
 
 /** The frame clock's step: a dropped frame continues (at most 1/30 s), it never jumps. */

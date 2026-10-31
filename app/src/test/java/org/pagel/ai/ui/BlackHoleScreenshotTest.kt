@@ -25,7 +25,9 @@ import org.pagel.ai.data.db.TaskEntity
 import org.pagel.ai.data.upcoming.completedGroups
 import org.pagel.ai.ui.glass.AuroraBackground
 import org.pagel.ai.ui.glass.GlassTheme
+import org.pagel.ai.ui.motion.blackhole.BlackHoleFrame
 import org.pagel.ai.ui.motion.blackhole.BlackHoleLab
+import org.pagel.ai.ui.motion.blackhole.Capsule
 import org.pagel.ai.ui.motion.blackhole.LabStill
 import org.pagel.ai.ui.upcoming.CompletedScreen
 import org.pagel.ai.ui.upcoming.CompletedUi
@@ -34,23 +36,26 @@ import org.robolectric.annotation.GraphicsMode
 import java.time.LocalDate
 
 /**
- * The black hole's frame series (black-hole brief, "Prove it"): the lab's six sample rows at t = 0, 0.2, 0.5, 0.8, 1.1
- * and 1.4 s of the 1.9 s "Clear all", with a fixed clock so a regression shows as a picture diff; the same moments on
- * the API 26-32 canvas ring; and Completed's "Clear done" button.
+ * The black hole's frame series (black-hole v2 brief, "Prove"): six sample rows on a 360 x 800 dp screen whose camera is
+ * a top-centre punch hole, at t = 0.1, 0.4, 0.8, 1.2 and 1.6 s of the 1.9 s "Clear all", with a fixed clock so a
+ * regression shows as a picture diff; the same moments on the API 26-32 canvas ring; and Completed's "Clear done" button.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [35], qualifiers = "w360dp-h780dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi")
 class BlackHoleScreenshotTest {
     @get:Rule val compose = createComposeRule()
 
     private val pad = PaddingValues(top = 16.dp, bottom = 32.dp)
-    private val moments = listOf(0f, 0.2f, 0.5f, 0.8f, 1.1f, 1.4f)
+    private val moments = listOf(0.1f, 0.4f, 0.8f, 1.2f, 1.6f)
+
+    /** A 36 px punch hole, top centre, 40 px below the top edge, in the stage's px (xxhdpi: 1080 px wide). */
+    private val camera = Capsule(540f, 58f, 36f, 36f)
 
     /** One composition (setContent runs once per test); the fixed moment changes between the captures. */
     private fun series(times: List<Float>, shaderRing: Boolean, prefix: String) {
         var still by mutableStateOf(LabStill(times.first(), shaderRing = shaderRing))
-        compose.setContent { GlassTheme { AuroraBackground(Modifier.fillMaxSize()) { BlackHoleLab(pad, jank = null, still = still) } } }
+        compose.setContent { GlassTheme { AuroraBackground(Modifier.fillMaxSize()) { BlackHoleFrame(still, camera) } } }
         for (t in times) {
             still = LabStill(t, shaderRing = shaderRing)
             compose.waitForIdle()
@@ -60,7 +65,7 @@ class BlackHoleScreenshotTest {
 
     @Test fun clearAllFrameSeriesOnTheAgslRing() = series(moments, shaderRing = true, prefix = "black-hole")
 
-    @Test fun clearAllFrameSeriesOnTheCanvasFallback() = series(listOf(0.5f, 0.8f, 1.1f), shaderRing = false, prefix = "black-hole-fallback")
+    @Test fun clearAllFrameSeriesOnTheCanvasFallback() = series(listOf(0.4f, 0.8f, 1.2f), shaderRing = false, prefix = "black-hole-fallback")
 
     @Test fun theLabShowsBothLengthsAndTheJankLine() {
         compose.setContent { GlassTheme { AuroraBackground(Modifier.fillMaxSize()) { BlackHoleLab(pad, jank = "Janky frames: 3.1 % (4 of 128)") } } }
