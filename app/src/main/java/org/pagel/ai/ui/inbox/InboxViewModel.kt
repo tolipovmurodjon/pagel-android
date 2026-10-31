@@ -245,6 +245,7 @@ class InboxViewModel @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
     private val prefs = appContext.getSharedPreferences("pagel-inbox", android.content.Context.MODE_PRIVATE)
+    private val goalHabit = org.pagel.ai.data.inbox.InboxGoalHabit(habits, tasks, prefs) { org.pagel.ai.data.inbox.tashkentDay(System.currentTimeMillis()) }
     private val oldMode = MutableStateFlow(false)
     private val doneShown = MutableStateFlow(runCatching { prefs.getBoolean(OLD_DONE_SHOWN, false) }.getOrDefault(false))
     private val order = MutableStateFlow(runCatching { InboxOrder.valueOf(prefs.getString(ORDER, InboxOrder.NEWEST.name).orEmpty()) }.getOrDefault(InboxOrder.NEWEST))
@@ -376,7 +377,6 @@ class InboxViewModel @Inject constructor(
         }
     }
 
-    private val goalHabit = org.pagel.ai.data.inbox.InboxGoalHabit(habits, tasks, prefs) { org.pagel.ai.data.inbox.tashkentDay(System.currentTimeMillis()) }
 
     /** The habit "Sort 5 saves in your Inbox" follows the goal (see [org.pagel.ai.data.inbox.InboxGoalHabit]). */
     private suspend fun syncHabit(n: Int) { goalHabit.sync(n) }
