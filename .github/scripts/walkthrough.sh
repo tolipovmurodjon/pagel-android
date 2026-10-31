@@ -152,8 +152,9 @@ log "   What now: picked, started, ticked; pagel.uz has t_now1 done"
 shot r4-after-what-now 2
 
 log "-- Make it tiny: open Write the release note, spice 2, 4 funny steps from pagel.uz, Start -> Focus 1 of 4 -> tick all -> done"
+$T adb shell input swipe 160 460 160 260 300; sleep 1
 tap 'All today · [0-9]+' || r4_tap 'All today · [0-9]+' || { log "WALKTHROUGH: no All today row the second time"; exit 1; }
-sleep 1.5
+sleep 1; $T adb shell input swipe 160 260 160 520 300; $T adb shell input swipe 160 260 160 520 300; sleep 1
 r4_tap "Write the release note" && shot r4-panel 2.5 || { log "WALKTHROUGH: Write the release note is not on the open list"; exit 1; }
 r4_tap "Make it tiny" || { log "WALKTHROUGH: the panel has no Make it tiny row"; exit 1; }
 shot r4-tiny-sheet 2
