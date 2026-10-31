@@ -126,10 +126,13 @@ internal object AgslRing {
             half3 hot = half3(1.0, 0.94, 0.78);
             half3 col = mix(hot, gold, half(smoothstep(1.05, 1.5, x)));
             col = mix(col, mint, half(smoothstep(1.4, 2.2, x)));
-            float fall = 1.0 - smoothstep(0.9, 3.0, x);
+            float fall = 1.0 - smoothstep(0.9, 2.0, x);
             float s = shade * 0.12 * fall * fall;
-            float alpha = clamp(ring + s, 0.0, 1.0);
-            return half4(col * half(ring), half(alpha));
+            // Faint spiral arms in the shade: the space around the hole looks drawn in (implied, not a real lens).
+            float arm = 0.5 + 0.5 * sin(6.0 * (a + spin * 0.5) * 6.2831853 * 0.5 - 7.0 * x);
+            float streak = shade * 0.10 * arm * fall * smoothstep(1.1, 1.3, x);
+            float alpha = clamp(ring + s + streak, 0.0, 1.0);
+            return half4(col * half(ring + streak), half(alpha));
         }
     """
 

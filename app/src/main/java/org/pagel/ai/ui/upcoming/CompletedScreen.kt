@@ -110,7 +110,10 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
     val layer = rememberGraphicsLayer()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     var hole by remember { mutableStateOf<BlackHoleRun?>(null) }
+    // Laboratory → Black hole → "Use in the app" (on by default): off, and the rows just leave.
+    val holeOn by remember { org.pagel.ai.ui.lab.Experiments.isOn(context, org.pagel.ai.ui.lab.Experiments.BLACK_HOLE) }.collectAsStateWithLifecycle(initialValue = true)
     // Undo mid-run: the effect fades out in 120 ms (never cut in one frame) while the rows come back underneath.
     var holeStop by remember { mutableStateOf(false) }
     LaunchedEffect(ui.clearUndone) { if (ui.clearUndone > 0 && hole != null) holeStop = true }
@@ -123,7 +126,7 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
             val shot = withTimeoutOrNull(SNAPSHOT_WAIT_MS) { runCatching { layer.toImageBitmap().asAndroidBitmap() }.getOrNull() }
             onClearDone()
             holeStop = false
-            if (shot != null && pieces.isNotEmpty()) hole = BlackHoleRun(System.nanoTime(), shot, pieces, BlackHoleTiming.ClearAll)
+            if (holeOn && shot != null && pieces.isNotEmpty()) hole = BlackHoleRun(System.nanoTime(), shot, pieces, BlackHoleTiming.ClearAll)
         }
     }
     Box(Modifier.fillMaxSize()) {

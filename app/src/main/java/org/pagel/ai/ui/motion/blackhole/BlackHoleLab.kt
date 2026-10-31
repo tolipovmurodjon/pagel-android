@@ -24,7 +24,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
+import org.pagel.ai.ui.lab.Experiments
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -91,16 +96,30 @@ internal fun sampleRows(geo: LabGeometry, density: Float): Bitmap {
 @Composable
 fun BlackHoleLabScreen(padding: PaddingValues) {
     val meter = rememberJankMeter()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var report by remember { mutableStateOf<String?>(null) }
-    BlackHoleLab(padding, report, onRunStart = meter::start, onRunEnd = { report = meter.stop() })
+    var firstMs by remember { mutableFloatStateOf(-1f) }
+    BlackHoleLab(
+        padding, report,
+        onFirstFrame = { firstMs = it },
+        onRunStart = meter::start,
+        onRunEnd = {
+            val line = meter.stop()
+            report = line
+            // The Laboratory card keeps the last numbers, quietly, so Boss can read them without playing it again.
+            val first = if (firstMs >= 0f) " · first frame ${firstMs.roundToInt()} ms" else ""
+            scope.launch { Experiments.setNote(context, Experiments.BLACK_HOLE, line + first) }
+        },
+    )
 }
 
 @Composable
-fun BlackHoleLab(padding: PaddingValues, jank: String?, onRunStart: () -> Unit = {}, onRunEnd: () -> Unit = {}) {
+fun BlackHoleLab(padding: PaddingValues, jank: String?, onFirstFrame: (Float) -> Unit = {}, onRunStart: () -> Unit = {}, onRunEnd: () -> Unit = {}) {
     val density = LocalDensity.current.density
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(bottom = Space.xl)) {
         Column(Modifier.padding(start = Space.textEdge, end = Space.textEdge, top = Space.headerTop)) {
-            Text("Lab", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
+            Text("Laboratory", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
             Text("Black hole", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
             Text("Delete one or clear all. The janky frames are counted on this phone.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
         }
@@ -127,7 +146,7 @@ fun BlackHoleLab(padding: PaddingValues, jank: String?, onRunStart: () -> Unit =
                             }
                         },
                     )
-                    BlackHoleOverlay(run, onEnd = { run = null; onRunEnd() }, Modifier.fillMaxSize())
+                    BlackHoleOverlay(run, onEnd = { run = null; onRunEnd() }, Modifier.fillMaxSize(), onFirstFrame = onFirstFrame)
                     BlackHolePrewarm()
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = Space.gutter), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {

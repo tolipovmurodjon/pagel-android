@@ -25,6 +25,9 @@ import org.pagel.ai.data.db.TaskEntity
 import org.pagel.ai.data.upcoming.completedGroups
 import org.pagel.ai.ui.glass.AuroraBackground
 import org.pagel.ai.ui.glass.GlassTheme
+import org.pagel.ai.ui.lab.Experiments
+import org.pagel.ai.ui.lab.ExperimentEntry
+import org.pagel.ai.ui.lab.LaboratoryShelf
 import org.pagel.ai.ui.motion.blackhole.BlackHoleFrame
 import org.pagel.ai.ui.motion.blackhole.BlackHoleLab
 import org.pagel.ai.ui.motion.blackhole.Capsule
@@ -66,6 +69,20 @@ class BlackHoleScreenshotTest {
     @Test fun clearAllFrameSeriesOnTheAgslRing() = series(moments, shaderRing = true, prefix = "black-hole")
 
     @Test fun clearAllFrameSeriesOnTheCanvasFallback() = series(listOf(0.4f, 0.8f, 1.2f), shaderRing = false, prefix = "black-hole-fallback")
+
+    private fun laboratory(name: String) {
+        val entry = ExperimentEntry(Experiments.all.first(), on = true, note = "Janky frames: 3.1 % (4 of 128) · first frame 42 ms")
+        compose.setContent { GlassTheme { AuroraBackground(Modifier.fillMaxSize()) { LaboratoryShelf(listOf(entry), pad) } } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/$name.png")
+        compose.onNodeWithText("Laboratory").assertIsDisplayed()
+        compose.onNodeWithText("Black hole").assertIsDisplayed()
+        compose.onNodeWithText("Try it").assertIsDisplayed()
+        compose.onNodeWithText("Janky frames: 3.1 % (4 of 128) · first frame 42 ms").assertIsDisplayed()
+    }
+
+    @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-mdpi") fun laboratoryAtOneTimes() = laboratory("laboratory-1x")
+
+    @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-hdpi") fun laboratoryAtOnePointFiveTimes() = laboratory("laboratory-1_5x")
 
     @Test fun theLabShowsBothLengthsAndTheJankLine() {
         compose.setContent { GlassTheme { AuroraBackground(Modifier.fillMaxSize()) { BlackHoleLab(pad, jank = "Janky frames: 3.1 % (4 of 128)") } } }

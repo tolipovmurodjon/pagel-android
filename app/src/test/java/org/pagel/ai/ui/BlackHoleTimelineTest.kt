@@ -17,6 +17,7 @@ import org.pagel.ai.ui.motion.blackhole.chooseMode
 import org.pagel.ai.ui.motion.blackhole.holeGeometry
 import org.pagel.ai.ui.motion.blackhole.holeAt
 import org.pagel.ai.ui.motion.blackhole.shadeOf
+import org.pagel.ai.ui.motion.blackhole.swallowTicks
 import kotlin.math.max
 
 /**
@@ -88,8 +89,8 @@ class BlackHoleTimelineTest {
     @Test fun theTwoLengthsAreOnePointThreeAndAboutOnePointNineSeconds() {
         assertEquals(1.3f, BlackHoleTiming.Single.total, 0.01f)
         assertTrue(BlackHoleTiming.ClearAll.total in 1.85f..1.95f)
-        // The swallow starts at 10 % of the opening.
-        assertEquals(0.08f, BlackHoleTiming.ClearAll.swallowStart, 1e-4f)
+        // The swallow starts at 35 % of the opening, once the big hole has grown over the first rows.
+        assertEquals(0.28f, BlackHoleTiming.ClearAll.swallowStart, 1e-4f)
     }
 
     // A 360 x 800 dp phone at xxhdpi (3x), the camera a 36 x 36 px punch hole 40 px below the top, top centre.
@@ -98,10 +99,11 @@ class BlackHoleTimelineTest {
     private val geo = holeGeometry(camera, screenW)
 
     @Test fun theHoleIsBiggerThanTheSourceAndCentredOnTheCamera() {
-        assertTrue("radius at least 0.27 of the width: ${geo.radius}", geo.radius >= 0.27f * screenW)
+        assertTrue("radius at least 0.42 of the width: ${geo.radius}", geo.radius >= 0.42f * screenW)
         assertEquals(camera.cx, geo.cx, 0.01f)
-        // The circle's top is above the screen edge, as in the demo: the hole comes OUT of the top.
-        assertTrue(geo.cy - geo.radius < 0f)
+        // The circle's top edge stays at the camera: the hole comes OUT of it and owns the top half.
+        assertEquals(camera.top, geo.cy - geo.radius, 0.5f)
+        assertTrue("the circle ends in the upper half of an 800 dp phone", geo.cy + geo.radius < 0.5f * 2400f)
     }
 
     @Test fun theHoleOpensOutOfTheCameraAndTouchesItAtEveryMoment() {
@@ -117,7 +119,7 @@ class BlackHoleTimelineTest {
             assertTrue("the hole holds the camera sides", s.cx - s.width / 2f <= camera.left + 0.5f && s.cx + s.width / 2f >= camera.right - 0.5f)
             peak = max(peak, s.width / 2f)
         }
-        assertTrue("peak radius $peak is at least 0.27 w", peak >= 0.27f * screenW)
+        assertTrue("peak radius $peak is at least 0.42 w", peak >= 0.42f * screenW)
     }
 
     @Test fun theHoleBecomesACircleThenShrinksBackIntoTheCameraAndOnlyBulgesOutward() {
@@ -171,6 +173,17 @@ class BlackHoleTimelineTest {
         for (v in 0 until mesh.vertexCount) {
             assertEquals("point $v is gone", 0, mesh.sharp[v] ushr 24)
             assertEquals(0, mesh.soft[v] ushr 24)
+        }
+    }
+
+    @Test fun theSwallowTicksComeFasterAndNeverMoreThanNine() {
+        for (timing in listOf(BlackHoleTiming.Single, BlackHoleTiming.ClearAll)) {
+            val ticks = swallowTicks(timing)
+            assertTrue("some ticks", ticks.size >= 3)
+            assertTrue(ticks.size <= 9)
+            assertTrue(ticks.first() >= timing.swallowStart && ticks.last() < timing.closeStart)
+            val gaps = ticks.zipWithNext { a, b -> b - a }
+            for (i in 1 until gaps.size) assertTrue("gap $i shrinks: $gaps", gaps[i] <= gaps[i - 1] + 1e-4f)
         }
     }
 }

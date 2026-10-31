@@ -141,12 +141,12 @@ private fun WindowLayer(content: @Composable () -> Unit) {
 /**
  * Plays [run] over the box it was taken from, with the hole opening out of the camera; [onEnd] when it is over. The
  * data already changed (Undo works at any moment): this only draws. The scene is made off the main thread while the
- * plain snapshot holds the place, then one frame clock drives it, each step at most 1/30 s. Two haptics only: the
- * open and the land. The status bar's icons turn light while the hole is black behind them.
+ * plain snapshot holds the place, then one frame clock drives it, each step at most 1/30 s. Haptics: one tick at the
+ * open, soft ticks that come faster during the swallow, one when the hole lands in the camera. The status bar's icons turn light while the hole is black behind them.
  * Reduced motion, a scene that cannot be made, or two missed frame budgets in a row: the rows fade in 120 ms instead.
  */
 @Composable
-fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier = Modifier, stop: Boolean = false) {
+fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier = Modifier, stop: Boolean = false, onFirstFrame: (Float) -> Unit = {}) {
     if (run == null) return
     // [stop] (an Undo mid-run): the effect leaves by the same 120 ms fade, never cut in one frame.
     val stopNow by rememberUpdatedState(stop)
@@ -154,6 +154,7 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
     val density = LocalDensity.current
     val cell = BlackHole.CELL_DP * density.density
     val end by rememberUpdatedState(onEnd)
+    val firstFrame by rememberUpdatedState(onFirstFrame)
     var scene by remember(run.id) { mutableStateOf<BlackHoleScene?>(null) }
     // Where the snapshot's box sits in the window: the hole's place is worked out in window px, then moved into the box.
     var origin by remember(run.id) { mutableStateOf(Offset.Zero) }
@@ -169,6 +170,7 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
     }
     LaunchedEffect(run.id) {
         var t = 0f
+        val began = System.nanoTime()
         // One frame first: the host below has been laid out, so its window position is known.
         withFrameNanos { it }
         if (!stopNow && chooseMode(animatorScale(view.context)) == HoleMode.Full) {
@@ -184,7 +186,9 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
                 view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                 val watch = BudgetWatch()
                 var last = -1L
-                var landed = false
+                val ticks = swallowTicks(run.timing)
+                var nextTick = 0
+                var closed = false
                 var gaveUp = false
                 while (t < run.timing.total && !gaveUp && !stopNow) {
                     val now = withFrameNanos { it }
@@ -193,10 +197,16 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
                         gaveUp = watch.frame(raw)
                         t += FrameStep.step(raw)
                     }
+                    if (last < 0L) firstFrame((System.nanoTime() - began) / 1_000_000f)
                     last = now
                     time.floatValue = t
-                    if (!landed && t >= run.timing.swallowEnd) {
-                        landed = true
+                    // Soft ticks that come faster while the list is pulled in, then one when the hole lands in the camera.
+                    while (nextTick < ticks.size && t >= ticks[nextTick]) {
+                        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                        nextTick++
+                    }
+                    if (!closed && t >= run.timing.closeEnd) {
+                        closed = true
                         view.performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY)
                     }
                 }

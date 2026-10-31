@@ -15,11 +15,10 @@ import kotlin.math.sin
 object BlackHole {
     /**
      * The hole's radius when fully open, as a share of the screen's width. The source's 90 pt on a 393 pt phone is 0.23;
-     * Boss asked for bigger (2026-10-31), so 0.28: a hole 0.56 of the screen wide.
+     * Boss (2026-10-31, watching the demo again): "it becomes LARGE", so 0.45: a hole 0.9 of the screen wide that owns
+     * the top half. Its top edge stays at the camera.
      */
-    const val RADIUS_FRACTION = 0.28f
-    /** The circle's centre sits this many radii below the camera's centre, so its top is cut by the screen edge as in the demo. */
-    const val CENTRE_DROP = 0.25f
+    const val RADIUS_FRACTION = 0.45f
     /** The mesh cell: a 72 x 360 dp row is 6 x 30 cells (iOS uses 6 pt; 12 dp is a quarter of the cells). */
     const val CELL_DP = 12f
     /** A list snapshot is kept at 0.75x: it blurs near the hole anyway. */
@@ -30,7 +29,7 @@ object BlackHole {
     const val HEAT_FROM = 1.6f
     const val VANISH = 1.03f
     /** The AGSL ring runs only in a box this many radii wide around the hole, at half resolution. */
-    const val RING_BOX = 6f
+    const val RING_BOX = 4f
     /** Reduced motion, or the phone could not keep up: the rows fade out in this long instead. */
     const val FADE_MS = 120L
     /** How long the swallow takes to engage once it starts (rows near the hole do not start half faded). */
@@ -38,7 +37,7 @@ object BlackHole {
 }
 
 /**
- * One length of the effect. Phases: the hole opens (capsule → circle); the swallow starts at 10 % of the opening;
+ * One length of the effect. Phases: the hole opens (capsule → circle); the swallow starts at 35 % of the opening (the hole is big now: the rows must not vanish before it has grown over them);
  * the close starts [closeLead] before the last row is gone; a damped outward bulge; a short tail where the glow fades.
  */
 data class BlackHoleTiming(
@@ -48,7 +47,7 @@ data class BlackHoleTiming(
     val close: Float,
     val bulge: Float,
     val tail: Float,
-    val swallowStartFraction: Float = 0.10f,
+    val swallowStartFraction: Float = 0.35f,
 ) {
     val swallowStart: Float get() = open * swallowStartFraction
     val swallowEnd: Float get() = swallowStart + swallow
@@ -59,9 +58,9 @@ data class BlackHoleTiming(
 
     companion object {
         /** One task deleted: 1.3 s, short enough to survive a to-do app's many deletes. */
-        val Single = BlackHoleTiming(open = 0.5f, swallow = 0.75f, closeLead = 0.06f, close = 0.22f, bulge = 0.26f, tail = 0.08f)
+        val Single = BlackHoleTiming(open = 0.5f, swallow = 0.625f, closeLead = 0.06f, close = 0.22f, bulge = 0.26f, tail = 0.08f)
         /** "Clear done" / clear all: the full show, ~1.9 s (the source's 0.8 / 1.15 / 0.3 / 0.34 s). */
-        val ClearAll = BlackHoleTiming(open = 0.8f, swallow = 1.15f, closeLead = 0.09f, close = 0.30f, bulge = 0.34f, tail = 0.10f)
+        val ClearAll = BlackHoleTiming(open = 0.8f, swallow = 1.0f, closeLead = 0.09f, close = 0.30f, bulge = 0.34f, tail = 0.10f)
     }
 }
 
@@ -105,7 +104,7 @@ data class HoleGeometry(val capsule: Capsule, val radius: Float, val cx: Float, 
 /** The hole for a screen [screenWidth] px wide whose camera is [capsule]: out of the camera, big, a little lower. */
 fun holeGeometry(capsule: Capsule, screenWidth: Float): HoleGeometry {
     val r = BlackHole.RADIUS_FRACTION * screenWidth
-    return HoleGeometry(capsule, r, capsule.cx.coerceIn(0.6f * r, screenWidth - 0.6f * r), capsule.cy + BlackHole.CENTRE_DROP * r)
+    return HoleGeometry(capsule, r, capsule.cx.coerceIn(0.6f * r, screenWidth - 0.6f * r), capsule.top + r)
 }
 
 /** The hole at one moment: a capsule [width] x [height] px centred ([cx], [cy]), its opacity, and the ring's brightness (0..1). */
@@ -163,4 +162,21 @@ class BudgetWatch(private val warmup: Int = 2, private val missSeconds: Float = 
         misses = if (rawSeconds > missSeconds) misses + 1 else 0
         return misses >= 2
     }
+}
+
+/**
+ * When the soft ticks of the swallow fire, in seconds into the run: they start slow and come faster, so the pull feels
+ * like it speeds up (Boss, 2026-10-31: "a rising soft haptic during the swallow"). At most [max] of them; the gap
+ * shrinks by a fifth each time, from 0.2 s down to 0.06 s.
+ */
+fun swallowTicks(timing: BlackHoleTiming, max: Int = 9): List<Float> {
+    val out = ArrayList<Float>()
+    var t = timing.swallowStart + 0.12f
+    var gap = 0.2f
+    while (t < timing.closeStart - 0.05f && out.size < max) {
+        out += t
+        t += gap
+        gap = kotlin.math.max(0.06f, gap * 0.8f)
+    }
+    return out
 }
