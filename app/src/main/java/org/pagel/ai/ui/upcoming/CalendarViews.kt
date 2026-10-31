@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -101,6 +102,7 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.shapes.RoundedRectangle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.pagel.ai.data.db.TaskEntity
 import org.pagel.ai.data.upcoming.Block
 import org.pagel.ai.data.upcoming.BlockDrag
@@ -415,10 +417,30 @@ private fun Sliding(pager: PagerState, modifier: Modifier = Modifier, page: @Com
     var w by remember { mutableIntStateOf(0) }
     Box(modifier.fillMaxWidth().clipToBounds().onSizeChanged { w = it.width }) {
         val at = pager.currentPage
-        for (p in at - 1..at + 1) key(p) {
+        // Two pages each side: the page that comes next is composed before the finger reaches it (no blank frame at the flip).
+        for (p in at - 2..at + 2) key(p) {
             Box(Modifier.fillMaxWidth().offset { IntOffset(((p - pager.currentPage - pager.currentPageOffsetFraction) * w).roundToInt(), 0) }) { page(p) }
         }
     }
+}
+
+/**
+ * The glass top's own swipe: a horizontal drag on the dates (or the All-day line) turns the grid's pager under it, both
+ * ways, the dates and the grid following the finger together; a fling past 600 px/s turns one page.
+ */
+@Composable
+internal fun Modifier.pagerDrag(pager: PagerState): Modifier {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    return this.draggable(
+        androidx.compose.foundation.gestures.rememberDraggableState { d -> pager.dispatchRawDelta(-d) },
+        androidx.compose.foundation.gestures.Orientation.Horizontal,
+        onDragStopped = { v ->
+            val p = pager.currentPage
+            val f = pager.currentPageOffsetFraction
+            val target = when { v < -600f -> if (f < 0f) p else p + 1; v > 600f -> if (f > 0f) p else p - 1; else -> p }
+            scope.launch { pager.animateScrollToPage(target.coerceIn(0, TL_PAGES - 1)) }
+        },
+    )
 }
 
 /** The dates, once, on the columns (Google's letter over number, today a mint circle); a tap opens that day. */

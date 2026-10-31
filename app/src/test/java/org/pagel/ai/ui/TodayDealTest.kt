@@ -60,6 +60,25 @@ class TodayDealTest {
         assertEquals(null, dueLabel(null, today))
     }
 
+    @Test fun todayRowsSayNothingForAFutureDaySinceForAMissedOneAndTheTimeForToday() {
+        val today = LocalDate.of(2026, 10, 27) // a Tuesday
+        assertEquals(null, org.pagel.ai.ui.today.todayMeta("2026-10-28", today))
+        assertEquals(null, org.pagel.ai.ui.today.todayMeta("2026-10-27", today))
+        assertEquals("since Sat", org.pagel.ai.ui.today.todayMeta("2026-10-24", today)!!.text)
+        assertEquals("since 12 Oct", org.pagel.ai.ui.today.sinceWord("2026-10-12", today))
+        assertEquals("15:00", org.pagel.ai.ui.today.todayMeta("2026-10-27 15:00", today)!!.text)
+    }
+
+    @Test fun theNextTimedThingIsTheFirstOpenOneWithATimeToday() {
+        val today = LocalDate.of(2026, 10, 27)
+        fun row(id: String, due: String?) = org.pagel.ai.ui.today.TodayRow(id, "T$id", 1, due, null, "p", "P", null, false)
+        val all = listOf(row("a", null), row("b", "2026-10-28 09:00"), row("c", "2026-10-27 14:00"), row("d", "2026-10-27 16:00"))
+        val (r, time) = org.pagel.ai.ui.today.nextTimed(all, today)!!
+        assertEquals("c", r.id)
+        assertEquals("14:00", time)
+        assertEquals(null, org.pagel.ai.ui.today.nextTimed(all.take(2), today))
+    }
+
     @Test fun theWidgetShowsTheSameThreeWithWhenAndProject() {
         val tasks = listOf("a", "b", "c", "d").map { task(it) }.let { l -> listOf(l[0].copy(due = "2026-10-27 15:00", title = "Ship it")) + l.drop(1) }
         val items = rows(tasks, listOf(ProjectEntity("pagel", "PAGEL — the plan", null, 0, 4)), LocalDate.of(2026, 10, 27))

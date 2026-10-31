@@ -18,6 +18,8 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.performClick
@@ -105,13 +107,30 @@ class UpcomingScreenshotTest {
     @Test fun upcomingWithTheWeekStripAndOverdueAt360() {
         show { UpcomingScreen(upcoming(), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-360.png")
-        compose.onNodeWithText("Overdue").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Move all to today").assertIsDisplayed()
+        compose.onNodeWithText("Carried over").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Move to today").assertIsDisplayed()
         // Each task once, habits not counted ("21 planned" for 4 tasks, checker P4 #4).
         compose.onNodeWithText("5 tasks · 2 late").assertIsDisplayed()
         // The strip: today and the days with tasks say so.
         compose.onNodeWithContentDescription("Thursday 29 October, 2 tasks").assertIsDisplayed()
         compose.onNodeWithContentDescription("Saturday 31 October, 1 task").assertIsDisplayed()
+    }
+
+
+    /** Never red (Boss's rule): no pixel of the screen is red, rings, headers and chips included. */
+    private fun assertNoRedPixels() {
+        val b = compose.onRoot().captureToImage().asAndroidBitmap()
+        var red = 0
+        for (y in 0 until b.height step 2) for (x in 0 until b.width step 2) {
+            val c = b.getPixel(x, y)
+            if (((c shr 16) and 255) > 170 && ((c shr 8) and 255) < 90 && (c and 255) < 90) red++
+        }
+        org.junit.Assert.assertEquals("red pixels on screen", 0, red)
+    }
+
+    @Test fun upcomingHasNoRedAndSaysSinceForCarriedOver() {
+        show { UpcomingScreen(upcoming(), pad) }
+        assertNoRedPixels()
     }
 
     @Test fun upcomingAtLargeFont() {
@@ -145,7 +164,7 @@ class UpcomingScreenshotTest {
     @Test fun upcomingWithNothingOverdue() {
         show { UpcomingScreen(upcoming(open.drop(2)), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/upcoming-no-overdue.png")
-        compose.onNodeWithText("Overdue").assertDoesNotExist()
+        compose.onNodeWithText("Carried over").assertDoesNotExist()
         compose.onNodeWithText("Today · Wed 28 Oct").assertIsDisplayed()
         compose.onNodeWithText("Friday 30 Oct").assertIsDisplayed()
     }
@@ -153,7 +172,7 @@ class UpcomingScreenshotTest {
     @Test fun moveAllToTodayCallsBackWithTheOverdueOldestFirst() {
         var moved = emptyList<String>()
         show { UpcomingScreen(upcoming(), pad, onMoveAll = { moved = it }) }
-        compose.onNodeWithContentDescription("Move all to today").performClick()
+        compose.onNodeWithContentDescription("Move to today").performClick()
         assertEquals(listOf("u2", "u1"), moved)
     }
 

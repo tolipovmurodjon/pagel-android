@@ -40,7 +40,7 @@ class FinishMomentTest {
     @Test fun progressCountsTodaysFinishedAgainstTheWholeDay() {
         val p = DayProgress(done = 2, open = 3)
         assertEquals(5, p.total)
-        assertEquals("2 done · 3 left", p.text)
+        assertEquals("2 done", p.text)
         assertEquals(0.4f, p.fraction, 0.0001f)
         assertEquals(0f, DayProgress(0, 0).fraction, 0f)
     }

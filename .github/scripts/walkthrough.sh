@@ -642,7 +642,7 @@ centre_desc() {
 }
 tap More && shot more-phase4 1.5
 tap Upcoming && shot upcoming 2.5
-for want in 'text="Overdue"' 'text="Send the grant form"' 'text="Pay the internet bill"' 'content-desc="Move all to today"'; do
+for want in 'text="Carried over"' 'text="Send the grant form"' 'text="Pay the internet bill"' 'content-desc="Move to today"'; do
   grep -qF "$want" "$OUT/$(printf '%02d' $N)-upcoming.xml" || { log "WALKTHROUGH: Upcoming has no $want"; exit 1; }
 done
 TOMORROW_SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date -d '+1 day' '+%A %-d %B')
@@ -671,14 +671,14 @@ log "   pagel.uz got the drop: {\"due\":\"$AFTER2\"} after ~${i} s"
 TODAY_SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date '+%A %-d %B')
 P=$(centre_desc "$TODAY_SPOKEN") || exit 1; set -- $P
 $T adb shell input tap "$1" "$2"; sleep 1.5
-tap "Move all to today" && shot upcoming-moved-all 1.5
+tap "Move to today" && shot upcoming-moved-all 1.5
 for id in t_u2 t_u1; do
   WANT="PATCH /api/v1/tasks/$id {\"due\":\"$TODAY\"} auth=True"
   for i in $(seq 1 30); do grep -qF "$WANT" "$FAKE_LOG" && break; sleep 1; done
   grep -qF "$WANT" "$FAKE_LOG" || { log "WALKTHROUGH: Move all to today never reached pagel.uz as $WANT"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 done
 log "   pagel.uz got both overdue tasks moved to $TODAY"
-grep -q 'text="Overdue"' "$OUT/$(printf '%02d' $N)-upcoming-moved-all.xml" && { log "WALKTHROUGH: Overdue still shows after Move all to today"; exit 1; }
+grep -q 'text="Carried over"' "$OUT/$(printf '%02d' $N)-upcoming-moved-all.xml" && { log "WALKTHROUGH: Overdue still shows after Move all to today"; exit 1; }
 log "-- Round C calendar: swipe the strip to next week, Today comes back, a day tapped, Day / Week / Month / List"
 P=$(centre_desc "$TOMORROW_SPOKEN") || exit 1; set -- $P
 # The emulator's own width (a 320 dp screen here): from the strip's right edge to its left, in 400 ms.
