@@ -137,7 +137,7 @@ class InboxClarifyScreenshotTest {
     }
 
     private val dockWords = listOf("Drop", "Someday", "Note", "Learn", "Do now", "Action", "Project", "Waiting", "Calendar", "Later", "Yes", "No",
-        "Hold = repeat", "Can I do something about it?", "Inbox", "Today's 20", "Done ✓")
+        "Hold = repeat", "Can I do something about it?", "Inbox", "Today's 20", "Done")
 
     private fun layoutOf(n: SemanticsNode): TextLayoutResult? {
         val out = mutableListOf<TextLayoutResult>()
@@ -363,8 +363,8 @@ class InboxClarifyScreenshotTest {
         show { org.pagel.ai.ui.rituals.ReviewScreen(review, PaddingValues(top = 16.dp, bottom = 96.dp)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/review-waiting.png")
         compose.onNodeWithText("Waiting for").assertExists()
-        compose.onNodeWithText("👤 Aziz · the signed grant form").assertExists()
-        compose.onNodeWithText("👤 the drone parts from Uzum").assertExists()
+        compose.onNodeWithText("Aziz · the signed grant form").assertExists()
+        compose.onNodeWithText("the drone parts from Uzum").assertExists()
         compose.onNodeWithText("check was Wed 28 Oct").assertExists()
     }
 
@@ -406,7 +406,7 @@ class InboxClarifyScreenshotTest {
     /** After the day's goal: done for today, never the pile ("900 more"). */
     @Test fun afterTheGoalItSaysDoneForToday() {
         show { screen(ui(grant, sorted = 20)) }
-        compose.onNodeWithText("Done today ✓").assertIsDisplayed()
+        compose.onNodeWithText("Done today").assertIsDisplayed()
     }
 
     @Test fun tidySheetAt15xFont() {

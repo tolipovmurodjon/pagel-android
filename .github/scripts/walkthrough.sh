@@ -178,7 +178,7 @@ grep -q "Process: $PKG, PID" "$OUT/logcat-r4.txt" && { log "WALKTHROUGH: CRASH i
 log "CORE ROUND 4 WALK DONE: $N steps"
 
 log "-- add a task fast: + → type the line → Add task → it reaches pagel.uz with project and priority read from it"
-tap "Add a task" && shot add-sheet 2
+tap "Add to Inbox" && shot capture-sheet 2 && tap "Plan it" && shot add-sheet 2
 $T adb shell "input text 'Call%sAziz%stomorrow%s3pm%s#me%sp1'"; shot add-typed 1.5
 tap "Add task" && shot add-saved 1.5
 for i in $(seq 1 30); do grep -q 'POST /api/v1/tasks .*"text":"Call Aziz"' "$FAKE_LOG" && break; sleep 1; done
@@ -283,7 +283,7 @@ $T adb shell input keyevent 4; sleep 1.5
 front move-closed
 
 log "-- the project picker (Boss 2026-10-30): Add -> a task -> Project -> + New project \"CI Picker\" -> Enter -> Add; pagel.uz gets the project, then the task with that project"
-tap "Add a task" && shot picker-add 2 || { log "WALKTHROUGH: no Add a task on Today"; exit 1; }
+tap "Add to Inbox" && tap "Plan it" && shot picker-add 2 || { log "WALKTHROUGH: no Add to Inbox / Plan it on Today"; exit 1; }
 $T adb shell "input text 'Read%schapter%sone'"
 tap "Project" && shot picker-open 2 || { log "WALKTHROUGH: the Add sheet has no Project chip"; exit 1; }
 grep -q 'content-desc="New project"' "$(xml_of picker-open)" || { log "WALKTHROUGH: the project picker has no + New project row"; exit 1; }
@@ -309,7 +309,7 @@ PT=$(grep -nE 'POST /api/v1/tasks .*"project":"ci-picker"' "$FAKE_LOG" | head -1
 log "   pagel.uz got the project, then the task linked to it"
 
 log "-- Undo a new project (checker #3): Add -> Project -> + New project \"CI Picker 2\" -> Enter -> the toast's Undo; pagel.uz deletes it or never hears of it"
-tap "Add a task" && shot undo-add 2 || { log "WALKTHROUGH: no Add a task on Today"; exit 1; }
+tap "Add to Inbox" && tap "Plan it" && shot undo-add 2 || { log "WALKTHROUGH: no Add to Inbox / Plan it on Today"; exit 1; }
 tap "Project" && shot undo-open 1.5 || { log "WALKTHROUGH: the Add sheet has no Project chip"; exit 1; }
 tap "New project" || { log "WALKTHROUGH: + New project is not in the picker"; exit 1; }
 sleep 1; $T adb shell "input text 'CI%sPicker%s2'"; $T adb shell input keyevent 66
@@ -574,34 +574,59 @@ grep -q 'text="Undo"' "$OUT/$(printf '%02d' $N)-inbox-calendar-sent.xml" || fail
 FRIDAY=$(TZ=Asia/Tashkent date -d 'friday' +%Y-%m-%d)
 wait_re "POST /api/v1/inbox \{\"action\":\"act\",\"file\":\"inbox/ib11.md\",\"sentence\":\"Fill in the grant form\",\"project\":\"humopedia\",\"someday\":false,\"due\":\"$FRIDAY 09:00\"\}" || fail_inbox "Calendar never reached pagel.uz with its due $FRIDAY 09:00"
 log "   Calendar reached pagel.uz with due $FRIDAY 09:00 (the day the save named, the wheel's hour)"
+# Inbox v3: the Old pile. Everything from January is old; the Inbox shows only the current saves and one quiet row at the end.
+tap Inbox && sleep 2
+shot inbox-old-row 2
+grep -q 'text="Old pile · 64"' "$OUT/$(printf '%02d' $N)-inbox-old-row.xml" || fail_inbox "the Inbox shows no \"Old pile · 64\" row (the count of the saves from before the fresh start)"
+grep -q 'An old save' "$OUT/$(printf '%02d' $N)-inbox-old-row.xml" && fail_inbox "an old save is showing in the current Inbox"
+tap "Old pile" || fail_inbox "no Old pile row to open"
+sleep 3
+shot inbox-old-pile 2
+grep -q 'text="Old pile"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile did not open (no Old pile title)"
+grep -qE 'text="64.{1,2}left"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile does not say 64 left"
+grep -q 'An old save' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile shows no old save"
+# Sort two old saves with the same dock: the pile's own count goes 64 -> 62.
+tap Drop || fail_inbox "no Drop in the Old pile"
+sleep 2
+tap Drop || fail_inbox "no Drop the second time in the Old pile"
+sleep 2
+shot inbox-old-sorted-two 2
+grep -qE 'text="62.{1,2}left"' "$OUT/$(printf '%02d' $N)-inbox-old-sorted-two.xml" || fail_inbox "after two old saves were sorted the Old pile does not say 62 left"
+for i in $(seq 1 30); do [ "$(grep -cE 'POST /api/v1/inbox \{"action":"drop","file":"inbox/old[0-9]+.md"\}' "$FAKE_LOG")" = "2" ] && break; sleep 1; done
+[ "$(grep -cE 'POST /api/v1/inbox \{"action":"drop","file":"inbox/old[0-9]+.md"\}' "$FAKE_LOG")" = "2" ] || fail_inbox "the two old drops did not reach pagel.uz"
+log "   the Old pile opened, two old saves were sorted with the same dock, its own count read 62 left"
 # The bulk tidy-up: the count first, "Move all" with one Undo that stops every one before pagel.uz hears of it.
-# pagel.uz holds 64 old saves and deals 60 a page: the sheet shows its whole count (checker 2026-10-30 #2), "Move all"
-# pages through all 64 with one Undo, every part is quiet, and the ring does not move (checker 2026-10-30 #1).
+# pagel.uz now holds 62 old saves and deals 60 a page: the sheet shows its whole count (checker 2026-10-30 #2), "Move all"
+# pages through all 62 with one Undo, every part is quiet, and the ring does not move (checker 2026-10-30 #1).
 tap "Tidy old saves" || fail_inbox "no Tidy old saves button in the Inbox header"
 shot inbox-tidy 3
-grep -q '64 saves older than 60 days' "$OUT/$(printf '%02d' $N)-inbox-tidy.xml" || fail_inbox "the tidy-up did not show pagel.uz's whole count (64) before moving anything"
-tap "Move all 64 to Someday" || fail_inbox "no Move all 64 to Someday button"
+grep -q '62 saves older than 60 days' "$OUT/$(printf '%02d' $N)-inbox-tidy.xml" || fail_inbox "the tidy-up did not show pagel.uz's whole count (62) before moving anything"
+tap "Move all 62 to Someday" || fail_inbox "no Move all 62 to Someday button"
 # No dump between the move and the Undo: the Undo window is 5 s and a UI dump on this emulator takes 2-3 s.
 tap Undo || fail_inbox "the bulk move showed no Undo"
 shot inbox-tidy-undone 1.5
 sleep 10
-[ "$(grep -cE 'inbox/old[0-9]+.md' "$FAKE_LOG")" = "0" ] || fail_inbox "the Undo did not stop the bulk: pagel.uz heard of an old save"
-log "   one Undo stopped all 64 before pagel.uz heard of them"
+[ "$(grep -cE 'inbox/old[0-9]+.md.*"quiet":true' "$FAKE_LOG")" = "0" ] || fail_inbox "the Undo did not stop the bulk: pagel.uz heard of an old save"
+log "   one Undo stopped all 62 before pagel.uz heard of them"
 shot inbox-before-bulk 1
 RING_B=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-before-bulk.xml" | grep -oE '[0-9]+' | head -1)
 [ -n "$RING_B" ] || fail_inbox "the ring says nothing before the bulk"
 tap "Tidy old saves" || fail_inbox "no Tidy old saves button the second time"
 shot inbox-tidy-again 2
-tap "Move all 64 to Someday" || fail_inbox "no Move all 64 to Someday button the second time"
+tap "Move all 62 to Someday" || fail_inbox "no Move all 62 to Someday button the second time"
 shot inbox-bulk-progress 2
 BULK_RE='POST /api/v1/inbox \{"action":"act","file":"inbox/old[0-9]+.md","sentence":"An old save [0-9]+","project":"me","someday":true,"quiet":true\}'
-for i in $(seq 1 180); do [ "$(grep -cE "$BULK_RE" "$FAKE_LOG")" = "64" ] && break; sleep 1; done
-[ "$(grep -cE "$BULK_RE" "$FAKE_LOG")" = "64" ] || fail_inbox "the bulk move did not reach pagel.uz as 64 quiet acts with someday:true (got $(grep -cE "$BULK_RE" "$FAKE_LOG"))"
-log "   the bulk Someday reached pagel.uz: 64 quiet acts over two pages, after ~${i} s"
+for i in $(seq 1 180); do [ "$(grep -cE "$BULK_RE" "$FAKE_LOG")" = "62" ] && break; sleep 1; done
+[ "$(grep -cE "$BULK_RE" "$FAKE_LOG")" = "62" ] || fail_inbox "the bulk move did not reach pagel.uz as 62 quiet acts with someday:true (got $(grep -cE "$BULK_RE" "$FAKE_LOG"))"
+log "   the bulk Someday reached pagel.uz: 62 quiet acts over two pages, after ~${i} s"
 shot inbox-clarify-done 3
 RING_A=$(grep -oE 'content-desc="[0-9]+ of 20 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-clarify-done.xml" | grep -oE '[0-9]+' | head -1)
 [ "$RING_A" = "$RING_B" ] || fail_inbox "the bulk moved the ring: $RING_B before, $RING_A after (a tidy-up never counts toward the day's 20)"
 log "   the ring stayed at $RING_A/20 through the bulk move"
+tap "Back to Inbox" || fail_inbox "no way back from the emptied Old pile"
+sleep 2
+shot inbox-old-done 1.5
+grep -q 'text="Old pile done"' "$OUT/$(printf '%02d' $N)-inbox-old-done.xml" && log "   the Inbox says \"Old pile done\" once" || log "   (no Old pile done line in this shot; see inbox-old-done.png)"
 # The dock at 1.5x on the real phone, glass bar and all (checker 2026-10-30 #8): every choice ends above the bar.
 $T adb shell settings put system font_scale 1.5; sleep 3; front inbox-dock-font-1.5; shot inbox-dock-font-1.5 1.5
 XML="$OUT/$(printf '%02d' $N)-inbox-dock-font-1.5.xml"
@@ -627,9 +652,43 @@ if tap "Bring back"; then shot someday-bring-back 2; $T adb shell input keyevent
 $T adb shell input keyevent 4; sleep 1
 tap Inbox && sleep 2
 
+log "-- Inbox v3 capture: + in the Inbox header -> three lines, Enter after each -> pagel.uz gets three adds in order -> three current saves"
+tap Inbox && sleep 2
+tap "Add to Inbox" || fail_inbox "no Add to Inbox button in the Inbox header"
+sleep 1.5
+shot capture-open 1.5
+$T adb shell dumpsys input_method | grep -q "mInputShown=true" || fail_inbox "the capture sheet opened with no keyboard"
+for w in One Two Three; do
+  $T adb shell "input text 'Capture%s$w%sfrom%sCI'"; $T adb shell input keyevent 66; sleep 1.5
+done
+shot capture-three 1.5
+grep -q 'text="In Inbox · 3"' "$OUT/$(printf '%02d' $N)-capture-three.xml" || fail_inbox "the capture sheet does not count \"In Inbox · 3\""
+for k in 1 2 3; do
+  $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
+  timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -q 'New capture' || break
+  $T adb shell input keyevent 4; sleep 1.5
+done
+CAP_RE='POST /api/v1/inbox \{"action":"add","id":"c[0-9a-f]+","text":"Capture (One|Two|Three) from CI"\}'
+for i in $(seq 1 40); do [ "$(grep -cE "$CAP_RE" "$FAKE_LOG")" = "3" ] && break; sleep 1; done
+[ "$(grep -cE "$CAP_RE" "$FAKE_LOG")" = "3" ] || fail_inbox "pagel.uz did not get three captures (got $(grep -cE "$CAP_RE" "$FAKE_LOG"))"
+[ "$(grep -oE '"text":"Capture (One|Two|Three) from CI"' "$FAKE_LOG" | sed -E 's/.*Capture ([A-Za-z]+) from CI.*/\1/' | tr '\n' ' ')" = "One Two Three " ] || fail_inbox "the captures reached pagel.uz out of order"
+log "   three captures reached pagel.uz in the order typed"
+front capture-closed
+shot capture-inbox 2
+onscreen "Capture Three from CI" || fail_inbox "the newest capture is not on top of the Inbox"
+grep -q 'content-desc="Old pile"' "$OUT/$(printf '%02d' $N)-capture-inbox.xml" && fail_inbox "the Old pile row came back after the bulk emptied it"
+log "   the captures sit on top of the current Inbox"
+log "-- Inbox v3 share: Share > PAGEL with a link lands in the Inbox"
+$T adb shell am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT https://example.com/shared-by-ci -n "$PKG/.ui.capture.ShareActivity" > /dev/null
+wait_re 'POST /api/v1/inbox \{"action":"add","id":"c[0-9a-f]+","text":"https://example.com/shared-by-ci"\}' || fail_inbox "the shared link never reached pagel.uz as an add (a link alone has no source: pagel.uz reads it)"
+sleep 2
+front share-done
+shot share-inbox 2
+log "   the shared link reached pagel.uz"
+
 log "-- Inbox: where did it go (round D item 2): Sorted today lists the day's choices by where they went; More -> Notes reads a project's notes"
 $T adb shell input swipe 160 200 160 600 400; sleep 1
-tap 'Sorted today \([0-9]+\)' && shot sorted-today 2
+tap "Sorted today" && shot sorted-today 2
 # Match the word, not the emoji: uiautomator writes 📝 (outside the basic plane) as &#128221; but ✅ as itself.
 grep -qE 'text="[^"]*Notes · [0-9]+"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Note"; exit 1; }
 grep -qE 'text="[^"]*Tasks · [0-9]+"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Action"; exit 1; }

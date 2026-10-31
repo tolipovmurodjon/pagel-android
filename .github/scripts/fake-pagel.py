@@ -2,7 +2,8 @@
 """A fake pagel.uz for the CI emulator (NATIVE-PLAN Phase 1): the same app API the real server has
 (dashboard src/app/api/v1), with fixed data. Every request is logged to fake-pagel.log, so the smoke test can prove
 the app paired, synced, listened live and sent its saved crash."""
-import json, struct, sys, time, zlib
+import json
+import re, struct, sys, time, zlib
 from urllib.parse import parse_qs, urlparse
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -66,6 +67,11 @@ SOMEDAY_ACTS = []  # (file, body) of each one-tap Someday: a P3 task in /sync, a
 
 def counted():
     return sum(1 for f, _ in SORTS if f not in QUIET)
+# Inbox v3 (2026-10-31): POST /api/v1/inbox {action: "add", id, text, source?} files one capture as inbox/<slug>.md and answers
+# 201 {file}; the same id again answers the same file (a retry never saves twice). The fake names the Old pile's line with
+# fresh_from, so the CI run does not depend on the date it runs on: the January saves are old, everything from October is current.
+FRESH_FROM = "2026-10-01"
+CAPTURES = []  # (id, file, text, source) in the order pagel.uz took them
 SORTS = []  # (file, action) in the order pagel.uz took them
 LATER = set()
 TRIAGED = set()  # saves the AI has read since the phone asked (POST {action: "triage"})
@@ -144,10 +150,15 @@ def inbox_body():
              for i, src, claim, why, proj, kind, nxt, note, au, pic, day in
              [row + ("2026-10-27",) for row in INBOX] + ([row + (CLARIFY_DAY,) for row in CLARIFY] if revealed else [])
              if f"inbox/{i}.md" not in sorted_files]
+    sorted_now = {f for f, _ in SORTS}
+    for _cid, f, text, src in CAPTURES:
+        if f not in sorted_now:
+            items.insert(0, {"file": f, "saved": today(), "source": src or "", "text": text, "claim": text[:160], "why": "", "project": "me", "kind": "action", "next": "",
+                             "note": "", "guessed": True, "author": "", "posted": "", "later": None, "has_picture": False})
     items.sort(key=lambda x: x["later"] is not None)
-    return {"day": today(), "goal": 20, "sorted": counted(), "kept_today": 2 + sum(1 for _, a in SORTS if a == "keep"), "cap": 5, "min_words": 6,
+    return {"day": today(), "goal": 20, "fresh_from": FRESH_FROM, "sorted": counted(), "kept_today": 2 + sum(1 for _, a in SORTS if a == "keep"), "cap": 5, "min_words": 6,
             "by_source": by_source(items), "older_than_60": len(old_left()),
-            "total": len(items), "items": items}
+            "total": len(items) + len(old_left()), "items": items}
 
 def png(w=360, h=240):
     # A mint-to-violet gradient, written by hand (no Pillow on the runner): the card's "post picture".
@@ -216,6 +227,17 @@ class H(BaseHTTPRequestHandler):
                 files = [f for f in b.get("files", []) if isinstance(f, str) and f.startswith("inbox/")]
                 TRIAGED.update(files)
                 return self.send(202, {"started": True, "files": len(files)})
+            if b.get("action") == "add":
+                cid, text = str(b.get("id", "")), str(b.get("text", "")).strip()
+                if not re.fullmatch(r"[A-Za-z0-9_-]{6,48}", cid) or not text or len(text) > 20000:
+                    return self.send(400, {"error": "Send {id, text}."})
+                known = next((c for c in CAPTURES if c[0] == cid), None)
+                if known:
+                    return self.send(200, {"file": known[1], "already": True})
+                slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "note"
+                file = f"inbox/{slug}-{len(CAPTURES) + 1}.md"
+                CAPTURES.append((cid, file, text, b.get("source")))
+                return self.send(201, {"file": file, "commit": "fake"})
             f, a = b.get("file", ""), b.get("action", "")
             if a not in ("keep", "act", "note", "later", "drop", "now") or not f.startswith("inbox/"):
                 return self.send(400, {"error": "action is one of keep, act, note, later, drop, now."})

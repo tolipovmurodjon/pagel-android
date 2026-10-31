@@ -176,7 +176,7 @@ class OutboxSender(
         var sortsHeld = false
         for (op in dao.waitingOutbox()) {
             if (op.taskId in held) continue
-            if (op.op == OutboxEntity.SORT) {
+            if (op.op == OutboxEntity.SORT || op.op == OutboxEntity.CAPTURE) {
                 if (sortsHeld) continue
                 val sender = inbox ?: continue
                 when (sender.send(account, op)) {

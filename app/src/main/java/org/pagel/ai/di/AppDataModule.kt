@@ -75,8 +75,13 @@ object AppDataModule {
     fun provideSyncEngine(api: PagelApi, dao: PagelDao): SyncEngine = SyncEngine(api, dao)
 
     @Provides @Singleton
-    fun provideOutboxSender(api: PagelApi, dao: PagelDao, inbox: InboxDao, rituals: RitualsDao): OutboxSender =
-        OutboxSender(api, dao, inbox = InboxSender(api, inbox), rituals = RitualSender(api, rituals))
+    fun provideOutboxSender(api: PagelApi, dao: PagelDao, inbox: InboxDao, rituals: RitualsDao, captured: org.pagel.ai.data.inbox.CapturedFiles): OutboxSender =
+        OutboxSender(api, dao, inbox = InboxSender(api, inbox, captured = captured), rituals = RitualSender(api, rituals))
+
+    /** The saves captured on this phone, kept so they stay in the Inbox after pagel.uz names them (Inbox v3). */
+    @Provides @Singleton
+    fun provideCapturedFiles(@ApplicationContext ctx: Context): org.pagel.ai.data.inbox.CapturedFiles =
+        org.pagel.ai.data.inbox.CapturedFiles(ctx.getSharedPreferences("pagel-inbox", Context.MODE_PRIVATE))
 
     @Provides
     fun provideRitualsDao(db: PagelDatabase): RitualsDao = db.rituals()
@@ -109,8 +114,8 @@ object AppDataModule {
     fun provideInboxDao(db: PagelDatabase): InboxDao = db.inbox()
 
     @Provides @Singleton
-    fun provideInboxRepository(@ApplicationContext ctx: Context, api: PagelApi, inbox: InboxDao): InboxRepository =
-        InboxRepository(api, inbox, OutboxWorker.scheduler(ctx))
+    fun provideInboxRepository(@ApplicationContext ctx: Context, api: PagelApi, inbox: InboxDao, captured: org.pagel.ai.data.inbox.CapturedFiles): InboxRepository =
+        InboxRepository(api, inbox, OutboxWorker.scheduler(ctx), captured = captured)
 
     @Provides @Singleton
     fun provideInboxPictures(@ApplicationContext ctx: Context, api: PagelApi, @IoDispatcher io: CoroutineDispatcher): InboxPictures =

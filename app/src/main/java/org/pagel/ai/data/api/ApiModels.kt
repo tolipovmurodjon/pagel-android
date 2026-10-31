@@ -146,7 +146,20 @@ data class InboxResponse(
     @SerialName("by_source") val bySource: Map<String, Int> = emptyMap(),
     /** How many saves in the whole deck are 60+ days old (the tidy-up's real count; a page holds at most 60). */
     @SerialName("older_than_60") val olderThan60: Int? = null,
+    /** The day the Old pile starts from; only a newer pagel.uz (or the CI fake) names it, else the app's own line stands. */
+    @SerialName("fresh_from") val freshFrom: String? = null,
 )
+
+/** `POST /api/v1/inbox {action: "add"}`: one capture. [id] is the phone's own, so a retry never saves it twice. */
+@Serializable
+data class CaptureBody(val action: String, val id: String, val text: String, val source: String? = null)
+
+/** What the phone keeps in the outbox for a capture; [hold] = a pasted list waits out its 5 s Undo first. */
+@Serializable
+data class CaptureOp(val id: String, val text: String, val source: String? = null, val hold: Boolean = false)
+
+@Serializable
+data class CaptureReply(val file: String? = null)
 
 /** `POST /api/v1/inbox`: one choice on one save. null fields are left out. */
 @Serializable

@@ -106,8 +106,8 @@ class InboxClarifyTest {
     @Test fun theWordsEachChoiceSends() {
         assertEquals("Waiting for Aziz: the grant form", waitingLine(" Aziz ", "the grant form "))
         assertEquals("no filler word when nobody is named", "Waiting for: the grant form", waitingLine("", "the grant form"))
-        assertEquals("person first, no colon", "👤 Aziz · the grant form", waitingRowText(waitingLine("Aziz", "the grant form")))
-        assertEquals("nobody named", "👤 the grant form", waitingRowText(waitingLine("", "the grant form")))
+        assertEquals("person first, no colon", "Aziz · the grant form", waitingRowText(waitingLine("Aziz", "the grant form")))
+        assertEquals("nobody named", "the grant form", waitingRowText(waitingLine("", "the grant form")))
         assertTrue(isWaiting(waitingLine("Aziz", "x")))
         assertTrue(isWaiting(waitingLine("", "x")))
         assertFalse(isWaiting("Email Aziz about the form"))

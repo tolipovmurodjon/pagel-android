@@ -267,13 +267,20 @@ data class InboxActions(
     val tidy: () -> Unit = {},
     /** Long-press a choice: the same choice, with last time's settings, on this card. */
     val repeat: (InboxCard, Choice) -> Unit = { _, _ -> },
+    /** The empty Inbox's one action: open the capture sheet. */
+    val capture: () -> Unit = {},
+    /** Open the Old pile (the saves from before the fresh start) and come back from it. */
+    val openOld: () -> Unit = {},
+    val closeOld: () -> Unit = {},
 )
 
 @Composable
 fun InboxRoute(
-    contentPadding: PaddingValues, reselect: Int, onOpen: (InboxOpen) -> Unit = {}, onSorted: () -> Unit = {}, vm: InboxViewModel = hiltViewModel(),
+    contentPadding: PaddingValues, reselect: Int, onOpen: (InboxOpen) -> Unit = {}, onSorted: () -> Unit = {}, onCapture: () -> Unit = {}, vm: InboxViewModel = hiltViewModel(),
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    // Back from the Old pile returns to the Inbox before it leaves the tab.
+    androidx.activity.compose.BackHandler(enabled = ui.oldMode) { vm.closeOld() }
     val sortedToday by vm.sortedToday.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { vm.open.collect(onOpen) }
     val leaving by vm.leaving.collectAsStateWithLifecycle()
@@ -290,7 +297,7 @@ fun InboxRoute(
     }
     InboxScreen(
         ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer, sortedCount = sortedToday.size, bulk = bulk,
-        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy, repeat = vm::repeat),
+        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy, repeat = vm::repeat, capture = onCapture, openOld = vm::openOld, closeOld = vm::closeOld),
     )
     tidy?.let { t -> TidySheet(t, onSomeday = { vm.tidyAll(Choice.SOMEDAY) }, onDrop = { vm.tidyAll(Choice.DROP) }, onDismiss = vm::closeTidy, onRetry = vm::openTidy) }
     form?.let { f -> ChoiceFormSheet(f, ui, onEdit = vm::editForm, onSubmit = vm::submit, onDismiss = vm::closeForm, withPicture = pictures[f.card.file] != null) }
@@ -351,14 +358,11 @@ fun InboxScreen(
     // drew the choice buttons behind the bar, only their tops showing).
     Box(Modifier.fillMaxSize().onGloballyPositioned { rootAt = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize().then(if (tall) Modifier else Modifier.verticalScroll(scroll)).padding(contentPadding).padding(bottom = if (tall) DockGap else 12.dp)) {
-            Header(ui, onHelp = actions.help, onRing = { ringAt = it }, sortedCount = sortedCount, onSorted = actions.sorted, onTidy = actions.tidy, bulk = bulk)
+            Header(ui, actions, onRing = { ringAt = it }, bulk = bulk)
             // Tall: the middle takes what the header and the dock leave, and the card sits centred in it.
             val middle = if (tall) Modifier.fillMaxWidth().weight(1f) else Modifier.fillMaxWidth()
             when {
-                ui.loading -> Box(middle, contentAlignment = Alignment.Center) {
-                    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(4, Modifier.padding(vertical = 10.dp)) }
-                }
-                ui.cards.isEmpty() && leaving == null -> Box(middle, contentAlignment = Alignment.Center) { Empty(ui) }
+                ui.cards.isEmpty() && leaving == null -> Box(middle, contentAlignment = Alignment.Center) { Empty(ui, actions) }
                 else -> {
                     androidx.compose.foundation.layout.BoxWithConstraints(middle, contentAlignment = Alignment.Center) {
                         // 12 dp of air round the card (was 16: the Later line under the grid took 4 of the card's room).
@@ -374,41 +378,60 @@ fun InboxScreen(
 }
 
 @Composable
-private fun Header(ui: InboxUi, onHelp: () -> Unit, onRing: (Offset) -> Unit, sortedCount: Int = 0, onSorted: () -> Unit = {}, onTidy: () -> Unit = {}, bulk: Bulk? = null) {
-    Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
+private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit, bulk: Bulk? = null) {
+    val old = ui.oldMode
+    Column(Modifier.fillMaxWidth().padding(start = if (old) 8.dp else 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (old) GlassIconButton(TabIcons.ArrowLeft, "Back to Inbox", plain = true, onClick = actions.closeOld)
             Column(Modifier.weight(1f)) {
-                // With no card here, a count would sit over "Inbox zero" (checker 2026-10-28 #8): the empty card says it.
-                // After the goal: done for today, never the pile ("900 more", checker 2026-10-30 #9).
-                if (ui.cards.isNotEmpty()) FitText(headerNote(ui, LocalDensity.current.fontScale >= 1.3f), MaterialTheme.typography.labelSmall, Glass.Muted, minSize = 9.sp)
+                // With no card here, a count would sit over the empty card's words: it says it.
+                if (!old && ui.cards.isNotEmpty()) FitText(headerNote(ui, LocalDensity.current.fontScale >= 1.3f), MaterialTheme.typography.labelSmall, Glass.Muted, minSize = 9.sp)
                 // Never "Inbo / x": a word that does not fit gets a smaller size, not a break.
-                FitText("Inbox", MaterialTheme.typography.headlineLarge, Glass.Ink, minSize = 18.sp, modifier = Modifier.semantics { heading() })
+                FitText(if (old) "Old pile" else "Inbox", MaterialTheme.typography.headlineLarge, Glass.Ink, minSize = 18.sp, modifier = Modifier.semantics { heading() })
             }
-            // At a large font the flame gives its room to the title: "Inbo / x" and a three-line "Done for today" at 1.5x
-            // on the 320 dp screen (walk 59, run 41089220966).
-            if (ui.streak > 0 && LocalDensity.current.fontScale < 1.3f) Streak(ui.streak)
-            GlassIconButton(TabIcons.CalendarRange, "Tidy old saves", plain = true, onClick = onTidy)
-            GlassIconButton(TabIcons.CircleHelp, "How sorting works", plain = true, onClick = onHelp)
+            // At a large font the flame gives its room to the title (walk 59, run 41089220966).
+            if (!old && ui.streak > 0 && LocalDensity.current.fontScale < 1.3f) Streak(ui.streak)
+            // Capture is one tap from the Inbox itself (Boss 2026-10-31); the mint plus is the only coloured icon here.
+            if (!old) GlassIconButton(TabIcons.Plus, "Add to Inbox", tint = Glass.Primary, plain = true, onClick = actions.capture)
+            if (old) GlassIconButton(TabIcons.CalendarRange, "Tidy old saves", plain = true, onClick = actions.tidy)
+            GlassIconButton(TabIcons.CircleHelp, "How sorting works", plain = true, onClick = actions.help)
+            if (!old) GlassIconButton(TabIcons.ListTodo, "Sorted today", plain = true, onClick = actions.sorted)
+            // The day's 20 is counted once, here: the line under the title no longer repeats it (design audit 2026-10-31).
             GoalRing(ui.sorted, ui.goal, Modifier.onGloballyPositioned { onRing(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) })
         }
-        // The day's goal leads; the learned habit (5) follows (learn-client.tsx today-count). The counts get the whole
-        // width and keep their words together, so "2/5 learned" never breaks after the number (checker #7).
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // A bulk tidy-up on its way says how far it is in the same place, quietly (no spinner).
-            Text(bulk?.let(::bulkLine) ?: countsLine(ui), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
-            // Always there, so the deck never moves when the first decision lands (RULES.md Layout 1).
-            val press = remember { MutableInteractionSource() }
-            Text(
-                "Sorted today ($sortedCount)", style = MaterialTheme.typography.labelMedium, color = Glass.PrimaryInk, maxLines = 1,
-                modifier = Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onSorted)
-                    .wrapContentHeight(Alignment.CenterVertically).padding(horizontal = Space.sm),
-            )
+        // Always there, so the deck never moves when the first decision lands (RULES.md Layout 1).
+        Row(Modifier.heightIn(min = Space.touch), verticalAlignment = Alignment.CenterVertically) {
+            val line = bulk?.let(::bulkLine) ?: if (old) oldLeftLine(ui) else countsLine(ui)
+            Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
+            if (!old) OldPileRow(ui, actions.openOld)
         }
     }
 }
 
-/** The line over the title: "Today's 20", or "Done today ✓" after the goal; a short "Done ✓" at a large font so it stays one line. */
-private fun headerNote(ui: InboxUi, big: Boolean) = if (ui.sorted < ui.goal) "Today's ${ui.goal}" else if (big) "Done ✓" else "Done today ✓"
+/** "Old pile · 912" and a chevron, one quiet row (Boss 2026-10-31); "Old pile done" once when it reaches 0. */
+@Composable
+private fun OldPileRow(ui: InboxUi, onOpen: () -> Unit) {
+    val n = ui.old
+    if (n == null || n <= 0) {
+        if (ui.oldDone) Text("Old pile done", style = MaterialTheme.typography.labelMedium, color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
+        return
+    }
+    val press = remember { MutableInteractionSource() }
+    Row(
+        Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onOpen)
+            .semantics(mergeDescendants = true) { contentDescription = "Old pile" }.padding(start = Space.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Old pile \u00B7 $n", style = MaterialTheme.typography.labelMedium, color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
+        Icon(TabIcons.ChevronRight, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(16.dp))
+    }
+}
+
+/** "912 left" in the Old pile: its own count, never the day's 20. */
+fun oldLeftLine(ui: InboxUi): String = "${ui.old ?: ui.left}\u00A0left"
+
+/** The line over the title: "Today's 20", or "Done today" after the goal; a short "Done" at a large font so it stays one line. */
+private fun headerNote(ui: InboxUi, big: Boolean) = if (ui.sorted < ui.goal) "Today's ${ui.goal}" else if (big) "Done" else "Done today"
 
 /**
  * One text that shrinks until it fits its box, so a word is never cut with "…" or broken across lines. It lays out at
@@ -434,11 +457,10 @@ fun bulkLine(b: Bulk): String {
     return "$what · ${b.done}${nb}of${nb}${b.total}" + if (b.stalled) " · waiting for pagel.uz" else ""
 }
 
-/** "7/20 sorted today · 2/5 learned", with no-break spaces inside each count. */
+/** The habit's count only ("2/5 learned"): the day's 20 is the ring's, said once. */
 fun countsLine(ui: InboxUi): String {
     val nb = "\u00A0"
-    val learned = if (ui.kept < 5) "${ui.kept}/5${nb}learned" else "${ui.kept}${nb}learned${nb}✓"
-    return "${ui.sorted}/${ui.goal}${nb}sorted${nb}today · $learned"
+    return if (ui.kept < 5) "${ui.kept}/5${nb}learned" else "${ui.kept}${nb}learned"
 }
 
 /** Sorted since the screen opened, the web's flame pill. Solid deep orange so the white number keeps 5:1. */
@@ -483,7 +505,7 @@ fun GoalRing(sorted: Int, goal: Int, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Empty(ui: InboxUi) {
+private fun Empty(ui: InboxUi, actions: InboxActions) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Column(Modifier.fillMaxWidth().padding(vertical = 36.dp, horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             // Saves still on pagel.uz but none here (offline after the saved deck ran out): say so, no spinner.
@@ -492,10 +514,35 @@ private fun Empty(ui: InboxUi) {
                 Icon(if (waiting) TabIcons.CloudOff else TabIcons.InboxZero, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(34.dp))
             }
             Spacer(Modifier.height(14.dp))
-            Text(if (waiting) "${ui.left} more when online" else "Inbox zero", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink)
-            Spacer(Modifier.height(4.dp))
-            Text(if (ui.kept > 0) "${ui.kept} learned today." else "New saves land here.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+            // One calm sentence and one action (Boss 2026-10-31); no ghost cards.
+            Text(
+                when { waiting -> "${ui.left} more when online"; ui.loading -> "Opening your Inbox"; ui.oldMode -> "Old pile is clear"; else -> "Nothing waiting" },
+                style = MaterialTheme.typography.headlineSmall, color = Glass.Ink,
+            )
+            if (!ui.oldMode && !ui.loading && ui.kept > 0) {
+                Spacer(Modifier.height(4.dp))
+                Text("${ui.kept} learned today.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
+            }
+            if (!ui.loading) {
+                Spacer(Modifier.height(18.dp))
+                if (ui.oldMode) SolidButton("Back to Inbox", TabIcons.ArrowLeft, actions.closeOld) else SolidButton("Capture something", TabIcons.Plus, actions.capture)
+            }
         }
+    }
+}
+
+/** One solid mint action: it presses in on touch-down and springs back (Apple: respond on press, not on release). */
+@Composable
+private fun SolidButton(label: String, icon: ImageVector, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Row(
+        Modifier.heightIn(min = 48.dp).pressScale(press).background(Glass.Primary, CircleShape)
+            .clickable(press, indication = null, role = Role.Button, onClick = onClick).padding(horizontal = 22.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium, color = Color.White)
     }
 }
 
@@ -1004,7 +1051,7 @@ private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, onClick: ()
     // One row tall (64 dp, Boss 2026-10-28: the pill read as a slab); it grows only when 1.3x+ text needs two lines.
     Row(
         Modifier.fillMaxWidth().then(if (LocalDensity.current.fontScale <= 1.2f) Modifier.height(64.dp) else Modifier.heightIn(min = 64.dp)).pressScale(press)
-            .background(Brush.linearGradient(listOf(look.color, lerp(look.color, Color.Black, 0.18f))), shape)
+            .background(Brush.linearGradient(listOf(Glass.Primary, lerp(Glass.Primary, Color.Black, 0.18f))), shape)
             .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.Transparent)), shape)
             .clickable(press, indication = null, role = Role.Button, onClick = onClick)
             .semantics(mergeDescendants = true) { contentDescription = "AI pick: ${look.label}" }
@@ -1047,10 +1094,11 @@ private fun ChoiceIcon(
     ) {
         // 30 dp discs (were 32): with no padding round each choice, the grid pays for the Later line under it.
         Box(
-            Modifier.size(30.dp).background(if (picked) look.color.copy(alpha = 0.14f) else Color.White.copy(alpha = 0.72f), CircleShape)
-                .border(if (picked) 2.dp else 1.dp, if (picked) androidx.compose.ui.graphics.SolidColor(look.color) else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.45f))), CircleShape),
+            Modifier.size(30.dp).background(if (picked) Glass.PrimarySoft else Color.White.copy(alpha = 0.72f), CircleShape)
+                .border(if (picked) 2.dp else 1.dp, if (picked) androidx.compose.ui.graphics.SolidColor(Glass.Primary) else Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95f), Glass.Aurora1.copy(alpha = 0.45f))), CircleShape),
             contentAlignment = Alignment.Center,
-        ) { Icon(look.icon, contentDescription = null, tint = look.color, modifier = Modifier.size(18.dp)) }
+            // The calm dock: every choice is one quiet ink icon; only the AI's pick is mint (design audit 2026-10-31).
+        ) { Icon(look.icon, contentDescription = null, tint = if (picked) Glass.Primary else Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(18.dp)) }
         Spacer(Modifier.height(2.dp))
         androidx.compose.foundation.text.BasicText(
             look.label,

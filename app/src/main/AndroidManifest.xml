@@ -79,6 +79,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Share > PAGEL: a link or text from any app goes to the Inbox (Inbox v3). Text only; a picture alone is refused. -->
+        <activity
+            android:name=".ui.capture.ShareActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="PAGEL Inbox"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <!-- Anchor foreground service: holds the process (and therefore both gateway connections)
              alive, and (Phase D Task 5) is where a backgrounded location.get fix gets obtained. The
              manifest attribute is the *ceiling*; a startForeground() call may pass any subset of it,

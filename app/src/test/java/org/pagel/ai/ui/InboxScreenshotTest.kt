@@ -242,7 +242,8 @@ class InboxScreenshotTest {
     @Test fun inboxZero() {
         show { screen(ui(emptyList(), sorted = 14, kept = 3, left = 0)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-empty.png")
-        compose.onNodeWithText("Inbox zero").assertIsDisplayed()
+        compose.onNodeWithText("Nothing waiting").assertIsDisplayed()
+        compose.onNodeWithText("Capture something").assertIsDisplayed()
         compose.onNodeWithText("3 learned today.").assertIsDisplayed()
     }
 
@@ -251,7 +252,7 @@ class InboxScreenshotTest {
         show { screen(ui(emptyList(), sorted = 14, kept = 3, left = 214)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-more-when-online.png")
         compose.onNodeWithText("214 more when online").assertIsDisplayed()
-        compose.onNodeWithText("Inbox zero").assertDoesNotExist()
+        compose.onNodeWithText("Nothing waiting").assertDoesNotExist()
         compose.onNodeWithText("214 left").assertDoesNotExist()
     }
 
@@ -269,7 +270,7 @@ class InboxScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-ring-20.png")
         compose.onNodeWithContentDescription("20 of 20 sorted today").captureRoboImage("build/outputs/roborazzi/inbox-ring-20-closeup.png")
         // Five kept today: the big button offers a Note in Learn's place, as the web does.
-        compose.onNodeWithText("20/20 sorted today · 5 learned ✓").assertIsDisplayed()
+        compose.onNodeWithText("5 learned").assertIsDisplayed()
     }
 
     @Test fun keepsFullTurnALearnIntoANote() {
@@ -338,8 +339,8 @@ class InboxScreenshotTest {
         var opened: org.pagel.ai.ui.inbox.InboxOpen? = null
         show { org.pagel.ai.ui.inbox.SortedToday(sorted, projects.associateBy { it.name }, PaddingValues(top = 16.dp, bottom = 96.dp), onOpen = { opened = it }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-sorted-today.png")
-        compose.onNodeWithText("📝 Notes · 1").assertIsDisplayed()
-        compose.onNodeWithText("✅ Tasks · 1").assertIsDisplayed()
+        compose.onNodeWithText("Notes · 1").assertIsDisplayed()
+        compose.onNodeWithText("Tasks · 1").assertIsDisplayed()
         compose.onNodeWithText("RunCam Phoenix 2: the night camera").performClick()
         assertEquals(org.pagel.ai.ui.inbox.InboxOpen.Notes("ababil"), opened)
     }

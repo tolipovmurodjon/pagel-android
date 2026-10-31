@@ -30,7 +30,7 @@ abstract class InboxDao {
     @Query("SELECT * FROM inbox_items WHERE file = :file")
     abstract suspend fun item(file: String): InboxItemEntity?
 
-    @Query("SELECT * FROM inbox_items WHERE sortedAs IS NULL ORDER BY position LIMIT 1")
+    @Query("SELECT * FROM inbox_items WHERE sortedAs IS NULL AND position < $OLD_POSITION ORDER BY position LIMIT 1")
     abstract suspend fun topOnce(): InboxItemEntity?
 
     @Query("SELECT COUNT(*) FROM inbox_items WHERE sortedAs IS NULL")
@@ -40,13 +40,13 @@ abstract class InboxDao {
     @Query("SELECT COUNT(*) FROM inbox_items WHERE sortedAs IS NOT NULL")
     abstract fun leavingCount(): Flow<Int>
 
-    @Query("SELECT COALESCE(MAX(position), 0) FROM inbox_items")
+    @Query("SELECT COALESCE(MAX(position), 0) FROM inbox_items WHERE position < $OLD_POSITION")
     abstract suspend fun lastPosition(): Int
 
     @Query("SELECT COALESCE(MIN(position), 0) FROM inbox_items")
     abstract suspend fun firstPosition(): Int
 
-    @Query("SELECT file FROM inbox_items WHERE sortedAs IS NULL ORDER BY position")
+    @Query("SELECT file FROM inbox_items WHERE sortedAs IS NULL AND position < $OLD_POSITION ORDER BY position")
     abstract suspend fun deckFiles(): List<String>
 
     @Query("UPDATE inbox_items SET position = :position WHERE file = :file")
@@ -72,7 +72,7 @@ abstract class InboxDao {
     @Query("DELETE FROM inbox_items WHERE file = :file")
     abstract suspend fun delete(file: String)
 
-    @Query("DELETE FROM inbox_items WHERE file NOT IN (:keep)")
+    @Query("DELETE FROM inbox_items WHERE file NOT IN (:keep) AND position < $OLD_POSITION")
     abstract suspend fun deleteExcept(keep: List<String>)
 
     @Query("UPDATE inbox_items SET sortedAs = :action WHERE file = :file")
@@ -87,6 +87,17 @@ abstract class InboxDao {
 
     @Query("SELECT body FROM outbox WHERE op = '${OutboxEntity.SORT}' AND refused IS NULL ORDER BY id")
     abstract suspend fun waitingBodies(): List<String?>
+
+    /** Captures on this phone that pagel.uz has not named yet: the refresh keeps them where they are. */
+    @Query("SELECT taskId FROM outbox WHERE op = '${OutboxEntity.CAPTURE}' AND refused IS NULL")
+    abstract suspend fun capturingFiles(): List<String>
+
+    /** Old-pile cards sorted here whose choice has not reached pagel.uz yet. */
+    @Query("SELECT COUNT(*) FROM inbox_items WHERE sortedAs IS NOT NULL AND position >= $OLD_POSITION")
+    abstract fun leavingOldCount(): Flow<Int>
+
+    @Query("SELECT COALESCE(MAX(position), ${OLD_POSITION - 1}) FROM inbox_items WHERE position >= $OLD_POSITION")
+    abstract suspend fun lastOldPosition(): Int
 
     @Insert
     abstract suspend fun addToOutbox(row: OutboxEntity): Long
@@ -147,6 +158,52 @@ abstract class InboxDao {
     }
 
     /**
+     * A capture (Inbox v3): the save is in the deck at once, on top, and waits in the outbox. [hold] = a pasted list,
+     * which waits out its 5 s Undo before pagel.uz hears of it.
+     */
+    @Transaction
+    open suspend fun capture(file: String, body: String, text: String, today: String, at: Long): Long {
+        upsert(listOf(InboxItemEntity(
+            file = file, position = firstPosition() - 1, saved = today, source = "", text = text, claim = text.take(160), why = "", project = "me",
+            kind = "action", next = "", note = "", guessed = true, author = "", posted = "", later = null, hasPicture = false,
+        )))
+        return addToOutbox(OutboxEntity(taskId = file, op = OutboxEntity.CAPTURE, createdAt = at, body = body))
+    }
+
+    /** Undo of a pasted list before it left the phone: the save goes. False if it was already sent. */
+    @Transaction
+    open suspend fun undoCapture(opId: Long, file: String): Boolean {
+        if (takeBack(opId) == 0) return false
+        delete(file)
+        return true
+    }
+
+    /** pagel.uz made the file: the save keeps its place under its own name ([server] null = an older pagel.uz, no name). */
+    @Transaction
+    open suspend fun captureSent(opId: Long, local: String, server: String?) {
+        removeFromOutbox(opId)
+        val row = item(local) ?: return
+        delete(local)
+        if (server != null) upsert(listOf(row.copy(file = server)))
+    }
+
+    /** pagel.uz refused a capture (too long): it leaves the deck and the row stays so the shell can say why. */
+    @Transaction
+    open suspend fun captureRefused(opId: Long, local: String, message: String) {
+        delete(local)
+        markRefused(opId, message)
+    }
+
+    /** Old-pile cards from pagel.uz, after the ones already here; a card that is here keeps its place. */
+    @Transaction
+    open suspend fun addOld(rows: List<InboxItemEntity>): Int {
+        var at = lastOldPosition() + 1
+        val fresh = rows.filter { item(it.file) == null }
+        upsert(fresh.map { it.copy(position = at++) })
+        return fresh.size
+    }
+
+    /**
      * pagel.uz took the choice. A Later stays in the deck (at the back); any other choice ends the card. The counts
      * follow the server's, plus the choices still waiting behind this one. A [quiet] one (a bulk tidy-up part) keeps the
      * phone's counts: it never counted, and the reply's count is not a reason to move the ring (checker 2026-10-30 #1).
@@ -187,8 +244,9 @@ abstract class InboxDao {
     @Transaction
     open suspend fun refresh(items: List<InboxItemEntity>, state: InboxStateEntity, startedAt: Long) {
         val waiting = waitingFiles().toSet()
-        val top = topOnce()?.takeIf { it.file !in waiting }
-        val keepFiles = waiting + listOfNotNull(top?.file)
+        val capturing = capturingFiles().toSet()
+        val top = topOnce()?.takeIf { it.file !in waiting && it.file !in capturing && !it.file.startsWith("capture/") }
+        val keepFiles = waiting + capturing + listOfNotNull(top?.file)
         deleteExcept(keepFiles.toList().ifEmpty { listOf("") })
         top?.let { t -> upsert(listOf((items.firstOrNull { it.file == t.file } ?: t).copy(position = 0, sortedAs = null))) }
         val fresh = items.filter { it.file !in keepFiles }
@@ -209,6 +267,9 @@ abstract class InboxDao {
         saveState(state.copy(sorted = sorted, keptToday = kept, sentAt = cur?.sentAt ?: 0))
     }
 }
+
+/** Old-pile cards are numbered from here, so the refresh of the current deck never touches or renumbers them. */
+const val OLD_POSITION = 1_000_000
 
 private const val LATER = "later"
 

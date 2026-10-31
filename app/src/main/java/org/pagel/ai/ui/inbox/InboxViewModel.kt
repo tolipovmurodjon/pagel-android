@@ -27,6 +27,7 @@ import org.pagel.ai.data.db.ProjectEntity
 import org.pagel.ai.data.inbox.Choice
 import org.pagel.ai.data.inbox.InboxPictures
 import org.pagel.ai.data.inbox.InboxRepository
+import org.pagel.ai.data.inbox.isCurrent
 import org.pagel.ai.data.inbox.Picture
 import org.pagel.ai.data.sync.LiveStatus
 import org.pagel.ai.data.session.Session
@@ -99,6 +100,11 @@ data class InboxUi(
     val projects: List<ProjectEntity> = emptyList(),
     /** pagel.uz's AI is reading the next unread saves (asked from here); their picks come with the next deck. */
     val reading: Boolean = false,
+    /** The Old pile (saves from before the fresh start): how many are left (null = not known yet), and whether it is open. */
+    val old: Int? = null,
+    val oldMode: Boolean = false,
+    /** The Old pile just reached 0: its row says "Old pile done" once, then hides. */
+    val oldDone: Boolean = false,
 ) {
     val full get() = kept >= cap
 }
@@ -182,7 +188,17 @@ class InboxViewModel @Inject constructor(
     private val session: Session,
     private val where: org.pagel.ai.data.inbox.WhereItWent,
     private val projects: org.pagel.ai.data.projects.ProjectRepository,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: android.content.Context,
 ) : ViewModel() {
+    private val prefs = appContext.getSharedPreferences("pagel-inbox", android.content.Context.MODE_PRIVATE)
+    private val oldMode = MutableStateFlow(false)
+    private val doneShown = MutableStateFlow(runCatching { prefs.getBoolean(OLD_DONE_SHOWN, false) }.getOrDefault(false))
+    private var oldLoading = false
+    private var oldMisses = 0
+    private data class OldView(val fresh: String, val captured: Set<String>, val total: Int?, val leaving: Int, val mode: Boolean, val doneShown: Boolean)
+    private val oldView = combine(repo.freshFrom, repo.captured.files, repo.oldTotal, repo.leavingOld, combine(oldMode, doneShown) { m, d -> m to d }) { f, c, t, l, md ->
+        OldView(f, c, t, l, md.first, md.second)
+    }
     private val _open = kotlinx.coroutines.channels.Channel<InboxOpen>(kotlinx.coroutines.channels.Channel.BUFFERED)
     /** A toast's Open: the shell pushes the project page or its notes. */
     val open: kotlinx.coroutines.flow.Flow<InboxOpen> = _open.receiveAsFlow()
@@ -217,8 +233,11 @@ class InboxViewModel @Inject constructor(
     private var nextLeave = 1L
     private var refreshing = false
 
-    val ui: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), combine(streak, reading, gone) { a, b, c -> Triple(a, b, c) }) { deck, state, leavingCount, projects, (run, aiReading, hidden) ->
-        build(visibleDeck(deck, hidden), state, leavingCount, projects, run).copy(reading = aiReading)
+    val ui: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), combine(combine(streak, reading, gone) { a, b, c -> Triple(a, b, c) }, oldView) { t, o -> t to o }) { deck, state, _, projects, (t, old) ->
+        val (run, aiReading, hidden) = t
+        // The Inbox is the current saves; the Old pile is the rest, shown only while it is open.
+        val pool = deck.filter { isCurrent(it, old.fresh, old.captured) != old.mode }
+        build(visibleDeck(pool, hidden), state, projects, run, deck.isEmpty(), old).copy(reading = aiReading)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     init {
@@ -261,6 +280,21 @@ class InboxViewModel @Inject constructor(
                 }
             }
         }
+        // The Old pile: remembered once it has had saves, so reaching 0 says "Old pile done" once; and while it is open the
+        // next 60 come in when fewer than a screenful are left.
+        viewModelScope.launch {
+            ui.map { it.old to it.oldDone }.distinctUntilChanged().collect { (n, done) ->
+                if ((n ?: 0) > 0) runCatching { prefs.edit().putBoolean(OLD_SEEN, true).apply() }
+                if (done) {
+                    delay(4_000)
+                    runCatching { prefs.edit().putBoolean(OLD_DONE_SHOWN, true).apply() }
+                    doneShown.value = true
+                }
+            }
+        }
+        viewModelScope.launch {
+            ui.map { it.oldMode to it.cards.size }.distinctUntilChanged().collect { (open, shown) -> if (open && shown < 2) loadOld() }
+        }
         // The goal crossed here gets the finish moment once, as on the web (learn-client.tsx goalBar).
         viewModelScope.launch {
             var was: Int? = null
@@ -269,7 +303,7 @@ class InboxViewModel @Inject constructor(
                 val before = was
                 was = s.sorted
                 if (before != null && before < s.goal && s.sorted >= s.goal) {
-                    toasts.show("${s.goal} sorted today. Goal done ✓")
+                    toasts.show("${s.goal} sorted today. Goal done")
                     _cheer.update { it + 1 }
                 }
             }
@@ -286,6 +320,32 @@ class InboxViewModel @Inject constructor(
                 repo.refresh(account)
             } finally {
                 refreshing = false
+            }
+        }
+    }
+
+    /** Opens the Old pile: the same sorting, on the saves from before the fresh start. */
+    fun openOld() {
+        oldMisses = 0
+        oldMode.value = true
+        loadOld()
+    }
+
+    fun closeOld() { oldMode.value = false }
+
+    /** The next page of the Old pile (60, oldest first); it stops after a few pages that bring nothing new. */
+    private fun loadOld() {
+        if (oldLoading || oldMisses >= 3) return
+        oldLoading = true
+        viewModelScope.launch {
+            try {
+                val account = (accounts.load() as? AccountState.Paired)?.account ?: return@launch
+                when (val r = repo.loadOld(account)) {
+                    is org.pagel.ai.data.Outcome.Ok -> if (r.value == 0) oldMisses++ else oldMisses = 0
+                    else -> oldMisses++
+                }
+            } finally {
+                oldLoading = false
             }
         }
     }
@@ -340,7 +400,7 @@ class InboxViewModel @Inject constructor(
      * nothing is sent and nothing is counted. False when it is the last card (it springs back).
      */
     fun shuffle(card: InboxCard, thrown: Throw): Boolean {
-        if (ui.value.cards.size < 2) return false
+        if (ui.value.cards.size < 2 || ui.value.oldMode) return false
         _leaving.value = Leaving(nextLeave++, card, Choice.LATER, thrown, shuffled = true)
         hide(card.file)
         viewModelScope.launch {
@@ -482,7 +542,8 @@ class InboxViewModel @Inject constructor(
                 _bulk.value = Bulk(choice, done.size, total)
             }
             _bulk.value = null
-            toasts.show("${done.size} $what ✓")
+            toasts.show("${done.size} $what")
+            refresh()
         }
     }
 
@@ -513,9 +574,9 @@ class InboxViewModel @Inject constructor(
                 Choice.ACT -> {
                     val tomorrow = java.time.LocalDate.parse(where.today()).plusDays(1).toString()
                     val whenText = when (due) { null -> if (someday == true) " · Someday" else ""; where.today() -> " · today"; tomorrow -> " · tomorrow"; else -> " · $plain" }
-                    toasts.show("✅ ${projectName(project)}$whenText", action = "Undo", millis = 5_000) { undo(op, card) }
+                    toasts.show("${projectName(project)}$whenText", action = "Undo", millis = 5_000) { undo(op, card) }
                 }
-                Choice.NOTE -> toasts.show("📝 Saved to ${projectName(project)} notes", action = "Open") { project?.let { _open.trySend(InboxOpen.Notes(it)) } }
+                Choice.NOTE -> toasts.show("Saved to ${projectName(project)} notes", action = "Open") { project?.let { _open.trySend(InboxOpen.Notes(it)) } }
                 Choice.KEEP -> {
                     val n = keptBefore + 1
                     val cheer = CHEERS[n]
@@ -523,12 +584,12 @@ class InboxViewModel @Inject constructor(
                     if (cheer != null) _cheer.update { it + 1 }
                 }
                 Choice.NOW -> toasts.show("Done and gone")
-                Choice.LATER -> toasts.show("🕒 Later · back in 3 days")
-                Choice.SOMEDAY -> toasts.show("🌙 Someday · ${projectName(project)}", action = "Undo", millis = 5_000) { undo(op, card) }
-                Choice.WAITING -> toasts.show("👤 check $plain", action = "Undo", millis = 5_000) { undo(op, card) }
-                Choice.CALENDAR -> toasts.show("📅 $plain", action = "Undo", millis = 5_000) { undo(op, card) }
+                Choice.LATER -> toasts.show("Later · back in 3 days")
+                Choice.SOMEDAY -> toasts.show("Someday · ${projectName(project)}", action = "Undo", millis = 5_000) { undo(op, card) }
+                Choice.WAITING -> toasts.show("Check $plain", action = "Undo", millis = 5_000) { undo(op, card) }
+                Choice.CALENDAR -> toasts.show(plain, action = "Undo", millis = 5_000) { undo(op, card) }
                 // Undo takes the step back and the new project with it (it drops after its own 5 s).
-                Choice.PROJECT -> toasts.show("📁 ${shortTitle(title ?: projectName(project))}", action = "Undo", millis = 5_000) {
+                Choice.PROJECT -> toasts.show(shortTitle(title ?: projectName(project)), action = "Undo", millis = 5_000) {
                     undo(op, card) { project?.let { viewModelScope.launch { projects.delete(it, dropTasks = true) } } }
                 }
             }
@@ -561,28 +622,34 @@ class InboxViewModel @Inject constructor(
         }
     }
 
-    private fun build(deck: List<InboxItemEntity>, s: InboxStateEntity?, leavingCount: Int, projects: List<ProjectEntity>, run: Int): InboxUi {
+    private fun build(deck: List<InboxItemEntity>, s: InboxStateEntity?, projects: List<ProjectEntity>, run: Int, rawEmpty: Boolean, old: OldView): InboxUi {
         val today = org.pagel.ai.data.inbox.tashkentDay(System.currentTimeMillis())
         // Today's counts: the day pagel.uz names, or counts it sent today (never a ring reset by a stale day field).
         val fresh = s != null && (s.day == today || org.pagel.ai.data.inbox.tashkentDay(s.fetchedAt) == today)
         val kept = if (fresh) s!!.keptToday else 0
         val cap = s?.cap ?: 5
         val byName = projects.associateBy(ProjectEntity::name)
+        val oldLeft = old.total?.let { (it - old.leaving).coerceAtLeast(0) }
         return InboxUi(
-            loading = s == null && deck.isEmpty(),
+            loading = s == null && rawEmpty,
             cards = deck.take(2).map { i -> card(i, kept >= cap, byName[i.project]) },
             sorted = if (fresh) s!!.sorted else 0,
             goal = s?.goal ?: 20,
             kept = kept,
             cap = cap,
             minWords = s?.minWords ?: 6,
-            left = ((s?.total ?: deck.size) - leavingCount).coerceAtLeast(deck.size),
+            left = deck.size,
             streak = run,
             projects = projects,
+            old = oldLeft,
+            oldMode = old.mode,
+            oldDone = old.total == 0 && !old.doneShown && runCatching { prefs.getBoolean(OLD_SEEN, false) }.getOrDefault(false),
         )
     }
 
     companion object {
+        private const val OLD_SEEN = "old_pile_seen"
+        private const val OLD_DONE_SHOWN = "old_pile_done_shown"
         /** Cards whose pictures are fetched ahead of time. */
         private const val PREFETCH = 10
         /** The cards Boss sees next: one with no AI pick among them asks pagel.uz's AI to read. */
@@ -593,11 +660,11 @@ class InboxViewModel @Inject constructor(
 
         /** The web's cheers for keeps (learn-client.tsx CHEERS): 5 is the habit, bigger days get bigger words. */
         val CHEERS = mapOf(
-            5 to "5 learned. Today's habit is done 🎉",
-            10 to "10 learned. Double the habit 🔥",
-            25 to "25 learned in one day. That is a whole chapter 🚀",
-            50 to "50 learned. Rare day 🏆",
-            100 to "100 learned. Legendary 👑",
+            5 to "5 learned. Today's habit is done",
+            10 to "10 learned. Double the habit",
+            25 to "25 learned in one day. That is a whole chapter",
+            50 to "50 learned. Rare day",
+            100 to "100 learned. Legendary",
         )
 
         fun card(i: InboxItemEntity, full: Boolean, project: ProjectEntity?): InboxCard {

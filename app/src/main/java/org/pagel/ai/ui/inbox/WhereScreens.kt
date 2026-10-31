@@ -79,9 +79,9 @@ class NotesViewModel @Inject constructor(private val where: WhereItWent, private
 }
 
 private val ACTION_WORDS = mapOf(
-    "act" to ("✅" to "Tasks"), "note" to ("📝" to "Notes"), "keep" to ("🧠" to "Kept to learn"), "later" to ("🕒" to "Later"),
-    "drop" to ("🗑️" to "Dropped"), "now" to ("⚡" to "Done now"),
-    "someday" to ("🌙" to "Someday"), "waiting" to ("👤" to "Waiting for"), "project" to ("📁" to "New projects"), "calendar" to ("📅" to "On the calendar"),
+    "act" to "Tasks", "note" to "Notes", "keep" to "Kept to learn", "later" to "Later",
+    "drop" to "Dropped", "now" to "Done now",
+    "someday" to "Someday", "waiting" to "Waiting for", "project" to "New projects", "calendar" to "On the calendar",
 )
 
 /** The choices that land as a task in a project: their row opens that project. */
@@ -109,8 +109,8 @@ fun SortedToday(
             Text("Nothing sorted yet today. Each choice shows here with where it went.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, modifier = Modifier.padding(Space.xl))
         }
         for ((action, rows) in sorted.groupBy { it.action }.toList().sortedBy { ACTION_WORDS.keys.indexOf(it.first) }) {
-            val (glyph, label) = ACTION_WORDS[action] ?: ("•" to action)
-            Text("$glyph $label · ${rows.size}", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.textEdge).semantics { heading() })
+            val label = ACTION_WORDS[action] ?: action
+            Text("$label · ${rows.size}", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.textEdge).semantics { heading() })
             Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
                 Column(Modifier.padding(vertical = Space.xs)) {
                     for (s in rows) {

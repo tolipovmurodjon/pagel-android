@@ -73,6 +73,12 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(SortReply.serializer(), it) } }
     }
 
+    /** One capture into the Inbox; pagel.uz answers the file it made (`inbox/<slug>.md`). */
+    suspend fun capture(baseUrl: String, token: String, body: CaptureBody): Outcome<CaptureReply> = call {
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox")).post(json.encodeToString(CaptureBody.serializer(), body).toRequestBody(JSON)), token).build()
+        http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(CaptureReply.serializer(), it) } }
+    }
+
     /** Finished tasks newest first, a page at a time (`before` = the last done_at of the page before). */
     suspend fun completed(baseUrl: String, token: String, limit: Int, before: String? = null): Outcome<CompletedResponse> = call {
         val q = before?.let { "&before=" + java.net.URLEncoder.encode(it, "UTF-8") }.orEmpty()

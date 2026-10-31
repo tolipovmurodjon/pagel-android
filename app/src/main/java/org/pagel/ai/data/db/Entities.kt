@@ -163,6 +163,8 @@ data class OutboxEntity(
         const val PATCH = "patch"
         /** One Inbox choice (Phase 2): [taskId] holds the save's file, [body] the `POST /api/v1/inbox` JSON. */
         const val SORT = "sort"
+        /** One capture into the Inbox (Inbox v3): [taskId] holds the local file `capture/<id>`, [body] a CaptureOp. */
+        const val CAPTURE = "capture"
         /** A dump for the AI to split (Phase 5): [taskId] holds the sweep's id; its text lives in `sweeps`. */
         const val SWEEP = "sweep"
         /** A ritual closed on the phone (Phase 5): [body] is the `POST /api/v1/rituals` JSON, [taskId] its own id. */

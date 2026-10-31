@@ -5,11 +5,17 @@ import android.graphics.BitmapFactory
 import android.util.LruCache
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import org.pagel.ai.data.db.OLD_POSITION
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.pagel.ai.data.DataError
 import org.pagel.ai.data.Outcome
 import org.pagel.ai.data.account.Account
+import org.pagel.ai.data.api.CaptureBody
+import org.pagel.ai.data.api.CaptureOp
 import org.pagel.ai.data.api.InboxItemDto
 import org.pagel.ai.data.api.PagelApi
 import org.pagel.ai.data.api.SortBody
@@ -67,8 +73,15 @@ class InboxRepository(
     private val dao: InboxDao,
     private val scheduler: OutboxScheduler,
     private val clock: () -> Long = System::currentTimeMillis,
+    val captured: CapturedFiles = CapturedFiles(),
 ) {
     val deck: Flow<List<InboxItemEntity>> = dao.deck()
+    private val fresh = MutableStateFlow(FRESH_START)
+    /** The day the Old pile starts from: the app's own line, or the one pagel.uz names. */
+    val freshFrom: StateFlow<String> = fresh
+    /** How many old saves pagel.uz holds (null = not known yet). */
+    val oldTotal: StateFlow<Int?> = captured.oldLeft
+    val leavingOld: Flow<Int> = dao.leavingOldCount()
     val state: Flow<InboxStateEntity?> = dao.state()
     val leaving: Flow<Int> = dao.leavingCount()
 
@@ -82,7 +95,12 @@ class InboxRepository(
             is Outcome.Failed -> r
             is Outcome.Ok -> {
                 val b = r.value
-                dao.refresh(newestFirst(b.items.map(::entity)), InboxStateEntity(day = b.day.ifEmpty { tashkentDay(clock()) }, goal = b.goal, sorted = b.sorted, keptToday = b.keptToday,
+                b.freshFrom?.let { fresh.value = it }
+                // The page is newest first, so every current save is in it when it holds an old one (or is not full).
+                val rows = b.items.map(::entity)
+                val here = captured.files.value
+                val current = rows.count { isCurrent(it, fresh.value, here) }
+                if (current < rows.size || rows.size < DECK) captured.oldLeft.value = (b.total - current).coerceAtLeast(0)                dao.refresh(newestFirst(b.items.map(::entity)), InboxStateEntity(day = b.day.ifEmpty { tashkentDay(clock()) }, goal = b.goal, sorted = b.sorted, keptToday = b.keptToday,
                     cap = b.cap, minWords = b.minWords, total = b.total, fetchedAt = clock()), startedAt = started)
                 Outcome.Ok(Unit)
             }
@@ -95,6 +113,40 @@ class InboxRepository(
      */
     suspend fun askToRead(account: Account, files: List<String>): Boolean =
         api.triage(account.serverUrl, account.token, files) is Outcome.Ok
+
+    /**
+     * Captures [texts] (each its own save), top of the Inbox at once, each waiting in the outbox in the order typed.
+     * [hold]: a pasted list waits out the 5 s Undo. Returns the (outbox row, local file) pairs for [undoCapture].
+     */
+    suspend fun capture(texts: List<String>, source: String? = null, hold: Boolean = false): List<Pair<Long, String>> {
+        val now = clock()
+        val day = tashkentDay(now)
+        val rows = texts.map { text ->
+            val id = "c" + java.util.UUID.randomUUID().toString().replace("-", "").take(14)
+            val body = wire.encodeToString(CaptureOp.serializer(), CaptureOp(id, text, source, hold))
+            dao.capture(CAPTURE_PREFIX + id, body, text, day, now) to (CAPTURE_PREFIX + id)
+        }
+        scheduler.kick()
+        return rows
+    }
+
+    /** Takes a pasted list back before it left the phone: how many had not been sent. */
+    suspend fun undoCapture(rows: List<Pair<Long, String>>): Int = rows.count { (id, file) -> dao.undoCapture(id, file) }
+
+    /**
+     * Brings the next page (60) of the Old pile into Room, oldest first, behind the ones already here. The pile is every
+     * save before the fresh start. Returns how many were new, or the failure.
+     */
+    suspend fun loadOld(account: Account): Outcome<Int> {
+        val days = oldPileDays(fresh.value, tashkentDay(clock()))
+        return when (val r = api.inbox(account.serverUrl, account.token, OLDER_PAGE, seed = 0, olderThan = days)) {
+            is Outcome.Failed -> r
+            is Outcome.Ok -> {
+                val here = captured.files.value
+                Outcome.Ok(dao.addOld(r.value.items.map(::entity).filter { !isCurrent(it, fresh.value, here) }))
+            }
+        }
+    }
 
     /** Boss's choice: Room first (the card leaves now), the outbox after. Returns the outbox row (Drop's Undo needs it). */
     suspend fun choose(file: String, choice: Choice, sentence: String? = null, project: String? = null, someday: Boolean? = null, due: String? = null): Long {
@@ -159,7 +211,7 @@ class InboxRepository(
 
     companion object {
         /** Cards kept on the phone: enough for a subway ride offline (the web loads 30). */
-        const val DECK = 40
+        const val DECK = 60
         /** Below this many cards the deck asks pagel.uz for more (the web's 8). */
         const val LOW = 8
         /** The most pagel.uz deals in one answer. */
@@ -183,16 +235,47 @@ enum class SortStep { SENT, HOLD, SIGNED_OUT, TRY_LATER }
  * Sends one Inbox choice from the outbox. A Drop waits out its 5 s Undo first (the web's flushDrop). Sent → the card
  * is gone (a Later stays at the back); refused → the card is back on top and the row stays so the shell says why in red.
  */
-class InboxSender(private val api: PagelApi, private val dao: InboxDao, private val clock: () -> Long = System::currentTimeMillis) {
+class InboxSender(
+    private val api: PagelApi,
+    private val dao: InboxDao,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val captured: CapturedFiles = CapturedFiles(),
+) {
     suspend fun send(account: Account, op: OutboxEntity): SortStep {
+        if (op.op == OutboxEntity.CAPTURE) return sendCapture(account, op)
         val body = op.body?.let { runCatching { wire.decodeFromString(SortBody.serializer(), it) }.getOrNull() }
             ?: run { dao.removeFromOutbox(op.id); return SortStep.SENT }
         if (body.holdsForUndo() && clock() - op.createdAt < UNDO_WINDOW_MS) return SortStep.HOLD
         dao.countAttempt(op.id)
         return when (val out = api.sort(account.serverUrl, account.token, body)) {
-            is Outcome.Ok -> { dao.sent(op.id, body.file, body.action, out.value.sorted, out.value.keptToday, clock(), body.quiet == true); SortStep.SENT }
+            is Outcome.Ok -> {
+                // An old save reached pagel.uz: the Old pile is one shorter (its row in Room is about to go, a quiet bulk part has none).
+                val old = body.quiet == true || (dao.item(body.file)?.position ?: 0) >= OLD_POSITION
+                dao.sent(op.id, body.file, body.action, out.value.sorted, out.value.keptToday, clock(), body.quiet == true)
+                if (old && body.action != "later") captured.oldLeft.update { it?.minus(1)?.coerceAtLeast(0) }
+                SortStep.SENT
+            }
             is Outcome.Failed -> when (val e = out.error) {
                 is DataError.Refused -> { dao.refused(op.id, body.file, body.action, e.message); SortStep.SENT }
+                DataError.Unauthorized -> SortStep.SIGNED_OUT
+                else -> SortStep.TRY_LATER
+            }
+        }
+    }
+
+    /**
+     * One capture (Inbox v3). A retry carries the same phone id, so pagel.uz never saves it twice. Sent: the save takes
+     * its file's name and is remembered as captured here. Refused (too long): it leaves and the shell says why.
+     */
+    private suspend fun sendCapture(account: Account, op: OutboxEntity): SortStep {
+        val c = op.body?.let { runCatching { wire.decodeFromString(CaptureOp.serializer(), it) }.getOrNull() }
+            ?: run { dao.removeFromOutbox(op.id); return SortStep.SENT }
+        if (c.hold && clock() - op.createdAt < UNDO_WINDOW_MS) return SortStep.HOLD
+        dao.countAttempt(op.id)
+        return when (val out = api.capture(account.serverUrl, account.token, CaptureBody("add", c.id, c.text, c.source))) {
+            is Outcome.Ok -> { out.value.file?.let(captured::add); dao.captureSent(op.id, op.taskId, out.value.file); SortStep.SENT }
+            is Outcome.Failed -> when (val e = out.error) {
+                is DataError.Refused -> { dao.captureRefused(op.id, op.taskId, e.message); SortStep.SENT }
                 DataError.Unauthorized -> SortStep.SIGNED_OUT
                 else -> SortStep.TRY_LATER
             }

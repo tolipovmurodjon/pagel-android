@@ -83,6 +83,7 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import com.kyant.shapes.Capsule
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
@@ -167,6 +168,9 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
     val onTop = stack.lastOrNull() == Tab.entries[selected].root
     // The Add sheet's target: null = closed, "" = Today, a name = that project. The open task panel's task id.
     var adding by rememberSaveable { mutableStateOf<String?>(null) }
+    // The capture sheet (Inbox v3): the + opens it with Inbox as the default; a long press on the + opens it speaking.
+    var capturing by rememberSaveable { mutableStateOf(false) }
+    var speaking by rememberSaveable { mutableStateOf(false) }
     var openTask by rememberSaveable { mutableStateOf<String?>(null) }
     // Focus mode (core round 4): one micro-step per full-screen card, over whatever is open.
     var focusTask by rememberSaveable { mutableStateOf<String?>(null) }
@@ -287,7 +291,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         org.pagel.ai.ui.rituals.ReviewRoute(padding, onInbox = { selected = 1 }, onSweep = { stack.add(SweepRoute) }, onToday = ::goToday)
                     }
                     entry<InboxRoute> {
-                        InboxScreenRoute(padding, reselect, onSorted = { stack.add(SortedTodayRoute) }, onOpen = { o ->
+                        InboxScreenRoute(padding, reselect, onSorted = { stack.add(SortedTodayRoute) }, onCapture = { speaking = false; capturing = true }, onOpen = { o ->
                             when (o) { is org.pagel.ai.ui.inbox.InboxOpen.Project -> stack.add(ProjectPageRoute(o.name)); is org.pagel.ai.ui.inbox.InboxOpen.Notes -> stack.add(NotesRoute(o.project)) }
                         })
                     }
@@ -396,12 +400,15 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             toasts, backdrop, bottom = fabAt,
             showFab = showFab,
             toastOnTop = onTop && Tab.entries[selected] == Tab.Inbox,
-        ) { adding = inProject?.name ?: "" }
+            onSpeak = { speaking = true; capturing = true },
+            inProject = inProject != null,
+        ) { if (inProject != null) adding = inProject.name else { speaking = false; capturing = true } }
         DayClearedBurst()
     }
     }
     if (whatsNew) WhatsNewSheet(onDismiss = { whatsNew = false }, onOpen = ::openWhere)
     adding?.let { target -> AddTaskSheet(onClose = { adding = null }, project = target.ifEmpty { null }) }
+    if (capturing) org.pagel.ai.ui.capture.CaptureSheet(onClose = { capturing = false; speaking = false }, speak = speaking)
     openTask?.let { id ->
         androidx.compose.runtime.key(id) {
             TaskPanelSheet(id, onClose = { openTask = null }, onOpenProject = { name -> openTask = null; if (top != ProjectPageRoute(name)) stack.add(ProjectPageRoute(name)) },
@@ -470,7 +477,7 @@ private fun TitleCapsule(title: String, visible: Boolean, backdrop: Backdrop, mo
  * shows it instead.
  */
 @Composable
-internal fun BoxScope.BottomActions(toasts: ToastCenter, backdrop: Backdrop, bottom: Dp, showFab: Boolean, toastOnTop: Boolean, onAdd: () -> Unit) {
+internal fun BoxScope.BottomActions(toasts: ToastCenter, backdrop: Backdrop, bottom: Dp, showFab: Boolean, toastOnTop: Boolean, onSpeak: () -> Unit = {}, inProject: Boolean = false, onAdd: () -> Unit) {
     val density = LocalDensity.current
     var toastH by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val under = toasts.sheets == 0 && !toastOnTop && toastH > 0
@@ -483,6 +490,8 @@ internal fun BoxScope.BottomActions(toasts: ToastCenter, backdrop: Backdrop, bot
             Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.navigationBars).padding(end = 20.dp, bottom = bottom)
                 .offset { IntOffset(0, -lift.roundToPx()) },
             onAdd,
+            onSpeak,
+            description = if (inProject) "Add a task" else "Add to Inbox",
         )
     }
     if (toasts.sheets == 0) {
@@ -501,7 +510,8 @@ internal fun BoxScope.BottomActions(toasts: ToastCenter, backdrop: Backdrop, bot
  * (rules/liquid-glass-navbar: glass on chrome only). Sits above the bar on Today, where the web has its Add row.
  */
 @Composable
-private fun AddButton(backdrop: Backdrop, modifier: Modifier, onClick: () -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun AddButton(backdrop: Backdrop, modifier: Modifier, onClick: () -> Unit, onLongClick: () -> Unit, description: String) {
     val press = remember { MutableInteractionSource() }
     Box(
         modifier
@@ -513,8 +523,8 @@ private fun AddButton(backdrop: Backdrop, modifier: Modifier, onClick: () -> Uni
                 effects = { vibrancy(); blur(8f.dp.toPx()); lens(16f.dp.toPx(), 16f.dp.toPx()) },
                 onDrawSurface = { drawRect(Glass.Primary.copy(alpha = 0.82f)) },
             ))
-            .clickable(press, indication = null, role = Role.Button) { onClick() }
-            .semantics { contentDescription = "Add a task" },
+            .combinedClickable(press, indication = null, role = Role.Button, onLongClickLabel = "Speak to the Inbox", onLongClick = onLongClick) { onClick() }
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(20.dp)) {
