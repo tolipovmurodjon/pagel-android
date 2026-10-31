@@ -385,7 +385,9 @@ fun InboxScreen(
 @Composable
 private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit, bulk: Bulk? = null) {
     val old = ui.oldMode
-    Column(Modifier.fillMaxWidth().padding(start = if (old) 8.dp else 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
+    // A short screen at a large font gives the header less air so the claim keeps two lines (checker leftover, 320 dp at 1.5x).
+    val tight = LocalDensity.current.fontScale >= 1.3f && LocalConfiguration.current.screenHeightDp < 700
+    Column(Modifier.fillMaxWidth().padding(start = if (old) 8.dp else 20.dp, end = 12.dp, top = if (tight) Space.sm else 12.dp, bottom = if (tight) Space.xs else 12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (old) GlassIconButton(TabIcons.ArrowLeft, "Back to Inbox", plain = true, onClick = actions.closeOld)
             Column(Modifier.weight(1f)) {
@@ -824,7 +826,7 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
     val crowded = scale >= 1.3f && room < 340.dp
     var cut by remember(card.file) { mutableStateOf(false) }
     Pane(Modifier.fillMaxWidth().heightIn(max = room)) {
-        Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = if (crowded) Space.md else 18.dp, bottom = if (crowded) Space.xs else 8.dp)) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SitePill(card.site, card.siteName)
                 card.author?.let { Text(it, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -835,7 +837,7 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
                     Text(card.projectTitle ?: card.project.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(if (crowded) Space.xs else 10.dp))
             // Takes what the rest of the card leaves, shrinking by words until it all fits: the pane clips what overflows it, and a
             // clipped claim ("Quizzes beat rereading:" and no more, walk 78) is a cut text.
             // With a picture the picture takes what the words leave, so the claim keeps its line count and shrinks by it instead.

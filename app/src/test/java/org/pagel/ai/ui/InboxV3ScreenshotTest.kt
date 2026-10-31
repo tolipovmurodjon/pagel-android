@@ -165,6 +165,8 @@ class InboxV3ScreenshotTest {
     @Test fun theClaimIsOnTheCardAt320dpAnd15xFont() {
         show(1.5f) { Box(Modifier.width(320.dp).height(640.dp)) { screen(ui(grant)) } }
         compose.onNodeWithText("The IT Park grant round closes on 15 November", useUnmergedTree = true).assertIsDisplayed()
+        val claim = layoutOf(compose.onNodeWithText("The IT Park grant round closes on 15 November", useUnmergedTree = true).fetchSemanticsNode())!!
+        assertTrue("the claim is whole, with no clipped second line (${claim.lineCount} lines)", !claim.hasVisualOverflow)
         assertTrue("the reason is not on a crowded card", compose.onAllNodesWithText("Humopedia can apply", useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-claim-320-font-1.5.png")
     }
