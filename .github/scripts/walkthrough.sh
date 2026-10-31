@@ -1202,7 +1202,8 @@ HOUR=$(TZ=Asia/Tashkent date +%-H)
 EVENING_NOW=0; { [ "$HOUR" -ge 18 ] || [ "$HOUR" -lt 5 ]; } && EVENING_NOW=1
 log "   Tashkent hour $HOUR (evening: $EVENING_NOW)"
 # The weekly review is a Sunday pill on Today; any other day it lives in More only (Boss 2026-10-31).
-SUNDAY_NOW=0; [ "$(TZ=Asia/Tashkent date +%u)" = 7 ] && SUNDAY_NOW=1
+# The rituals' day runs until 05:00 (Rituals.ritualDay): at 02:00 on a Sunday it is still Saturday night.
+SUNDAY_NOW=0; [ "$(TZ=Asia/Tashkent date -d '-5 hours' +%u)" = 7 ] && SUNDAY_NOW=1
 grep -qF 'content-desc="Empty your head"' "$OUT/$(printf '%02d' $N)-p5-today.xml" || { log "WALKTHROUGH: Today has no Empty your head"; exit 1; }
 if [ "$SUNDAY_NOW" = 1 ]; then
   grep -qF 'content-desc="Weekly review is due"' "$OUT/$(printf '%02d' $N)-p5-today.xml" || { log "WALKTHROUGH: no review pill on Sunday"; exit 1; }
