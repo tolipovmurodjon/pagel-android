@@ -166,26 +166,18 @@ internal fun LiveLine(fixed: Int? = null) {
     }
 }
 
-/** 1, 2 or 3 drawn chilies (line icons in our colours) in place of the pepper emoji. */
+/** The spice as steps that grow: 1, 2 or 3 small stair bars (rounded outlines, 1.75 dp), the chosen stop in mint. */
 @Composable
-private fun Chilies(count: Int, color: Color) {
-    androidx.compose.foundation.Canvas(Modifier.size(width = (18 * count + 4 * (count - 1)).dp, height = 24.dp).semantics { contentDescription = "$count chili" }) {
-        val w = 18.dp.toPx(); val gap = 4.dp.toPx(); val line = 1.75.dp.toPx()
+private fun StepBars(count: Int, color: Color) {
+    androidx.compose.foundation.Canvas(Modifier.size(width = 30.dp, height = 24.dp).semantics { contentDescription = "$count steps" }) {
+        val bar = 6.dp.toPx(); val gap = 3.dp.toPx(); val line = 1.75.dp.toPx()
         repeat(count) { k ->
-            val x = k * (w + gap)
-            // A pod tapering to a curled tip, a flat cap and a short stem: reads as a chili, not a crescent.
-            val pod = androidx.compose.ui.graphics.Path().apply {
-                moveTo(x + 5.dp.toPx(), 6.dp.toPx())
-                cubicTo(x + 13.dp.toPx(), 5.dp.toPx(), x + 15.dp.toPx(), 12.dp.toPx(), x + 12.dp.toPx(), 17.dp.toPx())
-                cubicTo(x + 10.dp.toPx(), 20.dp.toPx(), x + 6.dp.toPx(), 22.dp.toPx(), x + 3.dp.toPx(), 22.dp.toPx())
-                cubicTo(x + 7.dp.toPx(), 19.dp.toPx(), x + 8.dp.toPx(), 15.dp.toPx(), x + 7.dp.toPx(), 12.dp.toPx())
-                cubicTo(x + 6.dp.toPx(), 10.dp.toPx(), x + 5.dp.toPx(), 8.dp.toPx(), x + 5.dp.toPx(), 6.dp.toPx())
-                close()
-            }
-            val stroke = androidx.compose.ui.graphics.drawscope.Stroke(line, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-            drawPath(pod, color, style = stroke)
-            drawLine(color, androidx.compose.ui.geometry.Offset(x + 2.dp.toPx(), 7.dp.toPx()), androidx.compose.ui.geometry.Offset(x + 8.dp.toPx(), 6.dp.toPx()), line, androidx.compose.ui.graphics.StrokeCap.Round)
-            drawLine(color, androidx.compose.ui.geometry.Offset(x + 5.dp.toPx(), 6.5.dp.toPx()), androidx.compose.ui.geometry.Offset(x + 3.dp.toPx(), 2.dp.toPx()), line, androidx.compose.ui.graphics.StrokeCap.Round)
+            val h = (8 + 6 * k).dp.toPx()
+            drawRoundRect(
+                color, topLeft = androidx.compose.ui.geometry.Offset(k * (bar + gap) + line / 2, size.height - h - line / 2),
+                size = androidx.compose.ui.geometry.Size(bar, h), cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(line),
+            )
         }
     }
 }
@@ -215,7 +207,7 @@ fun TinyContent(ui: StartUi, spice: Int, onSpice: (Int) -> Unit = {}, onWrite: (
         Spacer(Modifier.height(Space.lg))
         // The spice: three stops in one capsule row, the chosen one rimmed mint (never a hidden setting).
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            SPICE.forEachIndexed { i, (chili, words) ->
+            SPICE.forEachIndexed { i, (level, words) ->
                 val on = spice == i + 1
                 val press = remember { MutableInteractionSource() }
                 Column(
@@ -227,7 +219,7 @@ fun TinyContent(ui: StartUi, spice: Int, onSpice: (Int) -> Unit = {}, onWrite: (
                         .padding(vertical = Space.sm, horizontal = Space.xs),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                 ) {
-                    Chilies(chili, if (on) Glass.Primary else Glass.Muted)
+                    StepBars(level, if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.6f))
                     Text(words, style = MaterialTheme.typography.labelSmall, color = if (on) Glass.Ink else Glass.Muted, maxLines = 2, textAlign = TextAlign.Center)
                 }
             }

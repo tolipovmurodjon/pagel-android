@@ -211,7 +211,7 @@ class StartingScreenshotTest {
         shot("stuck-waiting", s)
     }
 
-    /** Boss 2026-10-31: the skeleton stays, with one small live line and a Stop; the chilies are drawn, never emoji. */
+    /** Boss 2026-10-31: the skeleton stays, with one small live line and a Stop; the spice is drawn as growing step bars, never emoji. */
     private fun shot320(name: String, scale: Float) =
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/v2-$name-320x640" + (if (scale > 1f) "-font-1.5" else "") + ".png")
 
@@ -237,6 +237,11 @@ class StartingScreenshotTest {
             assertTrue("${s}x: What now's bottom ${card.bottom} must be above the bar's top ${root.bottom - barDp}", card.bottom <= root.bottom - barDp)
             shot320("today-bottom", s)
         }
+    }
+
+    @Test fun makeItTinySpiceStepsAt360() {
+        show { Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Idle), spice = 2) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/gtd-spice-steps-360x800.png")
     }
 
     @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun makeItTinyWritingAt320x640() {
