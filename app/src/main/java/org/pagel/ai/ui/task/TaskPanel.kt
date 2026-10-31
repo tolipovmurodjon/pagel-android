@@ -178,14 +178,16 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
     // The starting tools (core round 4): "tiny" or "stuck" open their own half sheet over the panel.
     var tool by rememberSaveable(taskId) { mutableStateOf("") }
     // Room answers in a few ms: the sheet opens with the task already in it, never with a placeholder that then grows.
-    if (ui.loading) return
+    // A habit is edited here too: its rows come from the Habits view model, and the sheet waits for them (no jump).
+    val habit = if (ui.habit) org.pagel.ai.ui.habits.rememberHabitPanel(taskId) else null
+    if (ui.loading || (ui.habit && habit == null)) return
     GlassSheet(onClose, full = true) {
         Box(Modifier.fillMaxWidth().onGloballyPositioned { rootAt = it.positionInRoot() }) {
             when {
                 ui.project.isEmpty() -> Text("This task is gone from pagel.uz.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(24.dp))
                 else -> TaskPanelContent(
                     ui, vm.dayToday(),
-                    projects = projects, pickerActions = pickerActions,
+                    projects = projects, pickerActions = pickerActions, habit = habit,
                     a = PanelActions(
                         onTitle = vm::title, onDoneWhen = vm::doneWhen, onText = vm::text, onDue = vm::due, onEvery = vm::every, onTimes = vm::times,
                         onPriority = vm::priority, onStar = vm::star, onSteps = vm::steps, onMakeTasks = vm::makeStepsTasks,
@@ -221,6 +223,7 @@ fun TaskPanelSheet(taskId: String, onClose: () -> Unit, onOpenProject: (String) 
 fun TaskPanelContent(
     ui: PanelUi, today: LocalDate, a: PanelActions, stopFirst: Boolean = false, picker0: String = "",
     projects: List<ProjectEntity> = emptyList(), pickerActions: ProjectPickerActions? = null,
+    habit: org.pagel.ai.ui.habits.HabitPanel? = null, habitRow0: String = "",
 ) {
     // A finished task's fields are its record, not a form (Completed → tap): read only, with Reopen. Ticked here, the
     // panel stays open on that record and its ring draws the tick in.
@@ -229,20 +232,21 @@ fun TaskPanelContent(
     var stopping by rememberSaveable(ui.id) { mutableStateOf(stopFirst) }
     var picker by rememberSaveable(ui.id) { mutableStateOf(picker0) }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = SheetBottom)) {
-        Header(ui, stopping, a, onStop = { stopping = !stopping }, onProject = if (a.onMove != null) { { picker = "project" } } else null)
+        Header(ui, stopping, a, onStop = { stopping = !stopping }, canStop = habit == null, onProject = if (a.onMove != null) { { picker = "project" } } else null)
         AnimatedVisibility(stopping, enter = expandVertically(spring(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(), exit = shrinkVertically(tween(160)) + fadeOut()) {
             StopForm(onCancel = { stopping = false }) { kind, reason ->
                 a.onNotDoing(kind, reason).also { if (it == null) { stopping = false; if (kind == "drop") a.onClose() } }
             }
         }
-        TitleBlock(ui, a)
+        TitleBlock(ui, a, habit)
         Spacer(Modifier.height(14.dp))
         Steps(ui, a)
         Spacer(Modifier.height(12.dp))
-        Props(ui, today, a, onPick = { picker = it })
+        if (habit != null) org.pagel.ai.ui.habits.HabitRows(habit, ui.every, ui.times, onRepeat = { picker = "repeat" }, openRow0 = habitRow0)
+        else Props(ui, today, a, onPick = { picker = it })
         // The starting tools sit under the props: on a 640 dp screen Priority stays above the fold (checker round 2 #6).
         Spacer(Modifier.height(Space.md))
-        StartRows(ui.microCount, a.onTiny, a.onStuck)
+        if (habit != null) org.pagel.ai.ui.habits.HabitToday(habit) else StartRows(ui.microCount, a.onTiny, a.onStuck)
         // The note only when it says more than the title (Boss 2026-10-28: the pane repeated the title word for word).
         if (ui.text.trim() != ui.title.trim()) {
             Spacer(Modifier.height(12.dp))
@@ -297,8 +301,9 @@ private fun Header(ui: PanelUi, stopping: Boolean, a: PanelActions, onStop: () -
             copied = true
         }
         // slot: a done task keeps the Won't-do place (empty), so Copy never slides 48 dp right (round B checker #5).
+        // A habit has no Won't do (it is not a one-off), so it has no slot either; a done task keeps the slot.
         if (canStop) GlassIconButton(TabIcons.Ban, "Won't do, with the reason", on = stopping, size = 36.dp, label = "Won't do", onClick = onStop)
-        else Spacer(Modifier.size(Space.touch))
+        else if (!ui.open) Spacer(Modifier.size(Space.touch))
         a.onTurnIntoProject?.let { GlassIconButton(TabIcons.Folder, "Turn into project", size = 36.dp, label = "Turn into project", onClick = it) }
         // Ink with an amber rim, never red (Boss's rule); the Undo toast is the safety net.
         GlassIconButton(TabIcons.Trash, "Delete task", tint = Glass.Ink, size = 36.dp, label = "Delete", rim = Glass.Amber, onClick = a.onDelete)
@@ -377,14 +382,16 @@ private fun StopForm(onCancel: () -> Unit, onSave: (String, String) -> String?) 
 }
 
 @Composable
-private fun TitleBlock(ui: PanelUi, a: PanelActions) {
-    val haptics = LocalHapticFeedback.current
+private fun TitleBlock(ui: PanelUi, a: PanelActions, habit: org.pagel.ai.ui.habits.HabitPanel? = null) {
     Row(Modifier.fillMaxWidth().padding(start = Space.rowLead, end = Space.xl), verticalAlignment = Alignment.Top) {
-        Ring(ui.priority, done = !ui.open, title = ui.title, onTick = a.onComplete)
+        // A habit wears its icon tile where a task has its ring; finishing it today is in the Today card below.
+        if (habit != null) org.pagel.ai.ui.habits.HabitTitleTile(habit)
+        else Ring(ui.priority, done = !ui.open, title = ui.title, onTick = a.onComplete)
         Column(Modifier.weight(1f).padding(top = 10.dp)) {
             InlineField(ui.title, "Name the next action", "Title", MaterialTheme.typography.headlineSmall, Modifier.fillMaxWidth(), onSave = a.onTitle)
             Spacer(Modifier.height(6.dp))
-            InlineField(ui.doneWhen, "+ Add a finish line: Done when …", "Finish line", MaterialTheme.typography.bodyMedium, Modifier.fillMaxWidth(),
+            if (habit != null) org.pagel.ai.ui.habits.HabitIdentity(habit, Modifier.fillMaxWidth())
+            else InlineField(ui.doneWhen, "+ Add a finish line: Done when …", "Finish line", MaterialTheme.typography.bodyMedium, Modifier.fillMaxWidth(),
                 allowBlank = true, color = Glass.PrimaryInk, onSave = a.onDoneWhen)
         }
     }

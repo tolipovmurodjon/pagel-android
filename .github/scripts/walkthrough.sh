@@ -588,19 +588,47 @@ for k in 1 2 3 4 5; do
   $T adb shell input swipe 160 460 160 300 400; sleep 1
 done
 tap "Stretch for ten minutes" && shot habit-page 2.5
-# The page is mainly stats (Boss 2026-10-29); every setting sits behind ⋮.
-grep -q 'content-desc="Habit settings"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no ⋮ settings"; exit 1; }
+# The page is mainly stats (Boss 2026-10-29); the ⋮ opens the task panel, the one editor for a habit (Boss 2026-10-31).
+grep -q 'content-desc="Edit habit"' "$OUT/$(printf '%02d' $N)-habit-page.xml" || { log "WALKTHROUGH: the habit's page has no ⋮ edit"; exit 1; }
 grep -q 'text="Reminder · off"' "$OUT/$(printf '%02d' $N)-habit-page.xml" && { log "WALKTHROUGH: the reminder card is still on the page body"; exit 1; }
-# Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the sheet stays open.
+# Exact alarms are a special grant Boss gives once in Settings; the emulator is given it here so the panel stays open.
 $T adb shell appops set "$PKG" SCHEDULE_EXACT_ALARM allow
 ALARMS_BEFORE=$($T adb shell dumpsys alarm | grep -c "org.pagel.ai.HABIT_FIRE")
-tap "Habit settings" && shot reminder-sheet 2.5
-# The Reminder block sits under Look and Schedule in the sheet: scroll until its switch is on screen.
-for k in 1 2 3 4 5; do onscreen "Remind me" && break; $T adb shell input swipe 160 500 160 220 400; sleep 1; done
+hide_keyboard() { $T adb shell dumpsys input_method 2>/dev/null | grep -q 'mInputShown=true' && $T adb shell input keyevent 4; return 0; }
+tap "Edit habit" && shot habit-panel 2.5
+PANEL="$OUT/$(printf '%02d' $N)-habit-panel.xml"
+for want in 'Time: ' 'Repeat: ' 'Reminder: ' 'After: '; do
+  grep -q "content-desc=\"$want" "$PANEL" || { log "WALKTHROUGH: the habit's panel has no \"$want\" row"; exit 1; }
+done
+grep -q 'content-desc="Priority: \|content-desc="Pin to Today' "$PANEL" && { log "WALKTHROUGH: a habit's panel still shows Priority or Pin to Today"; exit 1; }
+grep -q 'content-desc="Time wheel' "$PANEL" && { log "WALKTHROUGH: the time wheel is open before any row was tapped"; exit 1; }
+log "-- the title is edited in place: tap it, type, Done; pagel.uz gets one PATCH title"
+TITLES=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"title"' "$FAKE_LOG")
+tap "Title" || { log "WALKTHROUGH: the habit panel has no Title field"; exit 1; }
+$T adb shell input keyevent 123; $T adb shell "input text 'x'"; shot habit-title-edit 1; $T adb shell input keyevent 66; sleep 1; hide_keyboard
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"title"' "$FAKE_LOG")" -gt "$TITLES" ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"title"' "$FAKE_LOG")" -gt "$TITLES" ] || { log "WALKTHROUGH: the habit's new title never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+# Put the name back, so the steps after this one still find "Stretch for ten minutes".
+tap "Title"; $T adb shell input keyevent 123; $T adb shell input keyevent 67; $T adb shell input keyevent 66; sleep 1; hide_keyboard
+log "-- Repeat → Every weekday: one PATCH every"
+tap 'Repeat: [^"]*' && shot habit-repeat-sheet 2
+tap "Every weekday" || { log "WALKTHROUGH: the Repeat sheet has no Every weekday"; exit 1; }
+for i in $(seq 1 30); do grep -qF 'PATCH /api/v1/tasks/t_h1 {"every":"weekday"}' "$FAKE_LOG" && break; sleep 1; done
+grep -qF 'PATCH /api/v1/tasks/t_h1 {"every":"weekday"}' "$FAKE_LOG" || { log "WALKTHROUGH: the habit's Repeat never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+tap "Every day" || true
+$T adb shell input keyevent 4; sleep 1
+log "-- Reminder on: the wheel shows only now, with the time it will ring"
 tap "Remind me" && shot reminder-on 1.5
 front reminder-on
-# The sheet reads the grant when it opens (checker #7): the walk granted it, so no "Exact time · Allow" row.
-grep -q 'content-desc="Exact time · Allow"' "$OUT/$(printf '%02d' $N)-reminder-on.xml" && { log "WALKTHROUGH: the sheet still says exact alarms are off after the grant"; exit 1; }
+RON="$OUT/$(printf '%02d' $N)-reminder-on.xml"
+grep -q 'content-desc="Time wheel 07:30"' "$RON" || { log "WALKTHROUGH: no time wheel at 07:30 once the reminder is on"; exit 1; }
+# The panel reads the grant when it opens (checker #7): the walk granted it, so no "Exact time · Allow" row.
+grep -q 'content-desc="Exact time · Allow"' "$RON" && { log "WALKTHROUGH: the panel still says exact alarms are off after the grant"; exit 1; }
+log "-- Freeze today, then Unfreeze (the Today card)"
+for k in 1 2 3 4 5; do onscreen 'Freeze today[^"]*' && break; $T adb shell input swipe 160 500 160 220 400; sleep 1; done
+tap 'Freeze today[^"]*' && shot habit-frozen 1.5
+onscreen "Unfreeze today" || { log "WALKTHROUGH: Freeze today did not turn into Unfreeze today"; exit 1; }
+tap "Unfreeze today" && shot habit-unfrozen 1.5
 $T adb shell input keyevent 4; shot reminder-closed 1.5
 # Proof the reminder is on AlarmManager (checker #7: the old grep for the data URI read 0 and was never asserted).
 sleep 2

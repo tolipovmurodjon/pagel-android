@@ -73,6 +73,8 @@ object Emoji {
         // A chosen look may carry its tile colour too ("coffee/amber", HabitLook): the emoji is the part before "/".
         val pick = chosen?.substringBefore('/')
         if (pick != null && pick in all) return pick
+        // A line icon picked in the task panel (HabitIcons) keeps its twin here, so the lists that still draw emoji agree.
+        org.pagel.ai.ui.habits.HabitIcons.emojiOf(pick)?.let { return it }
         val t = " ${title.lowercase()} "
         return KEYWORDS.firstOrNull { (_, words) -> words.any { it in t } }?.first ?: "seedling"
     }

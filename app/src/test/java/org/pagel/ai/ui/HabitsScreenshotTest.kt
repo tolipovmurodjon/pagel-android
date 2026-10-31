@@ -288,14 +288,6 @@ class HabitsScreenshotTest {
         assertTrue("chart spans the card: ${chart.width}", chart.width > 600f)
     }
 
-    @Test fun theSettingsSheetOpensOnScheduleAndTheEmojiGridSitsBehindTheTile() {
-        show { androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) { org.pagel.ai.ui.habits.HabitSettings(habits[0], ui(), org.pagel.ai.ui.habits.SheetAt.TOP, reminder = {}) } }
-        compose.onNodeWithText("SCHEDULE").performScrollTo().assertExists()
-        compose.onAllNodesWithText("Find an emoji").assertCountEquals(0)
-        compose.onNodeWithTag("look-tile").performClick()
-        compose.onNodeWithText("Find an emoji").assertExists()
-    }
-
     /** Boss 2026-10-29: "at most 5 things per row": the check, the emoji, the title, the progress, the streak. */
     @Test fun atMostFiveThingsPerRow() {
         show { HabitsScreen(ui(), pad) }
@@ -432,21 +424,21 @@ class HabitsScreenshotTest {
         assertTrue(started)
     }
 
-    /** Boss 2026-10-29: the page = header → stats → the month; every action sits behind ⋮ (and the bell chip). */
+    /** Boss 2026-10-29: the page = header → stats → the month; every setting is in the task panel, which ⋮ and the bell chip open. */
     @Test fun theHabitsPageIsMainlyStats() {
-        var at: org.pagel.ai.ui.habits.SheetAt? = null
-        show { HabitDetail(habits[0], ui(), pad, onSettings = { at = it }) }
+        var opened = 0
+        show { HabitDetail(habits[0], ui(), pad, onSettings = { opened++ }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-page-360x800.png")
         compose.onNode(hasTestTag("habit-stats")).assertIsDisplayed()
         compose.onNodeWithText("October 2026").performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithText("Reminder · 07:30").assertCountEquals(0)
         compose.onAllNodesWithText("Freeze today · 1 left this month").assertCountEquals(0)
         compose.onAllNodesWithText("Emoji").assertCountEquals(0)
-        // The bell chip is the quick glance (h1's reminder is on) and opens the sheet at Reminder.
+        // One editor (Boss 2026-10-31): the bell chip and the ⋮ both open the task panel, there is no second sheet.
         compose.onNodeWithContentDescription("Reminder on · 07:30").performClick()
-        assertEquals(org.pagel.ai.ui.habits.SheetAt.REMINDER, at)
-        compose.onNodeWithContentDescription("Habit settings").performClick()
-        assertEquals(org.pagel.ai.ui.habits.SheetAt.TOP, at)
+        assertEquals(1, opened)
+        compose.onNodeWithContentDescription("Edit habit").performClick()
+        assertEquals(2, opened)
         // Checker 3 #10: every chip in the header is one pill height (the bell chip stood taller).
         val pills = listOf("Morning", "Daily", "07:30", "10 min").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot }
         val mids = pills.map { it.center.y }
@@ -508,73 +500,6 @@ class HabitsScreenshotTest {
         show(1.5f) { org.pagel.ai.ui.habits.StatsCard(org.pagel.ai.data.habits.habitWeeks(h, t, emptyList(), LocalDate.parse(today))) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-stats-12-weeks-font-1.5.png")
         compose.onNode(hasTestTag("habit-weeks")).assertIsDisplayed()
-    }
-
-    /** The ⋮ sheet: Look · Schedule · Routine · Actions; "After" lists only real habits, never itself or a loop. */
-    @Test fun theSettingsSheetAndTheStackPicker() {
-        val weekly = habit("w1", "Run the weekly review", "2026-11-01", every = "week")
-        val u = ui(h = habits + weekly)
-        show { androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) { org.pagel.ai.ui.habits.HabitSettings(habits[0], u, org.pagel.ai.ui.habits.SheetAt.TOP, reminder = {}) } }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-sheet.png")
-        compose.onNodeWithText("LOOK").assertIsDisplayed()
-        compose.onNodeWithText("ROUTINE").performScrollTo()
-        compose.onNodeWithText("After · None").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("After: ☕ Coffee").performScrollTo().assertExists()
-        compose.onNodeWithContentDescription("After: Drink water").performScrollTo().assertExists()
-        // A weekly task is not a habit; h2 already comes after h1, so h1 after h2 would be a loop; never itself.
-        compose.onAllNodesWithContentDescription("After: Run the weekly review").assertCountEquals(0)
-        compose.onAllNodesWithContentDescription("After: Go through five saves in your Inbox").assertCountEquals(0)
-        compose.onAllNodesWithContentDescription("After: Stretch for ten minutes").assertCountEquals(0)
-        compose.onNodeWithContentDescription("After: 🪥 Brushing teeth").performScrollTo()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-after.png")
-    }
-
-    /** Checker 3 #3: the part chips keep their whole words at 360 dp ("Mornin / Afterno / Evenin / Anytim"). */
-    @Test fun thePartChipsAreWholeWords() {
-        show { androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) { org.pagel.ai.ui.habits.HabitSettings(habits[0], ui(), org.pagel.ai.ui.habits.SheetAt.TOP, reminder = {}) } }
-        compose.onNodeWithText("SCHEDULE").performScrollTo()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-schedule.png")
-        val parts = setOf("Morning", "Afternoon", "Evening", "Anytime")
-        assertNoCutText(allTexts().filter { n -> n.config.getOrNull(SemanticsProperties.Text)?.any { it.text in parts } == true }, "part chips 360")
-    }
-
-    /**
-     * Checker 3 #7: the Look picker open behind the tile, and a colour tapped: the tile above takes it at once (the
-     * live preview), from the habit's own saved colour.
-     */
-    @Test fun theLookPickerPreviewsTheColourLive() {
-        var p by androidx.compose.runtime.mutableStateOf(mapOf("h1" to HabitPrefEntity("h1", emoji = "lotus/teal")))
-        show {
-            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
-                org.pagel.ai.ui.habits.HabitSettings(
-                    habits[0], ui().copy(prefs = p), org.pagel.ai.ui.habits.SheetAt.LOOK, reminder = {},
-                    onColour = { c -> p = mapOf("h1" to HabitPrefEntity("h1", emoji = org.pagel.ai.data.habits.HabitLook.look("lotus", c))) },
-                )
-            }
-        }
-        compose.onNodeWithText("Find an emoji").assertExists()
-        compose.onNodeWithContentDescription("Colour teal").performScrollTo()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-look.png")
-        compose.onAllNodesWithContentDescription("Colour red").assertCountEquals(0)
-        compose.onNodeWithContentDescription("Colour amber").performScrollTo().performClick()
-        compose.onNodeWithTag("look-tile").performScrollTo()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-look-amber.png")
-        assertEquals("lotus/amber", p["h1"]?.emoji)
-        compose.onNodeWithContentDescription("Colour amber").assertIsSelected()
-    }
-
-    /** Checker 3 #7: the sheet opened from the bell chip, on a habit with a real reminder set. */
-    @Test fun theSettingsSheetWithAReminderSet() {
-        show {
-            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
-                org.pagel.ai.ui.habits.HabitSettings(habits[0], ui(), org.pagel.ai.ui.habits.SheetAt.REMINDER, reminder = {
-                    ReminderContent(habits[0], on = true, exact = true, onToggle = {}, onTime = {})
-                })
-            }
-        }
-        compose.waitForIdle()
-        compose.onNodeWithText("At 07:30 on the days it repeats, with a Done button.").performScrollTo().assertIsDisplayed()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-settings-reminder.png")
     }
 
     @Test fun historyCalendar() {
