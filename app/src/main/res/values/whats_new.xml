@@ -8,6 +8,13 @@
 -->
 <resources>
     <string-array name="whats_new_items">
+        <item>#0.3.43 · Inbox</item>
+        <item>Tap + on Today or in the Inbox, type, press Enter|today</item>
+        <item>Paste a list: one save each, one Undo|today</item>
+        <item>Share a link from any app to PAGEL|more</item>
+        <item>Old pile: saves from before 1 November, apart|more</item>
+        <item>Old pile: drop a whole topic in one tap|more</item>
+        <item>Learn is now Remember; a Note can be one word|more</item>
         <item>#0.3.41 · Today v2</item>
         <item>The top task is a Now card: Open or What now?|today</item>
         <item>One big count that drops as you tick|today</item>
