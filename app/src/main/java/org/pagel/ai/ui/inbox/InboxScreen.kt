@@ -420,13 +420,14 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
 @Composable
 private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier = Modifier) {
     Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
+        // The order pill leads, so it is always in reach; the chips scroll behind it.
+        GlassChip(TabIcons.Clock, ui.order.label, set = ui.order != InboxOrder.NEWEST, description = ui.order.label) { actions.cycleOrder() }
         val all = ui.sources.sumOf { it.count }
         GlassChip(TabIcons.Inbox, "All \u00B7 $all", set = ui.source == null, description = "All \u00B7 $all") { actions.setSource(null) }
         for (s in ui.sources) {
             val icon = when (s.key) { "note" -> TabIcons.StickyNote; "web" -> TabIcons.ArrowUpRight; else -> TabIcons.Sparkles }
             GlassChip(icon, "${s.label} \u00B7 ${s.count}", set = ui.source == s.key, description = "${s.label} \u00B7 ${s.count}") { actions.setSource(s.key) }
         }
-        GlassChip(TabIcons.Clock, ui.order.label, set = ui.order != InboxOrder.NEWEST, description = ui.order.label) { actions.cycleOrder() }
     }
 }
 
