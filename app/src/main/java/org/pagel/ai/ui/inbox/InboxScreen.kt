@@ -969,7 +969,10 @@ private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
     // card keeps the room its picture needs at 360x780.
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         val guess = card.guess
-        if (guess != null) GuessButton(card, guess, ui, firstUse = guess.name !in explained.value) { used(guess); actions.choose(card, guess, Throw.None) }
+        if (guess != null) GuessButton(card, guess, ui, firstUse = guess.name !in explained.value, armed = armed && guess == Choice.DROP) {
+            // The big button guards Drop as the small one does: the first tap arms it, the second drops.
+            if (guess == Choice.DROP && !armed) armed = true else { armed = false; used(guess); actions.choose(card, guess, Throw.None) }
+        }
         else AiReading(ui.reading)
         Text(
             "Can I do something about it?", style = MaterialTheme.typography.labelMedium, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -1064,12 +1067,12 @@ private fun dockSizes(width: Dp): Pair<Dp, androidx.compose.ui.unit.TextUnit> {
  * today's keeps full, a Learn becomes a Note and says why, as on the web.
  */
 @Composable
-private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, firstUse: Boolean = false, onClick: () -> Unit) {
+private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, firstUse: Boolean = false, armed: Boolean = false, onClick: () -> Unit) {
     val look = guess.look
     val press = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(18.dp)
     // The hint alone, in full white (the .92 white measured 4.36:1 on Learn's light end); "AI's pick" is the sparkle.
-    val sub = if (guess != card.pick) "${ui.cap}/${ui.cap} remembered · one line" else if (firstUse) "e.g. " + look.eg else look.hint
+    val sub = if (armed) "Tap again to drop" else if (guess != card.pick) "${ui.cap}/${ui.cap} remembered · one line" else if (firstUse) "e.g. " + look.eg else look.hint
     // One row tall (64 dp, Boss 2026-10-28: the pill read as a slab); it grows only when 1.3x+ text needs two lines.
     Row(
         Modifier.fillMaxWidth().then(if (LocalDensity.current.fontScale <= 1.2f) Modifier.height(64.dp) else Modifier.heightIn(min = 64.dp)).pressScale(press)
