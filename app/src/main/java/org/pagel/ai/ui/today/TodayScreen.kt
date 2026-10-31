@@ -575,7 +575,6 @@ private fun TaskRow(
             Meta(row, today)
             if (hero) Row(Modifier.padding(top = Space.sm)) { NowPill("Open", onClick = onOpen) }
         }
-        }
     }
 }
 
