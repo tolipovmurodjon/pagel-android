@@ -62,7 +62,7 @@ class HabitPanelLogicTest {
 
     @Test fun aNewHabitTakesItsIconFromItsWords() {
         assertEquals("water", HabitIcons.keyFor("Drink water", null))
-        assertEquals("sparkles", HabitIcons.keyFor("Zzzz qqq", null))
+        assertEquals("leaf", HabitIcons.keyFor("Zzzz qqq", null))
         assertEquals("flame", HabitIcons.keyFor("Drink water", "flame/teal"))
     }
 

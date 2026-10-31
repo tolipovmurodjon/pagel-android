@@ -88,7 +88,7 @@ class HabitPanelScreenshotTest {
     private val ticks = listOf(HabitTickEntity("2026-10-27", "h1"), HabitTickEntity("2026-10-26", "h1"), HabitTickEntity("2026-10-27", "h2"))
     // An old saved look (an emoji key, with a colour) and an old moment with its glyph: both must show without any emoji.
     private val prefs = listOf(
-        HabitPrefEntity("h1", emoji = "lotus/teal", after = "moment:☕ Coffee", identity = "I'm someone who moves every morning"),
+        HabitPrefEntity("h1", emoji = "lotus/teal", after = "moment:" + org.pagel.ai.data.habits.HabitLook.MOMENTS[0], identity = "I'm someone who moves every morning"),
         HabitPrefEntity("h2", after = "h1"),
     )
 
@@ -281,12 +281,10 @@ class HabitPanelScreenshotTest {
     @Test fun theTitleIsEditedInPlaceTrimmedAndAnEmptyOneIsRestored() {
         val saved = mutableListOf<String>()
         show { TaskPanelContent(panelUi(habits[0]), day, PanelActions(onTitle = { saved += it }), habit = habitPanel(habits[0])) }
-        compose.onNodeWithContentDescription("Title").performClick()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-panel-title-edit.png")
         compose.onNodeWithContentDescription("Title").performTextReplacement("  Stretch longer  ")
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-panel-title-edit.png")
         compose.onNodeWithContentDescription("Title").performImeAction()
         assertEquals(listOf("Stretch longer"), saved)
-        compose.onNodeWithContentDescription("Title").performClick()
         compose.onNodeWithContentDescription("Title").performTextReplacement("   ")
         compose.onNodeWithContentDescription("Title").performImeAction()
         assertEquals("an empty title saves nothing", listOf("Stretch longer"), saved)
