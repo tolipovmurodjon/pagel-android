@@ -23,6 +23,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
@@ -274,7 +275,7 @@ class HabitPanelScreenshotTest {
         // h2 already comes after h1, so h1 may not come after h2 (a loop); itself is never offered.
         compose.onAllNodesWithContentDescription("After: Go through five saves in your Inbox").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("After: Stretch for ten minutes").assertCountEquals(0)
-        compose.onNodeWithContentDescription("After: Drink water").performClick()
+        compose.onNodeWithContentDescription("After: Drink water").performScrollTo().performClick()
         assertEquals(org.pagel.ai.data.habits.HabitLook.Anchor.Habit("h3"), anchor)
         judge("after open")
     }
