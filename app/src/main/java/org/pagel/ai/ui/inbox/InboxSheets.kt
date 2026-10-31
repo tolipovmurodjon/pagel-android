@@ -358,7 +358,7 @@ fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onRetry: 
                     Text(tidy.sources.joinToString(" · ") { (name, count) -> "$name\u00A0$count" }, style = MaterialTheme.typography.bodyLarge, color = Glass.Ink,
                         modifier = Modifier.padding(horizontal = Space.lg, vertical = Space.md))
                 }
-                Text("Nothing is sent for 5 seconds; one Undo stops all $n. None of it counts toward today's 20.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, bottom = Space.md))
+                Text("Nothing is sent for 5 seconds; one Undo stops all $n. None of it counts toward today's 5.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, bottom = Space.md))
                 PrimaryButton("Move all $n to Someday", TabIcons.Moon, enabled = true, color = Glass.Primary, onClick = onSomeday)
                 Spacer(Modifier.height(Space.sm))
                 QuietButton("Drop all $n", TabIcons.Trash, onDrop)
