@@ -72,7 +72,7 @@ class RitualPillsViewModel @Inject constructor(private val repo: RitualsReposito
         val day = repo.ritualDay()
         RitualPills(
             evening = Rituals.evening(repo.now()), shutTonight = s.shutDay == day,
-            reviewDue = (s.fetchedAt > 0 || s.lastReview != null) && Rituals.reviewDue(s.lastReview, day),
+            reviewDue = (s.fetchedAt > 0 || s.lastReview != null) && Rituals.reviewPill(s.lastReview, day),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RitualPills())
 

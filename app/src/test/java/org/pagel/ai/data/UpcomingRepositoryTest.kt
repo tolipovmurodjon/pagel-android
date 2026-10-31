@@ -140,17 +140,21 @@ class UpcomingRepositoryTest {
      * Checker P4 #1: a habit's due is its series. A drop of "Gym" (tue,thu,sun) on a Monday would put it on Monday and
      * take Thursday away; a late habit sent to today would undo today's tick on pagel.uz. Neither moves, nothing is sent.
      */
-    @Test fun aHabitIsNeverRescheduledNeitherByADropNorByMoveAll() = runBlocking {
+    @Test fun aHabitIsNeverRescheduledByADropButMoveAllRollsAMissedRepeatToTodayOnceAndUndoRestoresIt() = runBlocking {
         db.dao().upsertTasks(listOf(task("t_gym", "2026-10-29 18:00", every = "tue,thu,sun"), task("t_late", "2026-10-26 07:30", every = "day"), task("t_1", "2026-10-25")))
         val r = repo()
         assertNull(r.reschedule("t_gym", LocalDate.parse("2026-11-02")))
         assertEquals("2026-10-29 18:00", db.dao().taskOnce("t_gym")!!.due)
         assertEquals(SyncStatus.SYNCED, db.dao().taskOnce("t_gym")!!.syncStatus)
         val moved = r.moveAllToToday(listOf("t_late", "t_1"))
-        assertEquals(listOf("t_1"), moved.map { it.id })
+        assertEquals(listOf("t_late", "t_1"), moved.map { it.id })
+        assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_late")!!.due)
+        // Nothing left to move: a second tap sends nothing more.
+        assertTrue(r.moveAllToToday(listOf("t_late", "t_1")).isEmpty())
+        r.undoMoves(moved)
         assertEquals("2026-10-26 07:30", db.dao().taskOnce("t_late")!!.due)
         assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
-        assertEquals(listOf("""t_1 {"due":"2026-10-28"}"""), patches)
+        assertTrue(patches.isEmpty())
     }
 
     @Test fun moveAllToTodayMovesEachOverdueAndUndoWhileWaitingPutsThemBack() = runBlocking {

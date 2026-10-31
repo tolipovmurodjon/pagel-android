@@ -73,6 +73,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -99,9 +100,9 @@ import kotlin.math.roundToInt
 private val TASHKENT = ZoneId.of("Asia/Tashkent")
 private val HEAD_DATE = DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.UK)
 
-/** The flag colours: P1 deep amber (never red, Boss's rule), P2 orange, P3 blue, P4 none. */
-private val FLAGS = listOf(Color(0xFF92400E), Color(0xFFEB8909), Color(0xFF246FE0))
-private val RingIdle = Color(0xFF9AA2BB)
+/** The ring colours: P1 amber (never red, never brown), P2 mint, P3 and none soft ink; all 3:1 on white. */
+private val FLAGS = listOf(Color(0xFFC77700), Glass.Primary, Color(0xFF7A839B))
+private val RingIdle = Color(0xFF7A839B)
 
 @Composable
 fun TodayRoute(
@@ -191,7 +192,9 @@ fun TodayScreen(
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot(); overlayWidth = it.size.width.toFloat() }) {
         // One gap between all blocks (spacing audit #19: 16 under the header, 12 under the bar, 8 under the pills).
-        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
+        LazyColumn(Modifier.fillMaxSize(), state = list,
+            // The last row clears the tab bar and the + (56 dp + its gap): "All today" never ends under them (Boss 2026-10-31).
+            contentPadding = PaddingValues(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding() + 72.dp), verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
             if (compassLine != null) item(key = "compass", contentType = "compass") { org.pagel.ai.ui.compass.CompassTodayLine(compassLine) }
             if (namozLine != null) item(key = "namoz", contentType = "namoz") { org.pagel.ai.ui.namoz.NamozTodayLine(namozLine) }
             item(key = "head", contentType = "head") {
@@ -232,7 +235,9 @@ fun TodayScreen(
                                 AllToday(ui.all, today, seen, reduce, dragPreview, onOpen = { openTask(it) }, onReorder = onReorder) { row, centre -> finish(row, centre) }
                             } else for ((i, row) in ui.rows.withIndex()) key(row.id) {
                                 if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
-                                TaskRow(row, today, isNew = seen.isNotEmpty() && row.id !in seen, reduce = reduce, onOpen = { openTask(row.id) }) { centre -> finish(row, centre) }
+                                // The first open task is the "Now" card: a big title, Open, and What now? folded into it.
+                                TaskRow(row, today, isNew = seen.isNotEmpty() && row.id !in seen, reduce = reduce, onOpen = { openTask(row.id) },
+                                    hero = i == 0 && !row.done, onWhatNow = if (i == 0) onWhatNow else null) { centre -> finish(row, centre) }
                             }
                             // "All today · 9" (Boss 2026-10-29: "3 by default, then see more"): a quiet row that opens the full
                             // list in place; the chevron up folds it back to 3.
@@ -241,39 +246,59 @@ fun TodayScreen(
                     }
                 }
             }
-            // What now? (core round 4): one calm button under the list, only while something is open. It ends where the +
-            // begins (20 dp edge + 56 dp + a gap), so the + never covers it at any scroll or with a toast lifting the +.
-            if (onWhatNow != null && !ui.loading && ui.rows.any { !it.done }) item(key = "whatnow", contentType = "whatnow") {
-                WhatNowButton(Modifier.padding(start = Space.gutter, end = FabClear), onWhatNow)
-            }
+            // The empty space under the hero says the next timed thing, so the page never ends in nothing.
+            nextTimed(ui.all, today)?.let { (row, time) -> item(key = "next", contentType = "next") {
+                NextTimedRow(time, row.title, Modifier.padding(horizontal = Space.gutter)) { openTask(row.id) }
+            } }
         }
         for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
     }
 }
 
-/** Room the + button takes at the screen's right edge (AppShell.BottomActions: 20 dp edge, 56 dp drop) plus a gap. */
-private val FabClear = 20.dp + 56.dp + Space.md
-
-/** The calm "What now?" button: one pick for right now, never a list. */
+/** A pill on the Now card: Open (filled mint) and What now? (outlined); 48 dp to touch, one action each. */
 @Composable
-internal fun WhatNowButton(modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun NowPill(label: String, filled: Boolean, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    Box(
+        Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label, style = MaterialTheme.typography.labelLarge, color = if (filled) Color.White else Glass.PrimaryInk, maxLines = 1,
+            modifier = Modifier.background(if (filled) Glass.Primary else Color.White.copy(alpha = 0.7f), CircleShape)
+                .then(if (filled) Modifier else Modifier.border(1.dp, Glass.Primary.copy(alpha = 0.5f), CircleShape))
+                .padding(horizontal = Space.lg, vertical = Space.sm),
+        )
+    }
+}
+
+/** The first open task of today with a time of day, in Boss's order: its row and the time ("14:00"). */
+internal fun nextTimed(all: List<TodayRow>, today: LocalDate): Pair<TodayRow, String>? =
+    all.firstNotNullOfOrNull { r -> todayMeta(r.due, today)?.takeIf { it.tone == DueTone.TODAY }?.let { r to it.text } }
+
+/** "Next · 14:00 Gym": one quiet glass row under the Now card. */
+@Composable
+internal fun NextTimedRow(time: String, title: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Row(
         modifier.fillMaxWidth().heightIn(min = Space.touch).pressScale(press)
-            .background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(24.dp))
-            .border(1.dp, Glass.Aurora1.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
+            .background(Color.White.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
             .clickable(press, indication = null, role = Role.Button, onClick = onClick)
-            .semantics(mergeDescendants = true) { contentDescription = "What now?" }
-            .padding(horizontal = Space.lg, vertical = Space.md),
+            .semantics(mergeDescendants = true) { contentDescription = "Next · $time $title" }
+            .padding(horizontal = Space.lg, vertical = Space.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(TabIcons.Zap, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(20.dp))
+        Icon(TabIcons.Clock, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(Space.md))
         Column(Modifier.weight(1f)) {
-            Text("What now?", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, maxLines = 1)
-            Text("One thing for right now", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Next", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
+                Spacer(Modifier.width(Space.sm))
+                Text(time, style = Glass.NumberText, color = Glass.Ink, maxLines = 1)
+            }
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = Glass.Ink, maxLines = 4)
         }
-        Icon(TabIcons.ChevronRight, contentDescription = null, tint = Glass.Muted, modifier = Modifier.size(16.dp))
     }
 }
 
@@ -368,9 +393,14 @@ private fun Header(ui: TodayUiState, today: LocalDate, closed: Boolean = false, 
         Text(today.format(HEAD_DATE), style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
         Text("Today", style = MaterialTheme.typography.headlineLarge, color = Glass.Ink, modifier = Modifier.semantics { heading() })
         // One counting language on Today: "12 done · 4 left" lives in the bar; the header names the day only.
-        val count = if (closed) "Closed for tonight" else "${ui.open} left"
-        // Only "Offline" is worth a word (PHASE-BRIEF: no "Syncing"); the waiting chip already says what waits.
-        Text(if (ui.status != "Offline") count else "$count · Offline", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+        // The one count of the day, with weight: it changes with a slide when a task is ticked. The bar says only "done".
+        if (closed) Text("Closed for tonight", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+        else if (!ui.loading) Row(verticalAlignment = Alignment.Bottom) {
+            androidx.compose.animation.AnimatedContent(ui.open, label = "left") { n ->
+                Text("$n left", style = MaterialTheme.typography.headlineSmall, color = Glass.PrimaryInk)
+            }
+            if (ui.status == "Offline") Text("  Offline", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(bottom = 3.dp))
+        }
     }
     // Round B (A): what waits to reach pagel.uz is never invisible; a tap sends it now. In the header's row (taller than
     // the chip), never a list item: the list never moves when it comes or goes (spacing audit #3).
@@ -406,10 +436,20 @@ internal fun WaitingChip(n: Int, modifier: Modifier = Modifier, onClick: () -> U
 @Composable
 internal fun DayProgressBar(p: DayProgress, nudge: String?, modifier: Modifier = Modifier) {
     val grown by androidx.compose.animation.core.animateFloatAsState(p.fraction, spring(dampingRatio = 0.8f, stiffness = 300f), label = "progress")
+    // The edge brightens for ~270 ms when a task is ticked (not at the first frame, not with reduced motion).
+    val ctx = LocalContext.current
+    val flash = remember { Animatable(0f) }
+    var lastDone by remember { mutableStateOf(p.done) }
+    LaunchedEffect(p.done) {
+        if (p.done > lastDone && !reducedMotion(ctx)) { flash.animateTo(1f, tween(90, easing = EaseOutStrong)); flash.animateTo(0f, tween(180)) }
+        lastDone = p.done
+    }
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.semantics(mergeDescendants = true) { contentDescription = "${p.done} of ${p.total} done today" }, verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f).height(8.dp).background(Glass.Ink.copy(alpha = 0.07f), RoundedCornerShape(4.dp))) {
-                Box(Modifier.fillMaxWidth(grown.coerceIn(0f, 1f)).height(8.dp).background(Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)), RoundedCornerShape(4.dp)))
+            Box(Modifier.weight(1f).height(14.dp).background(Color.White.copy(alpha = 0.6f), CircleShape).border(1.dp, Color.White.copy(alpha = 0.8f), CircleShape)) {
+                Box(Modifier.fillMaxWidth(grown.coerceIn(0f, 1f)).height(14.dp).background(Brush.horizontalGradient(listOf(Glass.Aurora1, Glass.Primary)), CircleShape)) {
+                    Box(Modifier.matchParentSize().graphicsLayer { alpha = flash.value * 0.55f }.background(Color.White, CircleShape))
+                }
             }
             Spacer(Modifier.width(10.dp))
             // slot: tabular figures in a fixed least width, so "9 of 10 ✓" and "1 of 6 ✓" never change the bar's length (#22).
@@ -462,8 +502,11 @@ private fun Note(title: String, line: String) {
  * One task: the ring, the title, then when + project. Ticked: the ring fills and pops, the tick draws itself, and
  * after 0.85 s the row folds in 0.38 s (the web's "finish moment"). A newly dealt row slides up into the free slot.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun TaskRow(row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boolean, onOpen: () -> Unit, onTick: (Offset) -> Unit) {
+private fun TaskRow(
+    row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boolean, onOpen: () -> Unit, hero: Boolean = false, onWhatNow: (() -> Unit)? = null, onTick: (Offset) -> Unit,
+) {
     val fold = remember { Animatable(1f) }
     val enter = remember { Animatable(if (isNew && !reduce) 0f else 1f) }
     LaunchedEffect(Unit) { if (enter.value < 1f) enter.animateTo(1f, tween(460, easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1.15f))) }
@@ -479,6 +522,7 @@ private fun TaskRow(row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boo
             .layout { m, c -> val p = m.measure(c); layout(p.width, (p.height * fold.value).roundToInt()) { p.place(0, 0) } }
             .clipToBounds()
             .graphicsLayer { alpha = fold.value * enter.value; translationY = (1f - enter.value) * 14.dp.toPx() }
+            .then(if (hero) Modifier.padding(horizontal = 6.dp, vertical = 4.dp).background(Glass.PrimarySoft.copy(alpha = 0.7f), RoundedCornerShape(20.dp)) else Modifier)
             .padding(start = 6.dp, end = 16.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -490,8 +534,13 @@ private fun TaskRow(row: TodayRow, today: LocalDate, isNew: Boolean, reduce: Boo
                 .clickable(open, indication = null, enabled = !row.done, role = Role.Button, onClickLabel = "Open") { onOpen() }
                 .padding(top = 12.dp, bottom = 10.dp),
         ) {
-            Text(row.title, style = MaterialTheme.typography.bodyLarge, color = titleColor, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (hero) Text("Now", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
+            Text(row.title, style = if (hero) MaterialTheme.typography.headlineSmall.copy(fontSize = 20.sp, lineHeight = 25.sp) else MaterialTheme.typography.bodyLarge, color = titleColor, maxLines = if (hero) 5 else 3, overflow = TextOverflow.Ellipsis)
             Meta(row, today)
+            if (hero && onWhatNow != null) androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                NowPill("Open", filled = true, onClick = onOpen)
+                NowPill("What now?", filled = false, onClick = onWhatNow)
+            }
         }
     }
 }
@@ -501,8 +550,9 @@ private fun Meta(row: TodayRow, today: LocalDate) {
     // The web Habits card's meta line, 12.5 sp, in the body face (mono only on numbers, checker 2026-10-28 #6).
     val small = MaterialTheme.typography.labelSmall
     Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-        dueLabel(row.due, today)?.let { d ->
-            val c = when (d.tone) { DueTone.LATE -> Glass.Risk; DueTone.TODAY -> Glass.Primary; else -> Glass.Muted }
+        // Today is today: a future date is no chip here; late says "since Tue" in amber, a time says the time.
+        todayMeta(row.due, today)?.let { d ->
+            val c = when (d.tone) { DueTone.LATE -> Glass.AmberInk; DueTone.TODAY -> Glass.PrimaryInk; else -> Glass.Muted }
             androidx.compose.material3.Icon(TabIcons.Calendar, contentDescription = null, tint = c, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(4.dp))
             Text(d.text, style = small, color = c)
@@ -545,11 +595,11 @@ internal fun TickRing(priority: Int, done: Boolean, title: String, onTick: (Offs
     ) {
         Canvas(Modifier.size(22.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }) {
             val r = size.minDimension / 2
-            val line = 1.5.dp.toPx()
+            val line = (if (priority == 0) 2.25.dp else 1.75.dp).toPx()
             // Done = bright mint with an ink tick, as Habits, Completed and the panel draw it (no 4th green).
             if (done) drawCircle(Brush.linearGradient(listOf(Glass.Aurora2, Glass.Aurora1)), r)
             else {
-                if (flag != null) drawCircle(flag.copy(alpha = 0.08f), r)
+                if (flag != null) drawCircle(flag.copy(alpha = if (priority == 0) 0.12f else 0.06f), r)
                 drawCircle(flag ?: RingIdle, r - line / 2, style = Stroke(line))
             }
             // The tick (M5.5 10.5 l3 3 6-7 on a 20-unit box), drawn up to [draw] of its length.

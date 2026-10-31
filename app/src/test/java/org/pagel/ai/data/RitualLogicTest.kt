@@ -23,6 +23,13 @@ class RitualLogicTest {
     )
     private fun ms(s: String) = OffsetDateTime.parse(s).toInstant().toEpochMilli()
 
+    @Test fun theReviewPillShowsOnlyOnASundayWhenDueAndOtherDaysItLivesInMore() {
+        // 2026-11-01 is a Sunday, 2026-10-31 a Saturday.
+        assertTrue(Rituals.reviewPill(null, "2026-11-01"))
+        assertFalse(Rituals.reviewPill(null, "2026-10-31"))
+        assertFalse(Rituals.reviewPill("2026-10-28", "2026-11-01"))
+    }
+
     @Test fun theRitualDayIsLastNightUntilFiveInTashkent() {
         assertEquals("2026-10-28", Rituals.ritualDay(ms("2026-10-28T23:59:00+05:00")))
         assertEquals("2026-10-28", Rituals.ritualDay(ms("2026-10-29T04:59:00+05:00")))
