@@ -584,6 +584,10 @@ def _r4_post_h(self):
     b = json.loads(body or "{}")
     if b.get("spice") not in (1, 2, 3) or not b.get("id"):
         return self.send(400, {"error": "Send {id, spice: 1-3}."})
+    # A slow AI for every task but the first walk step's: the sheet can be closed while it writes (Boss 2026-10-31).
+    if b.get("id") != "t_now2":
+        import time
+        time.sleep(3)
     return self.send(200, {"steps": TINY})
 
 def _r4_patch_h(self):

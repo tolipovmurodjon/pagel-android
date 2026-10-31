@@ -27,7 +27,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 /** PATCH fields only the 2026-10-27 pagel.uz knows; it names what it understood in `applied` (task-api.ts). */
-val NEW_FIELDS = setOf("title", "every", "remove", "restore", "not_doing", "times", "project", "sort", "milestone", "micro", "today_sort")
+val NEW_FIELDS = setOf("title", "every", "remove", "restore", "not_doing", "times", "project", "sort", "milestone", "micro", "today_sort", "context")
 
 /** How long a delete waits on the phone before it leaves, so Undo costs pagel.uz nothing (Gmail's "Undo send"). */
 const val UNDO_WINDOW_MS = 5_000L
@@ -142,6 +142,9 @@ class TaskRepository(
     /** Links a task to one of its project's milestones (null unlinks). */
     suspend fun milestone(id: String, milestone: String?): Long? = edit(id, buildJsonObject { put("milestone", milestone) }) { it.copy(milestone = milestone) }
 
+    /** The task's GTD context (phone | laptop | home | out | any); null clears it back to inferred. */
+    suspend fun context(id: String, context: String?): Long? = edit(id, buildJsonObject { put("context", context) }) { it.copy(context = context) }
+
     /**
      * The micro-steps "Make it tiny" wrote (core round 4): saved on the task as its `micro` list, apart from the GTD steps;
      * `[]` clears them. Each is cut at 120 like a step.
@@ -252,6 +255,7 @@ class TaskRepository(
                 "project" -> put("project", before.project)
                 "sort" -> put("sort", before.sort)
                 "milestone" -> put("milestone", before.milestone)
+                "context" -> put("context", before.context)
                 "micro" -> put("micro", kotlinx.serialization.json.Json.parseToJsonElement(before.micro.ifBlank { "[]" }))
                 "today_sort" -> { put("today_sort", oldSort); put("today_day", set["today_day"] ?: JsonPrimitive(tashkentDay())) }
             }
@@ -320,6 +324,7 @@ suspend fun PagelDao.applyWas(taskId: String, was: JsonObject, at: Long = System
         "project" -> t.copy(project = v.str() ?: t.project)
         "sort" -> t.copy(sort = v.jsonPrimitive.doubleOrNull ?: t.sort)
         "milestone" -> t.copy(milestone = v.str())
+        "context" -> t.copy(context = v.str())
         "micro" -> t.copy(micro = (v as? JsonArray)?.toString() ?: "[]")
         else -> t
     }
