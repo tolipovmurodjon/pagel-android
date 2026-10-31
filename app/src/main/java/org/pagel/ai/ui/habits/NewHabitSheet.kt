@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +38,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
@@ -74,7 +76,8 @@ internal fun NewHabitContent(part: Part, onAdd: (String, Part, String, Boolean) 
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val ok = name.isNotBlank()
     fun add() { if (ok) { onAdd(name.trim(), at, every, remind); onDismiss() } }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
+    // imePadding: the sheet rides above the keyboard, Add always in view.
+    Column(Modifier.fillMaxWidth().imePadding(), verticalArrangement = Arrangement.spacedBy(Space.md)) {
             Row(Modifier.padding(horizontal = Space.textEdge), verticalAlignment = Alignment.CenterVertically) {
                 HabitTile(HabitIcons.iconFor(name, null), HabitIcons.defaultColour(name, null), 40.dp)
                 Spacer(Modifier.width(Space.md))
@@ -106,11 +109,15 @@ internal fun NewHabitContent(part: Part, onAdd: (String, Part, String, Boolean) 
                 }
             }
             val press = remember { MutableInteractionSource() }
+            // Solid mint with white words when it can be pressed; flat grey with a hint when it cannot (never a pale pill that looks
+            // disabled while enabled, Boss 2026-10-31).
             Text(
-                "Add habit", style = MaterialTheme.typography.labelLarge, color = if (ok) Glass.PrimaryInk else Glass.Muted, textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = Space.gutter).heightIn(min = Space.touch).pressScale(press)
-                    .background(if (ok) Glass.PrimarySoft else Color.White.copy(alpha = 0.4f), CircleShape)
-                    .clickable(press, indication = null, enabled = ok, role = Role.Button, onClick = ::add).padding(vertical = Space.md),
+                if (ok) "Add habit" else "Type a name", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = if (ok) Color.White else Glass.Muted, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = Space.gutter).heightIn(min = Space.row).pressScale(press)
+                    .background(if (ok) Glass.Primary else Glass.Ink.copy(alpha = 0.08f), CircleShape)
+                    .clickable(press, indication = null, enabled = ok, role = Role.Button, onClick = ::add).padding(vertical = Space.md)
+                    .semantics { contentDescription = if (ok) "Add habit" else "Add habit, type a name first" },
             )
             Spacer(Modifier.height(SheetBottom))
     }

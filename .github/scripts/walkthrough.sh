@@ -621,6 +621,18 @@ $T adb shell input swipe 280 "$SY" 40 "$SY" 300
 sleep 1
 shot habits-week-no-further 1.5
 grep -qF "text=\"$TODAY_WD\"" "$OUT/$(printf '%02d' $N)-habits-week-no-further.xml" || { log "WALKTHROUGH: a swipe left past this week moved the day"; exit 1; }
+# Boss 2026-10-31 (0.3.41): a swipe back left the strip half empty. After a slow back, a fast back and two forward swipes the
+# strip must show one whole week: all 7 weekdays on screen.
+week_whole() {
+  local x; x="$OUT/$(printf '%02d' $N)-$1.xml"
+  for d in Monday Tuesday Wednesday Thursday Friday Saturday Sunday; do
+    grep -q "content-desc=.$d " "$x" || { log "WALKTHROUGH: after $1 the week strip has no $d (stuck half-way)"; exit 1; }
+  done
+}
+$T adb shell input swipe 40 "$SY" 280 "$SY" 900; sleep 1; shot habits-week-slow-back 1; week_whole habits-week-slow-back
+$T adb shell input swipe 40 "$SY" 280 "$SY" 120; sleep 1; shot habits-week-fast-back 1; week_whole habits-week-fast-back
+$T adb shell input swipe 280 "$SY" 40 "$SY" 300; sleep 1; shot habits-week-forward-1 1; week_whole habits-week-forward-1
+$T adb shell input swipe 280 "$SY" 40 "$SY" 300; sleep 1; shot habits-week-forward-2 1; week_whole habits-week-forward-2
 $T adb shell dumpsys gfxinfo "$PKG" > "$OUT/gfxinfo-week-swipe.txt"
 JANK=$(grep -E "Janky frames:" "$OUT/gfxinfo-week-swipe.txt" | head -1)
 log "   JANK on the week swipes (target < 5 % on a phone; an emulator draws in software): ${JANK:-unknown}"

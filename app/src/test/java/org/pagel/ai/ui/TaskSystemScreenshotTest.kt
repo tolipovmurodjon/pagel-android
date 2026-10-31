@@ -28,6 +28,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performScrollToNode
@@ -452,8 +454,8 @@ class TaskSystemScreenshotTest {
         show { org.pagel.ai.ui.shell.WhatsNewContent({ opened = it }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/whats-new-360x800.png")
         // The counter is this version's only; its lines are open, the older versions are folded rows.
-        compose.onNodeWithText("0/7").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Try: Swipe the week: it follows your finger").performClick()
+        compose.onAllNodesWithText("0/7").onFirst().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Try: Swipe the week back and forward").performClick()
         assertEquals("habits", opened)
         compose.onAllNodesWithContentDescription("Try: 🧭 Compass: goals only you can read").assertCountEquals(0)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("0.3.30 · Compass"))

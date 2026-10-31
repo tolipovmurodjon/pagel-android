@@ -275,7 +275,8 @@ fun HabitsScreen(
                 }
             }
             // The glass bar must never sit on the last card: its own clearance, then the page's edge fade takes over.
-            item(key = "end", contentType = "end") { Spacer(Modifier.height(Space.xxl)) }
+            // Browsing another day shows the Today pill above the bar: the list leaves it its own strip, so it never covers a card.
+            item(key = "end", contentType = "end") { Spacer(Modifier.height(Space.xxl + if (board != null && board.selected != board.today) Space.touch + Space.md else 0.dp)) }
         }
         // Browsing another day: one pill back to today (Boss's reference "Today").
         if (board != null && board.selected != board.today) {
