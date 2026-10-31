@@ -47,7 +47,7 @@ data class DayProgress(val done: Int, val open: Int) {
     val total: Int get() = done + open
     val fraction: Float get() = if (total == 0) 0f else done.toFloat() / total
     // One number, one meaning (Boss 2026-10-28: "what is that 12 of 13"): what is done and what is left.
-    val text: String get() = "$done done · $open left"
+    val text: String get() = "$done done"
 }
 
 /** The nudge after a tick: the next task and a small first slice of time ("next: Call the bank · 10 min?"). */

@@ -14,8 +14,11 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -71,6 +74,37 @@ class FinishScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-progress-360x800.png")
     }
 
+
+    /** Never red (Boss's rule): no pixel of the screen is red, rings, headers and chips included. */
+    private fun assertNoRedPixels() {
+        val b = compose.onRoot().captureToImage().asAndroidBitmap()
+        var red = 0
+        for (y in 0 until b.height step 2) for (x in 0 until b.width step 2) {
+            val c = b.getPixel(x, y)
+            if (((c shr 16) and 255) > 150 && ((c shr 8) and 255) < 60 && (c and 255) < 60) red++
+        }
+        org.junit.Assert.assertEquals("red pixels on screen", 0, red)
+    }
+
+    /** Today v2: a late task, a P1, the Now card and the count, at 1.5x font, with no red anywhere and no cut text. */
+    @Test fun todayNowCardIsNeverRedAndShowsOneCount() {
+        val late = rows.mapIndexed { i, r -> if (i == 1) r.copy(due = "2026-10-26") else if (i == 2) r.copy(due = "2026-10-29") else r }
+        show { TodayScreen(TodayUiState(loading = false, rows = late, all = late, open = 8, doneToday = 2, status = "Live"), pad, today = day, onWhatNow = {}) }
+        compose.onNodeWithText("8 left").assertIsDisplayed()
+        compose.onNodeWithText("Now").assertIsDisplayed()
+        compose.onNodeWithText("since Mon").assertIsDisplayed()
+        compose.onAllNodesWithText("Tomorrow").assertCountEquals(0)
+        assertNoRedPixels()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-v2-360x800.png")
+    }
+
+    @Test fun todayNowCardAtLargeFontAndNothingDone() {
+        show(1.5f) { TodayScreen(TodayUiState(loading = false, rows = rows, all = rows, open = 8, doneToday = 0, status = "Live"), pad, today = day, onWhatNow = {}) }
+        compose.onNodeWithText("8 left").assertIsDisplayed()
+        assertNoRedPixels()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-v2-360x800-font-1.5.png")
+    }
+
     @Test fun todayWithItsProgressBarLargeFont() {
         show(1.5f) { TodayScreen(TodayUiState(loading = false, rows = rows, open = 3, doneToday = 2, status = "Live"), pad, today = day) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-progress-360x800-font-1.5.png")
@@ -78,7 +112,7 @@ class FinishScreenshotTest {
 
     @Test fun theProgressBarWithTheNextTasksNudge() {
         show { Column(Modifier.padding(top = 24.dp)) { DayProgressBar(DayProgress(3, 2), "Next: Call the bank about the report · 10 min?", Modifier.padding(horizontal = 20.dp)) } }
-        compose.onNodeWithText("3 done · 2 left").assertIsDisplayed()
+        compose.onNodeWithText("3 done").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-progress-nudge-360x800.png")
     }
 

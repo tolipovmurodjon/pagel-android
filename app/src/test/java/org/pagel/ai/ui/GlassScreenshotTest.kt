@@ -195,7 +195,7 @@ class GlassScreenshotTest {
     @Test fun todayThreeAtATime() {
         showToday(today)
         compose.onNodeWithText("Ship the native Today screen").assertIsDisplayed()
-        compose.onNodeWithText("5 left").assertIsDisplayed()
+        compose.onNodeWithContentDescription("0 of 5 done today").assertIsDisplayed()
         compose.onNodeWithText("All today · 5").assertIsDisplayed()
         compose.onNodeWithContentDescription("Done: Weigh in").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today.png")

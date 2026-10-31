@@ -114,6 +114,7 @@ import org.pagel.ai.ui.today.DueTone
 import org.pagel.ai.ui.today.TickRing
 import org.pagel.ai.ui.today.dueLabel
 import org.pagel.ai.ui.today.headline
+import org.pagel.ai.ui.today.sinceWord
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -223,8 +224,11 @@ fun UpcomingScreen(
     val monthAt = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val slop = with(LocalDensity.current) { 28.dp.toPx() }
     // Page 0 is Upcoming as before (Overdue + today and the next 6); another week is its 7 days, no Overdue.
-    val shownView = if (page == 0) ui.view else remember(ui.tasks, stripStart) {
-        org.pagel.ai.data.upcoming.upcomingView(ui.tasks, ui.today, from = stripStart).copy(overdue = emptyList())
+    // The list under the strip changes when the week has settled, not at the half-way flip mid-swipe (it jumped under the finger).
+    val settledPageNo = pager.settledPage - STRIP_BACK
+    val settledStart = org.pagel.ai.data.upcoming.pageStart(ui.today, settledPageNo)
+    val shownView = if (settledPageNo == 0) ui.view else remember(ui.tasks, settledStart) {
+        org.pagel.ai.data.upcoming.upcomingView(ui.tasks, ui.today, from = settledStart).copy(overdue = emptyList())
     }
     val days by rememberUpdatedState(shownView.days)
     val moveTo by rememberUpdatedState(onMove)
@@ -331,7 +335,7 @@ fun UpcomingScreen(
         focusText = d.toString()
         if (view == CalView.SCHEDULE) {
             val i = days.indexOfFirst { it.day == d }
-            if (i >= 0) scope.launch { list.animateScrollToItem(if (i == 0 && page == 0) 0 else 1 + overdueFirst + i) }
+            if (i >= 0) scope.launch { list.animateScrollToItem(if (i == 0 && settledPageNo == 0) 0 else 1 + overdueFirst + i) }
         }
     }
     fun pick(v: CalView) {
@@ -362,10 +366,10 @@ fun UpcomingScreen(
                     CalView.SCHEDULE -> LazyColumn(
                         Modifier.fillMaxSize(),
                         state = list,
-                        contentPadding = PaddingValues(top = headDp + Space.sm, bottom = contentPadding.calculateBottomPadding() + Space.sm),
+                        contentPadding = PaddingValues(top = headDp + Space.sm, bottom = contentPadding.calculateBottomPadding() + Space.xxxl,),
                         verticalArrangement = Arrangement.spacedBy(Space.paneGap),
                     ) {
-                        item(key = "head", contentType = "head") { Header(shownView, page) }
+                        item(key = "head", contentType = "head") { Header(shownView, settledPageNo) }
                         when {
                             ui.loading -> item(key = "loading", contentType = "note") {
                                 Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
@@ -413,11 +417,11 @@ fun UpcomingScreen(
                     CalView.SCHEDULE -> WeekPager(pager, ui, focus, drag.hovered, Modifier.padding(bottom = Space.xs).onGloballyPositioned { strip[0] = it }) { d -> tapDay(d) }
                     CalView.MONTH -> Unit
                     else -> {
-                        TimelineHeads(tl, timelineView, ui.today, Modifier.padding(start = GUTTER - Space.xl)) { d ->
+                        TimelineHeads(tl, timelineView, ui.today, Modifier.padding(start = GUTTER - Space.xl).pagerDrag(tl)) { d ->
                             focusText = d.toString()
                             if (view != CalView.DAY) pick(CalView.DAY)
                         }
-                        if (anyAllDay) AllDayLine(tl, timelineView, ui, allDayOpen, Modifier.padding(start = GUTTER - Space.xl, bottom = Space.xs),
+                        if (anyAllDay) AllDayLine(tl, timelineView, ui, allDayOpen, Modifier.padding(start = GUTTER - Space.xl, bottom = Space.xs).pagerDrag(tl),
                             onToggle = { allDayOpen = !allDayOpen }, onOpen = openTask)
                     }
                 }
@@ -491,18 +495,18 @@ private fun PaneTitle(text: String, color: Color = Glass.Ink, trailing: (@Compos
 private fun OverduePane(ui: UpcomingUi, drag: Drag, handlers: DragHandlers, onMoveAll: () -> Unit, onOpen: (String) -> Unit, onFinish: (String) -> Unit, modifier: Modifier) {
     Pane(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Column(Modifier.padding(bottom = 6.dp)) {
-            PaneTitle("Overdue", Glass.Risk) {
+            PaneTitle("Carried over", Glass.AmberInk) {
                 val press = remember { MutableInteractionSource() }
                 Row(
                     Modifier.heightIn(min = 48.dp).pressScale(press)
                         .clickable(press, indication = null, role = Role.Button, onClick = onMoveAll)
-                        .semantics(mergeDescendants = true) { contentDescription = "Move all to today" },
+                        .semantics(mergeDescendants = true) { contentDescription = "Move to today" },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(Modifier.background(Glass.PrimarySoft, CircleShape).padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(TabIcons.Today, contentDescription = null, tint = Glass.PrimaryInk, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Move all to today", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
+                        Text("Move to today", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1)
                     }
                 }
             }
@@ -625,9 +629,9 @@ private fun Meta(t: TaskEntity, ui: UpcomingUi, late: Boolean) {
         val time = t.due?.drop(11)?.trim()?.takeIf(String::isNotEmpty)?.let(org.pagel.ai.ui.glass.DatePick::timeText)
         val lateLabel = if (late) dueLabel(t.due, ui.today)?.takeIf { it.tone == DueTone.LATE } else null
         if (lateLabel != null || time != null) Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (lateLabel != null) TabIcons.Calendar else TabIcons.Clock, contentDescription = null, tint = if (lateLabel != null) Glass.Risk else Glass.Muted, modifier = Modifier.size(icon))
+            Icon(if (lateLabel != null) TabIcons.Calendar else TabIcons.Clock, contentDescription = null, tint = if (lateLabel != null) Glass.AmberInk else Glass.Muted, modifier = Modifier.size(icon))
             Spacer(Modifier.width(4.dp))
-            Text(lateLabel?.text ?: time.orEmpty(), style = small, color = if (lateLabel != null) Glass.Risk else Glass.Muted, maxLines = 1)
+            Text(if (lateLabel != null) sinceWord(t.due, ui.today) else time.orEmpty(), style = small, color = if (lateLabel != null) Glass.AmberInk else Glass.Muted, maxLines = 1)
         }
         t.every?.takeIf(String::isNotBlank)?.let { Text(Repeat.label(it), style = small, color = Glass.Muted, maxLines = 1) }
         val p = ui.projects[t.project]
@@ -692,5 +696,5 @@ private fun Ghost(drag: Drag, rootAt: Offset) {
     }
 }
 
-/** The ring's colour by priority, as Today's TickRing draws it (P0 red, P1 orange, P2 blue; else grey). */
-private val GhostRing = listOf(Color(0xFFD1453B), Color(0xFFEB8909), Color(0xFF246FE0))
+/** The ring's colour by priority, as Today's TickRing draws it (amber, mint, soft ink; never red). */
+private val GhostRing = listOf(Color(0xFFC77700), Glass.Primary, Color(0xFF7A839B))

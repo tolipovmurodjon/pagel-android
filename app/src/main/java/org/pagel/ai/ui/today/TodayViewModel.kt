@@ -118,8 +118,9 @@ class TodayViewModel @Inject constructor(
     // A refused tick is said by the shell (ShellViewModel), for every screen at once.
     val ui: StateFlow<TodayUiState> = combine(ordered, finishing, session.projects(), session.live, counts) { (tasks, keys, expanded), folding, projects, live, (done, cleared, outbox, dated) ->
         val byName = projects.associateBy(ProjectEntity::name)
-        val dealt = dealToday(tasks, folding)
-        val queue = tasks.filter { it.status == "open" || it.id in folding }
+        val today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Tashkent")).toString()
+        val dealt = dealToday(tasks, folding, today = today)
+        val queue = tasks.filter { (it.status == "open" || it.id in folding) && belongsToday(it, today) }
         TodayUiState(
             loading = tasks.isEmpty() && (live is LiveStatus.Idle || live is LiveStatus.Syncing),
             rows = dealt.visible.map { t ->
