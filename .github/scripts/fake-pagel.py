@@ -653,4 +653,30 @@ def _hole_patch_h(self):
 
 H.do_PATCH = _hole_patch_h
 
+# pagel.uz 6705d8b: PATCH /api/v1/tasks/:id {"context": phone|laptop|home|out|any|null} -> 200 applied ["context"]; anything else 400.
+# The value rides /sync rows through EDITS, like every other panel edit.
+CONTEXTS = {"phone", "laptop", "home", "out", "any"}
+_ctx_patch = H.do_PATCH
+
+def _context_patch_h(self):
+    length = int(self.headers.get("content-length") or 0)
+    raw = self.rfile.read(length)
+    try:
+        b = json.loads(raw or b"{}")
+    except ValueError:
+        b = {}
+    if "context" not in b:
+        self.rfile = io.BytesIO(raw)
+        return _ctx_patch(self)
+    LOG.write(f"PATCH {self.path} {raw.decode()[:300]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    tid = self.path.rsplit("/", 1)[-1]
+    if b["context"] is not None and b["context"] not in CONTEXTS:
+        return self.send(400, {"error": "context must be phone, laptop, home, out, any or null."})
+    EDITS.setdefault(tid, {})["context"] = b["context"]
+    return self.send(200, {"id": tid, "status": "open", "applied": ["context"]})
+
+H.do_PATCH = _context_patch_h
+
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()
