@@ -147,7 +147,112 @@ fun TodayScreen(
     onExpand: (Boolean) -> Unit = {},
     /** A drag on the full list: from index → to index. */
     onReorder: (Int, Int) -> Unit = { _, _ -> },
-    /** A pill on the Now card: Open (filled mint) and What now? (outlined); 48 dp to touch, one action each. */
+    /** The calm "What now?" button; null hides it. */
+    onWhatNow: (() -> Unit)? = null,
+    /** A screenshot's frozen drag: the row lifted from this index, sitting exactly over that slot (offset from the rows' heights). */
+    dragPreview: Pair<Int, Int>? = null,
+) {
+    val ctx = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val toasts = LocalToasts.current
+    val openTask = LocalTaskOpener.current
+    val reduce = remember { reducedMotion(ctx) }
+    val closed = pills?.shutTonight == true
+    val bursts = remember { mutableStateListOf<Burst>() }
+    var nextBurst by remember { mutableLongStateOf(0L) }
+    var overlayAt by remember { mutableStateOf(Offset.Zero) }
+    var overlayWidth by remember { mutableStateOf(0f) }
+    // The next task, said once after a tick ("Next: Call the bank · 10 min?"), gone after 8 s.
+    var nudge by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(nudge) { if (nudge != null) { delay(8_000); nudge = null } }
+    val list = rememberLazyListState()
+    // Rows seen so far: a row that appears later is the next task being dealt, and slides in.
+    val seen = remember { mutableSetOf<String>() }
+    SideEffect { seen += ui.rows.map(TodayRow::id) }
+
+    LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
+
+    fun finish(row: TodayRow, ringCentre: Offset) {
+        // Respond first (rules/respond-first-save-after): feel, sound and picture now, the save goes behind.
+        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        val app = ctx.applicationContext
+        val cleared = ui.open == 1 && !row.done
+        // The run going up (checker #11): three or more in a row is a bigger burst and a third, higher note. The day
+        // cleared is the shell's (DayClear): one full-screen burst from the centre and the chord, from any screen.
+        val big = Combo.app.next(System.currentTimeMillis()) >= 3
+        if (!cleared) scope.launch(Dispatchers.Default) { if (big) Ding.combo(app) else Ding.play(app) }
+        bursts += Burst(nextBurst++, ringCentre - overlayAt, power = if (big) 1 else 0)
+        val inRow = Combo.app.tick(System.currentTimeMillis())
+        nudge = if (cleared) null else nudgeText(ui.rows.firstOrNull { !it.done && it.id != row.id }?.title)
+        onTick(row.id)
+        toasts.show(if (cleared) "Day cleared ✨" else comboText(inRow), action = "Undo") { Combo.app.undo(); onUndo(row.id) }
+    }
+
+    Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot(); overlayWidth = it.size.width.toFloat() }) {
+        // One gap between all blocks (spacing audit #19: 16 under the header, 12 under the bar, 8 under the pills).
+        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.headerToCard)) {
+            if (compassLine != null) item(key = "compass", contentType = "compass") { org.pagel.ai.ui.compass.CompassTodayLine(compassLine) }
+            if (namozLine != null) item(key = "namoz", contentType = "namoz") { org.pagel.ai.ui.namoz.NamozTodayLine(namozLine) }
+            item(key = "head", contentType = "head") {
+                Header(ui, today, closed = closed, onSweep = if (pills != null) links.sweep else null) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSendNow() }
+            }
+            // Boss 2026-10-28: "I closed the day … I should have an empty Today, so I can sleep well". After Close the
+            // day, Today is one calm card and a folded peek at tomorrow; no rows, no bar, no leftover habits.
+            if (closed) {
+                if (pills != null && pills.any) item(key = "rituals", contentType = "pills") {
+                    org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.padding(horizontal = Space.gutter))
+                }
+                item(key = "closed", contentType = "note") { DayClosedCard(ui.doneToday, ui.tomorrow) }
+                return@LazyColumn
+            }
+            // The day's progress grows with each tick (a game's level bar), with the next task's nudge under it.
+            if (!ui.loading && ui.progress.total > 0) item(key = "progress", contentType = "progress") {
+                DayProgressBar(ui.progress, nudge, Modifier.padding(horizontal = Space.gutter))
+            }
+            // One row, only when it has something to say: Close the day in the evening, the review while due (checker P5 #4).
+            if (pills != null && pills.any) item(key = "rituals", contentType = "pills") {
+                org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.animateItem().padding(horizontal = Space.gutter))
+            }
+            when {
+                ui.loading -> item(key = "loading", contentType = "note") {
+                    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
+                }
+                // Also after a sync took the finished rows off Today: tasks were done today and none is open.
+                ui.allDone || (ui.rows.isEmpty() && ui.open == 0 && ui.doneToday > 0) -> item(key = "done", contentType = "note") {
+                    DayClearedCard(ui.doneToday, ui.clearedStreak)
+                }
+                ui.rows.isEmpty() -> item(key = "empty", contentType = "note") {
+                    Note("Nothing picked yet", "Star up to 3 tasks on pagel.uz and they show here.")
+                }
+                else -> item(key = "list", contentType = "list") {
+                    Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                        Column(Modifier.padding(vertical = 6.dp)) {
+                            if (ui.expanded && ui.all.size > 1) {
+                                AllToday(ui.all, today, seen, reduce, dragPreview, onOpen = { openTask(it) }, onReorder = onReorder) { row, centre -> finish(row, centre) }
+                            } else for ((i, row) in ui.rows.withIndex()) key(row.id) {
+                                if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(start = 54.dp, end = 16.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
+                                // The first open task is the "Now" card: a big title, Open, and What now? folded into it.
+                                TaskRow(row, today, isNew = seen.isNotEmpty() && row.id !in seen, reduce = reduce, onOpen = { openTask(row.id) },
+                                    hero = i == 0 && !row.done, onWhatNow = if (i == 0) onWhatNow else null) { centre -> finish(row, centre) }
+                            }
+                            // "All today · 9" (Boss 2026-10-29: "3 by default, then see more"): a quiet row that opens the full
+                            // list in place; the chevron up folds it back to 3.
+                            if (ui.waiting > 0 || (ui.expanded && ui.all.size > 1)) AllTodayRow(maxOf(ui.all.size, ui.rows.size + ui.waiting), ui.expanded) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onExpand(!ui.expanded) }
+                        }
+                    }
+                }
+            }
+            // The empty space under the hero says the next timed thing, so the page never ends in nothing.
+            nextTimed(ui.all, today)?.let { (row, time) -> item(key = "next", contentType = "next") {
+                NextTimedRow(time, row.title, Modifier.padding(horizontal = Space.gutter)) { openTask(row.id) }
+            } }
+        }
+        for (b in bursts) key(b.id) { ConfettiBurst(b, onEnd = { bursts.remove(b) }, modifier = Modifier.fillMaxSize()) }
+    }
+}
+
+/** A pill on the Now card: Open (filled mint) and What now? (outlined); 48 dp to touch, one action each. */
 @Composable
 private fun NowPill(label: String, filled: Boolean, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
@@ -169,7 +274,7 @@ private fun NowPill(label: String, filled: Boolean, onClick: () -> Unit) {
 internal fun nextTimed(all: List<TodayRow>, today: LocalDate): Pair<TodayRow, String>? =
     all.firstNotNullOfOrNull { r -> todayMeta(r.due, today)?.takeIf { it.tone == DueTone.TODAY }?.let { r to it.text } }
 
-/** "Next · 14:00 Gym": one quiet glass row under What now. */
+/** "Next · 14:00 Gym": one quiet glass row under the Now card. */
 @Composable
 internal fun NextTimedRow(time: String, title: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
