@@ -143,6 +143,27 @@ r4_tap "Show 3" || { log "WALKTHROUGH: the open list has no Show 3 chevron"; exi
 sleep 1; for k in 1 2 3 4; do $T adb shell input swipe 160 260 160 520 300; done; sleep 1
 shot r4-folded 2
 grep -q 'text="Clean the desk"' "$OUT/$(printf '%02d' $N)-r4-folded.xml" || { log "WALKTHROUGH: the dragged task is not one of the 3 after folding"; exit 1; }
+# Boss 2026-10-31 (0.3.41): "drag and drop is not working at all". The FOLDED top 3 reorders too: a long press on #3, onto #1.
+ORD0=$(grep -c '"today_sort"' "$FAKE_LOG")
+F3=$(r4_centre "Record the fractions lesson"); F1=$(r4_centre "Clean the desk")
+[ -n "$F3" ] && [ -n "$F1" ] || { log "WALKTHROUGH: the folded top 3 has no row to drag ($F3 / $F1)"; exit 1; }
+set -- $F3 $F1
+log "   drag folded #3 (Record the fractions lesson) $1,$2 onto #1 at $3,$4"
+$T adb shell input draganddrop $1 $2 $3 $(( $4 - 40 )) 1800
+shot r4-folded-dragged 2
+for i in $(seq 1 30); do [ "$(grep -c '"today_sort"' "$FAKE_LOG")" -gt "$ORD0" ] && break; sleep 1; done
+[ "$(grep -c '"today_sort"' "$FAKE_LOG")" -eq $(( ORD0 + 1 )) ] || { log "WALKTHROUGH: dragging in the folded top 3 sent $(( $(grep -c '"today_sort"' "$FAKE_LOG") - ORD0 )) order PATCHes (want 1)"; exit 1; }
+log "   folded drag sent ONE order PATCH: $(grep '"today_sort"' "$FAKE_LOG" | tail -1 | cut -c1-160)"
+A=$(r4_centre "Record the fractions lesson"); B=$(r4_centre "Clean the desk")
+[ -n "$A" ] && [ -n "$B" ] && [ "${A#* }" -lt "${B#* }" ] || { log "WALKTHROUGH: after the folded drag Record the fractions lesson is not above Clean the desk ($A vs $B)"; exit 1; }
+# Put it back (the later steps expect Clean the desk first), one more order PATCH.
+F2=$(r4_centre "Clean the desk"); F0=$(r4_centre "Record the fractions lesson")
+set -- $F2 $F0
+$T adb shell input draganddrop $1 $2 $3 $(( $4 - 40 )) 1800
+for i in $(seq 1 30); do [ "$(grep -c '"today_sort"' "$FAKE_LOG")" -gt $(( ORD0 + 1 )) ] && break; sleep 1; done
+sleep 2
+A=$(r4_centre "Clean the desk"); B=$(r4_centre "Record the fractions lesson")
+[ -n "$A" ] && [ -n "$B" ] && [ "${A#* }" -lt "${B#* }" ] || { log "WALKTHROUGH: the drag back did not restore Clean the desk to #1 ($A vs $B)"; exit 1; }
 grep -q 'text="Measure the drone' "$OUT/$(printf '%02d' $N)-r4-folded.xml" && { log "WALKTHROUGH: folded Today still shows a 4th task"; exit 1; }
 
 log "-- What now: energy once, one pick (Clean the desk is first in Boss's order), Start · 10 min, the tick reaches pagel.uz"

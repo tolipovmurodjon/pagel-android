@@ -8,6 +8,10 @@
 -->
 <resources>
     <string-array name="whats_new_items">
+        <item>#0.3.42 · Today fixes</item>
+        <item>Drag to reorder works on the top 3 and All today|today</item>
+        <item>What now is its own card again, under the list|today</item>
+        <item>No floating Today chip at the top|today</item>
         <item>#0.3.41 · Today v2</item>
         <item>The top task is a Now card: Open or What now?|today</item>
         <item>One big count that drops as you tick|today</item>

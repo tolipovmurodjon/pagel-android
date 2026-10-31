@@ -277,9 +277,11 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator<NavKey>(), rememberViewModelStoreNavEntryDecorator<NavKey>()),
                 entryProvider = entryProvider<NavKey> {
                     entry<TodayRoute> {
+                        androidx.compose.runtime.CompositionLocalProvider(org.pagel.ai.ui.today.LocalListAtTop provides { scrolled = 0f; titleShown = false }) {
                         TodayScreenRoute(padding, reselect, links = org.pagel.ai.ui.rituals.RitualLinks(
                             sweep = { stack.add(SweepRoute) }, shutdown = { stack.add(ShutdownRoute) }, review = { stack.add(ReviewRoute) },
                         ))
+                        }
                     }
                     entry<SweepRoute> { org.pagel.ai.ui.rituals.SweepRoute(padding, onToday = ::goToday) }
                     entry<ShutdownRoute> { org.pagel.ai.ui.rituals.ShutdownRoute(padding, onToday = ::goToday) }
