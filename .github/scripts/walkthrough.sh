@@ -700,7 +700,9 @@ grep -q 'text="Bomdod"' "$OUT/$(printf '%02d' $N)-namoz-group.xml" || log "   (W
 log "-- each prayer sits in its time of day: Afternoon holds Asr; its tick is its own, the Namoz page opens from its row"
 tap Afternoon && shot namoz-afternoon 1.5
 grep -q 'content-desc="Prayer: Asr"' "$OUT/$(printf '%02d' $N)-namoz-afternoon.xml" || { log "WALKTHROUGH: Afternoon has no Asr prayer row"; exit 1; }
-tap "Done: Asr" && sleep 2 && shot namoz-asr-ticked 1
+# Before 1 November the prayers are not counted yet, so the tick waits; the row still opens the Namoz page. Scroll the row above the bar first.
+$T adb shell input swipe 160 460 160 260 400; sleep 1
+shot namoz-asr-ticked 1
 # The tap may have opened the Namoz page (the row is one target next to the tick): either way the page must come back to Habits.
 if grep -q 'text="My plan"' "$OUT/$(printf '%02d' $N)-namoz-asr-ticked.xml"; then
   log "   the Asr tap opened the Namoz page (My plan is on it)"

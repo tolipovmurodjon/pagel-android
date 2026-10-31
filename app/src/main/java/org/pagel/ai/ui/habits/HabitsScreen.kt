@@ -1094,8 +1094,9 @@ private fun PrayerRow(
 ) {
     val nowT = LocalTime.now(ZoneId.of("Asia/Tashkent"))
     val w = c.window
-    val current = isToday && w != null && isNow(w, nowT) && !c.done
-    val over = isToday && w != null && !c.done && !isNow(w, nowT) && nowT >= w.to && w.to > w.from
+    val current = c.mark != Mark.BEFORE && isToday && w != null && isNow(w, nowT) && !c.done
+    val counts = c.mark != Mark.BEFORE && c.mark != Mark.FUTURE
+    val over = counts && isToday && w != null && !c.done && !isNow(w, nowT) && nowT >= w.to && w.to > w.from
     val shape = RoundedCornerShape(Space.lg)
     val press = remember { MutableInteractionSource() }
     Row(
@@ -1129,7 +1130,7 @@ private fun PrayerRow(
                     modifier = Modifier.heightIn(min = Space.touch).pressScale(later).clickable(later, indication = null, role = Role.Button) { onPrayedLater(c.task.id) }
                         .wrapContentHeight(Alignment.CenterVertically).padding(horizontal = Space.sm),
                 )
-            } else if (prayedLater && !c.done) {
+            } else if (counts && prayedLater && !c.done) {
                 Text("Prayed later", style = MaterialTheme.typography.labelLarge, color = Glass.Muted, modifier = Modifier.padding(horizontal = Space.sm))
             }
         }
