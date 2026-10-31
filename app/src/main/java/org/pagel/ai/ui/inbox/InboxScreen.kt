@@ -818,9 +818,12 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
                 card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = if (!showPicture) 8 else if (room < 380.dp) 4 else 6, minSize = 15.sp,
                 modifier = if (showPicture) Modifier else Modifier.weight(1f, fill = false),
             )
-            card.why?.let {
+            // The claim comes first: on a short screen at a large font the AI's reason leaves, or the claim got no room at all
+            // (320 dp at 1.5x, walk 98: the title was gone and the reason sat clipped at the card's foot).
+            val crowded = scale >= 1.3f && room < 340.dp
+            card.why?.takeIf { !crowded }?.let {
                 Spacer(Modifier.height(4.dp))
-                FitText(it, MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), Glass.Primary, maxLines = if (tight) 2 else 3, minSize = 11.sp)
+                FitText(it, MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), Glass.Primary, maxLines = if (tight || scale >= 1.3f) 1 else 3, minSize = 11.sp)
             }
             if (showPicture) {
                 val bmp = pictures[card.file]

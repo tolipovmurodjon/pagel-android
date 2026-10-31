@@ -687,7 +687,7 @@ shot share-inbox 2
 log "   the shared link reached pagel.uz"
 
 log "-- Inbox: where did it go (round D item 2): Sorted today lists the day's choices by where they went; More -> Notes reads a project's notes"
-$T adb shell input swipe 160 200 160 600 400; sleep 1
+sleep 6   # a swipe down here would Drop the top card; the last toast (top of the Inbox, over the header icons) needs to be gone
 tap "Sorted today" && shot sorted-today 2
 # Match the word, not the emoji: uiautomator writes 📝 (outside the basic plane) as &#128221; but ✅ as itself.
 grep -qE 'text="[^"]*Notes · [0-9]+"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Note"; exit 1; }
