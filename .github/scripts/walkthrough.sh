@@ -1458,6 +1458,10 @@ $T adb shell "date -u 111211102026.00" > /dev/null || { log "WALKTHROUGH: could 
 $T adb reverse tcp:8799 tcp:8799
 $T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivity" > /dev/null
 front namoz-start
+# The cold start draws Today's glass on a software GPU (frames of 3-4 s on this emulator): a tap sent into that first frame
+# waits 5 s for the main thread and Android shows "isn't responding". Let the first frame finish before touching anything.
+for k in $(seq 1 20); do onscreen 'Today' && break; sleep 1; done
+sleep 8
 for k in 1 2 3; do tap Habits && break; $T adb shell input keyevent 4; sleep 1; done
 sleep 2
 # The Namoz page opens from a prayer row (each prayer sits in its time of day now; the one Namoz card is gone once tracking runs).

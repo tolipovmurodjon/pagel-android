@@ -143,8 +143,16 @@ class HabitsViewModel @Inject constructor(
 ) : ViewModel() {
     private val finishing = MutableStateFlow<Set<String>>(emptySet())
     /** Prayers made after their window ("day|id"): his own private log, kept on the phone, never counted anywhere. */
-    private val qazaLog = MutableStateFlow(org.pagel.ai.data.habits.NamozQaza.decode(ctx.getSharedPreferences("pagel-habits", Context.MODE_PRIVATE).getString("namoz-qaza", "").orEmpty()))
+    private val qazaLog = MutableStateFlow<Set<String>>(emptySet())
     val qaza: StateFlow<Set<String>> = qazaLog
+
+    // The log is read off the main thread: the first read of a preferences file is disk work, and a slow phone feels it.
+    init {
+        viewModelScope.launch(io) {
+            val saved = org.pagel.ai.data.habits.NamozQaza.decode(ctx.getSharedPreferences("pagel-habits", Context.MODE_PRIVATE).getString("namoz-qaza", "").orEmpty())
+            qazaLog.update { it + saved }
+        }
+    }
 
     fun prayedLater(id: String) {
         val key = org.pagel.ai.data.habits.NamozQaza.key(repo.today(), id)
