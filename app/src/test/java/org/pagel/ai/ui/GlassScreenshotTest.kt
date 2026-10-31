@@ -115,7 +115,7 @@ class GlassScreenshotTest {
         toasts.show("Done", action = "Undo", millis = 60_000) {}
         compose.mainClock.advanceTimeBy(1_000)
         val toast = compose.onNodeWithText("Done", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        val fab = compose.onNodeWithContentDescription("Add a task").fetchSemanticsNode().boundsInRoot
+        val fab = compose.onNodeWithContentDescription("Add to Inbox").fetchSemanticsNode().boundsInRoot
         val bar = compose.onNodeWithText("Today").fetchSemanticsNode().boundsInRoot
         org.junit.Assert.assertTrue("the + (bottom ${fab.bottom}) must sit above the toast (top ${toast.top})", fab.bottom <= toast.top)
         org.junit.Assert.assertTrue("the toast (bottom ${toast.bottom}) must sit above the bar (top ${bar.top})", toast.bottom <= bar.top)

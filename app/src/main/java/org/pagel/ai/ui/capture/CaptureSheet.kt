@@ -139,7 +139,7 @@ fun CaptureContent(vm: CaptureViewModel, speak: Boolean = false, initial: String
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { submit(typed) }),
                 modifier = Modifier.weight(1f).padding(vertical = Space.md).focusRequester(focus).semantics { contentDescription = "New capture" },
-                decorationBox = { inner -> Box { if (typed.isEmpty()) Text("A thought, a link or a list", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, maxLines = 1); inner() } },
+                decorationBox = { inner -> Box { if (typed.isEmpty()) Text("A thought, a link or a list", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted); inner() } },
             )
             Spacer(Modifier.width(8.dp))
             val ready = typed.isNotBlank()
