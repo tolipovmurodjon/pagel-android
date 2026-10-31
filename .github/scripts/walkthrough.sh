@@ -881,6 +881,8 @@ AFTER2_SPOKEN=$(LC_ALL=C TZ=Asia/Tashkent date -d '+2 days' '+%A %-d %B')
 # Tapping a day of the strip brings its section up (the tomorrow pane may be below the fold on a 640 dp screen).
 P=$(centre_desc "$TOMORROW_SPOKEN") || exit 1; set -- $P
 $T adb shell input tap "$1" "$2"; shot upcoming-tomorrow 2
+# Namoz's five daily prayers (since 1 Nov) fill Tomorrow's pane: scroll until the row is on screen, under the pinned strip.
+for k in 1 2 3 4 5 6; do centre "Review the lesson draft" > /dev/null && break; $T adb shell input swipe 160 520 160 300 400; sleep 1; done
 P=$(centre "Review the lesson draft") || exit 1; set -- $P; FX=$1; FY=$2
 P=$(centre_desc "$AFTER2_SPOKEN") || exit 1; set -- $P; TX=$1; TY=$2
 log "   drag \"Review the lesson draft\" ($FX,$FY) onto $AFTER2_SPOKEN ($TX,$TY)"
