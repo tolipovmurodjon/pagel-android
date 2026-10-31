@@ -246,7 +246,7 @@ class InboxViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     init {
-        refresh(reshuffle = true)
+        refresh()
         // The pictures of the next ten cards, ahead of time while online, so a subway ride still shows them. One that
         // could not be fetched is asked for again when the live link is back (checker 2026-10-28 #4).
         viewModelScope.launch {
@@ -357,8 +357,8 @@ class InboxViewModel @Inject constructor(
 
     /** The Inbox is on screen (started) or not: the AI is asked to read only while Boss looks at it. */
     fun onScreen(on: Boolean) {
-        // A new visit deals a new random deck; the card that was on top when he left is dealt last next time.
-        if (on && !visible.value) refresh(reshuffle = true)
+        // Newest first is the default order (Boss 2026-10-31); a random deal is the Shuffle order's job, which deals the
+        // card that was on top when he left last (repo.refresh(reshuffle = true)). The order control itself is not built yet.
         if (!on && visible.value) ui.value.cards.firstOrNull()?.let { repo.markShown(it.file) }
         visible.value = on
     }
