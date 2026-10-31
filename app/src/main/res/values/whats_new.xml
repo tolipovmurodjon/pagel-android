@@ -8,6 +8,12 @@
 -->
 <resources>
     <string-array name="whats_new_items">
+        <item>#0.3.44 · Black hole and Laboratory</item>
+        <item>Completed, then Clear done: a hole opens from the camera|more</item>
+        <item>The cleared tasks are pulled in, the toast says N cleared|more</item>
+        <item>More, then Laboratory: a shelf of experiments|more</item>
+        <item>Try it shows your janky % and first frame|more</item>
+        <item>Switch Use in the app off to clear without the hole|more</item>
         <item>#0.3.41 · Today v2</item>
         <item>The top task is a Now card: Open or What now?|today</item>
         <item>One big count that drops as you tick|today</item>
