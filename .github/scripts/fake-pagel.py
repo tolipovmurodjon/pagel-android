@@ -83,6 +83,8 @@ HABITS = [("t_h1", "Stretch for ten minutes", "07:30"), ("t_h2", "Read 10 pages"
           ("t_h5", "Go through five saves in your Inbox", None)]
 # Round B: "Log food" is done 3 times a day; each tap is one tick, the 3rd moves it on (task-store.ts habitTaps).
 HABIT_TIMES = {"t_h4": 3}
+# "Go through five saves in your Inbox" repeats Monday to Saturday so it never joins Sunday's list in the calendar steps.
+HABIT_EVERY = {"t_h5": "mon,tue,wed,thu,fri,sat"}
 HABIT_DUE = {}
 HABIT_TICKS = []  # (day, id), one per tap
 def habit_due(hid, at):
@@ -176,7 +178,7 @@ def sync_body():
                        "steps": [{"text": t, "done": d} for t, d in STEPS.get(i, [])], **EDITS.get(i, {})}
                       for k, (i, p, text, pr, due) in enumerate(TODAY)]
                      + [{"id": hid, "project": "me", "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 50 + k, "text": text, "status": "open",
-                         "priority": 2, "star": False, "due": habit_due(hid, at), "every": "day", "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": [],
+                         "priority": 2, "star": False, "due": habit_due(hid, at), "every": HABIT_EVERY.get(hid, "day"), "updated_at": "2026-10-27T10:00:00Z", "version": 1, "steps": [],
                          "times": HABIT_TIMES.get(hid, 1)}
                         for k, (hid, text, at) in enumerate(HABITS)]
                      + [{"id": uid, "project": p, "phase": "Now", "phase_sort": 0, "phase_now": True, "sort": 60 + k, "text": text, "status": "done" if uid in DONE else "open",
