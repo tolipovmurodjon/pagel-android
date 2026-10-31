@@ -136,6 +136,8 @@ ORDERS=$(grep -c '"today_sort"' "$FAKE_LOG")
 log "   pagel.uz got ONE order PATCH: $(grep -o 'PATCH /api/v1/tasks/t_now1 {"today_sort":[^}]*}' "$FAKE_LOG" | head -1)"
 A=$(r4_centre "Clean the desk"); B=$(r4_centre "Call the bank about the report")
 [ -n "$A" ] && [ -n "$B" ] && [ "${A#* }" -lt "${B#* }" ] || { log "WALKTHROUGH: after the drag Clean the desk is not above Call the bank ($A vs $B)"; exit 1; }
+# Show 3 sits under the last row: scroll to the end so it clears the tab bar, then tap.
+for k in 1 2; do $T adb shell input swipe 160 520 160 200 300; done; sleep 1
 r4_tap "Show 3" || { log "WALKTHROUGH: the open list has no Show 3 chevron"; exit 1; }
 # The list is taller than the screen now (the Now card + the bottom inset): back to the top for the Now card.
 sleep 1; for k in 1 2 3 4; do $T adb shell input swipe 160 260 160 520 300; done; sleep 1
