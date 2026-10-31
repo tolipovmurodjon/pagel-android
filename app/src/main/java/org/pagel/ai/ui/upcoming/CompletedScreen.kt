@@ -125,6 +125,7 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
             val info = list.layoutInfo
             val pieces = donePieces(info, with(density) { STRIP.toPx() })
             val shot = withTimeoutOrNull(SNAPSHOT_WAIT_MS) { runCatching { layer.toImageBitmap().asAndroidBitmap() }.getOrNull() }
+            android.util.Log.i("BlackHole", "Clear done: snapshot ${if (shot != null) "ok" else "missing"}, ${pieces.size} pieces")
             // The Undo toast of this clear shows under the camera, where the hole just closed.
             if (holeOn) toasts.topNext = true
             onClearDone()
@@ -187,7 +188,7 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
 
 /** A day pane is cut into strips this tall: each strip flies as its own piece. */
 private val STRIP = 72.dp
-private const val SNAPSHOT_WAIT_MS = 150L
+private const val SNAPSHOT_WAIT_MS = 400L
 
 /** The visible day panes, cut into strips, in the list's own px (the snapshot's coordinates). */
 internal fun donePieces(info: LazyListLayoutInfo, stripPx: Float): List<PieceRect> {
