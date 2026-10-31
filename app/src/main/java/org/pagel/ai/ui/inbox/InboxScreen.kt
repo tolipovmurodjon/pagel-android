@@ -408,8 +408,9 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
             if (line != null) Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
             else if (ui.sources.isNotEmpty()) SourceChips(ui, actions, Modifier.weight(1f))
             else Spacer(Modifier.weight(1f))
-            if (!old) OldPileRow(ui, actions.openOld)
         }
+        // The Old pile has its own line, so the chips keep the whole width and never sit under it.
+        if (!old) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { OldPileRow(ui, actions.openOld) }
     }
 }
 
