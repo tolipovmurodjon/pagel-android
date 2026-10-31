@@ -926,6 +926,8 @@ $T adb shell input keyevent 4; sleep 1
 log "-- Black hole v2: Clear done -> the hole runs out of the camera -> pagel.uz hears the deletes -> the toast under the camera -> Undo -> the inverse writes (restore + done)"
 REM0=$(grep -cE '"remove": ?true' "$FAKE_LOG")
 RES0=$(grep -cE '"restore": ?true' "$FAKE_LOG")
+# The emulator runs with animations off (reduced motion = the 120 ms fade); the hole needs them on for this step.
+$T adb shell settings put global animator_duration_scale 1.0
 tap "Clear done" || { log "WALKTHROUGH: Completed has no Clear done"; exit 1; }
 sleep 0.7; $T adb exec-out screencap -p > "$OUT/hole-run-a.png"
 sleep 0.5; $T adb exec-out screencap -p > "$OUT/hole-run-b.png"
@@ -933,6 +935,7 @@ sleep 3
 $T adb logcat -d | grep -q "BlackHole run" || { log "WALKTHROUGH: Clear done played no black hole (no 'BlackHole run' in the log)"; exit 1; }
 log "   $($T adb logcat -d | grep 'BlackHole run' | tail -1 | cut -c1-140)"
 shot hole-after 1
+$T adb shell settings put global animator_duration_scale 0.0
 UB=$(tr '>' '\n' < "$(xml_of hole-after)" | grep -E 'text="Undo"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tail -1)
 [ -n "$UB" ] && [ "$UB" -lt 500 ] || { log "WALKTHROUGH: the clear's Undo toast is not just under the camera (Undo top y=${UB:-none})"; exit 1; }
 grep -qE 'text="[0-9]+ cleared"' "$(xml_of hole-after)" || { log "WALKTHROUGH: the toast does not say 'N cleared'"; exit 1; }
