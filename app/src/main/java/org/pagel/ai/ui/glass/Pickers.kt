@@ -60,11 +60,11 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /**
- * The flag colours (task-panel.tsx FLAG): P1 deep amber, P2 orange, P3 blue, P4 grey. PAGEL counts from
+ * The flag colours (task-panel.tsx FLAG): P1 deep amber, P2 orange, P3 soft ink (blue clashed with mint, Boss 2026-10-31), P4 grey. PAGEL counts from
  * P0, so index 0 is "P1". The grey is darker than the web's #9aa2bb, and the orange darker than its #eb8909 (2.44:1), so
  * every flag keeps 3:1 on white (colour theory; checker 2026-10-27). P1 is deep amber, never red (Boss's rule).
  */
-val PriorityColors = listOf(Color(0xFF92400E), Color(0xFFC77400), Color(0xFF246FE0), Color(0xFF7A8299))
+val PriorityColors = listOf(Color(0xFF92400E), Color(0xFFC77400), Color(0xFF4A5470), Color(0xFF7A8299))
 /** What each priority means in PAGEL (the pagel MCP's own words): now, this week, this phase, someday. */
 val PriorityHints = listOf("now", "this week", "this phase", "someday")
 

@@ -133,7 +133,7 @@ object TabIcons {
 
     fun lucide(name: String): ImageVector? = pickable[name]
 
-    private fun icon(name: String, vararg paths: String, fill: Boolean = false, outline: Boolean = true): ImageVector {
+    internal fun icon(name: String, vararg paths: String, fill: Boolean = false, outline: Boolean = true): ImageVector {
         val b = ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
         for (d in paths) {
             b.addPath(

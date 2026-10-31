@@ -438,13 +438,14 @@ class HabitsViewModel @Inject constructor(
         }
     }
 
-    /** A new habit (note 8): every day from today, at the part's usual time; Undo takes it straight back. */
-    fun create(name: String, part: Part) {
+    /** A new habit (note 8): from today, at the part's usual time; Undo takes it straight back. */
+    fun create(name: String, part: Part, every: String = "day", remind: Boolean = false) {
         val text = name.trim().takeIf(String::isNotEmpty) ?: return
         val time = when (part) { Part.MORNING -> "07:00"; Part.AFTERNOON -> "13:00"; Part.EVENING -> "19:00"; Part.ANYTIME -> null }
         val date = repo.today()
         viewModelScope.launch {
-            val id = todayRepo.add(text, project = "me", priority = 2, due = if (time == null) date else "$date $time", every = "day", onToday = false)
+            val id = todayRepo.add(text, project = "me", priority = 2, due = if (time == null) date else "$date $time", every = every, onToday = false)
+            if (remind) repo.setReminder(id, true)
             repo.replan()
             chosenPart.value = if (part == Part.ANYTIME) chosenPart.value else part
             toasts.show("Habit added", action = "Undo", millis = 5_000) { viewModelScope.launch { tasks.delete(id); repo.replan() } }

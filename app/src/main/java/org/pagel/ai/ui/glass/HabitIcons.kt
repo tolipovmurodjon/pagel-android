@@ -146,6 +146,14 @@ object HabitIcons {
         }
     }
 
+    /** Every icon with its drawing, in picker order (the task panel's grid reads this). */
+    val all: Map<String, ImageVector> by lazy { names.associateWith { vector(it) } }
+
+    fun iconFor(title: String, chosen: String? = null): ImageVector = vector(keyFor(title, chosen))
+
+    /** The tile colour when Boss picked none: by what the habit is about, as the lists do. */
+    fun defaultColour(title: String, chosen: String? = null): String = org.pagel.ai.ui.habits.tileOf(Emoji.keyFor(title, chosen))
+
     /** The habit's icon name: Boss's own pick, else what its title is about (Emoji's keyword table), else the sprout. */
     fun keyFor(title: String, chosen: String? = null): String {
         val pick = chosen?.substringBefore('/')?.trim()
