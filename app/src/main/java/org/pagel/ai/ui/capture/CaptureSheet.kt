@@ -60,6 +60,7 @@ import org.pagel.ai.ui.glass.GlassChip
 import org.pagel.ai.ui.glass.GlassSheet
 import org.pagel.ai.ui.glass.SheetBottom
 import org.pagel.ai.ui.glass.SheetTitle
+import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.glass.TabIcons
 import org.pagel.ai.ui.glass.TouchMin
 import org.pagel.ai.ui.glass.pressScale
@@ -125,7 +126,7 @@ fun CaptureContent(vm: CaptureViewModel, speak: Boolean = false, initial: String
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 52.dp)
                 .background(Color.White.copy(alpha = 0.84f), RoundedCornerShape(26.dp)).border(1.dp, FieldRim, RoundedCornerShape(26.dp))
-                .padding(start = 18.dp, end = 2.dp),
+                .padding(start = Space.xl, end = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BasicTextField(
@@ -137,7 +138,7 @@ fun CaptureContent(vm: CaptureViewModel, speak: Boolean = false, initial: String
                 cursorBrush = SolidColor(Glass.Primary),
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { submit(typed) }),
-                modifier = Modifier.weight(1f).padding(vertical = 14.dp).focusRequester(focus).semantics { contentDescription = "New capture" },
+                modifier = Modifier.weight(1f).padding(vertical = Space.md).focusRequester(focus).semantics { contentDescription = "New capture" },
                 decorationBox = { inner -> Box { if (typed.isEmpty()) Text("A thought, a link or a list", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, maxLines = 1); inner() } },
             )
             Spacer(Modifier.width(8.dp))

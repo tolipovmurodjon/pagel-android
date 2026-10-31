@@ -524,7 +524,7 @@ private fun Empty(ui: InboxUi, actions: InboxActions) {
                 Text("${ui.kept} learned today.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
             }
             if (!ui.loading) {
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(Space.lg))
                 if (ui.oldMode) SolidButton("Back to Inbox", TabIcons.ArrowLeft, actions.closeOld) else SolidButton("Capture something", TabIcons.Plus, actions.capture)
             }
         }
@@ -537,7 +537,7 @@ private fun SolidButton(label: String, icon: ImageVector, onClick: () -> Unit) {
     val press = remember { MutableInteractionSource() }
     Row(
         Modifier.heightIn(min = 48.dp).pressScale(press).background(Glass.Primary, CircleShape)
-            .clickable(press, indication = null, role = Role.Button, onClick = onClick).padding(horizontal = 22.dp, vertical = 10.dp),
+            .clickable(press, indication = null, role = Role.Button, onClick = onClick).padding(horizontal = Space.xl, vertical = Space.md),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
