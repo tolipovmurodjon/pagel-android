@@ -269,7 +269,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     // Both edges are an alpha mask on the CONTENT (Boss 2026-10-28: "that colour is applied to the status
                     // bar too"): the list melts away under the clock and toward the bar, the aurora runs unbroken from the
                     // top pixel. Never a painted band.
-                    .then(if (!GlassStage.on || top is HabitTimerRoute) Modifier else Modifier.edgeFade(top + 14.dp, if (onTop) fadeTop else null)),
+                    .then(if (!GlassStage.on || stack.lastOrNull() is HabitTimerRoute) Modifier else Modifier.edgeFade(top + 14.dp, if (onTop) fadeTop else null)),
             ) {
             key(selected) { NavDisplay(
                 backStack = stack,
