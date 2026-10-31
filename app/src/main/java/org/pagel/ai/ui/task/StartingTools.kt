@@ -96,7 +96,8 @@ internal fun StartRows(micro: Int, onTiny: () -> Unit, onStuck: () -> Unit, task
                 thickness = 1.dp)
             ToolRow(TabIcons.CircleHelp, "I'm stuck", "4 quick fixes", onStuck)
             if (taskId.isNotEmpty()) {
-                HorizontalDivider(Modifier.padding(start = Space.xxl + Space.xxl), color = Divider, thickness = 1.dp)
+                HorizontalDivider(Modifier.padding(start = Space.xxl + Space.xxl), color = Divider,
+                    thickness = 1.dp)
                 WhereRow(taskId)
             }
         }
