@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import org.pagel.ai.data.habits.HabitLook
 import org.pagel.ai.ui.glass.Emoji
 import org.pagel.ai.ui.glass.TabIcons
