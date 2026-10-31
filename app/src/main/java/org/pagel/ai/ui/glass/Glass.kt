@@ -32,6 +32,8 @@ object Glass {
     val Risk = Color(0xFFB3261E)
     /** A grant that needs a tap ("Notifications off"): amber, never red; the words stay ink (checker 3 #1). */
     val Amber = Color(0xFFB7791F)
+    /** Amber for words (late, "since Tue"): 5.5:1 on white, the quiet stand-in for red. */
+    val AmberInk = Color(0xFF8A5A0B)
 
     private fun variable(res: Int, weight: FontWeight) =
         Font(res, weight, variationSettings = FontVariation.Settings(weight, FontStyle.Normal))
