@@ -1437,7 +1437,8 @@ $T adb shell am force-stop "$PKG"; $T adb shell am start -W -n "$PKG/.MainActivi
 front namoz-start
 for k in 1 2 3; do tap Habits && break; $T adb shell input keyevent 4; sleep 1; done
 sleep 2
-for k in 1 2 3; do tap Namoz && break; $T adb shell input swipe 160 200 160 600 400; sleep 1; done
+# The Namoz page opens from a prayer row (each prayer sits in its time of day now; the one Namoz card is gone once tracking runs).
+for k in 1 2 3 4; do tap 'Prayer: [^"]*' && break; $T adb shell input swipe 160 460 160 260 400; sleep 1; done
 shot namoz-page 3
 grep -q 'text="Next · ' "$(last namoz-page)" || { log "WALKTHROUGH: the Namoz page did not open (no Next · line)"; exit 1; }
 grep -q 'text="Tracking starts 1 November"' "$(last namoz-page)" && { log "WALKTHROUGH: on 12 November the page still waits for 1 November"; exit 1; }
