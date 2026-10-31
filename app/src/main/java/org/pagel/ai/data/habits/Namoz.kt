@@ -17,6 +17,16 @@ import java.time.ZoneId
  * Asr, Peshin 4 min after zawal, Xufton 1 min earlier. Checked against the published Tashkent table for all 30 days of
  * November 2026: 180 times, the worst off by 1 minute (NamozTest). PAGEL never rules on anything; it only shows times.
  */
+/**
+ * "Prayed later" (qaza): a prayer made after its window, kept in Boss's own private log, apart from the habit ticks.
+ * It never touches the chain, a streak, a perfect day or any badge, and nothing on screen judges it.
+ */
+object NamozQaza {
+    fun key(day: String, taskId: String) = "$day|$taskId"
+    fun encode(keys: Set<String>) = keys.sorted().joinToString(",")
+    fun decode(text: String): Set<String> = text.split(',').filter { it.contains('|') }.toSet()
+}
+
 object Namoz {
     const val GROUP = "namoz"
     /** No chain before this day and no missed day counted before it. */

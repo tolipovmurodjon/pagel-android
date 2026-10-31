@@ -18,6 +18,7 @@ import org.pagel.ai.data.habits.StripContext
 import org.pagel.ai.data.habits.habitBadges
 import org.pagel.ai.data.habits.habitBoard
 import org.pagel.ai.data.habits.heatOf
+import org.pagel.ai.data.habits.Part
 import org.pagel.ai.ui.glass.Emoji
 import org.pagel.ai.ui.glass.HabitIcons
 import org.pagel.ai.ui.habits.HabitTimer
@@ -156,6 +157,23 @@ class HabitsV3LogicTest {
         // A volume outside 0..1 is pulled back into range.
         assertEquals(1f, TimerLook.decode("0|true|0|1|7.5")!!.volume, 0f)
         assertNull(TimerLook.decode("0|true"))
+    }
+
+    @Test fun prayedLaterIsLoggedApartAndRoundTrips() {
+        val keys = setOf(org.pagel.ai.data.habits.NamozQaza.key("2026-11-02", "t_asr"), org.pagel.ai.data.habits.NamozQaza.key("2026-11-02", "t_shom"))
+        assertEquals(keys, org.pagel.ai.data.habits.NamozQaza.decode(org.pagel.ai.data.habits.NamozQaza.encode(keys)))
+        assertEquals(emptySet<String>(), org.pagel.ai.data.habits.NamozQaza.decode(""))
+    }
+
+    @Test fun theFivePrayersSitInTheirTimeOfDayAndNeverInTheChain() {
+        val day = LocalDate.parse("2026-11-02")
+        val windows = org.pagel.ai.data.habits.Namoz.windows(day)
+        val parts = windows.associate { it.prayer to org.pagel.ai.data.habits.partAt(it.from) }
+        assertEquals(Part.MORNING, parts[org.pagel.ai.data.habits.Namoz.Prayer.BOMDOD])
+        assertEquals(Part.AFTERNOON, parts[org.pagel.ai.data.habits.Namoz.Prayer.PESHIN])
+        assertEquals(Part.AFTERNOON, parts[org.pagel.ai.data.habits.Namoz.Prayer.ASR])
+        assertEquals(Part.EVENING, parts[org.pagel.ai.data.habits.Namoz.Prayer.SHOM])
+        assertEquals(Part.EVENING, parts[org.pagel.ai.data.habits.Namoz.Prayer.XUFTON])
     }
 
     @Test fun theTimerStateMachineStartPauseResumeFinish() {

@@ -227,6 +227,9 @@ data class HabitBoard(
     val chainOut: Boolean = false,
 ) {
     fun inPart(p: Part) = cards.filter { it.part == p || it.part == Part.ANYTIME }
+
+    /** The prayers that sit in a time-of-day section at their time (All shows the five). Never part of the chain or any count. */
+    fun prayersIn(p: Part) = if (p == Part.ANYTIME) namoz else namoz.filter { it.part == p }
     val doneCount get() = cards.count { it.finished }
     val total get() = cards.size
     val namozDone get() = namoz.count { it.finished }

@@ -115,6 +115,7 @@ import org.pagel.ai.data.habits.HabitBoard
 import org.pagel.ai.data.habits.HabitCard
 import org.pagel.ai.data.habits.Mark
 import org.pagel.ai.data.habits.Namoz
+import org.pagel.ai.data.habits.NamozQaza
 import org.pagel.ai.data.habits.Part
 import org.pagel.ai.data.habits.StripDay
 import org.pagel.ai.data.habits.Clear
@@ -175,6 +176,7 @@ fun HabitsRoute(
         onTick = vm::tick, onUntick = vm::untick, onOpen = onOpenHabit,
         onSelectDay = vm::selectDay, onSelectPart = vm::selectPart, onHistory = onHistory,
         onStartNamoz = vm::startNamoz, onNamozMenu = { namozSheet = true }, onOpenNamoz = onOpenNamoz,
+        qaza = vm.qaza.collectAsStateWithLifecycle().value, onPrayedLater = vm::prayedLater,
         onNew = { adding = true }, onLink = vm::link,
         onDayOff = { id, off -> if (off) vm.unfreeze(id) else vm.freeze(id) }, onEdit = openTask, onOpenTimer = onOpenTimer,
     )
@@ -205,6 +207,8 @@ fun HabitsScreen(
     onStartNamoz: () -> Unit = {},
     onNamozMenu: () -> Unit = {},
     onOpenNamoz: () -> Unit = {},
+    qaza: Set<String> = emptySet(),
+    onPrayedLater: (String) -> Unit = {},
     onNew: () -> Unit = {},
     onLink: (String, String) -> Unit = { _, _ -> },
     onDayOff: (String, Boolean) -> Unit = { _, _ -> },
@@ -255,14 +259,16 @@ fun HabitsScreen(
             if (ui.day.allDone && ui.finishing.isEmpty() && board.selected == board.today) item(key = "all-done", contentType = "all-done") {
                 AllDone(ui.day.doneCount, ui.day.best, Modifier.animateItem())
             }
-            item(key = "namoz", contentType = "namoz") {
+            // Before the first prayer is added the one Start card; after it, each prayer sits in its own time of day.
+            if (board.namoz.isEmpty()) item(key = "namoz", contentType = "namoz") {
                 NamozGroup(board, today, onTick = ::tick, onUntick = onUntick, onOpen = onOpen, onStart = onStartNamoz, onMenu = onNamozMenu, onPage = onOpenNamoz, centres = centres, modifier = Modifier.animateItem())
             }
             // All, Morning, Afternoon, Evening as one swipe pager (Boss's note 5): the chips and the pages follow each other.
             item(key = "pager", contentType = "pager") {
                 PartPager(ui.part, board, onSelectPart) { part, current ->
                     val cards = cardsFor(board, part)
-                    if (cards.isEmpty()) EmptyPart(part, board.total, onNew)
+                    val prayers = board.prayersIn(part)
+                    if (cards.isEmpty() && prayers.isEmpty()) EmptyPart(part, board.total, onNew)
                     for ((c, depth) in org.pagel.ai.data.habits.HabitLook.stackOrder(cards, { it.task.id }, ui.prefs)) key(c.task.id) { LinkableRow(c.task.id, links, onLink) {
                         HabitCardRow(
                             c, depth = depth.coerceAtMost(2), finishing = c.task.id in ui.finishing, timer = ui.timers[c.task.id], now = ui.now,
@@ -271,6 +277,13 @@ fun HabitsScreen(
                             onDayOff = onDayOff, onEdit = onEdit, onOpenTimer = onOpenTimer,
                             expanded = expandedId == c.task.id, onExpand = { expandedId = if (expandedId == it) null else it },
                         ) }
+                    }
+                    for (c in prayers) key("prayer-${c.task.id}") {
+                        PrayerRow(
+                            c, board.selected == today, NamozQaza.key(today.toString(), c.task.id) in qaza,
+                            onTick = ::tick, onUntick = onUntick, onOpenPage = onOpenNamoz, onPrayedLater = onPrayedLater,
+                            onCentre = { if (current) centres[c.task.id] = it },
+                        )
                     }
                 }
             }
@@ -1062,6 +1075,58 @@ private fun NamozGroup(
                         Text(w?.label().orEmpty(), style = Glass.NumberText, color = Glass.Muted, softWrap = false, maxLines = 1)
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * One prayer in its time of day: a quiet row, never a coloured card. Line icon, name, window, tick. It stands out with a mint
+ * outline only while its time is on. A window that ended unticked stays neutral (no "missed", no red) and offers a quiet
+ * "Prayed later". A tap on the row opens the Namoz page. Nothing here counts toward a chain, streak or badge.
+ */
+@Composable
+private fun PrayerRow(
+    c: HabitCard, isToday: Boolean, prayedLater: Boolean, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpenPage: () -> Unit,
+    onPrayedLater: (String) -> Unit, onCentre: (Offset) -> Unit,
+) {
+    val nowT = LocalTime.now(ZoneId.of("Asia/Tashkent"))
+    val w = c.window
+    val current = isToday && w != null && isNow(w, nowT) && !c.done
+    val over = isToday && w != null && !c.done && !isNow(w, nowT) && nowT >= w.to && w.to > w.from
+    val shape = RoundedCornerShape(Space.lg)
+    val press = remember { MutableInteractionSource() }
+    Row(
+        Modifier.fillMaxWidth().padding(start = Space.sm, end = Space.gutter).testTag("prayer-row"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CheckCircle(
+            c, c.done, enabled = c.mark != Mark.BEFORE && c.mark != Mark.FUTURE, onClick = { if (c.done) onUntick(c.task.id) else onTick(c.task.id) },
+            modifier = Modifier.onGloballyPositioned { onCentre(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) },
+        )
+        Row(
+            Modifier.weight(1f).heightIn(min = Space.row).pressScale(press).clip(shape)
+                .background(Color.White.copy(alpha = if (current) 0.82f else 0.5f))
+                .border(if (current) 1.5.dp else 1.dp, if (current) Glass.Primary else Color.White.copy(alpha = 0.8f), shape)
+                .clickable(press, indication = null, role = Role.Button, onClickLabel = "Open the Namoz page") { onOpenPage() }
+                .semantics { contentDescription = "Prayer: ${c.title}" }.padding(horizontal = Space.md),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(HabitIcons.vector(HabitIcons.forEmoji(c.emoji)), null, tint = Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(Space.md))
+            Column(Modifier.weight(1f).padding(vertical = Space.sm)) {
+                Text(c.title, style = MaterialTheme.typography.bodyLarge, color = if (c.done) Glass.Muted else Glass.Ink, maxLines = 1)
+                Text(w?.label().orEmpty(), style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false)
+            }
+            if (over && !prayedLater) {
+                val later = remember { MutableInteractionSource() }
+                Text(
+                    "Prayed later", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk,
+                    modifier = Modifier.heightIn(min = Space.touch).pressScale(later).clickable(later, indication = null, role = Role.Button) { onPrayedLater(c.task.id) }
+                        .wrapContentHeight(Alignment.CenterVertically).padding(horizontal = Space.sm),
+                )
+            } else if (prayedLater && !c.done) {
+                Text("Prayed later", style = MaterialTheme.typography.labelLarge, color = Glass.Muted, modifier = Modifier.padding(horizontal = Space.sm))
             }
         }
     }

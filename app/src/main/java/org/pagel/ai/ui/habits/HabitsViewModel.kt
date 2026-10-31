@@ -142,6 +142,15 @@ class HabitsViewModel @Inject constructor(
     session: Session,
 ) : ViewModel() {
     private val finishing = MutableStateFlow<Set<String>>(emptySet())
+    /** Prayers made after their window ("day|id"): his own private log, kept on the phone, never counted anywhere. */
+    private val qazaLog = MutableStateFlow(org.pagel.ai.data.habits.NamozQaza.decode(ctx.getSharedPreferences("pagel-habits", Context.MODE_PRIVATE).getString("namoz-qaza", "").orEmpty()))
+    val qaza: StateFlow<Set<String>> = qazaLog
+
+    fun prayedLater(id: String) {
+        val key = org.pagel.ai.data.habits.NamozQaza.key(repo.today(), id)
+        qazaLog.update { it + key }
+        ctx.getSharedPreferences("pagel-habits", Context.MODE_PRIVATE).edit().putString("namoz-qaza", org.pagel.ai.data.habits.NamozQaza.encode(qazaLog.value)).apply()
+    }
     private val selected = MutableStateFlow<LocalDate?>(null)
     private val chosenPart = MutableStateFlow<Part?>(null)
     private val timers = HabitClocks.all
