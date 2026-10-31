@@ -778,7 +778,7 @@ internal object RowPart {
  * is a 2-stop OKLCH gradient and warms with how many of the last 30 days were done (a missed day is only lighter, never
  * a mark). Done: the check fills with the card's colour and the card settles to 55 % with a spring. A tap opens the
  * habit's page; the menu holds Take a day off, Timer and Edit. A habit with minutes has a play ring for a check (tap =
- * run the clock) and a small Timer tag that opens the full-screen timer. Every card is one height: two title lines, one
+ * run the clock) and the menu opens the full-screen timer. Every card is one height: two title lines, one
  * progress line.
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -861,21 +861,6 @@ internal fun HabitCardRow(
                             Icon(TabIcons.Flame, null, tint = look.content, modifier = Modifier.size(13.dp).clearAndSetSemantics {})
                             Spacer(Modifier.width(Space.xs))
                             Text("${c.streak}", style = Glass.NumberText, color = look.content, modifier = Modifier.clearAndSetSemantics {})
-                        }
-                        if (minutes != null && !done) {
-                            val tag = remember { MutableInteractionSource() }
-                            Row(
-                                Modifier.padding(start = Space.sm).fillMaxHeight().testTag(RowPart.TIMER).pressScale(tag).clip(CircleShape)
-                                    .background(look.content.copy(alpha = 0.18f))
-                                    .clickable(tag, indication = null, role = Role.Button) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onOpenTimer(id) }
-                                    .semantics { contentDescription = "Open timer: ${c.title}" }
-                                    .padding(horizontal = Space.sm),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(TabIcons.Clock, null, tint = look.content, modifier = Modifier.size(12.dp).clearAndSetSemantics {})
-                                Spacer(Modifier.width(Space.xs))
-                                Text("Timer", style = MaterialTheme.typography.labelSmall, color = look.content, maxLines = 1, softWrap = false, modifier = Modifier.clearAndSetSemantics {})
-                            }
                         }
                     }
                 }

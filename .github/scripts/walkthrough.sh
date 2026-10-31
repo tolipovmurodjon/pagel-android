@@ -621,13 +621,14 @@ tap "Take a day off" && shot habit-day-off 0.6 || { log "WALKTHROUGH: the card m
 sleep 2
 shot habit-day-off-settled 1
 grep -q 'Frozen\|snowflake' "$OUT/$(printf '%02d' $N)-habit-day-off-settled.xml" && { log "WALKTHROUGH: a day off is marked frozen on screen (Boss: keep it as fully done)"; exit 1; }
-log "-- the full-screen timer: open it from the card's Timer tag, swipe its colour, start and pause"
+log "-- the full-screen timer: open it from the card's menu, swipe its colour, start and pause"
 $T adb shell input swipe 160 200 160 700 400; sleep 1
 for k in 1 2 3 4 5; do
-  onscreen "Open timer: Stretch for ten minutes" && break
+  onscreen "Habit menu: Stretch for ten minutes" && break
   $T adb shell input swipe 160 460 160 300 400; sleep 1
 done
-tap "Open timer: Stretch for ten minutes" && shot habit-timer-screen 1.5 || { log "WALKTHROUGH: the Stretch card has no Timer tag to open"; exit 1; }
+tap "Habit menu: Stretch for ten minutes" || { log "WALKTHROUGH: the Stretch card has no menu"; exit 1; }
+tap "Timer" && shot habit-timer-screen 1.5 || { log "WALKTHROUGH: the Stretch card menu has no Timer"; exit 1; }
 grep -qE 'content-desc="(Start|Resume|Pause) timer"' "$OUT/$(printf '%02d' $N)-habit-timer-screen.xml" || { log "WALKTHROUGH: the timer screen has no Start pill"; exit 1; }
 $T adb shell input swipe 900 1100 150 1100 250
 sleep 1
