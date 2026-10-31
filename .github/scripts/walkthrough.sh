@@ -605,11 +605,11 @@ grep -q 'content-desc="Time wheel' "$PANEL" && { log "WALKTHROUGH: the time whee
 log "-- the title is edited in place: tap it, type, Done; pagel.uz gets one PATCH title"
 TITLES=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"title"' "$FAKE_LOG")
 tap "Title" || { log "WALKTHROUGH: the habit panel has no Title field"; exit 1; }
-$T adb shell input keyevent 123; $T adb shell "input text 'x'"; shot habit-title-edit 1; tap "Who you are becoming"; sleep 1; hide_keyboard
+sleep 1; $T adb shell input keycombination 113 29; $T adb shell "input text 'Stretch%sfor%sten%sminutes%s2'"; shot habit-title-edit 1; tap "Who you are becoming"; sleep 1; hide_keyboard
 for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"title"' "$FAKE_LOG")" -gt "$TITLES" ] && break; sleep 1; done
 [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"title"' "$FAKE_LOG")" -gt "$TITLES" ] || { log "WALKTHROUGH: the habit's new title never reached pagel.uz"; grep PATCH "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 # Put the name back, so the steps after this one still find "Stretch for ten minutes".
-tap "Title"; $T adb shell input keyevent 123; $T adb shell input keyevent 67; tap "Who you are becoming"; sleep 1; hide_keyboard
+tap "Title"; sleep 1; $T adb shell input keycombination 113 29; $T adb shell "input text 'Stretch%sfor%sten%sminutes'"; tap "Who you are becoming"; sleep 1; hide_keyboard
 log "-- Repeat → Every weekday: one PATCH every"
 tap 'Repeat: [^"]*' && shot habit-repeat-sheet 2
 tap "Every weekday" || { log "WALKTHROUGH: the Repeat sheet has no Every weekday"; exit 1; }
