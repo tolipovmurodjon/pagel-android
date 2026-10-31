@@ -575,7 +575,7 @@ habit_xy() {
   set -- $(echo "$b" | grep -oE '[0-9]+' | tr '\n' ' ')
   echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"
 }
-$T adb shell input swipe 160 200 160 700 400; sleep 1
+$T adb shell input swipe 160 200 160 600 400; sleep 1
 TODAY_WD=$(TZ=Asia/Tashkent date +'%A %-d %B')
 YDATE=$(TZ=Asia/Tashkent date -d yesterday +%Y-%m-%d)
 YESTERDAY_WD=$(TZ=Asia/Tashkent date -d yesterday +'%A %-d %B')
@@ -583,16 +583,16 @@ STRIP_XY=$(habit_xy "$TODAY_WD") || { log "WALKTHROUGH: Habits' week strip has n
 set -- $STRIP_XY; SY=$2
 # Android's own frame stats for just the swipes: the janky share is logged (JankStats' number, from gfxinfo).
 $T adb shell dumpsys gfxinfo "$PKG" reset > /dev/null
-$T adb shell input swipe 120 "$SY" 900 "$SY" 250
+$T adb shell input swipe 40 "$SY" 280 "$SY" 300
 sleep 1
 shot habits-week-back 1.5
 grep -q 'looking back' "$OUT/$(printf '%02d' $N)-habits-week-back.xml" || { log "WALKTHROUGH: a swipe right on the week strip did not bring the week before"; exit 1; }
-$T adb shell input swipe 900 "$SY" 120 "$SY" 250
+$T adb shell input swipe 280 "$SY" 40 "$SY" 300
 sleep 1
 shot habits-week-forward 1.5
 grep -qF "text=\"$TODAY_WD\"" "$OUT/$(printf '%02d' $N)-habits-week-forward.xml" || { log "WALKTHROUGH: a swipe left on the week strip did not bring this week and today back"; exit 1; }
 # A swipe further forward has no week to go to: today stays today.
-$T adb shell input swipe 900 "$SY" 120 "$SY" 250
+$T adb shell input swipe 280 "$SY" 40 "$SY" 300
 sleep 1
 shot habits-week-no-further 1.5
 grep -qF "text=\"$TODAY_WD\"" "$OUT/$(printf '%02d' $N)-habits-week-no-further.xml" || { log "WALKTHROUGH: a swipe left past this week moved the day"; exit 1; }
@@ -600,7 +600,7 @@ $T adb shell dumpsys gfxinfo "$PKG" > "$OUT/gfxinfo-week-swipe.txt"
 JANK=$(grep -E "Janky frames:" "$OUT/gfxinfo-week-swipe.txt" | head -1)
 log "   JANK on the week swipes (target < 5 % on a phone; an emulator draws in software): ${JANK:-unknown}"
 log "-- a missed day: tap yesterday on the strip, tick a habit for it, see pagel.uz get that date, Undo writes the inverse"
-if [ "$(TZ=Asia/Tashkent date +%u)" = "1" ]; then $T adb shell input swipe 120 "$SY" 900 "$SY" 250; sleep 1; fi
+if [ "$(TZ=Asia/Tashkent date +%u)" = "1" ]; then $T adb shell input swipe 40 "$SY" 280 "$SY" 300; sleep 1; fi
 tap "$YESTERDAY_WD" && shot habits-yesterday 1.5 || { log "WALKTHROUGH: no \"$YESTERDAY_WD\" on the strip to tap"; exit 1; }
 $T adb shell input swipe 160 460 160 260 400; sleep 1
 tap "Done: Drink water" && shot habits-yesterday-logged 1
@@ -615,14 +615,19 @@ grep -qF "$HU" "$FAKE_LOG" || { log "WALKTHROUGH: the Undo of yesterday's tick n
 log "   the Undo wrote the inverse for that date after ~${i} s"
 tap "Back to today" && sleep 1
 log "-- a day off: the card menu, Take a day off; the card reads Finished (drawn as done), the strip joins it like a done day"
-$T adb shell input swipe 160 460 160 260 400; sleep 1
+$T adb shell input swipe 160 200 160 600 400; sleep 1
+tap All && sleep 1
+for k in 1 2 3 4 5; do
+  onscreen "Habit menu: Read 10 pages" && break
+  $T adb shell input swipe 160 460 160 300 400; sleep 1
+done
 tap "Habit menu: Read 10 pages" && shot habit-card-menu 1 || { log "WALKTHROUGH: no card menu on \"Read 10 pages\""; exit 1; }
 tap "Take a day off" && shot habit-day-off 0.6 || { log "WALKTHROUGH: the card menu has no \"Take a day off\""; exit 1; }
 sleep 2
 shot habit-day-off-settled 1
 grep -q 'Frozen\|snowflake' "$OUT/$(printf '%02d' $N)-habit-day-off-settled.xml" && { log "WALKTHROUGH: a day off is marked frozen on screen (Boss: keep it as fully done)"; exit 1; }
 log "-- the full-screen timer: open it from the card's menu, swipe its colour, start and pause"
-$T adb shell input swipe 160 200 160 700 400; sleep 1
+$T adb shell input swipe 160 200 160 600 400; sleep 1
 for k in 1 2 3 4 5; do
   onscreen "Habit menu: Stretch for ten minutes" && break
   $T adb shell input swipe 160 460 160 300 400; sleep 1
@@ -630,10 +635,10 @@ done
 tap "Habit menu: Stretch for ten minutes" || { log "WALKTHROUGH: the Stretch card has no menu"; exit 1; }
 tap "Timer" && shot habit-timer-screen 1.5 || { log "WALKTHROUGH: the Stretch card menu has no Timer"; exit 1; }
 grep -qE 'content-desc="(Start|Resume|Pause) timer"' "$OUT/$(printf '%02d' $N)-habit-timer-screen.xml" || { log "WALKTHROUGH: the timer screen has no Start pill"; exit 1; }
-$T adb shell input swipe 900 1100 150 1100 250
+$T adb shell input swipe 280 400 40 400 300
 sleep 1
 shot habit-timer-colour 1
-$T adb shell input swipe 900 1100 150 1100 250
+$T adb shell input swipe 280 400 40 400 300
 sleep 1
 shot habit-timer-colour-2 1
 if tap "Resume timer" || tap "Start timer"; then sleep 3; shot habit-timer-running 0.5; grep -q 'content-desc="Pause timer"' "$OUT/$(printf '%02d' $N)-habit-timer-running.xml" || { log "WALKTHROUGH: the timer did not start from its Start pill"; exit 1; }; tap "Pause timer" && sleep 1; fi
