@@ -269,7 +269,8 @@ class HabitPanelScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-panel-after-open.png")
         compose.onNodeWithContentDescription("After: None").assertExists()
         compose.onNodeWithContentDescription("After: Fajr").assertExists()
-        compose.onNodeWithContentDescription("After: Coffee").assertIsSelected()
+        // The row itself also reads "After: Coffee" (its value); the list line is the selectable one.
+        compose.onNode(androidx.compose.ui.test.hasContentDescription("After: Coffee") and androidx.compose.ui.test.isSelectable()).assertIsSelected()
         // h2 already comes after h1, so h1 may not come after h2 (a loop); itself is never offered.
         compose.onAllNodesWithContentDescription("After: Go through five saves in your Inbox").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("After: Stretch for ten minutes").assertCountEquals(0)
