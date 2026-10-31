@@ -75,7 +75,7 @@ today/Celebrate.kt 0
 today/FinishMoment.kt 0
 today/StartingMachine.kt 0
 today/TodayDeal.kt 0
-today/TodayScreen.kt 20
+today/TodayScreen.kt 22
 today/TodayViewModel.kt 0
 today/WhatNow.kt 0
 upcoming/CalendarViews.kt 1
