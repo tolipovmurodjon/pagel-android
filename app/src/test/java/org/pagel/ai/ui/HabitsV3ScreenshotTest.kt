@@ -16,6 +16,8 @@ import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.isRoot
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
@@ -195,7 +197,8 @@ class HabitsV3ScreenshotTest {
     @Test fun theMenuHoldsDayOffTimerAndEdit() {
         show { HabitsScreen(ui(), pad) }
         compose.onNodeWithContentDescription("Habit menu: Stretch for ten minutes").performClick()
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-v3-menu.png")
+        // The menu is a popup window: two roots, so the page's root is the first.
+        compose.onAllNodes(isRoot()).onFirst().captureRoboImage("build/outputs/roborazzi/habits-v3-menu.png")
         compose.onNodeWithText("Take a day off").assertExists()
         compose.onNodeWithText("Edit").assertExists()
     }

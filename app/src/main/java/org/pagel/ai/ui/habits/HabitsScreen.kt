@@ -589,9 +589,8 @@ private fun PartPager(part: Part, board: HabitBoard, onSelect: (Part) -> Unit, p
 private fun PartPills(part: Part, board: HabitBoard, onSelect: (Part) -> Unit) {
     val haptics = LocalHapticFeedback.current
     val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
-    val icons = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 340 && !big
     val weights = mapOf(Part.ANYTIME to 0.8f, Part.MORNING to 1.1f, Part.AFTERNOON to 1.25f, Part.EVENING to 1.0f)
-    val glyph = mapOf(Part.MORNING to TabIcons.Sunrise, Part.AFTERNOON to TabIcons.Sun, Part.EVENING to TabIcons.Moon)
+    val glyph = mapOf(Part.ANYTIME to TabIcons.ListTodo, Part.MORNING to TabIcons.Sunrise, Part.AFTERNOON to TabIcons.Sun, Part.EVENING to TabIcons.Moon)
     Row(
         Modifier.fillMaxWidth().then(if (big) Modifier.horizontalScroll(rememberScrollState()) else Modifier).padding(horizontal = Space.gutter),
         horizontalArrangement = Arrangement.spacedBy(Space.sm),
@@ -600,8 +599,8 @@ private fun PartPills(part: Part, board: HabitBoard, onSelect: (Part) -> Unit) {
             val on = p == part
             val left = cardsFor(board, p).count { !it.finished }
             val press = remember { MutableInteractionSource() }
-            Row(
-                (if (big) Modifier else Modifier.weight(weights.getValue(p))).heightIn(min = Space.touch).pressScale(press).clip(CircleShape)
+            Column(
+                (if (big) Modifier else Modifier.weight(weights.getValue(p))).heightIn(min = if (big) Space.touch else Space.row).pressScale(press).clip(CircleShape)
                     .background(if (on) Color.White.copy(alpha = 0.92f) else Color.White.copy(alpha = 0.34f))
                     .border(if (on) 1.5.dp else 1.dp, if (on) Glass.Primary else Color.White.copy(alpha = 0.8f), CircleShape)
                     // One merging node: clickable + semantics(mergeDescendants) made two, the label on one and
@@ -609,12 +608,13 @@ private fun PartPills(part: Part, board: HabitBoard, onSelect: (Part) -> Unit) {
                     .selectable(on, press, indication = null, role = Role.Tab) { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onSelect(p) }
                     .semantics { contentDescription = chipLabel(p); if (left > 0) stateDescription = "$left left" }
                     .padding(horizontal = if (big) Space.lg else Space.xs),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
             ) {
+                // The icon sits over the word, so the word keeps the chip's whole width at 320 dp (a large font drops the icon and scrolls).
                 val g = glyph[p]
-                if (icons && g != null) {
-                    Icon(g, null, tint = if (on) Glass.PrimaryInk else Glass.Muted, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(Space.xs))
+                if (!big && g != null) {
+                    Icon(g, null, tint = if (on) Glass.PrimaryInk else Glass.Muted, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.height(Space.xs))
                 }
                 Text(chipLabel(p), style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (on) FontWeight.Bold else FontWeight.Medium),
                     color = if (on) Glass.Ink else Glass.Muted, maxLines = 1, softWrap = false)
