@@ -418,6 +418,8 @@ sleep 1.5
 shot inbox-order-newest 1.5
 grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbox-order-newest.xml" || { log "WALKTHROUGH: Newest first did not bring the newest card back"; exit 1; }
 log "   chips filter by source, All resets, Oldest first flips the deck, Shuffle deals a new first card on reopen and the order is kept"
+# The next steps read the numbered "inbox" dump: take it again here, after the chip steps' own shots.
+shot inbox 2
 # Offline for real: the app's only road to the fake pagel.uz is adb reverse, so removing it refuses every call.
 $T adb reverse --remove tcp:8799
 log "   offline (adb reverse removed)"
