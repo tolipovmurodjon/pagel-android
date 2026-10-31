@@ -242,10 +242,10 @@ abstract class InboxDao {
      * stay as they are, and the rest takes the server's order behind them. Counts: the server's plus what still waits.
      */
     @Transaction
-    open suspend fun refresh(items: List<InboxItemEntity>, state: InboxStateEntity, startedAt: Long) {
+    open suspend fun refresh(items: List<InboxItemEntity>, state: InboxStateEntity, startedAt: Long, pinTop: Boolean) {
         val waiting = waitingFiles().toSet()
         val capturing = capturingFiles().toSet()
-        val top = topOnce()?.takeIf { it.file !in waiting && it.file !in capturing && !it.file.startsWith("capture/") }
+        val top = if (!pinTop) null else topOnce()?.takeIf { it.file !in waiting && it.file !in capturing && !it.file.startsWith("capture/") }
         val keepFiles = waiting + capturing + listOfNotNull(top?.file)
         deleteExcept(keepFiles.toList().ifEmpty { listOf("") })
         top?.let { t -> upsert(listOf((items.firstOrNull { it.file == t.file } ?: t).copy(position = 0, sortedAs = null))) }

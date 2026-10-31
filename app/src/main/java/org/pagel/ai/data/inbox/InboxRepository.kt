@@ -82,6 +82,11 @@ class InboxRepository(
     /** How many old saves pagel.uz holds (null = not known yet). */
     val oldTotal: StateFlow<Int?> = captured.oldLeft
     val leavingOld: Flow<Int> = dao.leavingOldCount()
+    private var visitSeed = clock()
+    private var randomVisit = false
+
+    /** The save on top when Boss left the Inbox: the next visit deals it last. */
+    fun markShown(file: String) = captured.markShown(file)
     val state: Flow<InboxStateEntity?> = dao.state()
     val leaving: Flow<Int> = dao.leavingCount()
 
@@ -89,8 +94,10 @@ class InboxRepository(
      * Pulls the next cards, newest first (Boss 2026-10-28: "latest one is main priority than old ones"): no seed, so
      * pagel.uz deals its own order, and [newestFirst] keeps it even from an older pagel.uz that sorts by the import day.
      */
-    suspend fun refresh(account: Account): Outcome<Unit> {
+    suspend fun refresh(account: Account, reshuffle: Boolean = false): Outcome<Unit> {
         val started = clock()
+        // A new visit deals a new random deck, the last 20 shown at the back; a refresh inside it keeps that order.
+        if (reshuffle) { visitSeed = clock(); randomVisit = true }
         return when (val r = api.inbox(account.serverUrl, account.token, DECK, seed = 0)) {
             is Outcome.Failed -> r
             is Outcome.Ok -> {
@@ -101,8 +108,8 @@ class InboxRepository(
                 val here = captured.files.value
                 val current = rows.count { isCurrent(it, fresh.value, here) }
                 if (current < rows.size || rows.size < DECK) captured.oldLeft.value = (b.total - current).coerceAtLeast(0)
-                dao.refresh(newestFirst(b.items.map(::entity)), InboxStateEntity(day = b.day.ifEmpty { tashkentDay(clock()) }, goal = b.goal, sorted = b.sorted, keptToday = b.keptToday,
-                    cap = b.cap, minWords = b.minWords, total = b.total, fetchedAt = clock()), startedAt = started)
+                dao.refresh(if (randomVisit) openOrder(rows, captured.shown, visitSeed) else newestFirst(rows), InboxStateEntity(day = b.day.ifEmpty { tashkentDay(clock()) }, goal = b.goal, sorted = b.sorted, keptToday = b.keptToday,
+                    cap = b.cap, minWords = b.minWords, total = b.total, fetchedAt = clock()), startedAt = started, pinTop = !reshuffle)
                 Outcome.Ok(Unit)
             }
         }
@@ -276,7 +283,8 @@ class InboxSender(
         return when (val out = api.capture(account.serverUrl, account.token, CaptureBody("add", c.id, c.text, c.source))) {
             is Outcome.Ok -> { out.value.file?.let(captured::add); dao.captureSent(op.id, op.taskId, out.value.file); SortStep.SENT }
             is Outcome.Failed -> when (val e = out.error) {
-                is DataError.Refused -> { dao.captureRefused(op.id, op.taskId, e.message); SortStep.SENT }
+                // An older pagel.uz does not know "add": the save stays on the phone, on top, and goes when it learns it.
+                is DataError.Refused -> if (e.message.contains("action is one of")) SortStep.SENT else { dao.captureRefused(op.id, op.taskId, e.message); SortStep.SENT }
                 DataError.Unauthorized -> SortStep.SIGNED_OUT
                 else -> SortStep.TRY_LATER
             }

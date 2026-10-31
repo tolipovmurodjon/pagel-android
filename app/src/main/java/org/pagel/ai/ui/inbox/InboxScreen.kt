@@ -137,17 +137,17 @@ data class ChoiceLook(val icon: ImageVector, val label: String, val hint: String
 val Choice.look: ChoiceLook
     get() = when (this) {
         Choice.ACT -> ChoiceLook(TabIcons.ListTodo, "Action", "a next step in a plan", Color(0xFF1C7E69),
-            "It asks you to DO something. Write the very next physical step: a verb and a thing.", "\"Apply to the grant\" → \"Open the form and fill the first page\" in Humopedia.")
+            "It becomes a task. Write the very next step: a verb and a thing. Good: \"Call Aziz about the grant · Mon\". Bad: \"Grant stuff\".", "\"Apply to the grant\" → \"Open the form and fill the first page\" in Humopedia.")
         Choice.NOTE -> ChoiceLook(TabIcons.StickyNote, "Note", "one line to remember", Color(0xFF1C7E69),
-            "Only one fact is worth keeping: a person, an account, a tool, a price.", "A drone-maker reel → \"@ixtirochi_bola: Uzbek maker, FPV drones with ESP\".")
-        Choice.KEEP -> ChoiceLook(TabIcons.BookOpen, "Learn", "in your words, then recall", Color(0xFF7C4DFF),
-            "An idea you want in your head. Say it in your own words; PAGEL asks you about it later. 5 a day.", "\"Quizzes beat rereading\" → \"every lesson ends with 3 questions\".")
+            "A quick note of any size: a name, a fact, a tool, an idea. Link it to a project or a topic. Good: \"Drone operator: Rustam, Chirchiq test site\". Bad: the caption copied word for word.", "\"Small daily starts beat big plans\" is a good note; so is one name.")
+        Choice.KEEP -> ChoiceLook(TabIcons.BookOpen, "Remember", "an idea, in your words", Color(0xFF7C4DFF),
+            "An idea you want in your head. Say it in your own words; PAGEL asks you about it later. 5 a day. Bad: the caption copied.", "\"Quizzes beat rereading\" → \"every lesson ends with 3 questions\".")
         Choice.NOW -> ChoiceLook(TabIcons.Zap, "Do now", "under 2 minutes", Color(0xFFB25E00),
             "It takes under 2 minutes. Do it right now, then it is gone.", "Follow an account, reply \"thanks\", star a repo.")
         Choice.LATER -> ChoiceLook(TabIcons.Clock, "Later", "once", Color(0xFF6B7280),
-            "Not now, but not sure. Goes to the back once; next time you must decide.", "A long video you cannot watch tonight.")
+            "Not now, but not sure. Goes to the back once; next time you must decide.", "A course for next year.")
         Choice.DROP -> ChoiceLook(TabIcons.Trash, "Drop", "git keeps it", Color(0xFF1F2937),
-            "Nothing to do, nothing to keep. Most saves end here, and that is fine. Undo for 5 s.", "Memes, jokes, ads, \"10 AI tools\" lists you will never open.")
+            "Nothing to do, nothing to keep. Undo for 5 s.", "A duplicate, or a link that is dead.")
         Choice.SOMEDAY -> ChoiceLook(TabIcons.Moon, "Someday", "maybe, with no date", Color(0xFF4F5FA8),
             "Not now, maybe never. One tap files it where the weekly review looks; it has no date and no count.", "\"Learn to weld\" → Someday. Bring it back when the time is right.")
         Choice.WAITING -> ChoiceLook(TabIcons.UserClock, "Waiting", "someone else has the ball", Color(0xFF0E7490),
@@ -299,7 +299,7 @@ fun InboxRoute(
         ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer, sortedCount = sortedToday.size, bulk = bulk,
         actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy, repeat = vm::repeat, capture = onCapture, openOld = vm::openOld, closeOld = vm::closeOld),
     )
-    tidy?.let { t -> TidySheet(t, onSomeday = { vm.tidyAll(Choice.SOMEDAY) }, onDrop = { vm.tidyAll(Choice.DROP) }, onDismiss = vm::closeTidy, onRetry = vm::openTidy) }
+    tidy?.let { t -> TidySheet(t, onSomeday = { vm.tidyAll(Choice.SOMEDAY) }, onDrop = { vm.tidyAll(Choice.DROP) }, onDismiss = vm::closeTidy, onRetry = vm::openTidy, onGroup = vm::dropGroup) }
     form?.let { f -> ChoiceFormSheet(f, ui, onEdit = vm::editForm, onSubmit = vm::submit, onDismiss = vm::closeForm, withPicture = pictures[f.card.file] != null) }
     if (guide) GuideSheet { guide = false }
     reading?.let { c -> ReadAllSheet(c) { reading = null } }
@@ -1051,7 +1051,8 @@ private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, onClick: ()
                 Spacer(Modifier.width(6.dp))
                 Icon(TabIcons.Sparkles, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
             }
-            FitText(sub, MaterialTheme.typography.labelSmall, Color.White, maxLines = 2, minSize = 9.sp)
+            // A short phone at a large font keeps the button to its one word: the card's claim needs the room.
+            if (!(LocalDensity.current.fontScale >= 1.3f && LocalConfiguration.current.screenHeightDp < 700)) FitText(sub, MaterialTheme.typography.labelSmall, Color.White, maxLines = 2, minSize = 9.sp)
         }
     }
 }

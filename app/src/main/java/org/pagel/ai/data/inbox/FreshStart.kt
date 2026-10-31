@@ -40,6 +40,16 @@ fun isCurrent(i: InboxItemEntity, freshFrom: String, captured: Set<String>): Boo
 fun oldPileDays(freshFrom: String, today: String): Int =
     (ChronoUnit.DAYS.between(lineDay(freshFrom), LocalDate.parse(today)) + 1).toInt().coerceAtLeast(0)
 
+/**
+ * The deck for one visit (Boss 2026-10-31: "shuffle shows the same item every time I open the Inbox"): a stable random
+ * order from [seed] (each save's rank comes from the seed and its own name, so a refresh in the same visit keeps the
+ * order), with the saves shown last time dealt at the back and the put-off ones after everything.
+ */
+fun openOrder(items: List<InboxItemEntity>, shown: List<String>, seed: Long): List<InboxItemEntity> {
+    val rank = items.associate { it.file to java.util.Random(seed + it.file.hashCode()).nextInt() }
+    return items.sortedWith(compareBy<InboxItemEntity>({ it.later != null }, { it.file in shown }, { rank.getValue(it.file) }))
+}
+
 private val BULLET = Regex("""^([-*•]|\d{1,3}[.)])\s+""")
 
 /**
@@ -58,6 +68,17 @@ class CapturedFiles(private val prefs: SharedPreferences? = null) {
     private val state = MutableStateFlow(runCatching { prefs?.getStringSet(KEY, null)?.toSet() }.getOrNull().orEmpty())
     val files: StateFlow<Set<String>> = state
 
+    private val seen = MutableStateFlow(runCatching { prefs?.getString(SHOWN, null)?.split('\n')?.filter(String::isNotEmpty) }.getOrNull().orEmpty())
+
+    /** The last [SHOWN_MAX] saves that were on top when Boss left the Inbox: the next visit deals them last. */
+    val shown: List<String> get() = seen.value
+
+    fun markShown(file: String) {
+        if (file.isEmpty()) return
+        seen.update { (it.filter { f -> f != file } + file).takeLast(SHOWN_MAX) }
+        runCatching { prefs?.edit()?.putString(SHOWN, seen.value.joinToString("\n"))?.apply() }
+    }
+
     /** Old saves pagel.uz still holds, as last known; null until the first answer. */
     val oldLeft = MutableStateFlow<Int?>(null)
 
@@ -69,5 +90,7 @@ class CapturedFiles(private val prefs: SharedPreferences? = null) {
     private companion object {
         const val KEY = "captured_files"
         const val MAX = 400
+        const val SHOWN = "shown_files"
+        const val SHOWN_MAX = 20
     }
 }

@@ -399,7 +399,7 @@ y_of() { tr '>' '\n' < "$XML" | grep -E "(text|content-desc)=\"$1\"" | head -1 |
 BAR=$(y_of Today 2)
 [ -n "$BAR" ] || { log "WALKTHROUGH: no Today tab on the Inbox screen"; exit 1; }
 CHECKED=0
-for c in Action Note Learn "Do now" Later Drop "AI pick: [A-Za-z ]+"; do
+for c in Action Note Remember "Do now" Later Drop "AI pick: [A-Za-z ]+"; do
   B=$(y_of "$c" 4); [ -n "$B" ] || continue
   CHECKED=$((CHECKED + 1))
   [ "$B" -le "$BAR" ] || { log "WALKTHROUGH: \"$c\" ends at y=$B, under the tab bar's top y=$BAR"; exit 1; }
@@ -505,7 +505,7 @@ undo_pass() { # $1 the form's button, $2 the card's claim, $3 the card's file
   log "   Undo of \"$1\" took $3 back before it left: pagel.uz never heard of it"
 }
 shot inbox-groups 1.5
-for w in "Can I do something about it\?" Drop Someday Note Learn Later "Do now" Action Project Waiting Calendar; do
+for w in "Can I do something about it\?" Drop Someday Note Remember Later "Do now" Action Project Waiting Calendar; do
   grep -qE "(text|content-desc)=\"$w\"" "$OUT/$(printf '%02d' $N)-inbox-groups.xml" || { log "WALKTHROUGH: the Inbox dock has no \"$w\""; exit 1; }
 done
 log "   the dock shows the question and all ten choices"
@@ -632,7 +632,7 @@ $T adb shell settings put system font_scale 1.5; sleep 3; front inbox-dock-font-
 XML="$OUT/$(printf '%02d' $N)-inbox-dock-font-1.5.xml"
 if grep -q 'text="Can I do something about it?"' "$XML"; then
   BAR=$(y_of Today 2)
-  for c in Drop Someday Note Learn "Do now" Action Project Waiting Calendar Later; do
+  for c in Drop Someday Note Remember "Do now" Action Project Waiting Calendar Later; do
     B=$(y_of "$c" 4); [ -n "$B" ] || { $T adb shell settings put system font_scale 1.0; fail_inbox "no \"$c\" in the dock at 1.5x"; }
     [ "$B" -le "$BAR" ] || { $T adb shell settings put system font_scale 1.0; fail_inbox "at 1.5x \"$c\" ends at y=$B, under the tab bar's top y=$BAR"; }
   done

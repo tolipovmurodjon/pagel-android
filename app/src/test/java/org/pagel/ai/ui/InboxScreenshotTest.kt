@@ -140,7 +140,7 @@ class InboxScreenshotTest {
     @Test fun cardMidSwipeLeftIsLearn() {
         show { screen(ui(listOf(grant, meme)), peek = Offset(-420f, 10f)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-mid-swipe-learn.png")
-        compose.onNodeWithText("LEARN").assertIsDisplayed()
+        compose.onNodeWithText("REMEMBER").assertIsDisplayed()
     }
 
     @Test fun cardMidSwipeDownIsADrop() {

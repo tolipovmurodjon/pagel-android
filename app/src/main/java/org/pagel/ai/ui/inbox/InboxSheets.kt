@@ -322,12 +322,12 @@ private fun Segmented(options: List<String>, chosen: Int, onPick: (Int) -> Unit)
  * takes every one back.
  */
 @Composable
-fun TidySheet(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onDismiss: () -> Unit, onRetry: () -> Unit = {}) {
+fun TidySheet(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onDismiss: () -> Unit, onRetry: () -> Unit = {}, onGroup: (OldGroup) -> Unit = {}) {
     // Material's sheet keeps the height it opened with (CI 41084160574: it opened on "Looking…" and the found count's
     // buttons stayed below the screen). A new state is a new sheet, opened at its own height; a tall one scrolls.
     androidx.compose.runtime.key(tidy.loading, tidy.failed) {
         GlassSheet(onDismiss) {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { TidyContent(tidy, onSomeday, onDrop, onRetry); Spacer(Modifier.height(SheetBottom)) }
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { TidyContent(tidy, onSomeday, onDrop, onRetry, onGroup); Spacer(Modifier.height(SheetBottom)) }
         }
     }
 }
@@ -337,7 +337,7 @@ fun TidySheet(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onDismiss: 
  * then the two moves. Offline: say so and offer Retry. Drop all is the quiet ink button, never red.
  */
 @Composable
-fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onRetry: () -> Unit = {}) {
+fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onRetry: () -> Unit = {}, onGroup: (OldGroup) -> Unit = {}) {
     val n = tidy.count
     Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Text("Old saves", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs, bottom = Space.sm))
@@ -361,6 +361,20 @@ fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onRetry: 
                 PrimaryButton("Move all $n to Someday", TabIcons.Moon, enabled = true, color = Glass.Primary, onClick = onSomeday)
                 Spacer(Modifier.height(Space.sm))
                 QuietButton("Drop all $n", TabIcons.Trash, onDrop)
+                if (tidy.groups.isNotEmpty()) {
+                    Text("Or one topic at a time:", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, top = Space.md))
+                    for (g in tidy.groups) {
+                        val press = remember(g.name) { MutableInteractionSource() }
+                        Row(Modifier.fillMaxWidth().heightIn(min = Space.touch), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${g.name} \u00B7 ${g.items.size}", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, modifier = Modifier.weight(1f).padding(start = Space.xs))
+                            Text(
+                                "Drop group", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk,
+                                modifier = Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button) { onGroup(g) }
+                                    .wrapContentHeight(Alignment.CenterVertically).padding(horizontal = Space.sm).semantics { contentDescription = "Drop group ${g.name}" },
+                            )
+                        }
+                    }
+                }
             }
         }
     }

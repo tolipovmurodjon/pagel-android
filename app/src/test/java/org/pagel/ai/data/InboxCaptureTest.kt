@@ -53,6 +53,7 @@ class InboxCaptureTest {
     private val others = CopyOnWriteArrayList<String>()
     private val gets = CopyOnWriteArrayList<String>()
     @Volatile private var addCode = 201
+    @Volatile private var deckOverride: String? = null
     private var kicks = 0
     private val captured = CapturedFiles()
     /** 15:00 in Tashkent on 31 October: the day before the fresh start. */
@@ -70,7 +71,7 @@ class InboxCaptureTest {
                     request.method == "GET" && path.startsWith("/api/v1/inbox") -> {
                         gets += path
                         val old = path.contains("older_than=")
-                        val items = if (old) listOf("o1", "o2", "o3").joinToString(",") { item(it, "2026-01-05") } else listOf(item("old", "2026-01-05"), item("new", "2026-11-01")).joinToString(",")
+                        val items = if (old) listOf("o1", "o2", "o3").joinToString(",") { item(it, "2026-01-05") } else deckOverride ?: listOf(item("old", "2026-01-05"), item("new", "2026-11-01")).joinToString(",")
                         MockResponse().setBody("""{"day":"2026-11-05","goal":20,"sorted":0,"kept_today":0,"cap":5,"min_words":6,"total":912,"items":[$items]}""")
                     }
                     request.method == "POST" && path == "/api/v1/inbox" -> {
@@ -213,5 +214,47 @@ class InboxCaptureTest {
         now += UNDO_WINDOW_MS + 1
         sender().sendAll(account)
         assertTrue("pagel.uz never heard of either", others.isEmpty())
+    }
+
+    @Test fun everyOpenDealsADifferentFirstItemAndNeverRepeatsTheLastShown() = runBlocking {
+        deckOverride = (1..10).joinToString(",") { item("n$it", "2026-11-02") }
+        val r = repo()
+        val tops = mutableListOf<String>()
+        repeat(5) {
+            now += 60_000
+            assertTrue(r.refresh(account, reshuffle = true) is Outcome.Ok)
+            val top = db.inbox().deck().first().first().file
+            tops += top
+            r.markShown(top)
+        }
+        assertTrue("two opens, two different first items: $tops", tops[0] != tops[1])
+        assertEquals("none of the last shown comes back first: $tops", tops.size, tops.toSet().size)
+    }
+
+    @Test fun aRefreshInsideOneVisitKeepsItsOrder() = runBlocking {
+        deckOverride = (1..10).joinToString(",") { item("n$it", "2026-11-02") }
+        val r = repo()
+        r.refresh(account, reshuffle = true)
+        val first = db.inbox().deck().first().map { it.file }
+        r.refresh(account)
+        assertEquals(first, db.inbox().deck().first().map { it.file })
+    }
+
+    @Test fun theOldPileGroupsByTopicAndSourceWithNoAiCall() {
+        fun e(i: Int, claim: String, source: String, day: String) = row("inbox/g$i.md", day).copy(claim = claim, source = source, text = claim)
+        val items = (1..4).map { e(it, "Claude Code tip $it", "https://www.instagram.com/p/$it/", "2025-03-01") } +
+            (5..9).map { e(it, "A reel about cooking $it", "https://www.instagram.com/p/$it/", "2025-04-01") } +
+            listOf(e(10, "One lonely link", "https://example.com/x", "2025-05-01"))
+        val groups = org.pagel.ai.ui.inbox.oldGroups(items)
+        assertEquals(listOf("Claude / AI tool tips", "Instagram 2025"), groups.map { it.name })
+        assertEquals(listOf(4, 5), groups.map { it.items.size })
+        assertEquals("a group needs 3 saves", 2, groups.size)
+    }
+
+    @Test fun aNoteMayBeOneWord() {
+        val card = org.pagel.ai.ui.inbox.InboxViewModel.card(row("inbox/n.md", "2026-11-02"), false, null)
+        val f = org.pagel.ai.ui.inbox.Form(card, Choice.NOTE, "Rustam", "me", false)
+        assertTrue(org.pagel.ai.ui.inbox.formReady(f, 6))
+        assertFalse("Remember still asks for 6 words", org.pagel.ai.ui.inbox.formReady(f.copy(choice = Choice.KEEP), 6))
     }
 }

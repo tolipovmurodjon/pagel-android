@@ -128,6 +128,8 @@ fun formReady(f: Form, minWords: Int): Boolean = when (f.choice) {
     Choice.NOW -> true
     Choice.KEEP -> words(f.line) >= minWords
     Choice.PROJECT -> words(f.name) >= 1 && words(f.line) >= 2
+    // A note is any size: a name, a fact, a tool (Boss 2026-10-31).
+    Choice.NOTE -> words(f.line) >= 1
     else -> words(f.line) >= 2
 }
 
@@ -138,6 +140,8 @@ fun formReady(f: Form, minWords: Int): Boolean = when (f.choice) {
 data class Tidy(
     val loading: Boolean = true, val items: List<InboxItemEntity> = emptyList(), val failed: Boolean = false,
     val total: Int = items.size, val bySource: Map<String, Int> = emptyMap(),
+    /** The old saves already on the phone, grouped by topic and source: one quiet "Drop group" each. */
+    val groups: List<OldGroup> = emptyList(),
 ) {
     val count get() = maxOf(total, items.size)
 
@@ -242,7 +246,7 @@ class InboxViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     init {
-        refresh()
+        refresh(reshuffle = true)
         // The pictures of the next ten cards, ahead of time while online, so a subway ride still shows them. One that
         // could not be fetched is asked for again when the live link is back (checker 2026-10-28 #4).
         viewModelScope.launch {
@@ -312,13 +316,13 @@ class InboxViewModel @Inject constructor(
     }
 
     /** Pulls the next cards; a failure (offline) is silent: the saved deck stays and sorting goes on. */
-    fun refresh() {
+    fun refresh(reshuffle: Boolean = false) {
         if (refreshing) return
         refreshing = true
         viewModelScope.launch {
             try {
                 val account = (accounts.load() as? AccountState.Paired)?.account ?: return@launch
-                repo.refresh(account)
+                repo.refresh(account, reshuffle)
             } finally {
                 refreshing = false
             }
@@ -352,7 +356,12 @@ class InboxViewModel @Inject constructor(
     }
 
     /** The Inbox is on screen (started) or not: the AI is asked to read only while Boss looks at it. */
-    fun onScreen(on: Boolean) { visible.value = on }
+    fun onScreen(on: Boolean) {
+        // A new visit deals a new random deck; the card that was on top when he left is dealt last next time.
+        if (on && !visible.value) refresh(reshuffle = true)
+        if (!on && visible.value) ui.value.cards.firstOrNull()?.let { repo.markShown(it.file) }
+        visible.value = on
+    }
 
     /** True when pagel.uz took the ask. */
     private suspend fun askToRead(): Boolean {
@@ -493,13 +502,35 @@ class InboxViewModel @Inject constructor(
             val account = (accounts.load() as? AccountState.Paired)?.account
             val r = account?.let { repo.older(it) }
             _tidy.value = when (r) {
-                is org.pagel.ai.data.Outcome.Ok -> Tidy(loading = false, items = r.value.items, total = r.value.total, bySource = r.value.bySource)
+                is org.pagel.ai.data.Outcome.Ok -> Tidy(loading = false, items = r.value.items, total = r.value.total, bySource = r.value.bySource, groups = oldGroups(oldOnPhone()))
                 else -> Tidy(loading = false, failed = true)
             }
         }
     }
 
     fun closeTidy() { _tidy.value = null }
+
+    private suspend fun oldOnPhone(): List<InboxItemEntity> {
+        val fresh = repo.freshFrom.value
+        val here = repo.captured.files.value
+        return repo.deck.first().filter { !isCurrent(it, fresh, here) }
+    }
+
+    /**
+     * "Drop group": every old save in the topic goes as a quiet drop (it never counts toward the day's 20), with one Undo
+     * that stops all of them before pagel.uz hears.
+     */
+    fun dropGroup(g: OldGroup) {
+        _tidy.value = null
+        viewModelScope.launch {
+            val rows = repo.chooseMany(g.items, Choice.DROP, "me")
+            toasts.show("${g.items.size} dropped: ${g.name}", action = "Undo", millis = 5_000) {
+                viewModelScope.launch { repo.undoMany(rows); refresh() }
+            }
+            delay(org.pagel.ai.data.tasks.UNDO_WINDOW_MS + 300)
+            repo.sendNow()
+        }
+    }
 
     /**
      * Boss saw the count and chose: all of them go to Someday or are dropped (checker 2026-10-30 #2: all 412, not the

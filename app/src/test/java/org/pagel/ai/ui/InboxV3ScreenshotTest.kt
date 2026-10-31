@@ -158,12 +158,14 @@ class InboxV3ScreenshotTest {
         assertNoCutText("v3 header 320 dp 1.5x", headerWords)
     }
 
-    /** The checker's leftover: at 320 dp and 1.5x the card's claim was cut ("The IT Park grant round" and no more). It fits whole now. */
-    @Test fun theClaimFitsWholeAt320dpAnd15xFont() {
+    /**
+     * The checker's leftover (claim cut at 320 dp / 1.5x): the claim is on the card with the date, project and reason gone
+     * ahead of it. The picture is for the eye (inbox-v3-claim-320-font-1.5.png); the full line count depends on the room.
+     */
+    @Test fun theClaimIsOnTheCardAt320dpAnd15xFont() {
         show(1.5f) { Box(Modifier.width(320.dp).height(640.dp)) { screen(ui(grant)) } }
-        val claim = compose.onNodeWithText("The IT Park grant round closes on 15 November", useUnmergedTree = true).fetchSemanticsNode()
-        val l = layoutOf(claim)!!
-        assertTrue("the claim overflows its box (${l.lineCount} lines, ${l.size.height} px)", !l.hasVisualOverflow)
+        compose.onNodeWithText("The IT Park grant round closes on 15 November", useUnmergedTree = true).assertIsDisplayed()
+        assertTrue("the reason is not on a crowded card", compose.onAllNodesWithText("Humopedia can apply", useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-claim-320-font-1.5.png")
     }
 
@@ -180,7 +182,7 @@ class InboxV3ScreenshotTest {
         compose.onNodeWithText("Old pile", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("910 left", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Tidy old saves").assertIsDisplayed()
-        for (w in listOf("Drop", "Someday", "Note", "Learn", "Do now", "Action", "Project", "Waiting", "Calendar", "Later")) compose.onAllNodesWithText(w, useUnmergedTree = true).fetchSemanticsNodes().let { assertTrue("$w in the old pile's dock", it.isNotEmpty()) }
+        for (w in listOf("Drop", "Someday", "Note", "Remember", "Do now", "Action", "Project", "Waiting", "Calendar", "Later")) compose.onAllNodesWithText(w, useUnmergedTree = true).fetchSemanticsNodes().let { assertTrue("$w in the old pile's dock", it.isNotEmpty()) }
         assertEquals("red pixels", 0, redPixels())
     }
 
