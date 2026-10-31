@@ -112,7 +112,7 @@ private fun WhereRow(title: String, project: String, set: String?, onWhere: (Str
     val now = set ?: inferred
     val label = WHERE_CYCLE.firstOrNull { it.first == now }?.second ?: "Anywhere"
     val next = when (val i = WHERE_CYCLE.indexOfFirst { it.first == set }) { -1 -> WHERE_CYCLE[0].first; WHERE_CYCLE.lastIndex -> null; else -> WHERE_CYCLE[i + 1].first }
-    ToolRow(TabIcons.MapPin, "Where: $label", if (set == null) "Guessed from the words. Tap to set it" else "Tap for the next place", { onWhere(next) })
+    ToolRow(TabIcons.MapPin, "Where: $label", if (set == null) "Guessed. Tap to set it" else "Tap for the next place", { onWhere(next) })
 }
 
 @Composable
@@ -175,9 +175,11 @@ private fun Chilies(count: Int, color: Color) {
             val x = k * (w + gap)
             // A pod tapering to a curled tip, a flat cap and a short stem: reads as a chili, not a crescent.
             val pod = androidx.compose.ui.graphics.Path().apply {
-                moveTo(x + 4.dp.toPx(), 7.dp.toPx())
-                cubicTo(x + 13.dp.toPx(), 5.dp.toPx(), x + 17.dp.toPx(), 12.dp.toPx(), x + 12.dp.toPx(), 22.dp.toPx())
-                cubicTo(x + 11.dp.toPx(), 15.dp.toPx(), x + 5.dp.toPx(), 13.dp.toPx(), x + 4.dp.toPx(), 7.dp.toPx())
+                moveTo(x + 5.dp.toPx(), 6.dp.toPx())
+                cubicTo(x + 13.dp.toPx(), 5.dp.toPx(), x + 15.dp.toPx(), 12.dp.toPx(), x + 12.dp.toPx(), 17.dp.toPx())
+                cubicTo(x + 10.dp.toPx(), 20.dp.toPx(), x + 6.dp.toPx(), 22.dp.toPx(), x + 3.dp.toPx(), 22.dp.toPx())
+                cubicTo(x + 7.dp.toPx(), 19.dp.toPx(), x + 8.dp.toPx(), 15.dp.toPx(), x + 7.dp.toPx(), 12.dp.toPx())
+                cubicTo(x + 6.dp.toPx(), 10.dp.toPx(), x + 5.dp.toPx(), 8.dp.toPx(), x + 5.dp.toPx(), 6.dp.toPx())
                 close()
             }
             val stroke = androidx.compose.ui.graphics.drawscope.Stroke(line, cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
