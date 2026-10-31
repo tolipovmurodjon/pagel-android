@@ -241,7 +241,7 @@ class HabitsRepositoryTest {
         assertTrue(r.setDay("t_h", "2026-10-25", true))
         assertEquals(listOf(HabitTickEntity("2026-10-25", "t_h")), db.dao().habitTicksOf("t_h"))
         assertTrue(r.setDay("t_h", "2026-10-25", false))
-        val bodies = db.dao().waitingOutbox().map { it.body }
+        val bodies = db.dao().waitingOutbox().map { it.body.orEmpty() }
         assertTrue(bodies.toString(), bodies.any { it.contains("\"done\":true") && it.contains("\"day\":\"2026-10-25\"") })
         assertTrue(bodies.toString(), bodies.any { it.contains("\"done\":false") && it.contains("\"day\":\"2026-10-25\"") })
         // The habit's date never moves for a past day.
