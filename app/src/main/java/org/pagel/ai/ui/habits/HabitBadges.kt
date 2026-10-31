@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -75,9 +76,9 @@ internal fun AchievementsPage(badges: List<HabitBadge>) {
     // The mint card keeps its dark end light enough for ink words (4.5:1 all across).
     val (mintA, mintB) = org.pagel.ai.ui.glass.TileColors.stops("", "mint")
     val look = CardColours(mintA, androidx.compose.ui.graphics.lerp(mintB, mintA, 0.5f), Glass.Ink)
-    Column(verticalArrangement = Arrangement.spacedBy(Space.paneGap)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.xxl)) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = Space.gutter).clip(RoundedCornerShape(Space.xxl))
+            Modifier.fillMaxWidth().padding(horizontal = Space.xxl).clip(RoundedCornerShape(Space.xxl))
                 .background(Brush.linearGradient(listOf(look.a, look.b), start = Offset.Zero, end = Offset.Infinite))
                 .background(Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.18f), Color.Transparent), endY = 220f))
                 .padding(Space.xl),
@@ -110,26 +111,27 @@ internal fun AchievementsPage(badges: List<HabitBadge>) {
         }
         for (kind in BadgeKind.entries) {
             val of = badges.filter { it.kind == kind }
-            Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
-                Column(Modifier.fillMaxWidth().padding(Space.lg)) {
+            Pane(Modifier.fillMaxWidth().padding(horizontal = Space.xxl)) {
+                Column(Modifier.fillMaxWidth().padding(Space.xxl)) {
                     Text(
                         when (kind) { BadgeKind.PERFECT_DAYS -> "Perfect days"; BadgeKind.STREAK -> "Streaks"; BadgeKind.FINISHED -> "Habits finished" },
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = Glass.Ink, modifier = Modifier.semantics { heading() },
                     )
                     Text("${of.count { it.earned }}/${of.size} earned", style = Glass.NumberText, color = Glass.Muted)
-                    Spacer(Modifier.height(Space.md))
+                    Spacer(Modifier.height(Space.lg))
                     for (row in of.chunked(3)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            for (b in row) BadgeCell(b, Modifier.weight(1f), art = 76.dp, textColour = if (b.earned) Glass.Ink else Glass.Muted) { open = b }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.lg)) {
+                            for (b in row) BadgeCell(b, Modifier.weight(1f), art = 64.dp, textColour = if (b.earned) Glass.Ink else Glass.Muted) { open = b }
                             repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
-                        Spacer(Modifier.height(Space.md))
+                        Spacer(Modifier.height(Space.lg))
                     }
                 }
             }
         }
     }
-    open?.let { b -> BadgeSheet(b) { open = null } }
+    // A won badge is a full-screen moment with Share and Save; a locked one stays a small sheet that says how to earn it.
+    open?.let { b -> if (b.earned) BadgeMoment(b) { open = null } else BadgeSheet(b) { open = null } }
 }
 
 @Composable
@@ -140,7 +142,10 @@ private fun BadgeCell(b: HabitBadge, modifier: Modifier, art: Dp, textColour: Co
             .semantics(mergeDescendants = true) { contentDescription = "${b.title}, ${if (b.earned) "earned" else "not yet"}" },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        BadgeArt(b.kind, b.n, b.earned, art)
+        Box {
+            BadgeArt(b.kind, b.n, b.earned, art, Modifier.graphicsLayer { alpha = if (b.earned) 1f else 0.55f })
+            if (!b.earned) androidx.compose.material3.Icon(org.pagel.ai.ui.glass.TabIcons.Lock, null, tint = Glass.Muted, modifier = Modifier.align(Alignment.BottomEnd).size(16.dp))
+        }
         Spacer(Modifier.height(Space.xs))
         Text(b.title, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = textColour, textAlign = TextAlign.Center, minLines = 2, maxLines = 3)
     }

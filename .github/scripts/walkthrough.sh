@@ -697,6 +697,13 @@ for i in $(seq 1 30); do [ "$(grep -c 'POST /api/v1/tasks .*"group":"namoz"' "$F
 log "   5 prayers reached pagel.uz after ~${i} s"
 shot namoz-group 2
 grep -q 'text="Bomdod"' "$OUT/$(printf '%02d' $N)-namoz-group.xml" || log "   (WARN: the Namoz group shows no Bomdod row yet)"
+log "-- each prayer sits in its time of day: Afternoon holds Asr; its tick is its own, the Namoz page opens from its row"
+tap Afternoon && shot namoz-afternoon 1.5
+grep -q 'content-desc="Prayer: Asr"' "$OUT/$(printf '%02d' $N)-namoz-afternoon.xml" || { log "WALKTHROUGH: Afternoon has no Asr prayer row"; exit 1; }
+tap "Done: Asr" && sleep 2 && shot namoz-asr-ticked 1
+tap "Prayer: Asr" && shot namoz-page-after-asr 2.5
+grep -q 'text="My plan"' "$OUT/$(printf '%02d' $N)-namoz-page-after-asr.xml" || log "   (WARN: the Namoz page shows no My plan)"
+$T adb shell input keyevent 4; sleep 1
 tap History && shot habits-history 2
 $T adb shell input keyevent 4; sleep 1
 tap Morning && sleep 1

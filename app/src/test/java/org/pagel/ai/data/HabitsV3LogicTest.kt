@@ -165,6 +165,16 @@ class HabitsV3LogicTest {
         assertEquals(emptySet<String>(), org.pagel.ai.data.habits.NamozQaza.decode(""))
     }
 
+    @Test fun theNamozCueWordsAreCalmPlainAndHaveNoEmojiOrExclamation() {
+        for (p in org.pagel.ai.data.habits.Namoz.Prayer.entries) {
+            for (text in listOf(org.pagel.ai.data.habits.NamozCue.start(p), org.pagel.ai.data.habits.NamozCue.ready(p))) {
+                assertTrue(text, '!' !in text)
+                assertTrue(text, text.codePoints().noneMatch { it > 0x2000 })
+            }
+        }
+        assertEquals("Asr time. Wudu, then pray.", org.pagel.ai.data.habits.NamozCue.start(org.pagel.ai.data.habits.Namoz.Prayer.ASR))
+    }
+
     @Test fun theFivePrayersSitInTheirTimeOfDayAndNeverInTheChain() {
         val day = LocalDate.parse("2026-11-02")
         val windows = org.pagel.ai.data.habits.Namoz.windows(day)

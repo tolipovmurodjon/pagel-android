@@ -228,6 +228,7 @@ fun HabitsScreen(
     val today = runCatching { LocalDate.parse(ui.today) }.getOrNull()
     // One timed card open at a time: its Timer and Finish buttons sit under it (Boss 2026-10-31).
     var expandedId by remember { mutableStateOf<String?>(null) }
+    val intention = remember { org.pagel.ai.data.habits.NamozIntention.load(androidx.compose.ui.platform.LocalContext.current) }
     val strip = remember(ui.byId, ui.ticks, ui.freezes, today) { today?.let { StripContext(ui.byId.values.toList(), ui.ticks, ui.freezes, it) } }
 
     LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
@@ -280,7 +281,7 @@ fun HabitsScreen(
                     }
                     for (c in prayers) key("prayer-${c.task.id}") {
                         PrayerRow(
-                            c, board.selected == today, NamozQaza.key(today.toString(), c.task.id) in qaza,
+                            c, board.selected == today, NamozQaza.key(today.toString(), c.task.id) in qaza, intention,
                             onTick = ::tick, onUntick = onUntick, onOpenPage = onOpenNamoz, onPrayedLater = onPrayedLater,
                             onCentre = { if (current) centres[c.task.id] = it },
                         )
@@ -1087,7 +1088,7 @@ private fun NamozGroup(
  */
 @Composable
 private fun PrayerRow(
-    c: HabitCard, isToday: Boolean, prayedLater: Boolean, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpenPage: () -> Unit,
+    c: HabitCard, isToday: Boolean, prayedLater: Boolean, intention: String, onTick: (String) -> Unit, onUntick: (String) -> Unit, onOpenPage: () -> Unit,
     onPrayedLater: (String) -> Unit, onCentre: (Offset) -> Unit,
 ) {
     val nowT = LocalTime.now(ZoneId.of("Asia/Tashkent"))
@@ -1117,6 +1118,8 @@ private fun PrayerRow(
             Column(Modifier.weight(1f).padding(vertical = Space.sm)) {
                 Text(c.title, style = MaterialTheme.typography.bodyLarge, color = if (c.done) Glass.Muted else Glass.Ink, maxLines = 1)
                 Text(w?.label().orEmpty(), style = Glass.NumberText, color = Glass.Muted, maxLines = 1, softWrap = false)
+                // His own plan, shown back to him quietly while the prayer's time is on.
+                if (current && intention.isNotBlank()) Text(intention, style = MaterialTheme.typography.bodySmall, color = Glass.Muted, maxLines = 2)
             }
             if (over && !prayedLater) {
                 val later = remember { MutableInteractionSource() }

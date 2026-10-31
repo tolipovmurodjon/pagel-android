@@ -31,6 +31,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
@@ -62,6 +63,7 @@ import org.pagel.ai.ui.habits.AmbientSheetContent
 import org.pagel.ai.ui.habits.BellSheetContent
 import org.pagel.ai.ui.habits.HabitDetail
 import org.pagel.ai.ui.habits.HabitHistory
+import org.pagel.ai.ui.habits.NewHabitContent
 import org.pagel.ai.ui.habits.HabitTimer
 import org.pagel.ai.ui.habits.HabitTimerView
 import org.pagel.ai.ui.habits.HabitsScreen
@@ -375,6 +377,50 @@ class HabitsV3ScreenshotTest {
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-v3-expanded-320.png")
         assertNoCutText("expanded 320")
+    }
+
+    private fun newHabitSheetIn(width: Int, name: String) {
+        show { Box(Modifier.width(width.dp).fillMaxSize().background(Color.White)) { NewHabitContent(Part.ANYTIME, { _, _, _, _ -> }, {}) } }
+        if (name.isEmpty()) {
+            compose.onNodeWithText("Type a name").assertExists()
+        } else {
+            compose.onNodeWithContentDescription("Habit name").performTextInput(name)
+            compose.onNodeWithText("Add habit").assertExists()
+        }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-new-${width}-${if (name.isEmpty()) "empty" else "typed"}.png")
+        assertNoCutText("new habit $width")
+    }
+
+    @Test fun theNewHabitSheetEmptyAt360() = newHabitSheetIn(360, "")
+
+    @Test fun theNewHabitSheetTypedAt360() = newHabitSheetIn(360, "Read ten pages")
+
+    @Test fun theNewHabitSheetEmptyAt320() = newHabitSheetIn(320, "")
+
+    @Test fun theNewHabitSheetTypedAt320() = newHabitSheetIn(320, "Read ten pages")
+
+    @Test fun theShareCardIs1080By1350AndItsAddressIsContent() {
+        val ctx = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val small = android.graphics.Bitmap.createBitmap(300, 375, android.graphics.Bitmap.Config.ARGB_8888)
+        val out = org.pagel.ai.ui.habits.scaledForShare(small)
+        assertEquals(1080, out.width)
+        assertEquals(1350, out.height)
+        val file = java.io.File(ctx.cacheDir, "shares").apply { mkdirs() }.let { java.io.File(it, "badge.png") }.also { it.writeBytes(byteArrayOf(1)) }
+        assertEquals("content", org.pagel.ai.ui.habits.shareUriFor(ctx, file).scheme)
+    }
+
+    @Test fun theShareCardHasNoEmojiAndShowsTheDay() {
+        val earned = badges().first { it.earned }
+        show { Box(Modifier.width(300.dp)) { org.pagel.ai.ui.habits.ShareCard(earned) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habit-share-card.png")
+        compose.onNodeWithText("Achieved on", substring = true).assertExists()
+        compose.onNodeWithText("PAGEL").assertExists()
+    }
+
+    @Test fun theBadgeGridHasAirAtLargeFont() {
+        show(1.5f) { HabitHistory(ui(), pad, startTab = 2) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-v3-achievements-font-1.5.png")
+        assertNoCutText("achievements 1.5x")
     }
 
     private fun badges() = habitBadges(habits, ticks, freezes, LocalDate.parse(today))

@@ -27,6 +27,21 @@ object NamozQaza {
     fun decode(text: String): Set<String> = text.split(',').filter { it.contains('|') }.toSet()
 }
 
+/** The calm cue words: plain, no emoji, no exclamation mark (Boss 2026-10-31). Cues are off until he switches one on. */
+object NamozCue {
+    fun start(p: Namoz.Prayer) = "${p.uz} time. Wudu, then pray."
+    fun ready(p: Namoz.Prayer) = "${p.uz} in 10 minutes. Get ready."
+}
+
+/** His own if-then plan, written once on the Namoz page and shown back to him quietly at prayer time. Never read by anything else. */
+object NamozIntention {
+    private const val KEY = "namoz-intention"
+    fun load(ctx: android.content.Context): String = ctx.getSharedPreferences("pagel-habits", android.content.Context.MODE_PRIVATE).getString(KEY, "").orEmpty()
+    fun save(ctx: android.content.Context, text: String) {
+        ctx.getSharedPreferences("pagel-habits", android.content.Context.MODE_PRIVATE).edit().putString(KEY, text.trim().take(160)).apply()
+    }
+}
+
 object Namoz {
     const val GROUP = "namoz"
     /** No chain before this day and no missed day counted before it. */

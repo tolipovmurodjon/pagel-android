@@ -62,9 +62,11 @@ fun NamozRoute(contentPadding: PaddingValues, onBack: () -> Unit, vm: NamozViewM
     val ui by vm.ui.collectAsStateWithLifecycle()
     val grants = rememberReminderGrants(habits)
     var settings by remember { mutableStateOf(false) }
-    NamozScreen(ui, contentPadding, onBack, onTap = vm::tap, onMark = vm::mark, onStart = habits::startNamoz, onSettings = { settings = true },
-        onQaza = vm::qaza, onAddLearn = vm::addLearn, onLearned = vm::setLearned, onDeleteLearn = vm::deleteLearn)
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    var intention by remember { mutableStateOf(org.pagel.ai.data.habits.NamozIntention.load(ctx)) }
+    NamozScreen(ui, contentPadding, onBack, onTap = vm::tap, onMark = vm::mark, onStart = habits::startNamoz, onSettings = { settings = true },
+        onQaza = vm::qaza, onAddLearn = vm::addLearn, onLearned = vm::setLearned, onDeleteLearn = vm::deleteLearn,
+        intention = intention, onIntention = { intention = it; org.pagel.ai.data.habits.NamozIntention.save(ctx, it) })
     // "Use my location": the phone's last known place, read once; no place known yet = Tashkent stays.
     @android.annotation.SuppressLint("MissingPermission") // called only once ACCESS_COARSE_LOCATION is granted
     fun usePlace() {
@@ -85,6 +87,7 @@ fun NamozScreen(
     ui: NamozUi, contentPadding: PaddingValues, onBack: () -> Unit = {}, onTap: (Namoz.Prayer) -> Unit = {}, onMark: (Namoz.Prayer, String?) -> Unit = { _, _ -> },
     onStart: () -> Unit = {}, onSettings: () -> Unit = {}, onQaza: (Int) -> Unit = {}, onAddLearn: (String) -> Unit = {},
     onLearned: (Long, Boolean) -> Unit = { _, _ -> }, onDeleteLearn: (Long) -> Unit = {},
+    intention: String = "", onIntention: (String) -> Unit = {},
 ) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.paneGap)) {
         item(key = "top") {
@@ -100,11 +103,34 @@ fun NamozScreen(
             }
         }
         item(key = "next") { NextPane(ui) }
+        item(key = "intention") { IntentionPane(intention, onIntention) }
         item(key = "rows") { PrayerRows(ui, onTap, onMark, onStart) }
         if (ui.tracking && ui.started) item(key = "stats") { StatsPane(ui) }
         if (ui.settings.qazaOn) item(key = "qaza") { QazaPane(ui.settings.qaza, onQaza) }
         item(key = "learn") { LearnPane(ui.learning, onAddLearn, onLearned, onDeleteLearn) }
         item(key = "end") { Spacer(Modifier.height(Space.xxl)) }
+    }
+}
+
+/** His own plan, one line he writes once ("When I hear the time for Asr, I stand up, make wudu and pray"); it is shown back at prayer time. */
+@Composable
+private fun IntentionPane(text: String, onChange: (String) -> Unit) {
+    var draft by remember(text) { mutableStateOf(text) }
+    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Text("My plan", style = MaterialTheme.typography.titleSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
+            androidx.compose.foundation.text.BasicTextField(
+                draft, { draft = it.replace('\n', ' ').take(160); onChange(draft) },
+                Modifier.fillMaxWidth().heightIn(min = Space.touch).semantics { contentDescription = "My plan for prayer time" },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Glass.Ink), cursorBrush = androidx.compose.ui.graphics.SolidColor(Glass.Primary),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (draft.isEmpty()) Text("When I hear the time for Asr, I stand up, make wudu and pray.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted)
+                        inner()
+                    }
+                },
+            )
+        }
     }
 }
 

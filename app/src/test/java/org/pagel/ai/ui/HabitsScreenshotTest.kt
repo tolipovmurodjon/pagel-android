@@ -415,10 +415,9 @@ class HabitsScreenshotTest {
     @Test fun namozWaitsForTheFirstOfNovember() {
         show { HabitsScreen(ui(h = habits + prayers), pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-before.png")
-        compose.onNodeWithText("Namoz").assertIsDisplayed()
-        compose.onNodeWithText("From 1 November").assertIsDisplayed()
-        // The Namoz group is the Namoz team's (0.3.34): its rows show under the head.
+        // Each prayer is its own calm row in its time of day (All shows the five); the one Namoz card is only for before the first.
         compose.onNodeWithText("Bomdod").assertIsDisplayed()
+        compose.onAllNodesWithText("From 1 November").assertCountEquals(0)
     }
 
     @Test fun namozOnTheSecondOfNovemberWithThreeOfFive() {
@@ -431,7 +430,10 @@ class HabitsScreenshotTest {
         )
         show { HabitsScreen(u, pad) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-namoz-3-of-5.png")
-        compose.onNodeWithContentDescription("3 of 5 habits done today").assertIsDisplayed()
+        // Evening holds Shom and Xufton only; Bomdod sits in Morning.
+        compose.onNodeWithText("Shom").assertIsDisplayed()
+        compose.onNodeWithText("Xufton").assertIsDisplayed()
+        compose.onAllNodesWithText("Bomdod").assertCountEquals(0)
     }
 
     @Test fun namozNotStartedYetOffersOneButton() {
