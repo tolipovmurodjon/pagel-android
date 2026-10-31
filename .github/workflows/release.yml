@@ -30,6 +30,17 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Boss 2026-10-31: every release tells him what to try. No new What's new group since the last tag = no release.
+      - name: What's new must be updated
+        run: |
+          PREV=$(git tag --list 'app-v*' --sort=-v:refname | grep -vx "${GITHUB_REF_NAME}" | head -1)
+          echo "previous tag: ${PREV:-none}"
+          if [ -n "$PREV" ] && git diff --quiet "$PREV" HEAD -- app/src/main/res/values/whats_new.xml; then
+            echo "WHAT'S NEW NOT UPDATED since $PREV: add this version's group (newest first) to app/src/main/res/values/whats_new.xml"
+            exit 1
+          fi
       - uses: actions/setup-java@v4
         with:
           distribution: zulu

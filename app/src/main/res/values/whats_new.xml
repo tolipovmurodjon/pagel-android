@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  "What's new" (Boss 2026-10-28: never feel lost when testing an update). NEWEST FIRST, one group per version: a line
+  "What's new" (Boss 2026-10-28: never feel lost when testing an update). NEWEST FIRST, one group per version (release.yml refuses to publish when this file did not change since the last app-v tag): a line
   "#version · title" starts a group, then one line per thing to try, "words|where" (where = today, upcoming, habits,
   notifications, shutdown, compass, more). The first group is this version: it shows open with its own counter; older
   groups fold. Keep each line short (one line on a 360 dp phone) and 3-8 lines a version. The sheet opens once after an
@@ -8,6 +8,43 @@
 -->
 <resources>
     <string-array name="whats_new_items">
+        <item>#0.3.41 · Today v2</item>
+        <item>The top task is a Now card: Open or What now?|today</item>
+        <item>One big count that drops as you tick|today</item>
+        <item>Rings: amber P1, mint P2, no brown|today</item>
+        <item>Missed tasks say since Tue, never red|today</item>
+        <item>Upcoming: Carried over, then Move to today|upcoming</item>
+        <item>The calendar week swipes both ways|upcoming</item>
+        <item>Review shows on Sunday, Close the day at night|today</item>
+        <item>#0.3.40 · Calendar Mon to Sun</item>
+        <item>Week view Mon to Sun, clean like Google|upcoming</item>
+        <item>Hold a block, drag it to a new day and time|upcoming</item>
+        <item>Drag a block\'s bottom edge to make it longer|upcoming</item>
+        <item>Month: drop a task on a day, it keeps its time|upcoming</item>
+        <item>Every move has Undo|upcoming</item>
+        <item>#0.3.39 · The starting machine</item>
+        <item>What now? picks one task for right now|today</item>
+        <item>All today: hold and drag to reorder|today</item>
+        <item>I\'m stuck: 4 quick fixes on any task|today</item>
+        <item>Make it tiny: small steps, one card at a time|today</item>
+        <item>Remind me: on time or 10, 30, 60 min early|today</item>
+        <item>#0.3.38 · Project picker</item>
+        <item>Create a project right where you pick one|more</item>
+        <item>Paste a list: each line becomes a task|more</item>
+        <item>Projects: hold and drag to reorder|more</item>
+        <item>#0.3.37 · How PAGEL works</item>
+        <item>More, then How it works: 10 short cards|more</item>
+        <item>Tap ? on a screen to learn that screen|more</item>
+        <item>#0.3.36 · Black hole</item>
+        <item>Completed, then Clear done: the black hole|more</item>
+        <item>More, then Lab: try it and see its numbers|more</item>
+        <item>#0.3.35 · Habits round</item>
+        <item>A habit\'s 12-week chart|habits</item>
+        <item>Your own colour for each habit|habits</item>
+        <item>Link a habit after another one|habits</item>
+        <item>#0.3.34 · Namoz</item>
+        <item>Namoz page: your five, counted from 1 November|habits</item>
+        <item>Reminders only if you turn them on|habits</item>
         <item>#0.3.33 · Habits, fixed</item>
         <item>The top chain fills a day only when all are done|habits</item>
         <item>Swipe the week: it follows your finger|habits</item>
@@ -26,7 +63,7 @@
         <item>Inbox: Sorted today, with Undo|more</item>
         <item>More → Notes: your project notes|more</item>
         <item>#0.3.30 · Compass</item>
-        <item>🧭 Compass: goals only you can read|compass</item>
+        <item>Compass: goals only you can read|compass</item>
         <item>Today\'s goal line blocks screenshots|compass</item>
         <item>#Round C · Calendar, notifications</item>
         <item>Calendar: List · Day · 3 days · Week · Month|upcoming</item>
