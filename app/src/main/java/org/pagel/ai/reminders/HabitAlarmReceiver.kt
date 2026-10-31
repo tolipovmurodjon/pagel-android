@@ -78,7 +78,8 @@ class HabitAlarmReceiver : BroadcastReceiver() {
             // A prayer (round D): only "Peshin vaqti kirdi · 12:11", its own picture, no streak (Boss: plain and respectful).
             val prayer = org.pagel.ai.data.habits.Namoz.prayerOf(title)?.takeIf { org.pagel.ai.data.habits.isNamoz(t) }
             val window = prayer?.let { p -> org.pagel.ai.data.habits.Namoz.windows(java.time.LocalDate.parse(today), org.pagel.ai.data.habits.Namoz.setupOf(parts.namoz().settingsOnce())).first { it.prayer == p } }
-            if (window != null) postPrayer(ctx, id, window) else post(ctx, id, title, due?.drop(11)?.trim().orEmpty(), streak)
+            // A prayer rings only when his cues are switched on (off until he turns them on).
+            if (window != null) { if (org.pagel.ai.data.habits.NamozCue.shouldRing(org.pagel.ai.data.habits.NamozCue.on(ctx), on)) postPrayer(ctx, id, window) } else post(ctx, id, title, due?.drop(11)?.trim().orEmpty(), streak)
         }
         habits.replan()
     }
@@ -139,10 +140,10 @@ class HabitAlarmReceiver : BroadcastReceiver() {
             .setColor(0xFF1C7E69.toInt())
             // Collapsed, a long habit as the title was cut ("Stretch for ten min…", walk 40, also with BigTextStyle):
             // a short title, the habit in the text line (it wraps when expanded), the time in the header.
-            .setContentTitle(if (streak > 1) "Time for it · 🔥 $streak" else "Time for it")
-            .setContentText("${org.pagel.ai.ui.glass.Emoji.glyph(emoji)} $habit")
+            .setContentTitle(org.pagel.ai.data.habits.HabitNotice.title(streak))
+            .setContentText(org.pagel.ai.data.habits.HabitNotice.body(habit))
             .apply { if (time.isNotEmpty()) setSubText(time) }
-            .setStyle(NotificationCompat.BigTextStyle().bigText("${org.pagel.ai.ui.glass.Emoji.glyph(emoji)} $habit"))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(org.pagel.ai.data.habits.HabitNotice.body(habit)))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setContentIntent(open)
             .setAutoCancel(true)

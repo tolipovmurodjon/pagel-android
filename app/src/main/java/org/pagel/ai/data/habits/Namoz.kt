@@ -31,6 +31,21 @@ object NamozQaza {
 object NamozCue {
     fun start(p: Namoz.Prayer) = "${p.uz} time. Wudu, then pray."
     fun ready(p: Namoz.Prayer) = "${p.uz} in 10 minutes. Get ready."
+
+    private const val KEY = "namoz-cues"
+    fun on(ctx: android.content.Context): Boolean = ctx.getSharedPreferences("pagel-habits", android.content.Context.MODE_PRIVATE).getBoolean(KEY, false)
+    fun set(ctx: android.content.Context, on: Boolean) {
+        ctx.getSharedPreferences("pagel-habits", android.content.Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
+    }
+
+    /** A prayer cue rings only when Boss switched cues on AND that prayer's own reminder is on; cues are off until he turns them on. */
+    fun shouldRing(cuesOn: Boolean, reminderOn: Boolean) = cuesOn && reminderOn
+}
+
+/** The words of a habit's own notification: plain, no emoji (Boss 2026-10-31), the streak as "day 12". */
+object HabitNotice {
+    fun title(streak: Int) = if (streak > 1) "Time for it · day $streak" else "Time for it"
+    fun body(habit: String) = habit
 }
 
 /** His own if-then plan, written once on the Namoz page and shown back to him quietly at prayer time. Never read by anything else. */

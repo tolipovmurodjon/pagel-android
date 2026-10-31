@@ -175,6 +175,15 @@ class HabitsV3LogicTest {
         assertEquals("Asr time. Wudu, then pray.", org.pagel.ai.data.habits.NamozCue.start(org.pagel.ai.data.habits.Namoz.Prayer.ASR))
     }
 
+    @Test fun noCueRingsWhileCuesAreOffAndEveryNotificationWordIsPlain() {
+        assertEquals(false, org.pagel.ai.data.habits.NamozCue.shouldRing(cuesOn = false, reminderOn = true))
+        assertEquals(false, org.pagel.ai.data.habits.NamozCue.shouldRing(cuesOn = true, reminderOn = false))
+        assertEquals(true, org.pagel.ai.data.habits.NamozCue.shouldRing(cuesOn = true, reminderOn = true))
+        val words = listOf(org.pagel.ai.data.habits.HabitNotice.title(1), org.pagel.ai.data.habits.HabitNotice.title(12), org.pagel.ai.data.habits.HabitNotice.body("Stretch"))
+        for (w in words) assertTrue(w, w.codePoints().noneMatch { it > 0x2000 && it != 0x00B7 })
+        assertEquals("Time for it · day 12", org.pagel.ai.data.habits.HabitNotice.title(12))
+    }
+
     @Test fun theFivePrayersSitInTheirTimeOfDayAndNeverInTheChain() {
         val day = LocalDate.parse("2026-11-02")
         val windows = org.pagel.ai.data.habits.Namoz.windows(day)
