@@ -558,13 +558,13 @@ grep -q 'content-desc="Finish"' "$OUT/$(printf '%02d' $N)-habit-expanded.xml" ||
 grep -q 'content-desc="Timer"' "$OUT/$(printf '%02d' $N)-habit-expanded.xml" || { log "WALKTHROUGH: tapping a timed card did not open Timer"; exit 1; }
 grep -q 'content-desc="Reminder: \|content-desc="More: ' "$OUT/$(printf '%02d' $N)-habit-expanded.xml" && { log "WALKTHROUGH: a habit row still has a bell or a menu (Boss 2026-10-29: minimal rows)"; exit 1; }
 H1_BEFORE=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")
-H1_UNDO_BEFORE=$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":false' "$FAKE_LOG")
+H1_UNDO_BEFORE=$(grep -c 'PATCH /api/v1/tasks/t_h1 .*"undo":true' "$FAKE_LOG")
 tap "Finish" && tap Undo
 for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_BEFORE" ] && break; sleep 1; done
 [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":true' "$FAKE_LOG")" -gt "$H1_BEFORE" ] || { log "WALKTHROUGH: Finish never ticked Stretch at pagel.uz (no clock was run)"; grep t_h1 "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   Finish ticked the timed habit without its clock after ~${i} s"
-for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":false' "$FAKE_LOG")" -gt "$H1_UNDO_BEFORE" ] && break; sleep 1; done
-[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 {"done":false' "$FAKE_LOG")" -gt "$H1_UNDO_BEFORE" ] || { log "WALKTHROUGH: the Undo after Finish never wrote the inverse"; grep t_h1 "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
+for i in $(seq 1 30); do [ "$(grep -c 'PATCH /api/v1/tasks/t_h1 .*"undo":true' "$FAKE_LOG")" -gt "$H1_UNDO_BEFORE" ] && break; sleep 1; done
+[ "$(grep -c 'PATCH /api/v1/tasks/t_h1 .*"undo":true' "$FAKE_LOG")" -gt "$H1_UNDO_BEFORE" ] || { log "WALKTHROUGH: the Undo after Finish never wrote the inverse"; grep t_h1 "$FAKE_LOG" | tail -5 | tee -a "$OUT/steps.txt"; exit 1; }
 log "   Undo wrote the inverse after ~${i} s"
 shot habit-after-finish-undo 1.5
 log "-- a 3x habit (round B): Log food tapped 3 times in Afternoon; pagel.uz gets 3 ticks"
