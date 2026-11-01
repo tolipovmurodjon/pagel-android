@@ -1107,7 +1107,9 @@ private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, firstUse: B
     val shape = RoundedCornerShape(18.dp)
     // The hint alone, in full white (the .92 white measured 4.36:1 on Learn's light end); "AI's pick" is the sparkle.
     // The long example only where it fits on one or two lines: at a large font or under 360 dp the short hint stays.
-    val roomy = LocalDensity.current.fontScale < 1.3f && LocalConfiguration.current.screenWidthDp >= 360
+    var wide by remember { mutableStateOf(true) }
+    val wideAt = with(LocalDensity.current) { 320.dp.toPx() }
+    val roomy = LocalDensity.current.fontScale < 1.3f && wide
     val sub = if (armed) "Tap again to drop" else if (firstUse && roomy) "e.g. " + look.eg else look.hint
     // One row tall (64 dp, Boss 2026-10-28: the pill read as a slab); it grows only when 1.3x+ text needs two lines.
     Row(
@@ -1115,6 +1117,7 @@ private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, firstUse: B
             .background(Brush.linearGradient(listOf(Glass.Primary, lerp(Glass.Primary, Color.Black, 0.18f))), shape)
             .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.35f), Color.Transparent)), shape)
             .clickable(press, indication = null, role = Role.Button, onClick = onClick)
+            .onSizeChanged { wide = it.width >= wideAt }
             .semantics(mergeDescendants = true) { contentDescription = "AI pick: ${look.label}" }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

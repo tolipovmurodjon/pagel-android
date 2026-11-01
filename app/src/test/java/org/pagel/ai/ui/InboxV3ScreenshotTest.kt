@@ -201,7 +201,7 @@ class InboxV3ScreenshotTest {
         show { screen(ui(grant, old = 910, oldMode = true)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-old-pile.png")
         compose.onNodeWithText("Old pile", useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("910 left", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("saved before 1", substring = true, useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Tidy old saves").assertIsDisplayed()
         for (w in listOf("Drop", "Someday", "Note", "Do now", "Action", "Project", "Waiting", "Calendar", "Later")) compose.onAllNodesWithText(w, useUnmergedTree = true).fetchSemanticsNodes().let { assertTrue("$w in the old pile's dock", it.isNotEmpty()) }
         assertEquals("red pixels", 0, redPixels())
@@ -210,7 +210,7 @@ class InboxV3ScreenshotTest {
     @Test fun theOldPileAt15xFontCutsNothing() {
         show(1.5f) { screen(ui(grant, old = 910, oldMode = true)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-old-pile-font-1.5.png")
-        assertNoCutText("v3 old pile 1.5x", listOf("Old pile", "910 left"))
+        assertNoCutText("v3 old pile 1.5x", listOf("Old pile", "910 left · saved before 1 November"))
     }
 
     @Test fun theEmptyInboxIsOneSentenceAndOneAction() {

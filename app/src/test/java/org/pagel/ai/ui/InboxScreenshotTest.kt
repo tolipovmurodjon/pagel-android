@@ -140,7 +140,7 @@ class InboxScreenshotTest {
     @Test fun cardMidSwipeLeftIsLearn() {
         show { screen(ui(listOf(grant, meme)), peek = Offset(-420f, 10f)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-mid-swipe-learn.png")
-        compose.onNodeWithText("REMEMBER").assertIsDisplayed()
+        compose.onNodeWithText("NOTE").assertIsDisplayed()
     }
 
     @Test fun cardMidSwipeDownIsADrop() {
@@ -183,7 +183,7 @@ class InboxScreenshotTest {
     @Test fun dockAboveTheBarOnTheA05s() {
         show { InboxScreen(ui(listOf(ig, meme)), leaving = null, pictures = mapOf(ig.file to picture), contentPadding = a05s) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-360x800.png")
-        dockClearsTheBar(listOf("Action", "Note", "Do now", "Later", "Drop"))
+        dockClearsTheBar(listOf("Action", "Do now", "Later", "Drop"))
         // The pick is one row tall (64 dp), not a slab.
         val pick = compose.onNodeWithContentDescription("AI pick: Note").fetchSemanticsNode().boundsInRoot
         val px = compose.onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
@@ -196,7 +196,7 @@ class InboxScreenshotTest {
     @Test fun dockAboveTheBarOnTheA05sAtLargeFont() {
         show(1.5f) { InboxScreen(ui(listOf(ig, meme)), leaving = null, pictures = mapOf(ig.file to picture), contentPadding = a05s) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-360x800-font-1.5.png")
-        dockClearsTheBar(listOf("Action", "Note", "Do now", "Later", "Drop"))
+        dockClearsTheBar(listOf("Action", "Do now", "Later", "Drop"))
     }
 
     /** LinkedIn's caption is its claim again: the card says it once (Boss 2026-10-28). */
@@ -295,7 +295,7 @@ class InboxScreenshotTest {
         show { Column(Modifier.padding(top = 16.dp)) { GuideContent() } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-guide.png")
         // The five gestures as one picture, said in one line for TalkBack.
-        compose.onNodeWithContentDescription("Swipe up to shuffle, down to drop, left to learn, right for an action; hold for Do now").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Swipe up to shuffle, down to drop, left for a note, right for an action; hold for Do now").assertIsDisplayed()
     }
 
     /** Layout rule 3 (spacing audit #2): every choice keeps its place whether the AI guessed Learn or Drop. */

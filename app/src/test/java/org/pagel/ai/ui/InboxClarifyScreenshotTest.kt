@@ -380,7 +380,7 @@ class InboxClarifyScreenshotTest {
         val t = Tidy(loading = false, items = old(23, "www.instagram") + old(9, "x") + old(5, "www.linkedin"))
         show { Column(Modifier.padding(top = 16.dp).testTag("tidy-sheet")) { TidyContent(t, {}, {}) } }
         compose.onNodeWithTag("tidy-sheet").captureRoboImage("build/outputs/roborazzi/inbox-tidy.png")
-        compose.onNodeWithText("37 saves older than 60 days").assertIsDisplayed()
+        compose.onNodeWithText("37 saves from before 1 November").assertIsDisplayed()
         compose.onNodeWithContentDescription("Move all 37 to Someday").assertIsDisplayed()
         compose.onNodeWithContentDescription("Drop all 37").assertIsDisplayed()
     }
@@ -390,7 +390,7 @@ class InboxClarifyScreenshotTest {
         val t = Tidy(loading = false, items = old(60, "www.instagram"), total = 412, bySource = mapOf("instagram" to 700, "x" to 150, "note" to 55, "telegram" to 12))
         show { Column(Modifier.padding(top = 16.dp).testTag("tidy-sheet")) { TidyContent(t, {}, {}) } }
         compose.onNodeWithTag("tidy-sheet").captureRoboImage("build/outputs/roborazzi/inbox-tidy-412.png")
-        compose.onNodeWithText("412 saves older than 60 days").assertIsDisplayed()
+        compose.onNodeWithText("412 saves from before 1 November").assertIsDisplayed()
         compose.onNodeWithContentDescription("Move all 412 to Someday").assertIsDisplayed()
         compose.onNodeWithContentDescription("Drop all 412").assertIsDisplayed()
         compose.onNodeWithText("Telegram", substring = true).assertIsDisplayed()
