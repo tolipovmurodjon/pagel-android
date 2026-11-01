@@ -1198,7 +1198,7 @@ lens = "on" if any("lens on" in l for l in lines) else "off"
 print("   hole timings: tap to run %.0f ms, run length %.2f s, lens %s" % ((run - snap) * 1000, done - run, lens))
 PY
 # The middle captures show a large dark disc in the centre-top region (the hole, radius 0.45 w, top at the camera).
-python3 -I - "$OUT" <<'PY' || { log "WALKTHROUGH: no large dark disc in any of the hole's screencaps (see hole-run-*.png)"; exit 1; }
+python3 -I - "$OUT" <<'PY' | tee -a "$OUT/steps.txt"; [ "${PIPESTATUS[0]}" = 0 ] || { log "WALKTHROUGH: no large dark disc in any of the hole's screencaps (see hole-run-*.png)"; exit 1; }
 import struct, sys, zlib, pathlib
 
 def read_png(path):
@@ -1254,7 +1254,9 @@ UB=$(tr '>' '\n' < "$(xml_of hole-after)" | grep -E 'text="Undo"' | head -1 | gr
 [ -n "$UB" ] && [ "$UB" -lt 500 ] || { log "WALKTHROUGH: the clear's Undo toast is not just under the camera (Undo top y=${UB:-none})"; exit 1; }
 grep -qE 'text="[0-9]+ cleared"' "$(xml_of hole-after)" || { log "WALKTHROUGH: the toast does not say 'N cleared'"; exit 1; }
 log "   the toast says N cleared, Undo at y=$UB (under the camera)"
-wait_picker '"remove": ?true' || { log "WALKTHROUGH: the clear never reached pagel.uz as a remove"; exit 1; }
+# The removes leave after their 5 s hold: wait for NEW ones (earlier steps already left some in the log).
+for i in $(seq 1 30); do [ "$(( $(grep -cE '"remove": ?true' "$FAKE_LOG") - REM0 ))" -ge 1 ] && break; sleep 1; done
+sleep 1
 REM1=$(grep -cE '"remove": ?true' "$FAKE_LOG")
 GONE=$((REM1 - REM0))
 [ "$GONE" -ge 1 ] || { log "WALKTHROUGH: no deletes reached the fake log"; exit 1; }
