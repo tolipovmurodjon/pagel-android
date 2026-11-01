@@ -224,8 +224,11 @@ tap 'All today · [0-9]+' || r4_tap 'All today · [0-9]+' || { log "WALKTHROUGH:
 sleep 1; $T adb shell input swipe 160 260 160 520 300; $T adb shell input swipe 160 260 160 520 300; sleep 1
 r4_tap "Write the release note" && shot r4-panel 2.5 || { log "WALKTHROUGH: Write the release note is not on the open list"; exit 1; }
 # The Where row: it shows the guess; one tap opens the five places; Out is ONE PATCH {context:"out"} and the row says Out.
+# At 320x640 the row sits on the bottom edge (7 px showing, run 41268857028): scroll it up before the tap.
+$T adb shell input swipe 160 460 160 220 300; sleep 1
 r4_tap 'Where: [A-Za-z ]+' || { log "WALKTHROUGH: the panel has no Where row"; exit 1; }
-tap "Place: Out" || { log "WALKTHROUGH: the Where row did not open its five places"; exit 1; }
+sleep 1
+r4_tap "Place: Out" || { log "WALKTHROUGH: the Where row did not open its five places"; exit 1; }
 r4_wait 'PATCH /api/v1/tasks/t_now2 {"context":"out"}' 30 || { log "WALKTHROUGH: picking Out never reached pagel.uz as a context PATCH"; grep t_now2 "$FAKE_LOG" | tail -3 | tee -a "$OUT/steps.txt"; exit 1; }
 shot r4-where-out 1.5
 grep -q 'content-desc="Where: Out"' "$OUT/$(printf '%02d' $N)-r4-where-out.xml" || { log "WALKTHROUGH: the Where row did not change to Out"; exit 1; }
