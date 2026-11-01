@@ -106,7 +106,7 @@ enum class CaptureKind(val label: String) { NOT_SURE("Not sure"), NOTE("Note"), 
 @Composable
 private fun KindRow(kind: CaptureKind, onPick: (CaptureKind) -> Unit) {
     Row(Modifier.padding(start = Space.xs).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
-        for (k in listOf(CaptureKind.TASK, CaptureKind.NOTE, CaptureKind.NOT_SURE)) {
+        for (k in listOf(CaptureKind.NOT_SURE, CaptureKind.NOTE, CaptureKind.TASK)) {
             val icon = when (k) { CaptureKind.TASK -> TabIcons.ListPlus; CaptureKind.NOTE -> TabIcons.StickyNote; CaptureKind.NOT_SURE -> TabIcons.Inbox }
             GlassChip(icon, k.label, set = kind == k, description = "Add as ${k.label}") { onPick(k) }
         }

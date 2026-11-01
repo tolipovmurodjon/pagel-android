@@ -597,7 +597,7 @@ class InboxViewModel @Inject constructor(
             val account = (accounts.load() as? AccountState.Paired)?.account
             val r = account?.let { repo.older(it) }
             _tidy.value = when (r) {
-                is org.pagel.ai.data.Outcome.Ok -> Tidy(loading = false, items = r.value.items, total = r.value.total, bySource = r.value.bySource, groups = oldGroups(oldOnPhone()))
+                is org.pagel.ai.data.Outcome.Ok -> Tidy(loading = false, items = r.value.items.filter { it.source.isNotBlank() }, total = r.value.total - (r.value.bySource["note"] ?: 0), bySource = r.value.bySource - "note", groups = oldGroups(oldOnPhone()))
                 else -> Tidy(loading = false, failed = true)
             }
         }
@@ -656,7 +656,7 @@ class InboxViewModel @Inject constructor(
                 val account = (accounts.load() as? AccountState.Paired)?.account ?: break
                 val page = when (val r = repo.older(account)) { is org.pagel.ai.data.Outcome.Ok -> r.value; else -> null }
                 // pagel.uz still deals the ones on their way until each reaches it: only new files are queued.
-                val fresh = page?.items?.filter { it.file !in done }.orEmpty()
+                val fresh = page?.items?.filter { it.file !in done && it.source.isNotBlank() }.orEmpty()
                 if (page != null && page.items.isEmpty()) break
                 if (fresh.isEmpty()) {
                     misses++

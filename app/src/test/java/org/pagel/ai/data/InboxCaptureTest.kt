@@ -348,4 +348,10 @@ class InboxCaptureTest {
         assertEquals(Choice.DROP, Choice.guessOf("drop"))
         assertFalse("the dock no longer offers Learn", Choice.KEEP in org.pagel.ai.ui.inbox.NO_GROUP)
     }
+
+    @Test fun aTypedNoteDatedBeforeTheLineIsNotInTheOldPile() {
+        val typed = row("inbox/typed.md", "2026-10-20")
+        assertTrue("Boss's own typed words stay in the Inbox", isCurrent(typed, FRESH_START, emptySet()))
+        assertFalse("an imported save of the same day is old", isCurrent(typed.copy(source = "https://x.com/a/status/1"), FRESH_START, emptySet()))
+    }
 }

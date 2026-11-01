@@ -497,7 +497,8 @@ private fun headerNote(ui: InboxUi, big: Boolean) = if (ui.sorted < ui.goal) "To
  */
 @Composable
 private fun FitText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier, maxLines: Int = 1, minSize: TextUnit = 10.sp, onStuck: () -> Unit = {}) {
-    var size by remember(text, style) { mutableStateOf(style.fontSize) }
+    // A new floor starts the fit over: a text that was stuck at its old floor lays out again and can go lower.
+    var size by remember(text, style, minSize) { mutableStateOf(style.fontSize) }
     Text(
         // Tracking is in sp, so a shrunk text with its tracking left in loses its word spaces ("Quizzesbeat rereading"): it drops it.
         text, style = style.copy(

@@ -25,10 +25,12 @@ private fun lineDay(s: String?): LocalDate =
 
 /**
  * True for a save that belongs in the Inbox: its day is on or after the fresh start, or it was captured on this phone
- * (a capture made today must not fall into the Old pile), or it has no date at all (never called old).
+ * (a capture made today must not fall into the Old pile), it is Boss's own typed note (no source link), or it has no date.
  */
 fun isCurrent(i: InboxItemEntity, freshFrom: String, captured: Set<String>): Boolean {
     if (i.file.startsWith(CAPTURE_PREFIX) || i.file in captured) return true
+    // Boss's own typed words (no link behind them) never age into the Old pile: only imported saves do.
+    if (i.source.isBlank()) return true
     val day = savedDay(i) ?: return true
     return !day.isBefore(lineDay(freshFrom))
 }

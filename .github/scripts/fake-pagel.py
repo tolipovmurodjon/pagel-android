@@ -142,7 +142,7 @@ def old_body(limit=60):
              for k, i in enumerate(OLD_IDS, 1) if i in left]
     items.sort(key=lambda x: x["file"])
     return {"day": today(), "goal": 20, "sorted": counted(), "kept_today": 2, "cap": 5, "min_words": 6, "total": 900 + len(items),
-            "by_source": {"instagram": 700 + len(items), "x": 150, "note": 50}, "older_than_60": len(items), "items": items[:limit]}
+            "by_source": {"instagram": 700 + len(items), "x": 150}, "older_than_60": len(items), "items": items[:limit]}
 
 def inbox_body():
     sorted_files = {f for f, a in SORTS if a != "later"}
