@@ -637,7 +637,8 @@ internal fun DayClosedCard(done: Int, tomorrow: List<TodayRow>) {
     var peek by remember { mutableStateOf(false) }
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = Space.xl, vertical = Space.xxl), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("🌙", style = MaterialTheme.typography.headlineLarge)
+            Icon(TabIcons.Moon, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(34.dp))
+            Spacer(Modifier.height(Space.sm))
             Text("Day closed", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
             Spacer(Modifier.height(Space.xs))
             Text("Nothing needs you tonight", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)

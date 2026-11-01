@@ -355,10 +355,10 @@ private fun Head(ui: ProjectUi, actions: ProjectActions) {
             InlineField(ui.title.ifEmpty { "Project" }, "Project name", "Project name", MaterialTheme.typography.headlineLarge.copy(color = Glass.Ink),
                 modifier = Modifier.semantics { heading() }, onSave = actions.onRename)
             if (!ui.loading) Text(when {
-                ui.total == 0 && ui.habits > 0 -> "🔁 ${ui.habits} habit${if (ui.habits == 1) "" else "s"} · in Habits"
+                ui.total == 0 && ui.habits > 0 -> "${ui.habits} habit${if (ui.habits == 1) "" else "s"} · in Habits"
                 ui.total == 0 -> "No plan yet"
-                ui.now == ui.open || ui.now == 0 -> "${ui.open} open" + if (ui.habits > 0) " · 🔁 ${ui.habits} in Habits" else ""
-                else -> "${ui.now} now · ${ui.open} open" + if (ui.habits > 0) " · 🔁 ${ui.habits}" else ""
+                ui.now == ui.open || ui.now == 0 -> "${ui.open} open" + if (ui.habits > 0) " · ${ui.habits} in Habits" else ""
+                else -> "${ui.now} now · ${ui.open} open" + if (ui.habits > 0) " · ${ui.habits} habits" else ""
             }, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
         }
         GlassIconButton(TabIcons.More, "Project settings", onClick = actions.onSettings)
@@ -469,7 +469,7 @@ private fun FirstStepCard(title: String, actions: ProjectActions) {
 private fun FinishCard(onFinish: () -> Unit) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Column(Modifier.padding(horizontal = Space.lg, vertical = Space.md)) {
-            Text("Everything is done 🎉", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink)
+            Text("Everything is done", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), color = Glass.Ink)
             Text("Close it and say what you shipped.", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)
             Spacer(Modifier.height(Space.md))
             BigButton("Finish project", TabIcons.Flag, onFinish)

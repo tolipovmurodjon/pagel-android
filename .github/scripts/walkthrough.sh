@@ -1633,4 +1633,21 @@ grep -qE '(text|content-desc)="Clear done"' "$(last hole-undone)" || shot hole-u
 grep -qE '(text|content-desc)="Clear done"' "$(last hole-undone)" || { log "WALKTHROUGH: Undo did not bring the done rows back"; exit 1; }
 $T adb logcat -d > "$OUT/logcat-hole.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-hole.txt" && { log "WALKTHROUGH: CRASH in the black hole (see logcat-hole.txt)"; exit 1; }
+# No emoji on ANY screen of the walk (checker 2026-11-01: the r4-only check missed the closed-day moon).
+# Skipped until their own round: the Inbox (0.3.45), the notification copy and the stored emoji project icons.
+python3 -I - "$OUT" <<'PY' || { log "WALKTHROUGH: emoji on screen (see the list above)"; exit 1; }
+import sys, pathlib, re
+skip = re.compile(r"-(inbox|sorted-today|notify-settings|notification|core-icon|core-rocket)")
+bad = []
+for x in sorted(pathlib.Path(sys.argv[1]).glob("*.xml")):
+    if skip.search(x.name):
+        continue
+    t = x.read_text(encoding="utf8", errors="replace")
+    found = sorted({c for c in t if (0x1F000 <= ord(c) <= 0x1FAFF or 0x2600 <= ord(c) <= 0x27BF or ord(c) in (0xFE0F, 0x200D)) and c not in "✓✔"})
+    if found:
+        bad.append(f"{x.name}: {' '.join(found)}")
+print("
+".join(bad))
+sys.exit(1 if bad else 0)
+PY
 log "BLACK HOLE WALK DONE: $N steps"

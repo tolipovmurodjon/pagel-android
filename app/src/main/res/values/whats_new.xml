@@ -9,9 +9,9 @@
 <resources>
     <string-array name="whats_new_items">
         <item>#0.3.44 · What now, the GTD way</item>
-        <item>What now asks where, how long, energy|today</item>
-        <item>Set where a task happens in one tap|today</item>
-        <item>Make it tiny keeps writing when closed|today</item>
+        <item>What now asks where, time, energy|today</item>
+        <item>Pick where a task happens|today</item>
+        <item>Make it tiny writes on when closed|today</item>
         <item>#0.3.43 · Habits and Namoz</item>
         <item>Tap a timed habit: Timer or Finish, no clock needed|habits</item>
         <item>Swipe the week back and forward|habits</item>
