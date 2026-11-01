@@ -1205,8 +1205,8 @@ $T adb shell input keyevent 4; sleep 1
 front after-phase4
 # The Laboratory shelf (a card per experiment, Try it, a switch), then back to More. The emoji gate at the end reads its screen too.
 shot more-for-laboratory 1
-$T adb shell input swipe 540 1600 540 500 700; sleep 1
-$T adb shell input swipe 540 1600 540 500 700; sleep 1.5
+$T adb shell input swipe 160 480 160 140 400; sleep 1
+$T adb shell input swipe 160 480 160 140 400; sleep 1.5
 if tap Laboratory; then
   shot laboratory 2
   grep -q 'text="Try it"' "$(xml_of laboratory)" || { log "WALKTHROUGH: the Laboratory card has no Try it"; exit 1; }
