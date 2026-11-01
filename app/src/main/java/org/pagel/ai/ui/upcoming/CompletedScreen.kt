@@ -36,7 +36,10 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeoutOrNull
+import org.pagel.ai.ui.motion.blackhole.COPY_WAIT_MS
+import org.pagel.ai.ui.motion.blackhole.copyWindowHalf
 import org.pagel.ai.ui.glass.Space
 import org.pagel.ai.ui.motion.blackhole.BlackHoleOverlay
 import org.pagel.ai.ui.motion.blackhole.BlackHolePrewarm
@@ -111,6 +114,7 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
     val toasts = org.pagel.ai.ui.glass.LocalToasts.current
     var hole by remember { mutableStateOf<BlackHoleRun?>(null) }
     // Laboratory → Black hole → "Use in the app" (on by default): off, and the rows just leave.
@@ -124,13 +128,17 @@ fun CompletedScreen(ui: CompletedUi, contentPadding: PaddingValues, reselect: In
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             val info = list.layoutInfo
             val pieces = donePieces(info, with(density) { STRIP.toPx() })
+            // The window copy for the lens starts in the same frame, while the rows are still on screen, and runs beside the
+            // snapshot: nothing is hidden while it waits, and the rows are painted out of the copy later.
+            val copy = async(start = CoroutineStart.UNDISPATCHED) { withTimeoutOrNull(COPY_WAIT_MS) { copyWindowHalf(view) } }
             val shot = withTimeoutOrNull(SNAPSHOT_WAIT_MS) { runCatching { layer.toImageBitmap().asAndroidBitmap() }.getOrNull() }
+            val backdrop = copy.await()
             android.util.Log.i("BlackHole", "Clear done: snapshot ${if (shot != null) "ok" else "missing"}, ${pieces.size} pieces")
             // The Undo toast of this clear shows under the camera, where the hole just closed.
             if (holeOn) toasts.topNext = true
             onClearDone()
             holeStop = false
-            if (holeOn && shot != null && pieces.isNotEmpty()) hole = BlackHoleRun(System.nanoTime(), shot, pieces, BlackHoleTiming.ClearAll)
+            if (holeOn && shot != null && pieces.isNotEmpty()) hole = BlackHoleRun(System.nanoTime(), shot, pieces, BlackHoleTiming.ClearAll, backdrop)
         }
     }
     Box(Modifier.fillMaxSize()) {

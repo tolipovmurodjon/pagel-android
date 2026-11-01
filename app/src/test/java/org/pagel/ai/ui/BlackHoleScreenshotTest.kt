@@ -2,7 +2,22 @@ package org.pagel.ai.ui
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.test.core.app.ApplicationProvider
+import org.junit.Assert.assertTrue
+import org.pagel.ai.R
+import org.pagel.ai.ui.motion.blackhole.BlackHoleBackdrop
+import org.pagel.ai.ui.motion.blackhole.BlackHoleCanvas
+import org.pagel.ai.ui.motion.blackhole.BlackHoleScene
+import org.pagel.ai.ui.motion.blackhole.BlackHoleTiming
+import org.pagel.ai.ui.motion.blackhole.PieceRect
+import org.pagel.ai.ui.motion.blackhole.holeGeometry
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -50,7 +65,7 @@ class BlackHoleScreenshotTest {
     @get:Rule val compose = createComposeRule()
 
     private val pad = PaddingValues(top = 16.dp, bottom = 32.dp)
-    private val moments = listOf(0.1f, 0.4f, 0.8f, 1.2f, 1.6f)
+    private val moments = listOf(0.1f, 0.2f, 0.3f, 0.4f, 0.8f, 1.2f, 1.6f)
 
     /** A 36 px punch hole, top centre, 40 px below the top edge, in the stage's px (xxhdpi: 1080 px wide). */
     private val camera = Capsule(540f, 58f, 36f, 36f)
@@ -84,6 +99,76 @@ class BlackHoleScreenshotTest {
         compose.setContent { GlassTheme { BlackHoleFrame(LabStill(0.8f), camera, page) } }
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/black-hole-lens-t080.png")
+    }
+
+    private fun doneTask(id: String, text: String, at: String) = TaskEntity(
+        id = id, project = "me", phase = "Now", sort = 1.0, text = text, title = null, status = "done", priority = 2, star = false,
+        due = null, every = null, doneWhen = null, doneAt = at, updatedAt = "2026-10-27T05:00:00Z", serverVersion = 1, lastModified = 0,
+    )
+
+    /**
+     * The lens over the REAL Completed page (checker 2026-11-01): the page is shown with its rows, copied (the rows then
+     * painted out of the copy, as at the tap), the list is cleared as the app clears it, and the hole plays over it.
+     * t = 0.2 and 0.3 s show the rows already stretching toward the hole; 0.8 s the bend at its widest.
+     */
+    @Test fun theLensAndThePullOverTheRealCompletedPage() {
+        val today = LocalDate.parse("2026-10-28")
+        val tasks = listOf(
+            doneTask("c1", "Renew the domain", "2026-10-28T04:12:00Z"), doneTask("c2", "Write the IT Park report", "2026-10-28T03:40:00Z"),
+            doneTask("c3", "Export the hover log", "2026-10-28T02:10:00Z"), doneTask("c4", "Record the fractions lesson", "2026-10-27T10:00:00Z"),
+            doneTask("c5", "Call the bank about the report", "2026-10-27T09:00:00Z"), doneTask("c6", "Weigh in", "2026-10-26T07:30:00Z"),
+        )
+        var ui by mutableStateOf(CompletedUi(loading = false, today = today, groups = completedGroups(tasks, today), count = tasks.size))
+        var scene by mutableStateOf<BlackHoleScene?>(null)
+        val time = mutableFloatStateOf(0f)
+        compose.setContent {
+            GlassTheme {
+                AuroraBackground(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize()) {
+                        CompletedScreen(ui, pad)
+                        scene?.let { BlackHoleCanvas(it, { time.floatValue }) }
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        val shot = compose.onRoot().captureToImage().asAndroidBitmap()
+        val half = android.graphics.Bitmap.createScaledBitmap(shot, shot.width / 2, shot.height / 2, true).copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+        val top = 330f
+        val pieces = (0 until 8).map { PieceRect(0f, top + it * 216f, shot.width.toFloat(), top + (it + 1) * 216f) }
+        compose.runOnIdle {
+            ui = CompletedUi(loading = false, today = today, count = 0, allClear = true)
+            scene = BlackHoleScene.prepare(shot, pieces, holeGeometry(camera, shot.width.toFloat()), 36f, BlackHoleTiming.ClearAll, half)
+        }
+        for (t in listOf(0.2f, 0.3f, 0.8f)) {
+            compose.runOnIdle { time.floatValue = t }
+            compose.waitForIdle()
+            compose.onRoot().captureRoboImage("build/outputs/roborazzi/black-hole-page-${"t%03d".format(Math.round(t * 100))}.png")
+        }
+    }
+
+    /** Painting the pieces out of the copied page: where a row was, the column runs from the pixel above to the one below. */
+    @Test fun paintingOutThePiecesFillsFromAboveAndBelow() {
+        val bitmap = android.graphics.Bitmap.createBitmap(40, 40, android.graphics.Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(android.graphics.Color.rgb(250, 250, 250))
+        for (y in 10 until 20) for (x in 0 until 40) bitmap.setPixel(x, y, android.graphics.Color.BLACK)
+        BlackHoleBackdrop.paintOutPieces(bitmap, listOf(PieceRect(0f, 20f, 80f, 40f)), 0f, 0f)
+        for (y in 10 until 20) assertTrue("row $y is no longer black", android.graphics.Color.red(bitmap.getPixel(20, y)) > 200)
+    }
+
+    /** Every line of this version's What's new group fits ONE line at 360 dp (checker 2026-11-01). */
+    @Test @Config(sdk = [35], qualifiers = "w360dp-h800dp-xxhdpi") fun theWhatsNewLinesOfThisVersionFitOneLineEach() {
+        val items = ApplicationProvider.getApplicationContext<android.content.Context>().resources.getStringArray(R.array.whats_new_items).toList()
+        val lines = items.drop(1).takeWhile { !it.startsWith("#") }.map { it.substringBefore('|') }
+        assertEquals(5, lines.size)
+        compose.setContent { GlassTheme { AuroraBackground(Modifier.fillMaxSize()) { org.pagel.ai.ui.shell.WhatsNewContent({}) } } }
+        for (line in lines) {
+            val node = compose.onNodeWithText(line, useUnmergedTree = true).fetchSemanticsNode()
+            val results = mutableListOf<TextLayoutResult>()
+            node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+            assertEquals("\"$line\" fits one line", 1, results.first().lineCount)
+        }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/whats-new-black-hole-360x800.png")
     }
 
     @Test fun clearAllFrameSeriesOnTheAgslRing() = series(moments, shaderRing = true, prefix = "black-hole")

@@ -335,6 +335,16 @@ internal fun ColourPicker(chosen: String, onPick: (String) -> Unit) {
 }
 
 /** Fluent-style emoji with words to search them by (drawn by the phone's emoji font). */
+/**
+ * A stored "emoji:" project icon is shown as the closest line icon (no emoji in the app UI, Boss 2026-10-31): the first
+ * word of the emoji's search words that names a line icon; the stored value is kept.
+ */
+internal fun lineIconForEmoji(emoji: String): androidx.compose.ui.graphics.vector.ImageVector? {
+    val bare = emoji.replace("\uFE0F", "")
+    val words = EMOJI.firstOrNull { it.first.replace("\uFE0F", "") == bare }?.second ?: return null
+    return words.split(' ').firstNotNullOfOrNull { TabIcons.lucide(it) }
+}
+
 private val EMOJI = listOf(
     "🚀" to "rocket launch space", "🎮" to "game play", "📚" to "book read study", "💪" to "gym strength health", "🧠" to "brain mind learn",
     "🕌" to "mosque faith", "💰" to "money finance", "❤️" to "heart love people", "🎓" to "school university study", "🛠️" to "tools build fix",

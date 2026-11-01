@@ -25,6 +25,9 @@ object BlackHole {
     const val SNAPSHOT_SCALE = 0.75f
     /** The blurred copy is a quarter of the snapshot; the GPU's bilinear upscale is the blur. */
     const val BLUR_SCALE = 0.25f
+    /** Rows near the hole's edge are turned by up to this many radians, within [TWIST_REACH] radii (the lens's own bend). */
+    const val TWIST = 0.6f
+    const val TWIST_REACH = 1.6f
     /** Rows heat and fade from 1.6 r down to the horizon at 1.03 r. */
     const val HEAT_FROM = 1.6f
     const val VANISH = 1.03f
@@ -39,7 +42,7 @@ object BlackHole {
 }
 
 /**
- * One length of the effect. Phases: the hole opens (capsule → circle); the swallow starts at 35 % of the opening (the hole is big now: the rows must not vanish before it has grown over them);
+ * One length of the effect. Phases: the hole opens (capsule → circle); the swallow starts at 20 % of the opening (rows fade by the hole's CURRENT size, so they do not vanish before it has grown over them);
  * the close starts [closeLead] before the last row is gone; a damped outward bulge; a short tail where the glow fades.
  */
 data class BlackHoleTiming(
@@ -49,7 +52,7 @@ data class BlackHoleTiming(
     val close: Float,
     val bulge: Float,
     val tail: Float,
-    val swallowStartFraction: Float = 0.35f,
+    val swallowStartFraction: Float = 0.2f,
 ) {
     val swallowStart: Float get() = open * swallowStartFraction
     val swallowEnd: Float get() = swallowStart + swallow
@@ -60,9 +63,9 @@ data class BlackHoleTiming(
 
     companion object {
         /** One task deleted: 1.3 s, short enough to survive a to-do app's many deletes. */
-        val Single = BlackHoleTiming(open = 0.5f, swallow = 0.625f, closeLead = 0.06f, close = 0.22f, bulge = 0.26f, tail = 0.08f)
+        val Single = BlackHoleTiming(open = 0.5f, swallow = 0.70f, closeLead = 0.06f, close = 0.22f, bulge = 0.26f, tail = 0.08f)
         /** "Clear done" / clear all: the full show, ~1.9 s (the source's 0.8 / 1.15 / 0.3 / 0.34 s). */
-        val ClearAll = BlackHoleTiming(open = 0.8f, swallow = 1.0f, closeLead = 0.09f, close = 0.30f, bulge = 0.34f, tail = 0.10f)
+        val ClearAll = BlackHoleTiming(open = 0.8f, swallow = 1.12f, closeLead = 0.09f, close = 0.30f, bulge = 0.34f, tail = 0.10f)
     }
 }
 
@@ -141,7 +144,9 @@ fun holeAt(t: Float, timing: BlackHoleTiming, g: HoleGeometry): HoleShape {
 /** The frame clock's step: a dropped frame continues (at most 1/30 s), it never jumps. */
 object FrameStep {
     const val MAX = 1f / 30f
-    fun step(rawSeconds: Float): Float = rawSeconds.coerceIn(0f, MAX)
+    /** An emulator draws in software: its frames take 100 ms and more, so it may step further to finish in real time. */
+    const val MAX_EMULATOR = 0.25f
+    fun step(rawSeconds: Float, max: Float = MAX): Float = rawSeconds.coerceIn(0f, max)
 }
 
 /** Full effect, or the 120 ms fade (reduced motion: the system's animator scale is 0). */
@@ -149,20 +154,29 @@ enum class HoleMode { Full, Fade }
 
 fun chooseMode(animatorScale: Float): HoleMode = if (animatorScale == 0f) HoleMode.Fade else HoleMode.Full
 
+/** What the budget watch asks for: carry on, drop the lens (keep the ring and the pull), or give up for the fade. */
+enum class BudgetVerdict { Fine, DropLens, GiveUp }
+
 /**
- * Two missed frame budgets in a row and the effect gives up for the fade (never stutter). The first [warmup] frames
- * do not count: they carry the shader compile.
+ * Slow frames cost the effect its parts in order, never all at once: three frames over 33 ms in a row drop the lens
+ * (the most expensive part) and keep the ring and the pull; five more in a row after that give up for the fade. With no
+ * lens to drop, the five alone give up. The first [warmup] frames do not count: they carry the shader compile.
  */
-class BudgetWatch(private val warmup: Int = 2, private val missSeconds: Float = 0.025f) {
+class BudgetWatch(private val hasLens: Boolean = true, private val warmup: Int = 3, private val missSeconds: Float = 0.033f) {
     private var frames = 0
     private var misses = 0
+    private var lensDropped = !hasLens
 
-    /** One frame took [rawSeconds]; true = give up now. */
-    fun frame(rawSeconds: Float): Boolean {
+    fun frame(rawSeconds: Float): BudgetVerdict {
         frames++
-        if (frames <= warmup) return false
+        if (frames <= warmup) return BudgetVerdict.Fine
         misses = if (rawSeconds > missSeconds) misses + 1 else 0
-        return misses >= 2
+        if (!lensDropped && misses >= 3) {
+            lensDropped = true
+            misses = 0
+            return BudgetVerdict.DropLens
+        }
+        return if (lensDropped && misses >= 5) BudgetVerdict.GiveUp else BudgetVerdict.Fine
     }
 }
 

@@ -232,7 +232,7 @@ class CompletedViewModel @Inject constructor(
 
     companion object {
         const val REOPEN_MS = 650L
-        /** A bulk clear keeps its Undo longer than one tick's 4 s: it is the bigger mistake to make by accident. */
-        const val CLEAR_UNDO_MS = 30_000L
+        /** A bulk clear keeps its Undo longer than one tick's 4 s (the top toast covers the title, so not 30 s any more: 12 s). */
+        const val CLEAR_UNDO_MS = 12_000L
     }
 }

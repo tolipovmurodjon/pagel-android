@@ -51,7 +51,6 @@ import androidx.core.view.WindowInsetsCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -66,9 +65,15 @@ class BlackHoleRun(
     val snapshot: Bitmap,
     val pieces: List<PieceRect>,
     val timing: BlackHoleTiming,
+    /** The window at half size, copied AT the tap (before the data changed) for the lens; null: no lens. */
+    val backdrop: Bitmap? = null,
 )
 
-private const val COPY_WAIT_MS = 300L
+/** The window copy is asked for at the tap and waited for this long; slower, and the run has no lens. */
+internal const val COPY_WAIT_MS = 120L
+
+/** An emulator's frames are software-drawn: no budget watch there, and a wider frame step so the run ends in real time. */
+private val isEmulator: Boolean = Build.HARDWARE.contains("ranchu") || Build.HARDWARE.contains("goldfish") || Build.FINGERPRINT.contains("generic")
 
 /** The system's animator duration scale: 0 when Boss turned animations off (reduced motion). */
 fun animatorScale(context: Context): Float =
@@ -101,7 +106,7 @@ internal fun cameraCapsule(view: View, density: Float): Capsule {
  * The whole window, copied once at half size (PixelCopy, API 26+), for the lens. Null when the copy fails: the hole then
  * draws its shade only.
  */
-private suspend fun copyWindowHalf(view: View): Bitmap? {
+internal suspend fun copyWindowHalf(view: View): Bitmap? {
     val window = view.context.findActivity()?.window ?: return null
     val w = max(1, view.rootView.width / 2)
     val h = max(1, view.rootView.height / 2)
@@ -123,7 +128,7 @@ fun BlackHoleCanvas(scene: BlackHoleScene, time: () -> Float, modifier: Modifier
     val agsl: Any? = remember(shaderRing) { if (shaderRing && Build.VERSION.SDK_INT >= 33) AgslRing.get() else null }
     Box(modifier.fillMaxSize()) {
         // The lens first: the page bends under everything else (API 33+, when the window was copied).
-        if (Build.VERSION.SDK_INT >= 33 && shaderRing && scene.lensBackdrop != null) AgslLens.get()?.let { AgslLens.Layer(it, scene, time) }
+        if (Build.VERSION.SDK_INT >= 33 && shaderRing && scene.lensBackdrop != null && !scene.lensOff) AgslLens.get()?.let { AgslLens.Layer(it, scene, time) }
         Spacer(Modifier.fillMaxSize().drawBehind { drawIntoCanvas { scene.drawPieces(it.nativeCanvas, time()) } })
         if (agsl != null && Build.VERSION.SDK_INT >= 33) {
             AgslRing.Layer(agsl as android.graphics.RuntimeShader, scene, time)
@@ -186,8 +191,6 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
     // Where the snapshot's box sits in the window: the hole's place is worked out in window px, then moved into the box.
     var origin by remember(run.id) { mutableStateOf(Offset.Zero) }
     var iconsOnDark by remember(run.id) { mutableStateOf(false) }
-    // The layer is clear while the window is copied, so the copy holds the page and not the flying pieces.
-    var copying by remember(run.id) { mutableStateOf(false) }
     val time = remember(run.id) { mutableFloatStateOf(0f) }
     val fadeAlpha = remember(run.id) { mutableFloatStateOf(1f) }
     DisposableEffect(iconsOnDark) {
@@ -206,15 +209,7 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
             val box = origin
             val window = holeGeometry(cameraCapsule(view, density.density), view.rootView.width.toFloat())
             val geometry = window.shifted(-box.x, -box.y)
-            var backdrop: Bitmap? = null
-            if (Build.VERSION.SDK_INT >= 33) {
-                copying = true
-                withFrameNanos { it }
-                withFrameNanos { it }
-                // A copy that never answers must not hold the effect: 300 ms, then the shade alone.
-                backdrop = withTimeoutOrNull(COPY_WAIT_MS) { copyWindowHalf(view) }
-                copying = false
-            }
+            val backdrop = if (Build.VERSION.SDK_INT >= 33) run.backdrop else null
             val made = runCatching {
                 withContext(Dispatchers.Default) { BlackHoleScene.prepare(run.snapshot, run.pieces, geometry, cell, run.timing, backdrop, box.x, box.y) }
             }.getOrNull()
@@ -224,18 +219,23 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
                 Log.i("BlackHole", "BlackHole run ${run.id}: radius ${geometry.radius.toInt()} px, lens ${if (backdrop != null) "on" else "off"}")
                 iconsOnDark = true
                 view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                val watch = BudgetWatch()
+                val watch = BudgetWatch(hasLens = backdrop != null)
                 var last = -1L
                 val ticks = swallowTicks(run.timing)
                 var nextTick = 0
                 var closed = false
                 var gaveUp = false
+                val maxStep = if (isEmulator) FrameStep.MAX_EMULATOR else FrameStep.MAX
                 while (t < run.timing.total && !gaveUp && !stopNow) {
                     val now = withFrameNanos { it }
                     if (last >= 0L) {
                         val raw = (now - last) / 1_000_000_000f
-                        gaveUp = watch.frame(raw)
-                        t += FrameStep.step(raw)
+                        if (!isEmulator) when (watch.frame(raw)) {
+                            BudgetVerdict.DropLens -> { made.lensOff = true; Log.i("BlackHole", "BlackHole lens dropped at t=${"%.2f".format(t)}") }
+                            BudgetVerdict.GiveUp -> { gaveUp = true; Log.i("BlackHole", "BlackHole gave up at t=${"%.2f".format(t)}") }
+                            BudgetVerdict.Fine -> Unit
+                        }
+                        t += FrameStep.step(raw, maxStep)
                     }
                     if (last < 0L) firstFrame((System.nanoTime() - began) / 1_000_000f)
                     last = now
@@ -251,6 +251,7 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
                     }
                 }
                 if (!gaveUp && !stopNow) {
+                    Log.i("BlackHole", "BlackHole done")
                     end()
                     return@LaunchedEffect
                 }
@@ -270,7 +271,7 @@ fun BlackHoleOverlay(run: BlackHoleRun?, onEnd: () -> Unit, modifier: Modifier =
     val boxWidth = with(density) { run.snapshot.width.toDp() }
     val boxHeight = with(density) { run.snapshot.height.toDp() }
     WindowLayer {
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (copying) 0f else fadeAlpha.floatValue }) {
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = fadeAlpha.floatValue }) {
             Box(Modifier.offset { IntOffset(origin.x.roundToInt(), origin.y.roundToInt()) }.size(boxWidth, boxHeight)) {
                 val s = scene
                 if (s == null) {

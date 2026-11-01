@@ -1,11 +1,11 @@
 package org.pagel.ai.ui
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.pagel.ai.ui.motion.blackhole.BlackHole
 import org.pagel.ai.ui.motion.blackhole.BlackHoleTiming
+import org.pagel.ai.ui.motion.blackhole.BudgetVerdict
 import org.pagel.ai.ui.motion.blackhole.BudgetWatch
 import org.pagel.ai.ui.motion.blackhole.Capsule
 import org.pagel.ai.ui.motion.blackhole.FlowTable
@@ -75,22 +75,33 @@ class BlackHoleTimelineTest {
         assertEquals(HoleMode.Full, chooseMode(0.5f))
     }
 
-    @Test fun twoMissedBudgetsInARowGiveUpButTheWarmupAndOneSlowFrameDoNot() {
+    @Test fun slowFramesDropTheLensFirstAndOnlyThenGiveUp() {
         val w = BudgetWatch()
-        assertFalse(w.frame(0.2f))
-        assertFalse(w.frame(0.2f))
-        assertFalse(w.frame(0.016f))
-        assertFalse(w.frame(0.04f))
-        assertFalse(w.frame(0.016f))
-        assertFalse(w.frame(0.04f))
-        assertTrue(w.frame(0.05f))
+        // The warmup (3 frames) and one slow frame never count.
+        repeat(3) { assertEquals(BudgetVerdict.Fine, w.frame(0.2f)) }
+        assertEquals(BudgetVerdict.Fine, w.frame(0.05f))
+        assertEquals(BudgetVerdict.Fine, w.frame(0.016f))
+        // Three slow frames in a row: the lens goes, the ring and the pull stay.
+        assertEquals(BudgetVerdict.Fine, w.frame(0.05f))
+        assertEquals(BudgetVerdict.Fine, w.frame(0.05f))
+        assertEquals(BudgetVerdict.DropLens, w.frame(0.05f))
+        // Five more in a row (and not before): the fade.
+        repeat(4) { assertEquals(BudgetVerdict.Fine, w.frame(0.05f)) }
+        assertEquals(BudgetVerdict.GiveUp, w.frame(0.05f))
+    }
+
+    @Test fun withNoLensTheFiveSlowFramesAloneGiveUp() {
+        val w = BudgetWatch(hasLens = false)
+        repeat(3) { w.frame(0.2f) }
+        repeat(4) { assertEquals(BudgetVerdict.Fine, w.frame(0.05f)) }
+        assertEquals(BudgetVerdict.GiveUp, w.frame(0.05f))
     }
 
     @Test fun theTwoLengthsAreOnePointThreeAndAboutOnePointNineSeconds() {
         assertEquals(1.3f, BlackHoleTiming.Single.total, 0.01f)
         assertTrue(BlackHoleTiming.ClearAll.total in 1.85f..1.95f)
-        // The swallow starts at 35 % of the opening, once the big hole has grown over the first rows.
-        assertEquals(0.28f, BlackHoleTiming.ClearAll.swallowStart, 1e-4f)
+        // The swallow starts at 20 % of the opening: rows are already stretching at 0.2 to 0.3 s.
+        assertEquals(0.16f, BlackHoleTiming.ClearAll.swallowStart, 1e-4f)
     }
 
     // A 360 x 800 dp phone at xxhdpi (3x), the camera a 36 x 36 px punch hole 40 px below the top, top centre.

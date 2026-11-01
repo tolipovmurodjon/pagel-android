@@ -164,8 +164,9 @@ fun ProjectTile(project: String, color: String?, title: String, size: Dp = 36.dp
         contentAlignment = Alignment.Center,
     ) {
         val emoji = icon?.takeIf { it.startsWith("emoji:") }?.removePrefix("emoji:")
-        if (emoji != null) androidx.compose.material3.Text(emoji, fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.56f).toSp() }, maxLines = 1)
-        else androidx.compose.material3.Icon(icon?.removePrefix("lucide:")?.let(TabIcons::lucide) ?: TabIcons.forProject(project), contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.6f))
+        // An "emoji:" icon is drawn as its closest line icon: no emoji in the app UI (the stored value is kept).
+        val line = if (emoji != null) org.pagel.ai.ui.projects.lineIconForEmoji(emoji) else icon?.removePrefix("lucide:")?.let(TabIcons::lucide)
+        androidx.compose.material3.Icon(line ?: TabIcons.forProject(project), contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.6f))
     }
 }
 

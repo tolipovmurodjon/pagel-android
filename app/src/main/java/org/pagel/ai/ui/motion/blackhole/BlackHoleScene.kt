@@ -6,6 +6,8 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Shader
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -29,6 +31,9 @@ class BlackHoleScene private constructor(
 ) {
     val vertexCount: Int get() = mesh.vertexCount
 
+    /** Slow frames switch the lens off first (the ring and the pull go on); read in composition, so the layer leaves. */
+    var lensOff by androidx.compose.runtime.mutableStateOf(false)
+
     private var holeT = Float.NaN
     private var holeLast = holeAt(0f, timing, geometry)
 
@@ -44,7 +49,7 @@ class BlackHoleScene private constructor(
 
     /** Draws the pieces at [t] s into the run. */
     fun drawPieces(canvas: Canvas, t: Float) {
-        mesh.update(t - timing.swallowStart, flow, radius)
+        mesh.update(t - timing.swallowStart, flow, radius, hole(t).ringRadius / radius)
         val count = mesh.vertexCount * 2
         canvas.drawVertices(Canvas.VertexMode.TRIANGLES, count, mesh.pos, 0, mesh.tex, 0, mesh.sharp, 0, mesh.indices, 0, mesh.indices.size, sharpPaint)
         // The blurred copy only on the triangles near the horizon (the mesh lists them each frame; most frames few).
@@ -64,6 +69,8 @@ class BlackHoleScene private constructor(
             snapshot: Bitmap, pieces: List<PieceRect>, geometry: HoleGeometry, cell: Float, timing: BlackHoleTiming,
             backdrop: Bitmap? = null, shiftX: Float = 0f, shiftY: Float = 0f,
         ): BlackHoleScene {
+            // The page copied at the tap still holds the rows: paint them out, they fly by the mesh.
+            backdrop?.let { BlackHoleBackdrop.paintOutPieces(it, pieces, shiftX, shiftY) }
             // A GraphicsLayer snapshot is a HARDWARE bitmap: copy it once so it can be scaled.
             val readable = if (snapshot.config == Bitmap.Config.HARDWARE) snapshot.copy(Bitmap.Config.ARGB_8888, false) else snapshot
             // Read before any recycle below (checker: the sizes were read from a recycled bitmap).

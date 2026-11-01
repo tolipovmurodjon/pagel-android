@@ -1171,26 +1171,95 @@ REM0=$(grep -cE '"remove": ?true' "$FAKE_LOG")
 RES0=$(grep -cE '"restore": ?true' "$FAKE_LOG")
 # The emulator runs with animations off (reduced motion = the 120 ms fade); the hole needs them on for this step.
 $T adb shell settings put global animator_duration_scale 1.0
+$T adb logcat -c
 tap "Clear done" || { log "WALKTHROUGH: Completed has no Clear done"; exit 1; }
-sleep 0.7; $T adb exec-out screencap -p > "$OUT/hole-run-a.png"
-sleep 0.5; $T adb exec-out screencap -p > "$OUT/hole-run-b.png"
-sleep 3
-$T adb logcat -d | grep -q "BlackHole run" || { log "WALKTHROUGH: Clear done played no black hole (no 'BlackHole run' in the log)"; exit 1; }
-log "   $($T adb logcat -d | grep 'BlackHole run' | tail -1 | cut -c1-140)"
-shot hole-after 1
+# Four screencaps through the run (the emulator steps wider than a phone, so the run takes about 2 s of real time).
+for k in 1 2 3 4; do sleep 0.4; $T adb exec-out screencap -p > "$OUT/hole-run-$k.png"; done
+for i in $(seq 1 25); do $T adb logcat -d | grep -q "BlackHole done" && break; sleep 1; done
+HOLELOG=$($T adb logcat -d | grep "BlackHole")
+echo "$HOLELOG" | grep -q "BlackHole run" || { log "WALKTHROUGH: Clear done played no black hole (no 'BlackHole run' in the log)"; echo "$HOLELOG" | tee -a "$OUT/steps.txt"; exit 1; }
+if echo "$HOLELOG" | grep -q "gave up"; then
+  GAVE=$(echo "$HOLELOG" | grep -o "gave up at t=[0-9.]*" | head -1 | cut -d= -f2)
+  python3 -I -c "import sys; sys.exit(0 if float('$GAVE') >= 0.6 else 1)" || { log "WALKTHROUGH: the hole gave up at t=$GAVE (before 0.6 s)"; echo "$HOLELOG" | tee -a "$OUT/steps.txt"; exit 1; }
+  log "   (the hole gave up at t=$GAVE, after 0.6 s)"
+fi
+echo "$HOLELOG" | grep -q "BlackHole done" || { log "WALKTHROUGH: the hole never finished (no 'BlackHole done')"; echo "$HOLELOG" | tee -a "$OUT/steps.txt"; exit 1; }
+# Timings from the log: tap's snapshot to the first frame of the run; the lens state.
+python3 -I - "$HOLELOG" <<'PY' | tee -a "$OUT/steps.txt"
+import re, sys
+lines = sys.argv[1].splitlines()
+def sec(l):
+    m = re.search(r"(\d+):(\d+):(\d+\.\d+)", l)
+    return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else None
+snap = next((sec(l) for l in lines if "Clear done:" in l), None)
+run = next((sec(l) for l in lines if "BlackHole run" in l), None)
+done = next((sec(l) for l in lines if "BlackHole done" in l), None)
+lens = "on" if any("lens on" in l for l in lines) else "off"
+print("   hole timings: tap to run %.0f ms, run length %.2f s, lens %s" % ((run - snap) * 1000, done - run, lens))
+PY
+# The middle captures show a large dark disc in the centre-top region (the hole, radius 0.45 w, top at the camera).
+python3 -I - "$OUT" <<'PY' || { log "WALKTHROUGH: no large dark disc in any of the hole's screencaps (see hole-run-*.png)"; exit 1; }
+import struct, sys, zlib, pathlib
+
+def read_png(path):
+    d = pathlib.Path(path).read_bytes()
+    pos, idat, w, h, ct = 8, b"", 0, 0, 0
+    while pos < len(d):
+        n, kind = struct.unpack(">I4s", d[pos:pos + 8])
+        body = d[pos + 8:pos + 8 + n]
+        if kind == b"IHDR":
+            w, h, depth, ct = struct.unpack(">IIBB", body[:10])
+        elif kind == b"IDAT":
+            idat += body
+        pos += 12 + n
+    bpp = {2: 3, 6: 4}[ct]
+    raw = zlib.decompress(idat)
+    stride = w * bpp
+    rows, prev = [], bytearray(stride)
+    for y in range(h):
+        f = raw[y * (stride + 1)]
+        line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if f == 1: line[i] = (line[i] + a) & 255
+            elif f == 2: line[i] = (line[i] + b) & 255
+            elif f == 3: line[i] = (line[i] + (a + b) // 2) & 255
+            elif f == 4:
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                line[i] = (line[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        rows.append(line)
+        prev = line
+    return w, h, bpp, rows
+
+best = 0.0
+for k in (1, 2, 3, 4):
+    w, h, bpp, rows = read_png("%s/hole-run-%d.png" % (sys.argv[1], k))
+    x0, x1, y0, y1 = int(w * 0.42), int(w * 0.58), int(h * 0.14), int(h * 0.30)
+    dark = total = 0
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            r, g, b = rows[y][x * bpp], rows[y][x * bpp + 1], rows[y][x * bpp + 2]
+            total += 1
+            dark += (0.299 * r + 0.587 * g + 0.114 * b) < 60
+    frac = dark / total
+    print("   hole-run-%d: %.0f %% of the centre-top region is dark" % (k, 100 * frac))
+    best = max(best, frac)
+sys.exit(0 if best >= 0.9 else 1)
+PY
+shot hole-after 0.5
 $T adb shell settings put global animator_duration_scale 0.0
 UB=$(tr '>' '\n' < "$(xml_of hole-after)" | grep -E 'text="Undo"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]' | grep -oE '[0-9]+' | tail -1)
 [ -n "$UB" ] && [ "$UB" -lt 500 ] || { log "WALKTHROUGH: the clear's Undo toast is not just under the camera (Undo top y=${UB:-none})"; exit 1; }
 grep -qE 'text="[0-9]+ cleared"' "$(xml_of hole-after)" || { log "WALKTHROUGH: the toast does not say 'N cleared'"; exit 1; }
 log "   the toast says N cleared, Undo at y=$UB (under the camera)"
 wait_picker '"remove": ?true' || { log "WALKTHROUGH: the clear never reached pagel.uz as a remove"; exit 1; }
-sleep 3
 REM1=$(grep -cE '"remove": ?true' "$FAKE_LOG")
 GONE=$((REM1 - REM0))
 [ "$GONE" -ge 1 ] || { log "WALKTHROUGH: no deletes reached the fake log"; exit 1; }
 log "   pagel.uz got $GONE deletes"
-shot hole-cleared 1
-grep -q 'text="Write the IT Park report"' "$(xml_of hole-cleared)" && { log "WALKTHROUGH: a cleared task is still on Completed"; exit 1; }
+grep -q 'text="Write the IT Park report"' "$(xml_of hole-after)" && { log "WALKTHROUGH: a cleared task is still on Completed"; exit 1; }
 tap Undo || { log "WALKTHROUGH: the clear's toast has no Undo"; exit 1; }
 for i in $(seq 1 30); do [ "$(( $(grep -cE '"restore": ?true' "$FAKE_LOG") - RES0 ))" -ge "$GONE" ] && break; sleep 1; done
 BACK=$(( $(grep -cE '\{"restore": ?true, ?"done": ?true\}' "$FAKE_LOG") ))
@@ -1259,6 +1328,11 @@ tap_scroll() {
     tap "$1" && return 0
     $T adb shell input swipe 160 460 160 200 300; sleep 1
   done
+  return 1
+}
+# Waits up to $3 s (default 30) for a fixed string in the fake pagel.uz's log lines AFTER line $1 (record `wc -l` first).
+wait_since() {
+  for i in $(seq 1 "${3:-30}"); do tail -n +"$(( $1 + 1 ))" "$FAKE_LOG" | grep -qiF -- "$2" && return 0; sleep 1; done
   return 1
 }
 # Waits up to $2 s (default 30) for a fixed string in the fake pagel.uz's log.
@@ -1667,6 +1741,7 @@ for k in 1 2 3; do tap Completed && break; $T adb shell input swipe 160 200 160 
 shot hole-completed 2.5
 grep -qE '(text|content-desc)="Clear done"' "$(last hole-completed)" || shot hole-completed 3
 grep -qE '(text|content-desc)="Clear done"' "$(last hole-completed)" || { log "WALKTHROUGH: Completed shows no Clear done (no done rows?)"; exit 1; }
+HL0=$(wc -l < "$FAKE_LOG")
 tap "Clear done" || { log "WALKTHROUGH: Completed has no Clear done"; exit 1; }
 shot hole-cleared 1.5
 grep -qE '(text|content-desc)="Clear done"|text="Write the IT Park report"' "$(last hole-cleared)" && { log "WALKTHROUGH: the done rows are still on screen after Clear done"; exit 1; }
@@ -1675,25 +1750,26 @@ grep -qE 'text="[0-9]+ cleared"' "$(last hole-cleared)" || { log "WALKTHROUGH: C
 grep -q 'text="All clear"' "$(last hole-cleared)" || { log "WALKTHROUGH: the cleared list does not say All clear"; exit 1; }
 grep -q 'text="0 tasks done"' "$(last hole-cleared)" || { log "WALKTHROUGH: the cleared list's count is not 0 ($(grep -oE '[0-9]+ tasks? done' "$(last hole-cleared)" | head -1))"; exit 1; }
 log "   $(grep -oE '[0-9]+ cleared' "$(last hole-cleared)" | head -1), the list says All clear · 0 tasks done at once"
-wait_log 'PATCH /api/v1/tasks/t_c2 {"remove":true} auth=True' 25 || { log "WALKTHROUGH: the remove never reached pagel.uz"; grep -E 'PATCH /api/v1/tasks/t_c' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
-log "   pagel.uz got the removes ($(grep -c '{"remove":true}' "$FAKE_LOG") in all)"
+wait_since "$HL0" 'PATCH /api/v1/tasks/t_c2 {"remove":true} auth=True' 25 || { log "WALKTHROUGH: the remove never reached pagel.uz after this Clear done"; tail -n +"$((HL0 + 1))" "$FAKE_LOG" | grep -E 'PATCH /api/v1/tasks/t_c' | tee -a "$OUT/steps.txt"; exit 1; }
+log "   pagel.uz got $(tail -n +"$((HL0 + 1))" "$FAKE_LOG" | grep -c '{"remove":true}') removes after this Clear done"
+HL1=$(wc -l < "$FAKE_LOG")
 tap Undo || { log "WALKTHROUGH: the Clear done toast lost its Undo before the removes left"; exit 1; }
-wait_log 'PATCH /api/v1/tasks/t_c2 {"restore":true,"done":true} auth=True' 30 || { log "WALKTHROUGH: the Undo never reached pagel.uz as restore + done"; grep -E 'PATCH /api/v1/tasks/t_c' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+wait_since "$HL1" 'PATCH /api/v1/tasks/t_c2 {"restore":true,"done":true} auth=True' 30 || { log "WALKTHROUGH: the Undo never reached pagel.uz as restore + done"; grep -E 'PATCH /api/v1/tasks/t_c' "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
 shot hole-undone 2.5
 grep -qE '(text|content-desc)="Clear done"' "$(last hole-undone)" || shot hole-undone 3
 grep -qE '(text|content-desc)="Clear done"' "$(last hole-undone)" || { log "WALKTHROUGH: Undo did not bring the done rows back"; exit 1; }
 $T adb logcat -d > "$OUT/logcat-hole.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-hole.txt" && { log "WALKTHROUGH: CRASH in the black hole (see logcat-hole.txt)"; exit 1; }
 # No emoji on ANY screen of the walk (checker 2026-11-01: the r4-only check missed the closed-day moon).
-# Skipped until their own round: the Inbox (0.3.45), the notification copy and the stored emoji project icons.
+# Skipped until its own round: the Inbox (0.3.45). The notification copy and the stored emoji project icons are checked.
 python3 -I - "$OUT" <<'PY' || { log "WALKTHROUGH: emoji on screen (see the list above)"; exit 1; }
-import sys, pathlib, re
-skip = re.compile(r"-(inbox|sorted-today|notify-settings|notification|core-icon|core-rocket)")
+import sys, pathlib, re, html
+skip = re.compile(r"-(inbox|sorted-today)")
 bad = []
 for x in sorted(pathlib.Path(sys.argv[1]).glob("*.xml")):
     if skip.search(x.name):
         continue
-    t = x.read_text(encoding="utf8", errors="replace")
+    t = html.unescape(x.read_text(encoding="utf8", errors="replace"))
     found = sorted({c for c in t if (0x1F000 <= ord(c) <= 0x1FAFF or 0x2600 <= ord(c) <= 0x27BF or ord(c) in (0xFE0F, 0x200D)) and c not in "✓✔"})
     if found:
         bad.append(f"{x.name}: {' '.join(found)}")

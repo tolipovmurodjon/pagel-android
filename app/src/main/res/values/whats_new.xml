@@ -9,11 +9,11 @@
 <resources>
     <string-array name="whats_new_items">
         <item>#0.3.46 · Black hole and Laboratory</item>
-        <item>Completed, then Clear done: a hole opens from the camera|more</item>
-        <item>Cleared tasks are pulled in, toast says N cleared|more</item>
-        <item>More, then Laboratory: a shelf of experiments|more</item>
-        <item>Try it shows your janky % and first frame|more</item>
-        <item>Switch Use in the app off to clear without the hole|more</item>
+        <item>Clear done opens a hole from the camera|more</item>
+        <item>Tasks pulled in; toast says N cleared|more</item>
+        <item>More, then Laboratory: experiments|more</item>
+        <item>Try it shows janky % and first frame|more</item>
+        <item>Turn the hole off in Laboratory|more</item>
         <item>#0.3.44 · What now, the GTD way</item>
         <item>What now asks where, time, energy|today</item>
         <item>Pick where a task happens|today</item>

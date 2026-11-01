@@ -101,15 +101,30 @@ class HoleMesh(pieces: List<PieceRect>, private val cx: Float, private val cy: F
      * Puts every point where it is [tau] s into the swallow (negative: not started, all at rest). Heat runs from
      * [BlackHole.HEAT_FROM] · [radius] to the horizon: the colour warms to gold, the blurred copy takes over, alpha goes.
      */
-    fun update(tau: Float, flow: FlowTable, radius: Float) {
+    fun update(tau: Float, flow: FlowTable, radius: Float, grow: Float = 1f) {
         val engaged = if (tau <= 0f) 0f else HoleEase.smoothstep(tau / BlackHole.ENGAGE_S)
-        val heatFrom = BlackHole.HEAT_FROM * radius
-        val span = max(1f, heatFrom - flow.vanish)
+        // The hole is still opening: rows fade and heat by its CURRENT size, so they are not gone before it covers them.
+        val size = grow.coerceIn(0.05f, 1f)
+        val vanish = flow.vanish * size
+        val heatFrom = BlackHole.HEAT_FROM * radius * size
+        val span = max(1f, heatFrom - vanish)
+        val twistReach = BlackHole.TWIST_REACH * radius * size
         for (v in 0 until vertexCount) {
             val d = if (tau <= 0f) start[v] else flow.read(row[v], rowWeight[v], tau)
-            pos[2 * v] = cx + ux[v] * d
-            pos[2 * v + 1] = cy + uy[v] * d
-            val far = HoleEase.smoothstep((d - flow.vanish) / span)
+            var px = ux[v]
+            var py = uy[v]
+            if (tau > 0f && d < twistReach) {
+                // The same bend as the lens: near the edge the rows are turned a little around the hole.
+                val k = 1f - HoleEase.smoothstep((d - 0.9f * radius * size) / max(1f, twistReach - 0.9f * radius * size))
+                val ang = BlackHole.TWIST * k * k * engaged
+                val c = kotlin.math.cos(ang)
+                val s = kotlin.math.sin(ang)
+                px = ux[v] * c - uy[v] * s
+                py = ux[v] * s + uy[v] * c
+            }
+            pos[2 * v] = cx + px * d
+            pos[2 * v + 1] = cy + py * d
+            val far = HoleEase.smoothstep((d - vanish) / span)
             val heat = engaged * (1f - far)
             val alpha = 1f - heat
             val g = (255 - 41 * heat).toInt()

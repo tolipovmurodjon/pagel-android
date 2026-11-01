@@ -118,6 +118,8 @@ fun BlackHoleLabScreen(padding: PaddingValues) {
 @Composable
 fun BlackHoleLab(padding: PaddingValues, jank: String?, onFirstFrame: (Float) -> Unit = {}, onRunStart: () -> Unit = {}, onRunEnd: () -> Unit = {}) {
     val density = LocalDensity.current.density
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(bottom = Space.xl)) {
         Column(Modifier.padding(start = Space.textEdge, end = Space.textEdge, top = Space.headerTop)) {
             Text("Laboratory", style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
@@ -156,9 +158,13 @@ fun BlackHoleLab(padding: PaddingValues, jank: String?, onFirstFrame: (Float) ->
                             onClick = {
                                 if (run == null) {
                                     val pieces = if (timing == BlackHoleTiming.Single) listOf(geo.rows.first()) else geo.rows
-                                    gone = if (timing == BlackHoleTiming.Single) setOf(0) else geo.rows.indices.toSet()
-                                    onRunStart()
-                                    run = BlackHoleRun(next++, rows, pieces, timing)
+                                    // The window copy for the lens is taken before the rows are hidden, as in Completed.
+                                    scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                                        val backdrop = kotlinx.coroutines.withTimeoutOrNull(COPY_WAIT_MS) { copyWindowHalf(view) }
+                                        gone = if (timing == BlackHoleTiming.Single) setOf(0) else geo.rows.indices.toSet()
+                                        onRunStart()
+                                        run = BlackHoleRun(next++, rows, pieces, timing, backdrop)
+                                    }
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Glass.Primary),
