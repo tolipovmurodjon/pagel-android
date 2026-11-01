@@ -16,7 +16,9 @@ object Repeat {
 
     private val DAY_SET = Regex("^(sun|mon|tue|wed|thu|fri|sat)(,(sun|mon|tue|wed|thu|fri|sat))*$")
 
-    fun daysOf(every: String): List<Int> = every.split(",").map { SHORT.indexOf(it.trim().take(3)) }.filter { it >= 0 }
+    /** Whole day names only ("tue", "monday"): "month 1,15" must never read as Monday. */
+    fun daysOf(every: String): List<Int> = every.split(",").map { it.trim().lowercase() }
+        .map { d -> SHORT.indexOf(d).takeIf { it >= 0 } ?: NAMES.indexOfFirst { it.lowercase() == d } }.filter { it >= 0 }
 
     fun daySet(days: Collection<Int>): String = WEEK.filter { it in days }.joinToString(",") { SHORT[it] }
 

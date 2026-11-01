@@ -140,14 +140,14 @@ class UpcomingRepositoryTest {
      * Checker P4 #1: a habit's due is its series. A drop of "Gym" (tue,thu,sun) on a Monday would put it on Monday and
      * take Thursday away; a late habit sent to today would undo today's tick on pagel.uz. Neither moves, nothing is sent.
      */
-    @Test fun aHabitIsNeverRescheduledByADropOrMoveAllButAMissedWeeklyRepeatRollsToTodayOnceAndUndoRestoresIt() = runBlocking {
-        db.dao().upsertTasks(listOf(task("t_gym", "2026-10-29 18:00", every = "tue,thu,sun"), task("t_late", "2026-10-26 07:30", every = "day"), task("t_m", "2026-10-26 07:30", every = "week"), task("t_1", "2026-10-25")))
+    @Test fun aHabitIsNeverRescheduledByADropOrMoveAllButAMissedMonthlyRepeatRollsToTodayOnceAndUndoRestoresIt() = runBlocking {
+        db.dao().upsertTasks(listOf(task("t_gym", "2026-10-29 18:00", every = "tue,thu,sun"), task("t_late", "2026-10-26 07:30", every = "day"), task("t_m", "2026-10-26 07:30", every = "month"), task("t_1", "2026-10-25")))
         val r = repo()
         assertNull(r.reschedule("t_gym", LocalDate.parse("2026-11-02")))
         assertEquals("2026-10-29 18:00", db.dao().taskOnce("t_gym")!!.due)
         assertEquals(SyncStatus.SYNCED, db.dao().taskOnce("t_gym")!!.syncStatus)
         val moved = r.moveAllToToday(listOf("t_late", "t_m", "t_1"))
-        // The daily habit card stays where its series is; the weekly repeat and the plain task move.
+        // The daily habit card stays where its series is; the monthly repeat and the plain task move.
         assertEquals(listOf("t_m", "t_1"), moved.map { it.id })
         assertEquals("2026-10-26 07:30", db.dao().taskOnce("t_late")!!.due)
         assertEquals("2026-10-28 07:30", db.dao().taskOnce("t_m")!!.due)
