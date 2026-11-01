@@ -842,7 +842,7 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
             // clipped claim ("Quizzes beat rereading:" and no more, walk 78) is a cut text.
             // With a picture the picture takes what the words leave, so the claim keeps its line count and shrinks by it instead.
             FitText(
-                card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = if (!showPicture) 8 else if (room < 380.dp) 4 else 6, minSize = if (crowded) 11.sp else 15.sp,
+                card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = if (!showPicture) 8 else if (room < 380.dp) 4 else 6, minSize = 11.sp,
                 modifier = if (showPicture) Modifier else Modifier.weight(1f, fill = false),
             )
             // The claim comes first: on a short screen at a large font the AI's reason leaves, or the claim got no room at all
