@@ -8,12 +8,29 @@
 -->
 <resources>
     <string-array name="whats_new_items">
-        <item>#0.3.44 · Black hole and Laboratory</item>
+        <item>#0.3.46 · Black hole and Laboratory</item>
         <item>Completed, then Clear done: a hole opens from the camera|more</item>
-        <item>The cleared tasks are pulled in, the toast says N cleared|more</item>
+        <item>Cleared tasks are pulled in, toast says N cleared|more</item>
         <item>More, then Laboratory: a shelf of experiments|more</item>
         <item>Try it shows your janky % and first frame|more</item>
         <item>Switch Use in the app off to clear without the hole|more</item>
+        <item>#0.3.44 · What now, the GTD way</item>
+        <item>What now asks where, time, energy|today</item>
+        <item>Pick where a task happens|today</item>
+        <item>Make it tiny writes on when closed|today</item>
+        <item>#0.3.43 · Habits and Namoz</item>
+        <item>Tap a timed habit: Timer or Finish, no clock needed|habits</item>
+        <item>Swipe the week back and forward|habits</item>
+        <item>Tap a past day to log what you missed, Undo is there|habits</item>
+        <item>Open the timer, swipe its colour, pick a sound|habits</item>
+        <item>Open a habit: stats cards and a swipeable calendar|habits</item>
+        <item>History: open Achievements, tap a badge to share it|habits</item>
+        <item>Namoz: each prayer sits in its time of day|habits</item>
+        <item>Namoz page: write your own plan, switch calm cues on|more</item>
+        <item>#0.3.42 · Today fixes</item>
+        <item>Drag to reorder works on the top 3 and All today|today</item>
+        <item>What now is its own card again, under the list|today</item>
+        <item>No floating Today chip at the top|today</item>
         <item>#0.3.41 · Today v2</item>
         <item>The top task is a Now card: Open or What now?|today</item>
         <item>One big count that drops as you tick|today</item>

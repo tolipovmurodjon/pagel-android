@@ -65,6 +65,87 @@ enum class Energy(val word: String, val label: String) {
     }
 }
 
+/** Where Boss is right now (What now's first question). [fits] says which task contexts can be done there. */
+enum class Where(val word: String, val label: String) {
+    PHONE("phone", "Phone only"), LAPTOP("laptop", "Laptop"), HOME("home", "Home"), OUT("out", "Out"), RESTING("resting", "Resting");
+
+    /** A task needing [context] can be done here: the phone and "anywhere" tasks go everywhere; the rest need their place. */
+    fun fits(context: String): Boolean = when (this) {
+        PHONE, RESTING -> context == "phone" || context == "any"
+        LAPTOP -> context == "laptop" || context == "phone" || context == "any"
+        HOME -> context == "home" || context == "laptop" || context == "phone" || context == "any"
+        OUT -> context == "out" || context == "phone" || context == "any"
+    }
+}
+
+/** The minutes Boss has: 5, 15, 30 or 60+ (60 means no limit). */
+val TIME_CHOICES = listOf(5, 15, 30, 60)
+
+private val PHONE_VERBS = setOf("call", "text", "reply", "read", "watch", "listen", "message", "send", "check", "pay", "answer", "scroll")
+private val LAPTOP_VERBS = setOf("code", "write", "design", "build", "edit", "debug", "draft", "record", "measure", "train", "implement", "refactor", "deploy", "plan")
+private val OUT_WORDS = setOf("buy", "visit", "bank", "post", "pharmacy", "shop", "pick", "drop", "meet")
+private val HOME_VERBS = setOf("clean", "cook", "wash", "tidy", "fix", "organize", "organise", "move")
+private val LAPTOP_PROJECTS = setOf("pagel", "humopedia", "ababil", "labs", "muhub", "ci-rocket", "games", "autonomy")
+private val QUICK_VERBS = setOf("reply", "text", "call", "pay", "send", "check", "buy", "answer")
+private val LOW_EFFORT_VERBS = setOf("read", "reply", "text", "listen", "watch", "check", "pay", "send", "answer", "tidy")
+
+private fun firstWord(title: String) = title.trim().split(Regex("\\s+")).firstOrNull()?.lowercase()?.trim(',', '.', ':').orEmpty()
+private fun words(title: String) = title.lowercase().split(Regex("[^a-z']+")).filter(String::isNotEmpty).toSet()
+
+/**
+ * Where a task can be done, from its words and its project (GTD context): the first word decides (call / text / reply /
+ * read / watch = phone; code / write / design / build / edit = laptop; clean / cook = home), then any errand word (buy,
+ * visit, bank, post office = out), then the project's default (the software projects = laptop); a short task with no
+ * tool says "any". Boss corrects it in one tap in the task panel, which stores it.
+ */
+fun inferContext(title: String, project: String): String {
+    val first = firstWord(title)
+    val all = words(title)
+    return when {
+        first in OUT_WORDS || (first !in PHONE_VERBS && first !in LAPTOP_VERBS && all.any { it in OUT_WORDS }) -> "out"
+        first in PHONE_VERBS -> if (all.any { it in OUT_WORDS } && first == "pay") "out" else "phone"
+        first in LAPTOP_VERBS -> "laptop"
+        first in HOME_VERBS -> "home"
+        project.lowercase() in LAPTOP_PROJECTS -> "laptop"
+        else -> "any"
+    }
+}
+
+/** A task's context: the one Boss set, else the inferred one. */
+fun contextOf(row: TodayRow): String = row.context?.takeIf(String::isNotBlank) ?: inferContext(row.title, row.project)
+
+/** Minutes a task probably needs (a guess from its words): a quick verb 5, a big-looking one 60, the rest 30. */
+fun estimateMinutes(title: String): Int = when {
+    firstWord(title) in QUICK_VERBS -> 5
+    looksBig(title) -> 60
+    else -> 30
+}
+
+/** The energy a task asks for: reading, replying and the like are low; a big-looking task is high; the rest OK. */
+fun effortOf(title: String): Energy = when {
+    firstWord(title) in LOW_EFFORT_VERBS -> Energy.LOW
+    looksBig(title) -> Energy.HIGH
+    else -> Energy.OK
+}
+
+/**
+ * What now by the four GTD criteria, in GTD's order: CONTEXT (what can be done where Boss is; Resting = only low-effort
+ * phone things like reading), then TIME (the task's guess fits the minutes), then ENERGY (its effort is not above his),
+ * then PRIORITY and Today's order ([whatNow]'s score). Null = nothing fits.
+ */
+fun whatNowGtd(
+    order: List<TodayRow>, where: Where, minutes: Int, energy: Energy, day: LocalDate, now: LocalTime, free: Int?, skipped: Set<String>,
+): TodayRow? {
+    val fitting = order.filter { r ->
+        !r.done && r.id !in skipped && r.every.isNullOrBlank() &&
+            where.fits(contextOf(r)) &&
+            (where != Where.RESTING || effortOf(r.title) == Energy.LOW) &&
+            estimateMinutes(r.title) <= (if (minutes >= 60) Int.MAX_VALUE else minutes) &&
+            effortOf(r.title).ordinal <= energy.ordinal
+    }
+    return whatNow(fitting, energy, day, now, free, emptySet())
+}
+
 /** At most this many picks before What now says "nothing else fits" (never a list of 20). */
 const val MAX_PICKS = 3
 

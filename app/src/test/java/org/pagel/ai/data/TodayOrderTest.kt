@@ -22,6 +22,7 @@ import org.pagel.ai.data.api.TinyBody
 import org.pagel.ai.data.db.PagelDatabase
 import org.pagel.ai.data.sync.SyncEngine
 import org.pagel.ai.data.sync.microOf
+import org.pagel.ai.data.sync.withoutPictographs
 import org.pagel.ai.data.tasks.TaskRepository
 import org.pagel.ai.data.today.OutboxSender
 import org.pagel.ai.data.today.TodayRepository
@@ -168,13 +169,19 @@ class TodayOrderTest {
         assertEquals(3, steps.size)
         assertEquals("""{"id":"t_5","spice":3}""", posts.single())
         tasks().micro("t_5", steps)
-        assertEquals(steps, microOf(db.dao().taskOnce("t_5")!!.micro))
+        assertEquals(steps.map(::withoutPictographs), microOf(db.dao().taskOnce("t_5")!!.micro))
         assertTrue("GTD steps untouched", db.dao().stepsOnce("t_5").isEmpty())
         sender().sendAll(account)
         assertEquals("""t_5 {"micro":["Pick up the book 📖","Open page 12","Read the first line"]}""", patches.single())
         micro = """["Pick up the book 📖","Open page 12"]"""
         synced()
-        assertEquals(listOf("Pick up the book 📖", "Open page 12"), microOf(db.dao().taskOnce("t_5")!!.micro))
+        assertEquals(listOf("Pick up the book", "Open page 12"), microOf(db.dao().taskOnce("t_5")!!.micro))
+    }
+
+    @Test fun stepsComeWithoutEmojiAndWithTidySpaces() {
+        assertEquals("Stand up. Yes, right now", withoutPictographs("Stand up. Yes, right now \uD83E\uDDCD"))
+        assertEquals("Write one ugly first line", withoutPictographs("Write one \u270D\uFE0F ugly first line"))
+        assertEquals(listOf("Read it out loud"), microOf("""["Read it out loud \uD83C\uDF99\uFE0F","\uD83D\uDCC4"]"""))
     }
 
     @Test fun eventsAreFixedWordsOnTheKpiPost() = runBlocking {

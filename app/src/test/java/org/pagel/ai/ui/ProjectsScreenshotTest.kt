@@ -126,7 +126,7 @@ class ProjectsScreenshotTest {
         var finishing = false
         val all = running.copy(open = 0, now = 0, done = 5, groups = listOf(PhaseGroup("Now", true, emptyList(), done = listOf(ProjectRow("x", "Pick the engine", 2, null, null)))))
         show { Box(Modifier.fillMaxWidth()) { ProjectScreen(all, PaddingValues(bottom = 24.dp), today = day, actions = ProjectActions(onFinish = { finishing = true })) } }
-        compose.onNodeWithText("Everything is done 🎉").assertIsDisplayed()
+        compose.onNodeWithText("Everything is done").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/project-finish.png")
         compose.onNodeWithText("Finish project").performClick()
         assertEquals(true, finishing)

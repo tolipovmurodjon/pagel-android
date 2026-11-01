@@ -17,6 +17,46 @@ import java.time.ZoneId
  * Asr, Peshin 4 min after zawal, Xufton 1 min earlier. Checked against the published Tashkent table for all 30 days of
  * November 2026: 180 times, the worst off by 1 minute (NamozTest). PAGEL never rules on anything; it only shows times.
  */
+/**
+ * "Prayed later" (qaza): a prayer made after its window, kept in Boss's own private log, apart from the habit ticks.
+ * It never touches the chain, a streak, a perfect day or any badge, and nothing on screen judges it.
+ */
+object NamozQaza {
+    fun key(day: String, taskId: String) = "$day|$taskId"
+    fun encode(keys: Set<String>) = keys.sorted().joinToString(",")
+    fun decode(text: String): Set<String> = text.split(',').filter { it.contains('|') }.toSet()
+}
+
+/** The calm cue words: plain, no emoji, no exclamation mark (Boss 2026-10-31). Cues are off until he switches one on. */
+object NamozCue {
+    fun start(p: Namoz.Prayer) = "${p.uz} time. Wudu, then pray."
+    fun ready(p: Namoz.Prayer) = "${p.uz} in 10 minutes. Get ready."
+
+    private const val KEY = "namoz-cues"
+    fun on(ctx: android.content.Context): Boolean = ctx.getSharedPreferences("pagel-habits", android.content.Context.MODE_PRIVATE).getBoolean(KEY, false)
+    fun set(ctx: android.content.Context, on: Boolean) {
+        ctx.getSharedPreferences("pagel-habits", android.content.Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
+    }
+
+    /** A prayer cue rings only when Boss switched cues on AND that prayer's own reminder is on; cues are off until he turns them on. */
+    fun shouldRing(cuesOn: Boolean, reminderOn: Boolean) = cuesOn && reminderOn
+}
+
+/** The words of a habit's own notification: plain, no emoji (Boss 2026-10-31), the streak as "day 12". */
+object HabitNotice {
+    fun title(streak: Int) = if (streak > 1) "Time for it · day $streak" else "Time for it"
+    fun body(habit: String) = habit
+}
+
+/** His own if-then plan, written once on the Namoz page and shown back to him quietly at prayer time. Never read by anything else. */
+object NamozIntention {
+    private const val KEY = "namoz-intention"
+    fun load(ctx: android.content.Context): String = ctx.getSharedPreferences("pagel-habits", android.content.Context.MODE_PRIVATE).getString(KEY, "").orEmpty()
+    fun save(ctx: android.content.Context, text: String) {
+        ctx.getSharedPreferences("pagel-habits", android.content.Context.MODE_PRIVATE).edit().putString(KEY, text.trim().take(160)).apply()
+    }
+}
+
 object Namoz {
     const val GROUP = "namoz"
     /** No chain before this day and no missed day counted before it. */

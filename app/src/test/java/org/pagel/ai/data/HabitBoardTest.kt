@@ -173,7 +173,9 @@ class HabitBoardTest {
         assertEquals(emptyList<String>(), L.anchorChoices("a", listOf(a, b, w), prefs).map { it.id })
         assertEquals(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"), L.anchorOf(L.store(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"))))
         assertEquals(org.pagel.ai.data.habits.HabitLook.Anchor.Habit("a"), L.anchorOf("a"))
-        assertEquals("After ☕ coffee → 🧘 Floor routine", L.recipe(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"), null, "🧘", "Floor routine"))
+        // No emoji in the app (Boss 2026-10-31): a moment saved with its glyph reads as plain words.
+        assertEquals("After coffee → Floor routine", L.recipe(org.pagel.ai.data.habits.HabitLook.Anchor.Moment("☕ Coffee"), null, "Floor routine"))
+        assertEquals("After Stretch → Floor routine", L.recipe(org.pagel.ai.data.habits.HabitLook.Anchor.Habit("a"), "Stretch", "Floor routine"))
     }
 
     @Test fun stackedHabitsSitUnderTheirAnchor() {

@@ -80,7 +80,7 @@ class UpcomingRepository(
     suspend fun putBack(m: Moved): Long? = tasks.due(m.id, m.was)
 
     /**
-     * Overdue → today, each keeping its time, in the order shown (oldest first). A missed repeat rolls forward to today
+     * Overdue → today, each keeping its time, in the order shown (oldest first). A missed repeat (not a habit card) rolls forward to today
      * once (its series starts again from today, so it shows once under Today, not as a stale overdue row); a drop on a
      * day never moves one ([reschedule]). Undo puts the old due back.
      */
@@ -89,6 +89,8 @@ class UpcomingRepository(
         return ids.mapNotNull { id ->
             val t = dao.taskOnce(id) ?: return@mapNotNull null
             if (t.every.isNullOrBlank()) return@mapNotNull reschedule(id, today)
+            // A habit card keeps its own series on Habits: a due of today or earlier would undo today's tick on pagel.uz.
+            if (org.pagel.ai.data.habits.HabitLook.keepsItsOwnSeries(t)) return@mapNotNull null
             val due = movedTo(t.due, today)
             if (due == t.due) return@mapNotNull null
             tasks.due(id, due)?.let { Moved(id, t.due, it) }

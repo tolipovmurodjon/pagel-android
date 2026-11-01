@@ -67,6 +67,15 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Pagel">
 
+        <!-- Badge share images: content:// addresses for files in cache/shares only. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.shares"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/share_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -54,8 +54,12 @@ data class PanelUi(
     val times: Int = 1,
     /** Micro-steps "Make it tiny" wrote (core round 4): the panel row says "Tiny steps · 4" and opens Focus. */
     val microCount: Int = 0,
+    /** The GTD context Boss set (phone | laptop | home | out | any); null = guessed from the words. */
+    val context: String? = null,
     /** Its project holds lessons (a course): the panel offers Lesson steps as a chip ([looksLikeLessons]). */
     val lessons: Boolean = false,
+    /** A daily habit: the panel edits it with the habit rows (Time, Repeat, Reminder, After) instead of Date and Priority. */
+    val habit: Boolean = false,
 )
 
 /** The web's rule: at most 3 tasks pinned to Today by hand (a date puts more there by itself). */
@@ -84,7 +88,8 @@ class TaskPanelViewModel @Inject constructor(
                     title = t.title?.takeIf(String::isNotBlank) ?: headline(t.text), text = t.text, doneWhen = t.doneWhen.orEmpty(),
                     due = t.due, every = t.every, priority = t.priority, star = t.star, open = t.status == "open", doneAt = t.doneAt,
                     steps = steps.map { PanelStep(it.text, it.done) }, held = held > 0, pinned = pinned, times = t.times,
-                    microCount = org.pagel.ai.data.sync.microOf(t.micro).size,
+                    microCount = org.pagel.ai.data.sync.microOf(t.micro).size, context = t.context,
+                    habit = org.pagel.ai.data.habits.HabitLook.isDailyHabit(t),
                 )
             }
         }
@@ -106,6 +111,9 @@ class TaskPanelViewModel @Inject constructor(
     fun text(v: String) = go { tasks.text(it, v) }
     fun doneWhen(v: String) = go { tasks.doneWhen(it, v) }
     fun priority(p: Int) = go { tasks.priority(it, p) }
+
+    /** The Where row: one tap sets the next place (null = back to guessed). */
+    fun context(c: String?) = go { tasks.context(it, c) }
     fun star(on: Boolean) = go { tasks.star(it, on) }
     fun every(v: String?) = go { tasks.every(it, v) }
     fun times(n: Int) = go { tasks.times(it, n) }

@@ -16,7 +16,9 @@ object Repeat {
 
     private val DAY_SET = Regex("^(sun|mon|tue|wed|thu|fri|sat)(,(sun|mon|tue|wed|thu|fri|sat))*$")
 
-    fun daysOf(every: String): List<Int> = every.split(",").map { SHORT.indexOf(it.trim().take(3)) }.filter { it >= 0 }
+    /** Whole day names only ("tue", "monday"): "month 1,15" must never read as Monday. */
+    fun daysOf(every: String): List<Int> = every.split(",").map { it.trim().lowercase() }
+        .map { d -> SHORT.indexOf(d).takeIf { it >= 0 } ?: NAMES.indexOfFirst { it.lowercase() == d } }.filter { it >= 0 }
 
     fun daySet(days: Collection<Int>): String = WEEK.filter { it in days }.joinToString(",") { SHORT[it] }
 
@@ -46,6 +48,22 @@ object Repeat {
         // One weekday is a plural, as people say it ("Mondays"), not "Every monday" (checker 2026-10-28 #10).
         every in FULL -> every.replaceFirstChar(Char::uppercase) + "s"
         else -> "Every $every"
+    }
+
+    /**
+     * A habit's Repeat row in words: "Every day", "Weekdays", "Mon · Wed · Fri", six days as "Every day except Sun".
+     * Anything that is not a day or a set of weekdays reads as [label] does.
+     */
+    fun summary(every: String?): String {
+        val lit = if (isMonthly(every)) emptyList() else litDays(every)
+        return when {
+            every.isNullOrEmpty() -> "Never"
+            lit.size == 7 -> "Every day"
+            lit.size == 6 -> "Every day except " + NICE[(0..6).first { it !in lit }]
+            lit.isNotEmpty() && lit.toSet() == setOf(1, 2, 3, 4, 5) -> "Weekdays"
+            lit.isNotEmpty() -> WEEK.filter { it in lit }.joinToString(" · ") { NICE[it] }
+            else -> label(every)
+        }
     }
 
     /** The days lit in the picker: weekdays and every day light theirs too, so the toggles always show what repeats. */
