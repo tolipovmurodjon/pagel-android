@@ -455,7 +455,7 @@ class TaskSystemScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/whats-new-360x800.png")
         // The counter is this version's only; its lines are open, the older versions are folded rows.
         compose.onAllNodesWithText("0/5")[0].assertIsDisplayed() // older folded groups with 5 lines show 0/5 too
-        compose.onNodeWithContentDescription("Try: Clear done opens a hole from the camera").performClick()
+        compose.onNodeWithContentDescription("Try: Clear done opens a camera hole").performClick()
         assertEquals("more", opened)
         compose.onAllNodesWithContentDescription("Try: Compass: goals only you can read").assertCountEquals(0)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("0.3.30 · Compass"))
