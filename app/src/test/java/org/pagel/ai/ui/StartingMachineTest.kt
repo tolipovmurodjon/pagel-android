@@ -8,6 +8,10 @@ import org.junit.Test
 import org.pagel.ai.reminders.NotifyPrefs
 import org.pagel.ai.reminders.RemindChoice
 import org.pagel.ai.ui.today.Energy
+import org.pagel.ai.ui.today.Where
+import org.pagel.ai.ui.today.whatNowGtd
+import org.pagel.ai.ui.today.inferContext
+import org.pagel.ai.ui.today.contextOf
 import org.pagel.ai.ui.today.TodayRow
 import org.pagel.ai.ui.today.clockText
 import org.pagel.ai.ui.today.firstStepOf
@@ -30,6 +34,49 @@ class StartingMachineTest {
         row("small", "Call Aziz"),
         row("tiny", "Water the plant"),
     )
+
+    private fun gtd(vararg r: TodayRow, where: Where = Where.LAPTOP, minutes: Int = 60, energy: Energy = Energy.HIGH, skipped: Set<String> = emptySet()) =
+        whatNowGtd(r.toList(), where, minutes, energy, LocalDate.of(2026, 10, 27), LocalTime.of(10, 0), null, skipped)?.id
+
+    @Test fun contextComesFromTheFirstWordThenErrandsThenTheProject() {
+        assertEquals("phone", inferContext("Call the bank about the report", "me"))
+        assertEquals("phone", inferContext("Reply to Dilnoza", "humopedia"))
+        assertEquals("phone", inferContext("Read chapter one", "me"))
+        assertEquals("laptop", inferContext("Write the release note", "me"))
+        assertEquals("laptop", inferContext("Design the habit tile", "pagel"))
+        assertEquals("out", inferContext("Buy a cable", "me"))
+        assertEquals("out", inferContext("Take the parcel to the post office", "me"))
+        assertEquals("home", inferContext("Clean the desk", "uzcosmos"))
+        assertEquals("laptop", inferContext("Weigh in", "pagel"))
+        assertEquals("any", inferContext("Weigh in", "me"))
+    }
+
+    @Test fun aContextBossSetBeatsTheInferredOne() {
+        assertEquals("out", contextOf(row("a", "Call the bank").copy(context = "out")))
+        assertEquals("phone", contextOf(row("a", "Call the bank")))
+    }
+
+    @Test fun placeFiltersFirstThenTimeThenEnergyThenOrder() {
+        val call = row("call", "Call the bank")          // phone, 5 min, ok energy
+        val read = row("read", "Read chapter one")        // phone, 30 min, low energy
+        val write = row("write", "Write the release note") // laptop, 60 min, high energy
+        val clean = row("clean", "Clean the desk")        // home, 30 min, ok energy
+        // WHERE: on the phone only the phone tasks are left; the first in Boss's order wins.
+        assertEquals("call", gtd(write, call, read, clean, where = Where.PHONE))
+        // TIME: 5 minutes cuts the 30-minute reading; the call (5 min) stays.
+        assertEquals("call", gtd(read, call, where = Where.PHONE, minutes = 5))
+        // ENERGY: low energy cuts the call (ok effort) and keeps the reading.
+        assertEquals("read", gtd(call, read, where = Where.PHONE, energy = Energy.LOW))
+        // RESTING: only low-effort phone things, whatever the order.
+        assertEquals("read", gtd(call, read, where = Where.RESTING))
+        // Home takes the home task and the laptop and phone ones; Out takes none of home or laptop.
+        assertEquals("clean", gtd(clean, where = Where.HOME))
+        assertNull(gtd(clean, write, where = Where.OUT))
+        // Nothing fits: the 60-minute writing in 15 minutes.
+        assertNull(gtd(write, minutes = 15))
+        // Another one: a skipped task never returns.
+        assertEquals("read", gtd(call, read, where = Where.PHONE, skipped = setOf("call")))
+    }
 
     @Test fun okEnergyFollowsBossOrder() {
         assertEquals("big", whatNow(order, Energy.OK, day, LocalTime.of(10, 0), free = null, skipped = emptySet())?.id)

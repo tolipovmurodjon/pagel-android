@@ -17,6 +17,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -142,12 +144,42 @@ class StartingScreenshotTest {
 
     // ── What now ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private val pick = NowPick("n1", "Clean the desk", "UzCosmos", "Clear one corner of it, just one 🧽", "uzcosmos", null, 2)
+    private val pick = NowPick("n1", "Clean the desk", "UzCosmos", "Clear one corner of it, just one", "uzcosmos", null, 2)
 
-    @Test fun whatNowAsksTheEnergyOnce() = both({ Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.ENERGY)) } }) { s ->
+    /** The panel's Where row at 320 dp: the guess; one tap opens the five places; one tap on a place is exactly one write. */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun theWhereRowOpensFivePlacesAndOneTapIsOneWrite() {
+        val sent = mutableListOf<String?>()
+        show { Box(Modifier.padding(top = 24.dp)) { org.pagel.ai.ui.task.StartRows(0, {}, {}, "Call the bank about the report", "me", null) { sent += it } } }
+        compose.onNodeWithContentDescription("Where: Phone only").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/gtd-where-row-320x640.png")
+        compose.onNodeWithContentDescription("Where: Phone only").performClick()
+        for (p in listOf("Phone only", "Laptop", "Home", "Out", "Anywhere")) compose.onNodeWithContentDescription("Place: $p").assertIsDisplayed()
+        scale = 1.5f; compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/gtd-where-row-open-320x640-font-1.5.png")
+        compose.onNodeWithContentDescription("Place: Out").performClick()
+        assertEquals("one tap, one write", listOf<String?>("out"), sent)
+        compose.onNodeWithContentDescription("Place: Out").assertDoesNotExist()
+    }
+
+    private fun whatNowAt320(stage: String, ui: WhatNowUi) {
+        show(1f) { Box(Modifier.padding(top = 24.dp)) { WhatNowContent(ui) } }
+        for (s in listOf(1f, 1.5f)) { scale = s; compose.waitForIdle(); assertNoCutText(s); shot320("what-now-$stage", s) }
+    }
+
+    /** 0.3.44 checker: the GTD sheet and its result card at 320x640, 1x and 1.5x (the narrowest phone). */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun whatNowAskSheetAt320x640() = whatNowAt320("ask", WhatNowUi(WhatNowUi.Stage.ASK))
+
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun whatNowResultCardAt320x640() = whatNowAt320("pick", WhatNowUi(WhatNowUi.Stage.PICK, pick, shown = 1))
+
+    @Test fun whatNowAsksWhereTimeAndEnergy() = both({ Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.ASK)) } }) { s ->
+        compose.onNodeWithContentDescription("Where: Phone only").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Where: Resting").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Time: 5 min").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Time: 60+ min").assertIsDisplayed()
         compose.onNodeWithContentDescription("Energy: Low").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Find one").assertIsDisplayed()
         assertNoCutText(s)
-        shot("what-now-energy", s)
+        shot("what-now-gtd-ask", s)
     }
 
     @Test fun whatNowShowsOnePickWithWhyAndTheFirstStep() = both({ Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.PICK, pick, shown = 1)) } }) { s ->
@@ -183,7 +215,7 @@ class StartingScreenshotTest {
     // ── I'm stuck · Make it tiny · Focus · Remind me ──────────────────────────────────────────────────────────────
 
     private val task = StartUi(loading = false, id = "n2", title = "Write the release note", project = "uzcosmos", projectLabel = "UzCosmos",
-        micro = listOf("Stand up. Yes, right now 🧍", "Open the release notes file 📄", "Write one ugly first line ✍️", "Read it out loud like a news anchor 🎙️", "Tick it. You did it 🎉"))
+        micro = listOf("Stand up. Yes, right now", "Open the release notes file", "Write one ugly first line", "Read it out loud like a news anchor", "Tick it. You did it"))
 
     @Test fun stuckOffersFourPlainReasons() = both({ Box(Modifier.padding(top = 24.dp)) { StuckContent(task, null, today = day) } }) { s ->
         for (r in StuckReason.entries) compose.onNodeWithContentDescription("Stuck: ${r.label}").assertIsDisplayed()
@@ -195,6 +227,54 @@ class StartingScreenshotTest {
         compose.onNodeWithContentDescription("Waiting for whom").assertIsDisplayed()
         compose.onNodeWithText("Mon 2 Nov").assertIsDisplayed()
         shot("stuck-waiting", s)
+    }
+
+    /** Boss 2026-10-31: the skeleton stays, with one small live line and a Stop; the spice is drawn as growing step bars, never emoji. */
+    private fun shot320(name: String, scale: Float) =
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/v2-$name-320x640" + (if (scale > 1f) "-font-1.5" else "") + ".png")
+
+    /** The glass tab bar of the shell, 64 dp + its 16 dp gap, as a stand-in the list must end above. */
+    private val barDp = 80.dp
+
+    /** 0.3.42 checker: Today folded at 320x640 at both font sizes (What now is below the fold here: the next test scrolls to it). */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun todayFoldedWithWhatNowAt320x640() {
+        for (s in listOf(1f, 1.5f)) {
+            if (s == 1f) show(1f) { Today(folded) } else { scale = s; compose.waitForIdle() }
+            shot320("today-folded", s)
+        }
+    }
+
+    /** At the end of the scroll the What now card sits fully above the glass tab bar (not under it), at both font sizes. */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun todayScrolledToTheBottomShowsWhatNowAboveTheBar() {
+        for (s in listOf(1f, 1.5f)) {
+            if (s == 1f) show(1f) { Today(folded) } else { scale = s; compose.waitForIdle() }
+            repeat(3) { compose.onRoot().performTouchInput { swipeUp() } }
+            compose.waitForIdle()
+            val card = compose.onNodeWithContentDescription("What now?").getBoundsInRoot()
+            val root = compose.onRoot().getBoundsInRoot()
+            assertTrue("${s}x: What now's bottom ${card.bottom} must be above the bar's top ${root.bottom - barDp}", card.bottom <= root.bottom - barDp)
+            shot320("today-bottom", s)
+        }
+    }
+
+    @Test fun makeItTinySpiceStepsAt360() {
+        show { Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Idle), spice = 2) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/gtd-spice-steps-360x800.png")
+    }
+
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun makeItTinyWritingAt320x640() {
+        for (s in listOf(1f, 1.5f)) {
+            if (s == 1f) show(1f) { Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Writing), spice = 2, liveStep = 2) } } else { scale = s; compose.waitForIdle() }
+            compose.onNodeWithContentDescription("Cutting it into bites…").assertIsDisplayed()
+            shot320("tiny-writing", s)
+        }
+    }
+
+    @Test fun makeItTinyWhileItWritesShowsTheLiveLineAndStop() {
+        show { Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Writing), spice = 2, liveStep = 1) } }
+        compose.onNodeWithContentDescription("Finding the first 30 seconds…").assertIsDisplayed()
+        compose.onNodeWithText("Stop").assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/make-it-tiny-writing-360x800.png")
     }
 
     @Test fun makeItTinyShowsTheSpiceAndTheSteps() = both({ Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Ready(task.micro.take(4))), spice = 2) } }) { s ->

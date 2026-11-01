@@ -119,6 +119,28 @@ class TaskRepositoryTest {
         assertEquals("synced", task("t_a").syncStatus)
     }
 
+    @Test fun aWhereIsOneContextPatchAndUndoTakesItBackBeforeItLeaves() = runBlocking {
+        synced()
+        val r = tasks()
+        val op = r.context("t_a", "laptop")!!
+        assertEquals("laptop", task("t_a").context)
+        assertNotNull("waits in the outbox", db.dao().outboxRow(op))
+        assertTrue(r.takeBack("t_a", op))
+        assertNull("back to no place", task("t_a").context)
+        sender().sendAll(account)
+        assertTrue("pagel.uz never heard of it", patches.isEmpty())
+
+        r.context("t_a", "home")
+        sender().sendAll(account)
+        assertEquals(listOf("""t_a {"context":"home"}"""), patches.toList())
+        assertEquals("synced", task("t_a").syncStatus)
+        // Undo after it left: the old place goes back as its own write (null = guessed again).
+        r.context("t_a", null)
+        sender().sendAll(account)
+        assertEquals("""t_a {"context":null}""", patches.last())
+        assertNull(task("t_a").context)
+    }
+
     @Test fun stepsGoWithTheirTicksAsOneList() = runBlocking {
         synced()
         tasks().steps("t_a", listOf("Open the log", "Export the rate", "Write it down"), listOf(0, 1))

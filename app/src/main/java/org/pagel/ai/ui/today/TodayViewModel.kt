@@ -35,6 +35,8 @@ data class TodayRow(
     val projectTitle: String,
     val projectColor: String?,
     val done: Boolean,
+    /** GTD context Boss or the server set (phone | laptop | home | out | any); null = inferred by [contextOf]. */
+    val context: String? = null,
 )
 
 /**
@@ -55,8 +57,12 @@ data class WhatNowUi(
     /** When "Start · 10 min" was tapped (ms); the clock runs from it. */
     val startedAt: Long = 0,
     val minutes: Int = START_MINUTES,
+    /** The three answers the ask sheet shows chosen (remembered for the session). */
+    val where: Where = Where.LAPTOP,
+    val time: Int = 15,
+    val energy: Energy = Energy.OK,
 ) {
-    enum class Stage { CLOSED, ENERGY, PICK, NONE, TIMER }
+    enum class Stage { CLOSED, ASK, PICK, NONE, TIMER }
 }
 
 data class TodayUiState(
@@ -69,7 +75,7 @@ data class TodayUiState(
     val status: String = "",
     /** Tasks finished today (Tashkent), on Today or anywhere: the progress bar's "2 of 5 ✓". */
     val doneToday: Int = 0,
-    /** Days in a row Boss cleared his whole Today (the day-cleared card's 🔥). */
+    /** Days in a row Boss cleared his whole Today (the day-cleared card's count). */
     val clearedStreak: Int = 0,
     /** Changes waiting to reach pagel.uz: the "↑ 2 waiting" chip, tap = send now. */
     val outbox: Int = 0,
@@ -126,7 +132,7 @@ class TodayViewModel @Inject constructor(
             rows = dealt.visible.map { t ->
                 val p = byName[t.project]
                 TodayRow(t.id, t.title?.takeIf(String::isNotBlank) ?: headline(t.text), t.priority, t.due, t.every, t.project,
-                    p?.title ?: t.project, p?.color, done = t.status != "open")
+                    p?.title ?: t.project, p?.color, done = t.status != "open", context = t.context)
             },
             open = tasks.count { it.status == "open" },
             waiting = dealt.waiting,
@@ -135,7 +141,7 @@ class TodayViewModel @Inject constructor(
             all = queue.map { t ->
                 val p = byName[t.project]
                 TodayRow(t.id, t.title?.takeIf(String::isNotBlank) ?: headline(t.text), t.priority, t.due, t.every, t.project,
-                    p?.title ?: t.project, p?.color, done = t.status != "open")
+                    p?.title ?: t.project, p?.color, done = t.status != "open", context = t.context)
             },
             allKeys = queue.map { keys[it.id] ?: 0.0 },
             expanded = expanded,
@@ -201,18 +207,20 @@ class TodayViewModel @Inject constructor(
     val whatNow: StateFlow<WhatNowUi> = _now
     private val skipped = mutableSetOf<String>()
 
-    /** The calm button: the energy tap first (once a day), then one pick. */
+    private var answers = Triple(Where.LAPTOP, 15, Energy.OK)
+
+    /** The What now card: the GTD sheet opens with the session's last answers chosen (Where, Time, Energy), then one pick. */
     fun openWhatNow() {
         skipped.clear()
-        viewModelScope.launch {
-            val energy = repo.state(day).first().energy
-            if (Energy.of(energy) == null) _now.value = WhatNowUi(WhatNowUi.Stage.ENERGY) else pick(0)
-        }
+        _now.value = WhatNowUi(WhatNowUi.Stage.ASK, where = answers.first, time = answers.second, energy = answers.third)
     }
 
-    fun energy(e: Energy) {
+    /** "Find one": the three answers, remembered for the session, then the best task by context, time, energy, priority. */
+    fun ask(where: Where, minutes: Int, energy: Energy) {
+        answers = Triple(where, minutes, energy)
+        skipped.clear()
         viewModelScope.launch {
-            repo.setEnergy(e.word)
+            repo.setEnergy(energy.word)
             pick(0)
         }
     }
@@ -229,11 +237,11 @@ class TodayViewModel @Inject constructor(
 
     private suspend fun pick(shownBefore: Int) {
         val u = ui.value
-        val energy = Energy.of(repo.state(day).first().energy) ?: Energy.OK
+        val (where, minutes, energy) = answers
         val now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Tashkent"))
         val today = now.toLocalDate()
         val free = freeMinutes(u.all.map { it.due } + repo.dated.first().map { it.due }, today, now.toLocalTime())
-        val r = whatNow(u.all, energy, today, now.toLocalTime(), free, skipped)
+        val r = whatNowGtd(u.all, where, minutes, energy, today, now.toLocalTime(), free, skipped)
         if (r == null) { _now.value = WhatNowUi(WhatNowUi.Stage.NONE, shown = shownBefore); return }
         val t = tasks.task(r.id).first()
         val allSteps = tasks.steps(r.id).first()

@@ -285,9 +285,9 @@ class H(BaseHTTPRequestHandler):
             dot = b.get("day") and b["day"] >= (datetime.now(TASHKENT) - timedelta(days=7)).strftime("%Y-%m-%d") and \
                 (b.get("done") is False or b["day"] < habit_due(tid, at)[:10])
             if dot and not moved:
-                if b["done"] is True and taps(b["day"]) < times:
+                if b.get("done") is True and taps(b["day"]) < times:
                     HABIT_TICKS.append((b["day"], tid))
-                elif b["done"] is False and taps(b["day"]) > 0:
+                elif b.get("done") is False and taps(b["day"]) > 0:
                     if b["day"] == day and taps(day) == times and habit_due(tid, at)[:10] > day:
                         HABIT_DUE[tid] = day + (f" {at}" if at else "")
                     HABIT_TICKS.remove((b["day"], tid))
@@ -650,7 +650,7 @@ def sync_body():
 # tiny writes 4 funny steps (POST /api/v1/tiny, a proposal), saved as PATCH {micro}, then ticked one by one in Focus.
 NOW = [("t_now1", "uzcosmos", "Clean the desk", 2), ("t_now2", "uzcosmos", "Write the release note", 2)]
 NOW_IDS = {i for i, *_ in NOW}
-TINY = ["Stand up. Yes, right now 🧍", "Open the release notes file 📄", "Write one ugly first line ✍️", "Read it out loud like a news anchor 🎙️"]
+TINY = ["Stand up. Yes, right now", "Open the release notes file", "Write one ugly first line", "Read it out loud like a news anchor"]
 _r4_post, _r4_patch, _r4_get, _r4_sync = H.do_POST, H.do_PATCH, H.do_GET, sync_body
 
 def sync_body():
@@ -670,6 +670,10 @@ def _r4_post_h(self):
     b = json.loads(body or "{}")
     if b.get("spice") not in (1, 2, 3) or not b.get("id"):
         return self.send(400, {"error": "Send {id, spice: 1-3}."})
+    # A slow AI for every task but the first walk step's: the sheet can be closed while it writes (Boss 2026-10-31).
+    if b.get("id") != "t_now2":
+        import time
+        time.sleep(3)
     return self.send(200, {"steps": TINY})
 
 def _r4_patch_h(self):
@@ -734,5 +738,31 @@ def _hole_patch_h(self):
     return self.send(200, {"id": tid, "status": status, "applied": list(b.keys())})
 
 H.do_PATCH = _hole_patch_h
+
+# pagel.uz 6705d8b: PATCH /api/v1/tasks/:id {"context": phone|laptop|home|out|any|null} -> 200 applied ["context"]; anything else 400.
+# The value rides /sync rows through EDITS, like every other panel edit.
+CONTEXTS = {"phone", "laptop", "home", "out", "any"}
+_ctx_patch = H.do_PATCH
+
+def _context_patch_h(self):
+    length = int(self.headers.get("content-length") or 0)
+    raw = self.rfile.read(length)
+    try:
+        b = json.loads(raw or b"{}")
+    except ValueError:
+        b = {}
+    if "context" not in b:
+        self.rfile = io.BytesIO(raw)
+        return _ctx_patch(self)
+    LOG.write(f"PATCH {self.path} {raw.decode()[:300]} auth={self.authed()}\n")
+    if not self.authed():
+        return self.send(401, {"error": "Send Authorization: Bearer <token>."})
+    tid = self.path.rsplit("/", 1)[-1]
+    if b["context"] is not None and b["context"] not in CONTEXTS:
+        return self.send(400, {"error": "context must be phone, laptop, home, out, any or null."})
+    EDITS.setdefault(tid, {})["context"] = b["context"]
+    return self.send(200, {"id": tid, "status": "open", "applied": ["context"]})
+
+H.do_PATCH = _context_patch_h
 
 ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1]) if len(sys.argv) > 1 else 8799), H).serve_forever()

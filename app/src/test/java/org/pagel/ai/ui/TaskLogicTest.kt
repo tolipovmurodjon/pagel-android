@@ -30,6 +30,11 @@ class TaskLogicTest {
         assertEquals("Every Tue, Thu, Sun", Repeat.label("sun,tue,thu"))
         assertEquals("Mondays", Repeat.label("monday"))
         assertEquals("tue,thu,sun", Repeat.daySet(listOf(0, 2, 4)))
+        // "month" once read as Monday (take(3) = "mon"), so a monthly task looked like a habit and Move all skipped it.
+        assertEquals(emptyList<Int>(), Repeat.daysOf("month"))
+        assertEquals(emptyList<Int>(), Repeat.daysOf("month 1,15"))
+        assertEquals(listOf(1), Repeat.daysOf("monday"))
+        assertEquals(listOf(2, 4, 0), Repeat.daysOf("tue,thu,sun"))
         assertEquals("weekday", Repeat.toggle("mon,tue,wed,thu", 5))
         assertEquals("day", Repeat.toggle("weekday", 6).let { Repeat.toggle(it, 0) })
         assertNull(Repeat.toggle("tue", 2))

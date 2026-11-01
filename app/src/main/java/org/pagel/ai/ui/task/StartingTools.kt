@@ -88,13 +88,36 @@ private val Divider = Glass.Ink.copy(alpha = 0.07f)
 
 /** "✨ Make it tiny" (or "Tiny steps · 4" once written) and "I'm stuck": the starting tools, in the task panel. */
 @Composable
-internal fun StartRows(micro: Int, onTiny: () -> Unit, onStuck: () -> Unit) {
+internal fun StartRows(micro: Int, onTiny: () -> Unit, onStuck: () -> Unit, title: String = "", project: String = "", context: String? = null, onWhere: (String?) -> Unit = {}) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Column(Modifier.padding(vertical = Space.xs)) {
             ToolRow(TabIcons.Sparkles, if (micro > 0) "Tiny steps · $micro" else "Make it tiny", if (micro > 0) "Focus" else "Funny small steps", onTiny)
             HorizontalDivider(Modifier.padding(start = Space.xxl + Space.xxl), color = Divider,
                 thickness = 1.dp)
             ToolRow(TabIcons.CircleHelp, "I'm stuck", "4 quick fixes", onStuck)
+            HorizontalDivider(Modifier.padding(start = Space.xxl + Space.xxl), color = Divider,
+                thickness = 1.dp)
+            WhereRow(title, project, context, onWhere)
+        }
+    }
+}
+
+/** The places a task can need; the words match the What now sheet. */
+private val WHERE_CHOICES = listOf("phone" to "Phone only", "laptop" to "Laptop", "home" to "Home", "out" to "Out", "any" to "Anywhere")
+
+/** "Where": the task's place in one quiet row; a tap opens the five places, one tap on a place saves it (one PATCH). */
+@Composable
+private fun WhereRow(title: String, project: String, set: String?, onWhere: (String?) -> Unit) {
+    val now = set ?: org.pagel.ai.ui.today.inferContext(title, project)
+    val chosen = WHERE_CHOICES.indexOfFirst { it.first == now }.takeIf { it >= 0 } ?: WHERE_CHOICES.lastIndex
+    var open by rememberSaveable { mutableStateOf(false) }
+    ToolRow(TabIcons.MapPin, "Where: ${WHERE_CHOICES[chosen].second}", if (set == null) "Guessed. Tap to change" else "Tap to change") { open = !open }
+    if (open) {
+        Column(Modifier.padding(start = Space.lg, end = Space.md, bottom = Space.md)) {
+            org.pagel.ai.ui.today.AskRow("Place", WHERE_CHOICES.map { it.second }, chosen) { i ->
+                open = false
+                if (i != chosen || set == null) onWhere(WHERE_CHOICES[i].first)
+            }
         }
     }
 }
@@ -130,7 +153,41 @@ private fun SheetHead(title: String, sub: String? = null) {
 // ── Make it tiny ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The spice slider's three stops (goblin.tools Magic ToDo): a hard day gets smaller steps. */
-private val SPICE = listOf("🌶" to "A few steps", "🌶🌶" to "Small steps", "🌶🌶🌶" to "Tiny tiny steps")
+private val SPICE = listOf(1 to "A few steps", 2 to "Small steps", 3 to "Tiny tiny steps")
+
+/** Eight short lines for the wait; each shows ~1.2 s, none twice, the last stays. */
+internal val LIVE_LINES = listOf(
+    "Reading your task…", "Finding the first 30 seconds…", "Cutting it into bites…", "Making step one silly-easy…",
+    "Hiding the scary part…", "Checking nothing is too big…", "Shrinking it a little more…", "Nearly there…",
+)
+
+/** The live line under the skeleton: cross-fades every 1.2 s (reduced motion: an instant swap); [fixed] pins one for tests. */
+@Composable
+internal fun LiveLine(fixed: Int? = null) {
+    var step by remember { mutableIntStateOf(fixed ?: 0) }
+    LaunchedEffect(fixed) { if (fixed == null) while (step < LIVE_LINES.lastIndex) { kotlinx.coroutines.delay(1_200); step++ } }
+    val reduce = org.pagel.ai.ui.today.reducedMotion(LocalContext.current)
+    androidx.compose.animation.Crossfade(step, animationSpec = if (reduce) androidx.compose.animation.core.snap() else androidx.compose.animation.core.tween(280), label = "live") { i ->
+        Text(LIVE_LINES[i], style = MaterialTheme.typography.bodyMedium, color = Glass.Muted, maxLines = 1,
+            modifier = Modifier.padding(top = Space.md).semantics { contentDescription = LIVE_LINES[i] })
+    }
+}
+
+/** The spice as steps that grow: 1, 2 or 3 small stair bars (rounded outlines, 1.75 dp), the chosen stop in mint. */
+@Composable
+private fun StepBars(count: Int, color: Color) {
+    androidx.compose.foundation.Canvas(Modifier.size(width = 30.dp, height = 24.dp).semantics { contentDescription = "$count steps" }) {
+        val bar = 6.dp.toPx(); val gap = 3.dp.toPx(); val line = 1.75.dp.toPx()
+        repeat(count) { k ->
+            val h = (8 + 6 * k).dp.toPx()
+            drawRoundRect(
+                color, topLeft = androidx.compose.ui.geometry.Offset(k * (bar + gap) + line / 2, size.height - h - line / 2),
+                size = androidx.compose.ui.geometry.Size(bar, h), cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.dp.toPx()),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(line),
+            )
+        }
+    }
+}
 
 /** "Make it tiny" in a half sheet: the spice, the AI's steps, then Start → Focus mode. */
 @Composable
@@ -140,8 +197,9 @@ fun TinySheet(taskId: String, onClose: () -> Unit, onFocus: (String) -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     if (ui.loading) return
     var spice by rememberSaveable(taskId) { mutableIntStateOf(2) }
-    GlassSheet({ vm.clearProposal(); onClose() }) {
-        TinyContent(ui, spice, onSpice = { spice = it }, onWrite = { vm.propose(spice) },
+    val openTask = LocalTaskOpener.current
+    GlassSheet({ vm.leave(openTask); onClose() }) {
+        TinyContent(ui, spice, onSpice = { spice = it }, onWrite = { vm.propose(spice) }, onStop = { vm.stop() },
             onStart = { steps -> vm.keepTiny(steps) { onClose(); onFocus(taskId) } },
             onFocusSaved = { onClose(); onFocus(taskId) })
     }
@@ -149,14 +207,14 @@ fun TinySheet(taskId: String, onClose: () -> Unit, onFocus: (String) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TinyContent(ui: StartUi, spice: Int, onSpice: (Int) -> Unit = {}, onWrite: () -> Unit = {}, onStart: (List<String>) -> Unit = {}, onFocusSaved: () -> Unit = {}) {
+fun TinyContent(ui: StartUi, spice: Int, onSpice: (Int) -> Unit = {}, onWrite: () -> Unit = {}, onStart: (List<String>) -> Unit = {}, onFocusSaved: () -> Unit = {}, onStop: () -> Unit = {}, liveStep: Int? = null) {
     val haptics = LocalHapticFeedback.current
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = Space.gutter, end = Space.gutter, bottom = SheetBottom)) {
         SheetHead("Make it tiny", ui.title)
         Spacer(Modifier.height(Space.lg))
         // The spice: three stops in one capsule row, the chosen one rimmed mint (never a hidden setting).
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-            SPICE.forEachIndexed { i, (chili, words) ->
+            SPICE.forEachIndexed { i, (level, words) ->
                 val on = spice == i + 1
                 val press = remember { MutableInteractionSource() }
                 Column(
@@ -168,7 +226,7 @@ fun TinyContent(ui: StartUi, spice: Int, onSpice: (Int) -> Unit = {}, onWrite: (
                         .padding(vertical = Space.sm, horizontal = Space.xs),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                 ) {
-                    Text(chili, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                    StepBars(level, if (on) Glass.Primary else Glass.Ink.copy(alpha = 0.6f))
                     Text(words, style = MaterialTheme.typography.labelSmall, color = if (on) Glass.Ink else Glass.Muted, maxLines = 2, textAlign = TextAlign.Center)
                 }
             }
@@ -184,7 +242,12 @@ fun TinyContent(ui: StartUi, spice: Int, onSpice: (Int) -> Unit = {}, onWrite: (
                 } else PrimaryPill("Write tiny steps", "Write tiny steps", onWrite)
             }
             // Never a spinner while the AI writes (core round 4): the steps' own lines, waiting to fill.
-            Tiny.Writing -> Pane(Modifier.fillMaxWidth()) { SkeletonRows(4, Modifier.padding(vertical = Space.sm)) }
+            Tiny.Writing -> {
+                Pane(Modifier.fillMaxWidth()) { SkeletonRows(4, Modifier.padding(vertical = Space.sm)) }
+                // A small live line so he knows it is working (never repeats in one run; the last one stays if the server is slow).
+                LiveLine(liveStep)
+                QuietButton("Stop", onStop)
+            }
             is Tiny.Ready -> {
                 StepList(t.steps)
                 Spacer(Modifier.height(Space.lg))
@@ -279,7 +342,7 @@ fun StuckContent(
             StuckReason.TOO_BIG -> {
                 SheetHead("Too big", "Shrink it until starting is silly-easy.")
                 Spacer(Modifier.height(Space.lg))
-                PrimaryPill("✨ Make it tiny", "Make it tiny", onTiny)
+                PrimaryPill("Make it tiny", "Make it tiny", onTiny)
                 Spacer(Modifier.height(Space.sm))
                 OutlinePill("Turn into project", onProject)
                 QuietButton("Back", onBack)

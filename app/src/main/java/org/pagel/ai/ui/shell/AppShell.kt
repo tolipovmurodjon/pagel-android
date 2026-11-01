@@ -273,7 +273,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                     // Both edges are an alpha mask on the CONTENT (Boss 2026-10-28: "that colour is applied to the status
                     // bar too"): the list melts away under the clock and toward the bar, the aurora runs unbroken from the
                     // top pixel. Never a painted band.
-                    .then(if (!GlassStage.on) Modifier else Modifier.edgeFade(top + 14.dp, if (onTop) fadeTop else null)),
+                    .then(if (!GlassStage.on || stack.lastOrNull() is HabitTimerRoute) Modifier else Modifier.edgeFade(top + 14.dp, if (onTop) fadeTop else null)),
             ) {
             key(selected) { NavDisplay(
                 backStack = stack,
@@ -281,9 +281,11 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                 entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator<NavKey>(), rememberViewModelStoreNavEntryDecorator<NavKey>()),
                 entryProvider = entryProvider<NavKey> {
                     entry<TodayRoute> {
+                        androidx.compose.runtime.CompositionLocalProvider(org.pagel.ai.ui.today.LocalListAtTop provides { scrolled = 0f; titleShown = false }) {
                         TodayScreenRoute(padding, reselect, links = org.pagel.ai.ui.rituals.RitualLinks(
                             sweep = { stack.add(SweepRoute) }, shutdown = { stack.add(ShutdownRoute) }, review = { stack.add(ReviewRoute) },
                         ))
+                        }
                     }
                     entry<SweepRoute> { org.pagel.ai.ui.rituals.SweepRoute(padding, onToday = ::goToday) }
                     entry<ShutdownRoute> { org.pagel.ai.ui.rituals.ShutdownRoute(padding, onToday = ::goToday) }
@@ -304,9 +306,10 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
                         org.pagel.ai.ui.inbox.SomedayRoute(padding, onBack = { stack.removeLastOrNull() }, onOpen = { stack.add(ProjectPageRoute(it)) })
                     }
                     entry<NotesRoute> { r -> org.pagel.ai.ui.inbox.NotesRoute(r.project, padding, onBack = { stack.removeLastOrNull() }, onOpenProject = { stack.add(NotesRoute(it)) }) }
-                    entry<HabitsRoute> { HabitsScreenRoute(padding, reselect, onOpenHabit = { stack.add(HabitDetailRoute(it)) }, onHistory = { stack.add(HabitHistoryRoute) }, onOpenNamoz = { stack.add(NamozRoute) }) }
+                    entry<HabitsRoute> { HabitsScreenRoute(padding, reselect, onOpenHabit = { stack.add(HabitDetailRoute(it)) }, onHistory = { stack.add(HabitHistoryRoute) }, onOpenNamoz = { stack.add(NamozRoute) }, onOpenTimer = { stack.add(HabitTimerRoute(it)) }) }
                     entry<NamozRoute> { org.pagel.ai.ui.namoz.NamozRoute(padding, onBack = { stack.removeLastOrNull() }) }
-                    entry<HabitDetailRoute> { r -> org.pagel.ai.ui.habits.HabitDetailRoute(r.id, padding, onBack = { stack.removeLastOrNull() }) }
+                    entry<HabitDetailRoute> { r -> org.pagel.ai.ui.habits.HabitDetailRoute(r.id, padding, onBack = { stack.removeLastOrNull() }, onOpenTimer = { stack.add(HabitTimerRoute(r.id)) }) }
+                    entry<HabitTimerRoute> { r -> org.pagel.ai.ui.habits.HabitTimerScreen(r.id, onBack = { stack.removeLastOrNull() }) }
                     entry<HabitHistoryRoute> { org.pagel.ai.ui.habits.HabitHistoryRoute(padding, onBack = { stack.removeLastOrNull() }, onOpenHabit = { stack.add(HabitDetailRoute(it)) }) }
                     entry<NotebookRoute> { Coming("Notebook", "/notebook", padding) { stack.add(WebRoute(it)) } }
                     entry<MoreRoute> {
@@ -380,7 +383,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             ProjectListRoute -> "Projects"; UpcomingListRoute -> "Upcoming"; CompletedListRoute -> "Completed"; BlackHoleLabRoute -> "Lab"
             SweepRoute -> "Empty your head"; ShutdownRoute -> "Close the day"; ReviewRoute -> "Weekly review"; NotificationsRoute -> "Notifications"
             org.pagel.ai.ui.compass.CompassRoute -> "Compass"; is GuideRoute -> "How it works"
-            is HabitDetailRoute -> "Habit"; HabitHistoryRoute -> "History"; NamozRoute -> "Namoz"; SortedTodayRoute -> "Sorted today"; SomedayRoute -> "Someday"; is NotesRoute -> "Notes"
+            is HabitDetailRoute -> "Habit"; is HabitTimerRoute -> null; HabitHistoryRoute -> "History"; NamozRoute -> "Namoz"; SortedTodayRoute -> "Sorted today"; SomedayRoute -> "Someday"; is NotesRoute -> "Notes"
             is WebRoute, is ProjectPageRoute -> null; else -> Tab.entries[selected].label
         }
         val density = androidx.compose.ui.platform.LocalDensity.current

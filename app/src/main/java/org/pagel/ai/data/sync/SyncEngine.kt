@@ -147,7 +147,7 @@ fun org.pagel.ai.data.api.SyncTaskDto.toEntity(now: Long) = TaskEntity(
     status = status, priority = priority, star = star, due = due, every = every,
     doneWhen = doneWhen, doneAt = doneAt, updatedAt = updatedAt, serverVersion = version, lastModified = now,
     phaseSort = phaseSort, phaseNow = phaseNow, times = times.coerceIn(1, 12), habitGroup = group, milestone = milestone,
-    micro = microJson(micro),
+    micro = microJson(micro), context = context,
 )
 
 fun org.pagel.ai.data.api.SyncTaskDto.stepEntities() = steps.mapIndexed { i, s -> StepEntity(id, i, s.text, s.title, s.done) }
@@ -159,5 +159,10 @@ fun microJson(steps: List<String>): String =
 /** The micro-steps a task keeps (an unreadable value reads as none). */
 fun microOf(raw: String?): List<String> = runCatching {
     (kotlinx.serialization.json.Json.parseToJsonElement(raw ?: "[]") as kotlinx.serialization.json.JsonArray)
-        .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+        .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(::withoutPictographs)?.takeIf(String::isNotEmpty) }
 }.getOrDefault(emptyList())
+
+private val PICTOGRAPHS = Regex("""[\p{So}\p{Cs}\u200D\uFE0F\u20E3]""")
+
+/** The app draws its own icons, so a step the AI wrote with emoji arrives without them (no emoji in app UI). */
+fun withoutPictographs(s: String): String = s.replace(PICTOGRAPHS, "").replace(Regex("""\s{2,}"""), " ").trim()

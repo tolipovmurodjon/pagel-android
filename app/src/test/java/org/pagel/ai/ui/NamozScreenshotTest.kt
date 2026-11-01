@@ -103,6 +103,15 @@ class NamozScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/namoz-before.png")
     }
 
+    @Test fun theNextPrayerLineShowsWithCalmCuesOffAndMyPlanSitsUnderIt() {
+        show { NamozScreen(dayUi(), pad, intention = "When I hear the time for Asr, I stand up, make wudu and pray.", cues = false) }
+        // The plain clock line is there whatever the cues switch says; no count in it.
+        compose.onNodeWithText("Next · ", substring = true).assertExists()
+        compose.onNodeWithText("My plan").assertExists()
+        compose.onNodeWithContentDescription("Calm cues at prayer time").assertExists()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/namoz-plan-and-cues-off.png")
+    }
+
     @Test fun aNormalDay() {
         show { NamozScreen(dayUi(), pad) }
         compose.onNodeWithText("full days this week").assertExists()

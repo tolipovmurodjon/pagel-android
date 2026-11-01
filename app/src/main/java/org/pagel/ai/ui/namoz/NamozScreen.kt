@@ -9,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -62,9 +63,13 @@ fun NamozRoute(contentPadding: PaddingValues, onBack: () -> Unit, vm: NamozViewM
     val ui by vm.ui.collectAsStateWithLifecycle()
     val grants = rememberReminderGrants(habits)
     var settings by remember { mutableStateOf(false) }
-    NamozScreen(ui, contentPadding, onBack, onTap = vm::tap, onMark = vm::mark, onStart = habits::startNamoz, onSettings = { settings = true },
-        onQaza = vm::qaza, onAddLearn = vm::addLearn, onLearned = vm::setLearned, onDeleteLearn = vm::deleteLearn)
     val ctx = androidx.compose.ui.platform.LocalContext.current
+    var intention by remember { mutableStateOf(org.pagel.ai.data.habits.NamozIntention.load(ctx)) }
+    var cues by remember { mutableStateOf(org.pagel.ai.data.habits.NamozCue.on(ctx)) }
+    NamozScreen(ui, contentPadding, onBack, onTap = vm::tap, onMark = vm::mark, onStart = habits::startNamoz, onSettings = { settings = true },
+        onQaza = vm::qaza, onAddLearn = vm::addLearn, onLearned = vm::setLearned, onDeleteLearn = vm::deleteLearn,
+        intention = intention, onIntention = { intention = it; org.pagel.ai.data.habits.NamozIntention.save(ctx, it) },
+        cues = cues, onCues = { cues = it; org.pagel.ai.data.habits.NamozCue.set(ctx, it) })
     // "Use my location": the phone's last known place, read once; no place known yet = Tashkent stays.
     @android.annotation.SuppressLint("MissingPermission") // called only once ACCESS_COARSE_LOCATION is granted
     fun usePlace() {
@@ -85,6 +90,7 @@ fun NamozScreen(
     ui: NamozUi, contentPadding: PaddingValues, onBack: () -> Unit = {}, onTap: (Namoz.Prayer) -> Unit = {}, onMark: (Namoz.Prayer, String?) -> Unit = { _, _ -> },
     onStart: () -> Unit = {}, onSettings: () -> Unit = {}, onQaza: (Int) -> Unit = {}, onAddLearn: (String) -> Unit = {},
     onLearned: (Long, Boolean) -> Unit = { _, _ -> }, onDeleteLearn: (Long) -> Unit = {},
+    intention: String = "", onIntention: (String) -> Unit = {}, cues: Boolean = false, onCues: (Boolean) -> Unit = {},
 ) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding, verticalArrangement = Arrangement.spacedBy(Space.paneGap)) {
         item(key = "top") {
@@ -100,11 +106,54 @@ fun NamozScreen(
             }
         }
         item(key = "next") { NextPane(ui) }
+        item(key = "intention") { IntentionPane(intention, onIntention) }
+        item(key = "cues") { CuesPane(cues, onCues) }
         item(key = "rows") { PrayerRows(ui, onTap, onMark, onStart) }
         if (ui.tracking && ui.started) item(key = "stats") { StatsPane(ui) }
         if (ui.settings.qazaOn) item(key = "qaza") { QazaPane(ui.settings.qaza, onQaza) }
         item(key = "learn") { LearnPane(ui.learning, onAddLearn, onLearned, onDeleteLearn) }
         item(key = "end") { Spacer(Modifier.height(Space.xxl)) }
+    }
+}
+
+/** One switch, off until he turns it on: a calm note when a prayer's time starts ("Asr time. Wudu, then pray."). Each prayer's own reminder still decides which. */
+@Composable
+private fun CuesPane(on: Boolean, onChange: (Boolean) -> Unit) {
+    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth().heightIn(min = Space.row).padding(horizontal = Space.lg)
+                .toggleable(value = on, interactionSource = press, indication = null, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onChange).semantics { contentDescription = "Calm cues at prayer time" },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Calm cues", style = MaterialTheme.typography.titleSmall, color = Glass.Ink)
+                Text("A quiet note when a prayer's time starts", style = MaterialTheme.typography.bodySmall, color = Glass.Muted)
+            }
+            org.pagel.ai.ui.habits.Switch(on)
+        }
+    }
+}
+
+/** His own plan, one line he writes once ("When I hear the time for Asr, I stand up, make wudu and pray"); it is shown back at prayer time. */
+@Composable
+private fun IntentionPane(text: String, onChange: (String) -> Unit) {
+    var draft by remember(text) { mutableStateOf(text) }
+    Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
+        Column(Modifier.padding(Space.lg), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+            Text("My plan", style = MaterialTheme.typography.titleSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
+            androidx.compose.foundation.text.BasicTextField(
+                draft, { draft = it.replace('\n', ' ').take(160); onChange(draft) },
+                Modifier.fillMaxWidth().heightIn(min = Space.touch).semantics { contentDescription = "My plan for prayer time" },
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = Glass.Ink), cursorBrush = androidx.compose.ui.graphics.SolidColor(Glass.Primary),
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (draft.isEmpty()) Text("When I hear the time for Asr, I stand up, make wudu and pray.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted)
+                        inner()
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -114,7 +163,7 @@ private fun NextPane(ui: NamozUi) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         // "Next · Asr", "15:42", "in 1 h 03 m"; the countdown changes once a minute, never per second.
         Row(Modifier.fillMaxWidth().padding(Space.lg).semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(Emoji.res(ui.next.prayer.emoji)), null, Modifier.size(48.dp))
+            androidx.compose.material3.Icon(org.pagel.ai.ui.glass.HabitIcons.vector(org.pagel.ai.ui.glass.HabitIcons.forEmoji(ui.next.prayer.emoji)), null, tint = Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(48.dp))
             Spacer(Modifier.width(Space.lg))
             Column(Modifier.weight(1f)) {
                 Text("Next · ${ui.next.prayer.uz}", style = MaterialTheme.typography.labelLarge, color = Glass.Muted, maxLines = 1)
@@ -170,7 +219,7 @@ private fun PrayerRows(ui: NamozUi, onTap: (Namoz.Prayer) -> Unit, onMark: (Namo
                         if (done) androidx.compose.material3.Icon(TabIcons.Check, null, tint = Color.White, modifier = Modifier.size(16.dp))
                     }
                     Spacer(Modifier.width(Space.md))
-                    Image(painterResource(Emoji.res(p.emoji)), null, Modifier.size(22.dp))
+                    androidx.compose.material3.Icon(org.pagel.ai.ui.glass.HabitIcons.vector(org.pagel.ai.ui.glass.HabitIcons.forEmoji(p.emoji)), null, tint = Glass.Ink.copy(alpha = 0.78f), modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(Space.sm))
                     Column(Modifier.weight(1f)) {
                         Text(p.uz, style = MaterialTheme.typography.bodyLarge, color = if (done) Glass.Muted else Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)

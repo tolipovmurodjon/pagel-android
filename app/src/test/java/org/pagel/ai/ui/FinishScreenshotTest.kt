@@ -119,13 +119,13 @@ class FinishScreenshotTest {
     @Test fun theDayClearedCard() {
         show { TodayScreen(TodayUiState(loading = false, rows = emptyList(), open = 0, allDone = true, doneToday = 5, clearedStreak = 3, status = "Live"), pad, today = day) }
         compose.onNodeWithText("Day cleared").assertIsDisplayed()
-        compose.onNodeWithText("🔥 3 days cleared in a row").assertIsDisplayed()
+        compose.onNodeWithText("3 days cleared in a row").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-day-cleared-360x800.png")
     }
 
     @Test fun theDayClearedCardLargeFont() {
         show(1.5f) { Column(Modifier.padding(top = 24.dp)) { DayClearedCard(done = 1, streak = 1) } }
-        compose.onNodeWithText("🔥 First cleared day").assertIsDisplayed()
+        compose.onNodeWithText("First cleared day").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-day-cleared-360x800-font-1.5.png")
     }
 

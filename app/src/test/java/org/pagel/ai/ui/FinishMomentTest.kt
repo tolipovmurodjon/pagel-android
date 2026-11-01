@@ -33,8 +33,8 @@ class FinishMomentTest {
 
     @Test fun theToastSaysDoneThenTheCombo() {
         assertEquals("Done", comboText(1))
-        assertEquals("2 in a row 🔥", comboText(2))
-        assertEquals("3 in a row — on fire 🔥", comboText(3))
+        assertEquals("2 in a row", comboText(2))
+        assertEquals("3 in a row, on fire", comboText(3))
     }
 
     @Test fun progressCountsTodaysFinishedAgainstTheWholeDay() {
