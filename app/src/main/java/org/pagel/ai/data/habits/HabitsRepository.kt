@@ -104,7 +104,7 @@ class HabitsRepository(
     suspend fun setDay(phoneId: String, day: String, done: Boolean): Boolean {
         val id = dao.currentId(phoneId)
         val t = dao.taskOnce(id) ?: return false
-        if (t.every.isNullOrBlank() || t.status != "open") return false
+        if (!Repeat.isHabit(t.every) || t.status != "open") return false
         val today = today()
         val back = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(day), java.time.LocalDate.parse(today))
         // The 7 dots: today and the 6 days before, as pagel.uz takes them (it used to be 8 on both sides).

@@ -209,6 +209,19 @@ class HabitsScreenshotTest {
         assertOneRhythm(min = 2)
     }
 
+    /** Boss 2026-11-01 "light, squashed": a done card keeps its colour and its height; done and open sit in one rhythm. */
+    private fun doneAndOpen(name: String, fontScale: Float) {
+        val long = habit("h7", "Log today's food and sugar, then shut down the kitchen", "2026-10-28 08:00")
+        show(fontScale) { HabitsScreen(ui(h = habits + long, t = ticks + days("h1", today)), pad) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/habits-done-open-$name.png")
+        assertOneRhythm(min = 2)
+    }
+
+    @Test fun doneAndOpenCardsShareOneHeightAt360() = doneAndOpen("360", 1f)
+    @Test fun doneAndOpenCardsShareOneHeightAt360Font15() = doneAndOpen("360-font-1.5", 1.5f)
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun doneAndOpenCardsShareOneHeightAt320() = doneAndOpen("320", 1f)
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun doneAndOpenCardsShareOneHeightAt320Font15() = doneAndOpen("320-font-1.5", 1.5f)
+
     private fun assertOneRhythm(min: Int = 3) {
         val rootBottom = compose.onRoot().fetchSemanticsNode().boundsInRoot.bottom
         val rows = compose.onAllNodesWithTag("habit-row", useUnmergedTree = true).fetchSemanticsNodes()

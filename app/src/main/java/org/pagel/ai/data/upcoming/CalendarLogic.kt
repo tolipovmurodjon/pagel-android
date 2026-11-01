@@ -34,7 +34,7 @@ fun blockOf(t: TaskEntity): Block? {
     val time = t.due?.drop(11)?.trim().orEmpty()
     val start = minutesOf(time.take(5)) ?: return null
     val end = time.substringAfter('-', "").let(::minutesOf)?.takeIf { it > start } ?: minOf(start + DEFAULT_BLOCK_MIN, 24 * 60)
-    return Block(t, start, end, habit = !t.every.isNullOrBlank())
+    return Block(t, start, end, habit = Repeat.isHabit(t.every))
 }
 
 /** The open tasks on [day]: a dated task on its date, a habit on each day its repeat falls on (as Upcoming). */

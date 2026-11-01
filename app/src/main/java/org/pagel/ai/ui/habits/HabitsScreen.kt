@@ -831,23 +831,26 @@ internal fun HabitCardRow(
     val minutes = c.minutes
     // A timed habit opens its Timer and Finish buttons on a tap; every other card opens its page.
     val expandable = minutes != null && !done && tickable
-    val look = cardColours(c.colour ?: tileOf(c.emoji), c.heat)
+    val open = cardColours(c.colour ?: tileOf(c.emoji), c.heat)
     val shape = RoundedCornerShape(Space.xl)
-    // Done settles the card back to 55 %: a critically damped spring (no bounce: nothing here carried momentum).
-    val dim by animateFloatAsState(if (done) 0.55f else 1f, if (reduce) snap() else spring(dampingRatio = 1f, stiffness = 420f), label = "dim")
+    // Done keeps the card's colour, a touch softer (a critically damped spring: no bounce), and the words stay in full ink:
+    // fading the whole card made the title grey on colour (Boss 2026-11-01: "light, squashed").
+    val soft by animateFloatAsState(if (done) 0.34f else 0f, if (reduce) snap() else spring(dampingRatio = 1f, stiffness = 420f), label = "soft")
+    val look = CardColours(
+        androidx.compose.ui.graphics.lerp(open.a, Color.White, soft), androidx.compose.ui.graphics.lerp(open.b, Color.White, soft),
+        if (done) Glass.Ink else open.content,
+    )
     Column(modifier.fillMaxWidth().padding(start = Space.sm, end = Space.gutter).testTag(RowPart.ROW)) {
       Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         CheckCircle(
-            c, done, enabled = tickable, fill = look.a to look.b, tick = look.content,
+            c, done, enabled = tickable, fill = open.a to open.b, tick = open.content,
             onClick = { if (done) onUntick(id) else onTick(id) },
             modifier = Modifier.testTag(RowPart.TICK).onGloballyPositioned { onCentre(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) },
         )
         val press = remember { MutableInteractionSource() }
         Box(
             // A stacked habit's card steps in; its check stays in the one check column.
-            // The dim is one layer over card and shadow together (a dimmed card used to show its own shadow through itself).
             Modifier.weight(1f).padding(start = Space.lg * depth).pressScale(press)
-                .graphicsLayer { alpha = dim }
                 .shadow(8.dp, shape, ambientColor = look.b.copy(alpha = 0.18f), spotColor = look.b.copy(alpha = 0.30f))
                 .clip(shape)
                 .background(Brush.linearGradient(listOf(look.a, look.b), start = Offset.Zero, end = Offset.Infinite))

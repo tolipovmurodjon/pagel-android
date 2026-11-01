@@ -52,8 +52,8 @@ fun dailyLine(n: Int): String = if (n == 1) "1 daily habit" else "$n daily habit
  * it falls on, so counting rows said "21 planned" for 4 tasks (checker P4 #4); the web shows no count at all.
  */
 fun plannedLine(view: UpcomingView): String {
-    val tasks = (view.overdue + view.days.flatMap { it.tasks }).filter { it.every.isNullOrBlank() }.mapTo(HashSet()) { it.id }.size
-    val late = view.overdue.count { it.every.isNullOrBlank() }
+    val tasks = (view.overdue + view.days.flatMap { it.tasks }).filter { !Repeat.isHabit(it.every) }.mapTo(HashSet()) { it.id }.size
+    val late = view.overdue.count { !Repeat.isHabit(it.every) }
     val head = if (tasks == 1) "1 task" else "$tasks tasks"
     return if (late > 0) "$head · $late late" else head
 }

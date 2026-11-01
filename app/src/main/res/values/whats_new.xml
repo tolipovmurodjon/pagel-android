@@ -8,6 +8,10 @@
 -->
 <resources>
     <string-array name="whats_new_items">
+        <item>#0.3.47 · Cleaner habits</item>
+        <item>Monthly repeats stay tasks, not habits|upcoming</item>
+        <item>Finished habit cards keep their colour|habits</item>
+        <item>Habit blocks in the calendar are mint|upcoming</item>
         <item>#0.3.44 · What now, the GTD way</item>
         <item>What now asks where, time, energy|today</item>
         <item>Pick where a task happens|today</item>

@@ -684,7 +684,7 @@ internal fun RemindChoices(lead: Int, due: String?, onPick: (Int) -> Unit) {
 private fun PinRow(ui: PanelUi, today: LocalDate, onToggle: () -> Unit) {
     val day = ui.due?.take(10)
     val decided = when {
-        ui.every != null -> "Shows on Habits by its repeat"
+        Repeat.isHabit(ui.every) -> "Shows on Habits by its repeat"
         day != null && day <= today.toString() -> "On Today already, by its date"
         day != null -> "Shows on Today from " + DatePick.dueText(day, today).let { if (it == "Tomorrow") "tomorrow" else it }
         else -> null

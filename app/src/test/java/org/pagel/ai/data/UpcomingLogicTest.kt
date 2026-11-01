@@ -108,6 +108,12 @@ class UpcomingLogicTest {
         assertEquals(listOf("late"), v.overdue.map { it.id })
     }
 
+    @Test fun aMonthlyRepeatIsATaskInUpcomingOnItsDate() {
+        val v = upcomingView(listOf(task("rent", "2026-10-28", every = "month")), today)
+        assertEquals(listOf("rent"), v.days[0].tasks.map { it.id })
+        assertEquals("1 task", plannedLine(v))
+    }
+
     /** Checker P4 #4: "21 planned" for 4 tasks. Each task once; a habit on every day it falls on is not counted. */
     @Test fun theCountLineCountsEachTaskOnceAndNoHabit() {
         val v = upcomingView(

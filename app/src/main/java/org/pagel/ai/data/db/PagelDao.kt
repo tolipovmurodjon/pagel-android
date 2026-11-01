@@ -405,11 +405,11 @@ abstract class PagelDao {
 
     // ── Habits (Phase 3) ──────────────────────────────────────────────────────────────────────────────────────────
 
-    /** Open habits: repeating tasks, as the web's habitsView reads them (views.ts). */
-    @Query("SELECT * FROM tasks WHERE every IS NOT NULL AND every != '' AND status = 'open'")
+    /** Open habits: repeating tasks, as the web's habitsView reads them (views.ts); a monthly repeat is a task, never a habit (Boss 2026-11-01). */
+    @Query("SELECT * FROM tasks WHERE every IS NOT NULL AND every != '' AND every NOT LIKE 'month%' AND status = 'open'")
     abstract fun habits(): Flow<List<TaskEntity>>
 
-    @Query("SELECT * FROM tasks WHERE every IS NOT NULL AND every != '' AND status = 'open'")
+    @Query("SELECT * FROM tasks WHERE every IS NOT NULL AND every != '' AND every NOT LIKE 'month%' AND status = 'open'")
     abstract suspend fun habitsOnce(): List<TaskEntity>
 
     @Query("SELECT * FROM habit_ticks WHERE day >= :since")

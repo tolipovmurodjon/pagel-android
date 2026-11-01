@@ -22,6 +22,18 @@ class PagelDaoTest {
 
     @After fun tearDown() = db.close()
 
+    /** Boss 2026-11-01: a monthly repeat was a card on Habits. It is a task: not a habit, still in Upcoming on its date. */
+    @Test fun aMonthlyRepeatIsNotAHabitButAWeeklyOneIs() = runBlocking {
+        dao.upsertTasks(listOf(
+            t("t_day").copy(every = "day", due = "2026-10-28"), t("t_week").copy(every = "week", due = "2026-10-28"),
+            t("t_tue").copy(every = "tue,thu", due = "2026-10-28"), t("t_month").copy(every = "month", due = "2026-10-28"),
+            t("t_m15").copy(every = "month 1,15", due = "2026-10-28"),
+        ))
+        assertEquals(listOf("t_day", "t_tue", "t_week"), dao.habitsOnce().map { it.id }.sorted())
+        assertEquals(false, org.pagel.ai.ui.glass.Repeat.isHabit("month 1,15"))
+        assertEquals(true, org.pagel.ai.ui.glass.Repeat.isHabit("week"))
+    }
+
     private fun t(id: String, status: String = "open") = TaskEntity(id, "pagel", "Now", 1.0, "task $id", null, status, 2, false, null, null, null, null, "", 1, lastModified = 0)
     private val projects = listOf(ProjectEntity("pagel", "PAGEL", null, 0, 1))
 

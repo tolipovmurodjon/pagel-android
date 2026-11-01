@@ -257,6 +257,16 @@ class StartingScreenshotTest {
         }
     }
 
+    /** 0.3.44 checker: on a 360x800 phone What now shows fully above the tab bar on Today's first screen, with no scroll. */
+    @Test fun whatNowIsAboveTheBarOnTheFirstScreenAt360x800() {
+        show(1f) { Today(folded) }
+        compose.waitForIdle()
+        val card = compose.onNodeWithContentDescription("What now?").getBoundsInRoot()
+        val root = compose.onRoot().getBoundsInRoot()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/today-first-screen-360x800.png")
+        assertTrue("What now's bottom ${card.bottom} must be above the bar's top ${root.bottom - barDp}", card.bottom <= root.bottom - barDp)
+    }
+
     @Test fun makeItTinySpiceStepsAt360() {
         show { Box(Modifier.padding(top = 24.dp)) { TinyContent(task.copy(micro = emptyList(), tiny = Tiny.Idle), spice = 2) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/gtd-spice-steps-360x800.png")

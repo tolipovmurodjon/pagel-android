@@ -199,8 +199,8 @@ class ProjectViewModel @Inject constructor(
         combine(tasks.projectTasks(n), session.projects()) { all0, all -> all0 to all }.flatMapLatest { (all0, all) ->
             // Habits never end, so they stay out of the doing list, the bar and Finish (Boss: "Now · 13" of daily habits,
             // a 0/13 bar that can never fill). The page shows one quiet "N habits live in Habits" line instead.
-            val habits = all0.count { it.every != null && it.status == "open" }
-            val list = all0.filter { it.every == null }
+            val habits = all0.count { Repeat.isHabit(it.every) && it.status == "open" }
+            val list = all0.filter { !Repeat.isHabit(it.every) }
             val groups = projectGroups(list)
             val next = groups.firstOrNull { it.now }?.rows?.firstOrNull() ?: groups.firstOrNull { it.rows.isNotEmpty() }?.rows?.firstOrNull()
             (if (next != null) tasks.steps(next.id) else flowOf(emptyList())).let { steps ->

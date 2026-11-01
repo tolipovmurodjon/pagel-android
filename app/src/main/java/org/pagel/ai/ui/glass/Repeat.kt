@@ -26,6 +26,9 @@ object Repeat {
     const val LAST = 32
     private val MONTH_DAYS = Regex("^month (([1-9]|[12][0-9]|3[01]|last)(,([1-9]|[12][0-9]|3[01]|last))*)$")
 
+    /** A repeat that makes a habit: any repeat but a monthly one (a monthly repeat is a task on its dates). */
+    fun isHabit(every: String?): Boolean = !every.isNullOrBlank() && !isMonthly(every)
+
     fun isMonthly(every: String?): Boolean = every == "month" || (every != null && MONTH_DAYS.matches(every))
 
     /** The days of the month a repeat falls on; plain "month" = none chosen (it keeps its date's day). */

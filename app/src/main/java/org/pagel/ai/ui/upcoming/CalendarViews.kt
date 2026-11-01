@@ -219,7 +219,8 @@ internal fun fitWords(m: TextMeasurer, text: String, style: TextStyle, w: Int, h
     }
     val sizes = generateSequence(maxSp) { it - 0.5f }.takeWhile { it >= minSp - 0.01f }.toList()
     for (n in words.size downTo 1) {
-        val t = words.take(n).joinToString(" ")
+        // Fewer words end in a whole-word ellipsis ("Call the bank…"), so a cut title never reads as the whole title.
+        val t = words.take(n).joinToString(" ") + if (n < words.size) "…" else ""
         for ((k, sp) in sizes.withIndex()) lines(t, sp, last = k == sizes.lastIndex)?.let { return TitleFit(t, sp, it) }
     }
     // Not even the first word fits at [minSp] (8 sp, the floor: smaller is not read): no text. The block keeps its
@@ -767,7 +768,8 @@ private fun DayColumn(d: LocalDate, today: Boolean, blocks: List<Block>, ui: Upc
 @Composable
 private fun BlockView(b: Block, ui: UpcomingUi, hourH: Dp, colW: Int, held: Boolean, onOpen: () -> Unit) {
     val density = LocalDensity.current
-    val color = projectColor(ui, b.task.project)
+    // A habit or a prayer is mint, never its project's warm tint: a pale salmon block read as red (Boss 2026-11-01, Namoz is never red).
+    val color = if (b.habit) Glass.Primary else projectColor(ui, b.task.project)
     val top = hourH * (b.start / 60f)
     val height = maxOf(hourH * ((b.end - b.start) / 60f), MIN_BLOCK)
     val time = timeText(b)
