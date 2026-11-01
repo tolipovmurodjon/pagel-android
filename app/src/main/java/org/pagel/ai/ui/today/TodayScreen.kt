@@ -496,7 +496,7 @@ internal fun DayClearedCard(done: Int, streak: Int) {
             if (streak >= 1) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    if (streak == 1) "🔥 First cleared day" else "🔥 $streak days cleared in a row", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk,
+                    if (streak == 1) "First cleared day" else "$streak days cleared in a row", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk,
                     modifier = Modifier.background(Glass.PrimarySoft, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 7.dp),
                 )
             }

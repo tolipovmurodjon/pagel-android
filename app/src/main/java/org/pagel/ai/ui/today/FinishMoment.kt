@@ -35,11 +35,11 @@ class Combo(private val windowMs: Long = 10 * 60_000L) {
     }
 }
 
-/** What the toast says after a tick: "Done", then "2 in a row 🔥", "3 in a row — on fire". */
+/** What the toast says after a tick: "Done", then "2 in a row", "3 in a row, on fire" (no emoji, Boss 2026-10-31). */
 fun comboText(inRow: Int): String = when {
     inRow < 2 -> "Done"
-    inRow == 2 -> "2 in a row 🔥"
-    else -> "$inRow in a row — on fire 🔥"
+    inRow == 2 -> "2 in a row"
+    else -> "$inRow in a row, on fire"
 }
 
 /** Today's progress: tasks finished today against today's whole list (finished + still open). */

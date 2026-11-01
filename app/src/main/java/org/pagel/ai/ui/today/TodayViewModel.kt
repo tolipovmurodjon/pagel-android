@@ -75,7 +75,7 @@ data class TodayUiState(
     val status: String = "",
     /** Tasks finished today (Tashkent), on Today or anywhere: the progress bar's "2 of 5 ✓". */
     val doneToday: Int = 0,
-    /** Days in a row Boss cleared his whole Today (the day-cleared card's 🔥). */
+    /** Days in a row Boss cleared his whole Today (the day-cleared card's count). */
     val clearedStreak: Int = 0,
     /** Changes waiting to reach pagel.uz: the "↑ 2 waiting" chip, tap = send now. */
     val outbox: Int = 0,
