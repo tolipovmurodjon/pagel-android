@@ -1204,7 +1204,10 @@ sleep 1
 $T adb shell input keyevent 4; sleep 1
 front after-phase4
 # The Laboratory shelf (a card per experiment, Try it, a switch), then back to More. The emoji gate at the end reads its screen too.
-tap Laboratory || { $T adb shell input swipe 540 1700 540 600 300; sleep 1; tap Laboratory; } || { log "WALKTHROUGH: More has no Laboratory row"; exit 1; }
+shot more-for-laboratory 1
+FOUND=0
+for k in 1 2 3; do tap Laboratory && { FOUND=1; break; }; $T adb shell input swipe 540 1900 540 500 400; sleep 1.5; done
+[ "$FOUND" = 1 ] || { log "WALKTHROUGH: More has no Laboratory row; the first screen said: $(grep -o 'text="[^"]\+"' "$(xml_of more-for-laboratory)" | head -30 | tr '\n' ' ')"; exit 1; }
 shot laboratory 2
 grep -q 'text="Try it"' "$(xml_of laboratory)" || { log "WALKTHROUGH: the Laboratory card has no Try it"; exit 1; }
 grep -q 'content-desc="Use Black hole in the app"' "$(xml_of laboratory)" || { log "WALKTHROUGH: the Laboratory card has no Use in the app switch"; exit 1; }
