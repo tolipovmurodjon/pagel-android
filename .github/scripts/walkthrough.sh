@@ -1646,8 +1646,8 @@ for x in sorted(pathlib.Path(sys.argv[1]).glob("*.xml")):
     found = sorted({c for c in t if (0x1F000 <= ord(c) <= 0x1FAFF or 0x2600 <= ord(c) <= 0x27BF or ord(c) in (0xFE0F, 0x200D)) and c not in "✓✔"})
     if found:
         bad.append(f"{x.name}: {' '.join(found)}")
-print("
-".join(bad))
+for line in bad:
+    print(line.encode("ascii", "backslashreplace").decode())
 sys.exit(1 if bad else 0)
 PY
 log "BLACK HOLE WALK DONE: $N steps"
