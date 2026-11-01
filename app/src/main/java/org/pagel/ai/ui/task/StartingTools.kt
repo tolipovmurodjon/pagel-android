@@ -102,17 +102,24 @@ internal fun StartRows(micro: Int, onTiny: () -> Unit, onStuck: () -> Unit, titl
     }
 }
 
-/** The places a task can need, in the order one tap walks them; after "Anywhere" it goes back to inferred. */
-private val WHERE_CYCLE = listOf("phone" to "Phone", "laptop" to "Laptop", "home" to "Home", "out" to "Out", "any" to "Anywhere")
+/** The places a task can need; the words match the What now sheet. */
+private val WHERE_CHOICES = listOf("phone" to "Phone only", "laptop" to "Laptop", "home" to "Home", "out" to "Out", "any" to "Anywhere")
 
-/** "Where": the task's context in one quiet row; a tap sets the next place (the inferred one is shown until then). */
+/** "Where": the task's place in one quiet row; a tap opens the five places, one tap on a place saves it (one PATCH). */
 @Composable
 private fun WhereRow(title: String, project: String, set: String?, onWhere: (String?) -> Unit) {
-    val inferred = org.pagel.ai.ui.today.inferContext(title, project)
-    val now = set ?: inferred
-    val label = WHERE_CYCLE.firstOrNull { it.first == now }?.second ?: "Anywhere"
-    val next = when (val i = WHERE_CYCLE.indexOfFirst { it.first == set }) { -1 -> WHERE_CYCLE[0].first; WHERE_CYCLE.lastIndex -> null; else -> WHERE_CYCLE[i + 1].first }
-    ToolRow(TabIcons.MapPin, "Where: $label", if (set == null) "Guessed. Tap to set it" else "Tap for the next place", { onWhere(next) })
+    val now = set ?: org.pagel.ai.ui.today.inferContext(title, project)
+    val chosen = WHERE_CHOICES.indexOfFirst { it.first == now }.takeIf { it >= 0 } ?: WHERE_CHOICES.lastIndex
+    var open by rememberSaveable { mutableStateOf(false) }
+    ToolRow(TabIcons.MapPin, "Where: ${WHERE_CHOICES[chosen].second}", if (set == null) "Guessed. Tap to change" else "Tap to change") { open = !open }
+    if (open) {
+        Column(Modifier.padding(start = Space.lg, end = Space.md, bottom = Space.md)) {
+            org.pagel.ai.ui.today.AskRow("Place", WHERE_CHOICES.map { it.second }, chosen) { i ->
+                open = false
+                if (i != chosen || set == null) onWhere(WHERE_CHOICES[i].first)
+            }
+        }
+    }
 }
 
 @Composable
@@ -335,7 +342,7 @@ fun StuckContent(
             StuckReason.TOO_BIG -> {
                 SheetHead("Too big", "Shrink it until starting is silly-easy.")
                 Spacer(Modifier.height(Space.lg))
-                PrimaryPill("✨ Make it tiny", "Make it tiny", onTiny)
+                PrimaryPill("Make it tiny", "Make it tiny", onTiny)
                 Spacer(Modifier.height(Space.sm))
                 OutlinePill("Turn into project", onProject)
                 QuietButton("Back", onBack)

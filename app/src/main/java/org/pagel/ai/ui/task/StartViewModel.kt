@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import org.pagel.ai.data.DataError
 import org.pagel.ai.data.Outcome
 import org.pagel.ai.data.account.AccountState
+import org.pagel.ai.data.sync.withoutPictographs
 import org.pagel.ai.data.account.AccountStore
 import org.pagel.ai.data.api.PagelApi
 import org.pagel.ai.data.api.TinyBody
@@ -118,7 +119,7 @@ class StartViewModel @Inject constructor(
         writing = viewModelScope.launch {
             val account = (accounts.load() as? AccountState.Paired)?.account ?: run { tiny.value = Tiny.Offline; return@launch }
             val result = when (val out = api.tiny(account.serverUrl, account.token, TinyBody(taskId, spice.coerceIn(1, 3)))) {
-                is Outcome.Ok -> out.value.steps.map(String::trim).filter(String::isNotEmpty).take(8).let { if (it.isEmpty()) Tiny.Failed("No steps came back") else Tiny.Ready(it) }
+                is Outcome.Ok -> out.value.steps.map(::withoutPictographs).filter(String::isNotEmpty).take(8).let { if (it.isEmpty()) Tiny.Failed("No steps came back") else Tiny.Ready(it) }
                 is Outcome.Failed -> when (val e = out.error) {
                     DataError.Network -> Tiny.Offline
                     is DataError.Refused -> Tiny.Failed(e.message)

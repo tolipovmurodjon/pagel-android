@@ -138,7 +138,7 @@ private fun GtdAsk(where0: Where, time0: Int, energy0: Energy, onAsk: (Where, In
 /** One question: a label and its answers as capsules that wrap, the chosen one filled mint; each 48 dp to touch. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun AskRow(label: String, options: List<String>, chosen: Int, onPick: (Int) -> Unit) {
+internal fun AskRow(label: String, options: List<String>, chosen: Int, onPick: (Int) -> Unit) {
     val haptics = LocalHapticFeedback.current
     Text(label, style = MaterialTheme.typography.labelLarge, color = Glass.Muted)
     androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.sm)) {

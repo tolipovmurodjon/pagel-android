@@ -101,6 +101,13 @@ class UpcomingLogicTest {
         assertEquals("21 October", doneDayLabel(today.minusDays(7), today))
     }
 
+    /** A prayer of the Namoz group keeps its own series: a missed one is not "Carried over" (checker 2026-11-01). */
+    @Test fun anOverduePrayerIsNotCarriedOver() {
+        val fajr = task("fajr", "2026-10-26 05:00", every = "day").copy(habitGroup = "namoz")
+        val v = upcomingView(listOf(fajr, task("late", "2026-10-26")), today)
+        assertEquals(listOf("late"), v.overdue.map { it.id })
+    }
+
     /** Checker P4 #4: "21 planned" for 4 tasks. Each task once; a habit on every day it falls on is not counted. */
     @Test fun theCountLineCountsEachTaskOnceAndNoHabit() {
         val v = upcomingView(

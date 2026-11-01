@@ -223,6 +223,14 @@ $T adb shell input swipe 160 460 160 260 300; sleep 1
 tap 'All today · [0-9]+' || r4_tap 'All today · [0-9]+' || { log "WALKTHROUGH: no All today row the second time"; exit 1; }
 sleep 1; $T adb shell input swipe 160 260 160 520 300; $T adb shell input swipe 160 260 160 520 300; sleep 1
 r4_tap "Write the release note" && shot r4-panel 2.5 || { log "WALKTHROUGH: Write the release note is not on the open list"; exit 1; }
+# The Where row: it shows the guess; one tap opens the five places; Out is ONE PATCH {context:"out"} and the row says Out.
+r4_tap 'Where: [A-Za-z ]+' || { log "WALKTHROUGH: the panel has no Where row"; exit 1; }
+tap "Place: Out" || { log "WALKTHROUGH: the Where row did not open its five places"; exit 1; }
+r4_wait 'PATCH /api/v1/tasks/t_now2 {"context":"out"}' 30 || { log "WALKTHROUGH: picking Out never reached pagel.uz as a context PATCH"; grep t_now2 "$FAKE_LOG" | tail -3 | tee -a "$OUT/steps.txt"; exit 1; }
+shot r4-where-out 1.5
+grep -q 'content-desc="Where: Out"' "$OUT/$(printf '%02d' $N)-r4-where-out.xml" || { log "WALKTHROUGH: the Where row did not change to Out"; exit 1; }
+[ "$(grep -c 'PATCH /api/v1/tasks/t_now2 {"context"' "$FAKE_LOG")" = 1 ] || { log "WALKTHROUGH: one tap on a place should be exactly one context PATCH"; exit 1; }
+log "   Where: one tap on Out = one PATCH {context:out}, the row says Out"
 r4_tap "Make it tiny" || { log "WALKTHROUGH: the panel has no Make it tiny row"; exit 1; }
 shot r4-tiny-sheet 2
 tap "Write tiny steps" || { log "WALKTHROUGH: the tiny sheet has no Write tiny steps"; exit 1; }
@@ -231,6 +239,17 @@ shot r4-tiny-steps 2.5
 grep -q 'Stand up. Yes, right now' "$OUT/$(printf '%02d' $N)-r4-tiny-steps.xml" || { log "WALKTHROUGH: the 4 tiny steps did not show"; exit 1; }
 tap "Start focus" || { log "WALKTHROUGH: no Start on the tiny steps"; exit 1; }
 r4_wait 'PATCH /api/v1/tasks/t_now2 {"micro":["Stand up.' 30 || { log "WALKTHROUGH: the micro-steps were never saved to pagel.uz"; grep t_now2 "$FAKE_LOG" | tee -a "$OUT/steps.txt"; exit 1; }
+# No emoji on any Make it tiny / What now / Focus screen (the AI wrote some; the app strips them).
+no_pictographs() {
+  for x in "$OUT"/*-r4-what-now.xml "$OUT"/*-r4-gtd-pick.xml "$OUT"/*-r4-gtd-laptop.xml "$OUT"/*-r4-tiny-toast.xml "$OUT"/*-r4-tiny-steps.xml "$OUT"/*-r4-focus-*.xml; do
+    python3 -I - "$x" <<'PY' || { log "WALKTHROUGH: emoji on screen in $(basename "$x")"; exit 1; }
+import sys
+t = open(sys.argv[1], encoding="utf8", errors="replace").read()
+bad = sorted({c for c in t if 0x1F000 <= ord(c) <= 0x1FAFF or 0x2600 <= ord(c) <= 0x27BF or ord(c) in (0xFE0F, 0x200D)})
+sys.exit(1 if bad else 0)
+PY
+  done
+}
 shot r4-focus-1 2.5
 grep -q 'content-desc="Step 1 of 4"' "$OUT/$(printf '%02d' $N)-r4-focus-1.xml" || { log "WALKTHROUGH: Focus mode did not open on step 1 of 4"; exit 1; }
 for k in 1 2 3 4; do
@@ -244,6 +263,7 @@ $T adb shell input keyevent 4; sleep 1.5
 front r4-back-on-today
 r4_tap "Show 3" || true
 shot r4-today-end 2
+no_pictographs
 $T adb logcat -d > "$OUT/logcat-r4.txt"
 grep -q "Process: $PKG, PID" "$OUT/logcat-r4.txt" && { log "WALKTHROUGH: CRASH in core round 4 (see logcat-r4.txt)"; exit 1; }
 log "CORE ROUND 4 WALK DONE: $N steps"

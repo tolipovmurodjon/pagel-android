@@ -564,7 +564,7 @@ H.do_POST, H.do_PATCH, H.do_GET = _core_post_h, _core_patch_h, _core_get_h
 # tiny writes 4 funny steps (POST /api/v1/tiny, a proposal), saved as PATCH {micro}, then ticked one by one in Focus.
 NOW = [("t_now1", "uzcosmos", "Clean the desk", 2), ("t_now2", "uzcosmos", "Write the release note", 2)]
 NOW_IDS = {i for i, *_ in NOW}
-TINY = ["Stand up. Yes, right now 🧍", "Open the release notes file 📄", "Write one ugly first line ✍️", "Read it out loud like a news anchor 🎙️"]
+TINY = ["Stand up. Yes, right now", "Open the release notes file", "Write one ugly first line", "Read it out loud like a news anchor"]
 _r4_post, _r4_patch, _r4_get, _r4_sync = H.do_POST, H.do_PATCH, H.do_GET, sync_body
 
 def sync_body():

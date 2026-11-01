@@ -159,5 +159,10 @@ fun microJson(steps: List<String>): String =
 /** The micro-steps a task keeps (an unreadable value reads as none). */
 fun microOf(raw: String?): List<String> = runCatching {
     (kotlinx.serialization.json.Json.parseToJsonElement(raw ?: "[]") as kotlinx.serialization.json.JsonArray)
-        .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+        .mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.let(::withoutPictographs)?.takeIf(String::isNotEmpty) }
 }.getOrDefault(emptyList())
+
+private val PICTOGRAPHS = Regex("""[\p{So}\p{Cs}\u200D\uFE0F\u20E3]""")
+
+/** The app draws its own icons, so a step the AI wrote with emoji arrives without them (no emoji in app UI). */
+fun withoutPictographs(s: String): String = s.replace(PICTOGRAPHS, "").replace(Regex("""\s{2,}"""), " ").trim()

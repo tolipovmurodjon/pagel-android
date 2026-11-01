@@ -159,6 +159,14 @@ class UpcomingRepositoryTest {
         assertTrue(patches.isEmpty())
     }
 
+    @Test fun moveAllToTodayNeverMovesAnOverduePrayer() = runBlocking {
+        db.dao().upsertTasks(listOf(task("t_fajr", "2026-10-27 05:00", every = "day").copy(habitGroup = "namoz"), task("t_1", "2026-10-25")))
+        val moved = repo().moveAllToToday(listOf("t_fajr", "t_1"))
+        assertEquals(listOf("t_1"), moved.map { it.id })
+        assertEquals("2026-10-27 05:00", db.dao().taskOnce("t_fajr")!!.due)
+        assertEquals(SyncStatus.SYNCED, db.dao().taskOnce("t_fajr")!!.syncStatus)
+    }
+
     @Test fun moveAllToTodayMovesEachOverdueAndUndoWhileWaitingPutsThemBack() = runBlocking {
         db.dao().upsertTasks(listOf(task("t_1", "2026-10-25"), task("t_2", "2026-10-27 09:00")))
         val r = repo()

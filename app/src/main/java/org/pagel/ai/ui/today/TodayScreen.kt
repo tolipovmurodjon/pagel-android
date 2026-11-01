@@ -195,7 +195,7 @@ fun TodayScreen(
         val inRow = Combo.app.tick(System.currentTimeMillis())
         nudge = if (cleared) null else nudgeText(ui.rows.firstOrNull { !it.done && it.id != row.id }?.title)
         onTick(row.id)
-        toasts.show(if (cleared) "Day cleared ✨" else comboText(inRow), action = "Undo") { Combo.app.undo(); onUndo(row.id) }
+        toasts.show(if (cleared) "Day cleared" else comboText(inRow), action = "Undo") { Combo.app.undo(); onUndo(row.id) }
     }
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { overlayAt = it.positionInRoot(); overlayWidth = it.size.width.toFloat() }) {
@@ -257,8 +257,8 @@ fun TodayScreen(
             if (onWhatNow != null && !ui.loading && ui.rows.any { !it.done }) item(key = "whatnow", contentType = "whatnow") {
                 WhatNowButton(Modifier.padding(horizontal = Space.gutter), onWhatNow)
             }
-            // The empty space under the hero says the next timed thing, so the page never ends in nothing.
-            nextTimed(ui.all, today)?.let { (row, time) -> item(key = "next", contentType = "next") {
+            // The empty space under the hero says the next timed thing (unless the hero is that very task), so the page never ends in nothing.
+            nextTimed(ui.all, today)?.takeIf { (row, _) -> row.id != ui.rows.firstOrNull()?.takeIf { !it.done }?.id }?.let { (row, time) -> item(key = "next", contentType = "next") {
                 NextTimedRow(time, row.title, Modifier.padding(horizontal = Space.gutter)) { openTask(row.id) }
             } }
         }
@@ -490,7 +490,6 @@ internal fun DayProgressBar(p: DayProgress, nudge: String?, modifier: Modifier =
 internal fun DayClearedCard(done: Int, streak: Int) {
     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("✨", style = MaterialTheme.typography.headlineLarge)
             Text("Day cleared", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.semantics { heading() })
             Spacer(Modifier.height(4.dp))
             Text(if (done == 1) "1 task done today" else "$done tasks done today", style = MaterialTheme.typography.bodyMedium, color = Glass.Muted)

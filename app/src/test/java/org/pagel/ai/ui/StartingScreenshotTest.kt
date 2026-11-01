@@ -144,14 +144,32 @@ class StartingScreenshotTest {
 
     // ── What now ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private val pick = NowPick("n1", "Clean the desk", "UzCosmos", "Clear one corner of it, just one 🧽", "uzcosmos", null, 2)
+    private val pick = NowPick("n1", "Clean the desk", "UzCosmos", "Clear one corner of it, just one", "uzcosmos", null, 2)
 
-    /** The panel's Where row at 320 dp: the guess, and the one-tap correction's words. */
-    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun theWhereRowShowsTheGuessAndTheChilliesAreDrawn() {
-        show { Box(Modifier.padding(top = 24.dp)) { org.pagel.ai.ui.task.StartRows(0, {}, {}, "Call the bank about the report", "me", null, {}) } }
-        compose.onNodeWithContentDescription("Where: Phone").assertIsDisplayed()
+    /** The panel's Where row at 320 dp: the guess; one tap opens the five places; one tap on a place is exactly one write. */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun theWhereRowOpensFivePlacesAndOneTapIsOneWrite() {
+        val sent = mutableListOf<String?>()
+        show { Box(Modifier.padding(top = 24.dp)) { org.pagel.ai.ui.task.StartRows(0, {}, {}, "Call the bank about the report", "me", null) { sent += it } } }
+        compose.onNodeWithContentDescription("Where: Phone only").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/gtd-where-row-320x640.png")
+        compose.onNodeWithContentDescription("Where: Phone only").performClick()
+        for (p in listOf("Phone only", "Laptop", "Home", "Out", "Anywhere")) compose.onNodeWithContentDescription("Place: $p").assertIsDisplayed()
+        scale = 1.5f; compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/gtd-where-row-open-320x640-font-1.5.png")
+        compose.onNodeWithContentDescription("Place: Out").performClick()
+        assertEquals("one tap, one write", listOf<String?>("out"), sent)
+        compose.onNodeWithContentDescription("Place: Out").assertDoesNotExist()
     }
+
+    private fun whatNowAt320(stage: String, ui: WhatNowUi) {
+        show(1f) { Box(Modifier.padding(top = 24.dp)) { WhatNowContent(ui) } }
+        for (s in listOf(1f, 1.5f)) { scale = s; compose.waitForIdle(); assertNoCutText(s); shot320("what-now-$stage", s) }
+    }
+
+    /** 0.3.44 checker: the GTD sheet and its result card at 320x640, 1x and 1.5x (the narrowest phone). */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun whatNowAskSheetAt320x640() = whatNowAt320("ask", WhatNowUi(WhatNowUi.Stage.ASK))
+
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun whatNowResultCardAt320x640() = whatNowAt320("pick", WhatNowUi(WhatNowUi.Stage.PICK, pick, shown = 1))
 
     @Test fun whatNowAsksWhereTimeAndEnergy() = both({ Box(Modifier.padding(top = 24.dp)) { WhatNowContent(WhatNowUi(WhatNowUi.Stage.ASK)) } }) { s ->
         compose.onNodeWithContentDescription("Where: Phone only").assertIsDisplayed()
@@ -197,7 +215,7 @@ class StartingScreenshotTest {
     // ── I'm stuck · Make it tiny · Focus · Remind me ──────────────────────────────────────────────────────────────
 
     private val task = StartUi(loading = false, id = "n2", title = "Write the release note", project = "uzcosmos", projectLabel = "UzCosmos",
-        micro = listOf("Stand up. Yes, right now 🧍", "Open the release notes file 📄", "Write one ugly first line ✍️", "Read it out loud like a news anchor 🎙️", "Tick it. You did it 🎉"))
+        micro = listOf("Stand up. Yes, right now", "Open the release notes file", "Write one ugly first line", "Read it out loud like a news anchor", "Tick it. You did it"))
 
     @Test fun stuckOffersFourPlainReasons() = both({ Box(Modifier.padding(top = 24.dp)) { StuckContent(task, null, today = day) } }) { s ->
         for (r in StuckReason.entries) compose.onNodeWithContentDescription("Stuck: ${r.label}").assertIsDisplayed()
