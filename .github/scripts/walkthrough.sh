@@ -723,7 +723,7 @@ tap "Old pile" || fail_inbox "no Old pile row to open"
 sleep 3
 shot inbox-old-pile 2
 grep -q 'text="Old pile"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile did not open (no Old pile title)"
-grep -qE 'text="64.{1,2}left"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile does not say 64 left"
+grep -qE 'text="64.{1,2}left[^"]*"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile does not say 64 left"
 grep -q 'An old save' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile shows no old save"
 # Sort two old saves with the same dock: the pile's own count goes 64 -> 62.
 drop_tap || fail_inbox "no Drop in the Old pile"
@@ -731,7 +731,7 @@ sleep 2
 drop_tap || fail_inbox "no Drop the second time in the Old pile"
 sleep 2
 shot inbox-old-sorted-two 2
-grep -qE 'text="62.{1,2}left"' "$OUT/$(printf '%02d' $N)-inbox-old-sorted-two.xml" || fail_inbox "after two old saves were sorted the Old pile does not say 62 left"
+grep -qE 'text="62.{1,2}left[^"]*"' "$OUT/$(printf '%02d' $N)-inbox-old-sorted-two.xml" || fail_inbox "after two old saves were sorted the Old pile does not say 62 left"
 for i in $(seq 1 30); do [ "$(grep -cE 'POST /api/v1/inbox \{"action":"drop","file":"inbox/old[0-9]+.md"\}' "$FAKE_LOG")" = "2" ] && break; sleep 1; done
 [ "$(grep -cE 'POST /api/v1/inbox \{"action":"drop","file":"inbox/old[0-9]+.md"\}' "$FAKE_LOG")" = "2" ] || fail_inbox "the two old drops did not reach pagel.uz"
 log "   the Old pile opened, two old saves were sorted with the same dock, its own count read 62 left"
