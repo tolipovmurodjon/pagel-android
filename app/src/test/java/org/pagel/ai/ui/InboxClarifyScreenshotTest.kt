@@ -81,9 +81,9 @@ class InboxClarifyScreenshotTest {
     private val grant = row("inbox/grant.md", "The IT Park grant round closes on 15 November", "Open the grant form and fill page one")
     private val unread = row("inbox/unread.md", "A thread about welding", guessed = false, kind = "learn")
 
-    private fun ui(vararg rows: InboxItemEntity, sorted: Int = 7) = InboxUi(
+    private fun ui(vararg rows: InboxItemEntity, sorted: Int = 3) = InboxUi(
         loading = false, cards = rows.map { InboxViewModel.card(it, false, projects.firstOrNull { p -> p.name == it.project }) },
-        sorted = sorted, goal = 20, kept = 2, cap = 5, minWords = 6, left = 905, streak = 3, projects = projects,
+        sorted = sorted, goal = 5, kept = 2, cap = 5, minWords = 6, left = 905, streak = 3, projects = projects,
     )
 
     private fun show(fontScale: Float = 1f, body: @Composable () -> Unit) = compose.setContent {
@@ -110,9 +110,9 @@ class InboxClarifyScreenshotTest {
         show { screen(ui(grant)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-groups-360.png")
         compose.onNodeWithText("Can I do something about it?").assertIsDisplayed()
-        for (w in listOf("Drop", "Someday", "Note", "Remember", "Later", "Do now", "Action", "Project", "Waiting", "Calendar")) compose.onAllNodesWithText(w, useUnmergedTree = true).onFirst().assertIsDisplayed()
-        // Today's 20, not 905.
-        compose.onNodeWithText("Today's 20").assertIsDisplayed()
+        for (w in listOf("Drop", "Someday", "Note", "Later", "Do now", "Action", "Project", "Waiting", "Calendar")) compose.onAllNodesWithText(w, useUnmergedTree = true).onFirst().assertIsDisplayed()
+        // Today's 5, not 905.
+        compose.onNodeWithText("Today's 5").assertIsDisplayed()
         // All ten sit above the 96 dp the tab bar takes.
         val last = compose.onNodeWithText("Calendar", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
@@ -124,20 +124,20 @@ class InboxClarifyScreenshotTest {
         show(1.5f) { screen(ui(grant)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-groups-360-font-1.5.png")
         // (Action is also the AI pick's own word above, so it is read as the grid's last node below.)
-        for (w in listOf("No", "Yes", "Drop", "Someday", "Note", "Remember", "Do now", "Project", "Waiting", "Calendar", "Later")) oneWholeLine(w)
-        val sizes = listOf("Drop", "Someday", "Note", "Remember", "Do now", "Action", "Project", "Waiting", "Calendar").map { fontSize(it) }.toSet()
+        for (w in listOf("No", "Yes", "Drop", "Someday", "Note", "Do now", "Project", "Waiting", "Calendar", "Later")) oneWholeLine(w)
+        val sizes = listOf("Drop", "Someday", "Note", "Do now", "Action", "Project", "Waiting", "Calendar").map { fontSize(it) }.toSet()
         assertEquals("one word size in the grid: $sizes", 1, sizes.size)
     }
 
     @Test fun oneWordSizeInTheGridAt1x() {
         show { screen(ui(grant)) }
-        val sizes = listOf("Drop", "Someday", "Note", "Remember", "Do now", "Action", "Project", "Waiting", "Calendar").map { fontSize(it) }.toSet()
+        val sizes = listOf("Drop", "Someday", "Note", "Do now", "Action", "Project", "Waiting", "Calendar").map { fontSize(it) }.toSet()
         assertEquals("one word size in the grid: $sizes", 1, sizes.size)
         oneWholeLine("Calendar")
     }
 
-    private val dockWords = listOf("Drop", "Someday", "Note", "Remember", "Do now", "Action", "Project", "Waiting", "Calendar", "Later", "Yes", "No",
-        "Hold = repeat", "Can I do something about it?", "Inbox", "Today's 20", "Done")
+    private val dockWords = listOf("Drop", "Someday", "Note", "Do now", "Action", "Project", "Waiting", "Calendar", "Later", "Yes", "No",
+        "Hold = repeat", "Can I do something about it?", "Inbox", "Today's 5", "Done")
 
     private fun layoutOf(n: SemanticsNode): TextLayoutResult? {
         val out = mutableListOf<TextLayoutResult>()
@@ -405,7 +405,7 @@ class InboxClarifyScreenshotTest {
 
     /** After the day's goal: done for today, never the pile ("900 more"). */
     @Test fun afterTheGoalItSaysDoneForToday() {
-        show { screen(ui(grant, sorted = 20)) }
+        show { screen(ui(grant, sorted = 5)) }
         compose.onNodeWithText("Done today").assertIsDisplayed()
     }
 

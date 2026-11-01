@@ -79,7 +79,7 @@ class NotesViewModel @Inject constructor(private val where: WhereItWent, private
 }
 
 private val ACTION_WORDS = mapOf(
-    "act" to "Tasks", "note" to "Notes", "keep" to "Kept to learn", "later" to "Later",
+    "act" to "Tasks", "note" to "Notes", "keep" to "Kept as notes", "later" to "Later",
     "drop" to "Dropped", "now" to "Done now",
     "someday" to "Someday", "waiting" to "Waiting for", "project" to "New projects", "calendar" to "On the calendar",
 )

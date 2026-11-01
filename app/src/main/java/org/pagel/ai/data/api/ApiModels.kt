@@ -156,9 +156,9 @@ data class InboxResponse(
 @Serializable
 data class CaptureBody(val action: String, val id: String, val text: String, val source: String? = null)
 
-/** What the phone keeps in the outbox for a capture; [hold] = a pasted list waits out its 5 s Undo first. */
+/** What the phone keeps in the outbox for a capture; [hold] = a pasted list waits out its 5 s Undo first; [kind] "note" = it is filed as a Note once pagel.uz has it. */
 @Serializable
-data class CaptureOp(val id: String, val text: String, val source: String? = null, val hold: Boolean = false)
+data class CaptureOp(val id: String, val text: String, val source: String? = null, val hold: Boolean = false, val kind: String? = null)
 
 @Serializable
 data class CaptureReply(val file: String? = null)
@@ -173,7 +173,7 @@ data class SortBody(
     val someday: Boolean? = null,
     /** An Act's date (round D item 2: When? Today · Tomorrow); an older pagel.uz ignores it. */
     val due: String? = null,
-    /** A bulk tidy-up part (Inbox clarify fix 2): pagel.uz commits it as "(tidy)" and it never counts toward the day's 20. */
+    /** A bulk tidy-up part (Inbox clarify fix 2): pagel.uz commits it as "(tidy)" and it never counts toward the day's 5. */
     val quiet: Boolean? = null,
 )
 

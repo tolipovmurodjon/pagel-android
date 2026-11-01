@@ -72,10 +72,10 @@ class InboxScreenshotTest {
     private val meme = row("inbox/meme.md", "https://x.com/a/status/1", "A meme about Mondays", "not tied to your work", "all", "drop", "memes", pic = false)
     private val grant = row("inbox/grant.md", "https://www.linkedin.com/posts/grant", "The IT Park grant round closes on 15 November", "Humopedia can apply for the startup grant", "humopedia", "action", "IT Park", pic = false, next = "Open the grant form and fill page one")
 
-    private fun ui(rows: List<InboxItemEntity>, sorted: Int = 7, kept: Int = 2, left: Int = 214) = InboxUi(
+    private fun ui(rows: List<InboxItemEntity>, sorted: Int = 3, kept: Int = 2, left: Int = 214) = InboxUi(
         loading = false,
         cards = rows.map { InboxViewModel.card(it, kept >= 5, projects.firstOrNull { p -> p.name == it.project }) },
-        sorted = sorted, goal = 20, kept = kept, cap = 5, minWords = 6, left = left, streak = 3, projects = projects,
+        sorted = sorted, goal = 5, kept = kept, cap = 5, minWords = 6, left = left, streak = 3, projects = projects,
     )
 
     /** A post picture: the mint-to-violet gradient the fake pagel.uz serves in CI. */
@@ -107,9 +107,9 @@ class InboxScreenshotTest {
     @Test fun cardWithPictureAt360() {
         show { screen(ui(listOf(ig, meme))) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-card-360.png")
-        compose.onNodeWithContentDescription("AI pick: Remember").assertIsDisplayed()
+        compose.onNodeWithContentDescription("AI pick: Note").assertIsDisplayed()
         compose.onNodeWithContentDescription("The post's picture").assertIsDisplayed()
-        compose.onNodeWithContentDescription("7 of 20 sorted today").assertIsDisplayed()
+        compose.onNodeWithContentDescription("3 of 5 sorted today").assertIsDisplayed()
         oneWholeLine("Inbox")
         // The row of choices ends above the 96 dp the tab bar takes (checker 2026-10-28 #5).
         val drop = compose.onNodeWithText("Drop", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
@@ -124,8 +124,8 @@ class InboxScreenshotTest {
         oneWholeLine("Drop")
         oneWholeLine("Later")
         // The AI's pick stays on the 780 dp screen at 1.5x (checker 2026-10-28 #1).
-        compose.onNodeWithContentDescription("AI pick: Remember").assertIsDisplayed()
-        val pick = compose.onNodeWithContentDescription("AI pick: Remember").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithContentDescription("AI pick: Note").assertIsDisplayed()
+        val pick = compose.onNodeWithContentDescription("AI pick: Note").fetchSemanticsNode().boundsInRoot
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
         org.junit.Assert.assertTrue("the AI's pick ends at ${pick.bottom} px of ${root.bottom}: under the 96 dp the tab bar takes", pick.bottom <= root.bottom - 96 * 3f)
     }
@@ -175,7 +175,7 @@ class InboxScreenshotTest {
             val b = compose.onNodeWithText(n, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             org.junit.Assert.assertTrue("\"$n\" ends at ${b.bottom} px, the bar starts at $barTop px", b.bottom <= barTop - 12 * px + 1f)
         }
-        val pick = compose.onNodeWithContentDescription("AI pick: Remember").fetchSemanticsNode().boundsInRoot
+        val pick = compose.onNodeWithContentDescription("AI pick: Note").fetchSemanticsNode().boundsInRoot
         org.junit.Assert.assertTrue("the AI's pick ends at ${pick.bottom} px, the bar starts at $barTop px", pick.bottom <= barTop - 12 * px + 1f)
     }
 
@@ -185,7 +185,7 @@ class InboxScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-360x800.png")
         dockClearsTheBar(listOf("Action", "Note", "Do now", "Later", "Drop"))
         // The pick is one row tall (64 dp), not a slab.
-        val pick = compose.onNodeWithContentDescription("AI pick: Remember").fetchSemanticsNode().boundsInRoot
+        val pick = compose.onNodeWithContentDescription("AI pick: Note").fetchSemanticsNode().boundsInRoot
         val px = compose.onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
         assertEquals(64f, pick.height / px, 1f)
         // The caption leaves out the claim it starts with.
@@ -240,7 +240,7 @@ class InboxScreenshotTest {
     }
 
     @Test fun inboxZero() {
-        show { screen(ui(emptyList(), sorted = 14, kept = 3, left = 0)) }
+        show { screen(ui(emptyList(), sorted = 4, kept = 3, left = 0)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-empty.png")
         compose.onNodeWithText("Nothing waiting").assertIsDisplayed()
         compose.onNodeWithText("Capture something").assertIsDisplayed()
@@ -248,7 +248,7 @@ class InboxScreenshotTest {
 
     /** Offline after the saved deck ran out: no "214 left" over "Inbox zero" (checker 2026-10-28 #8). */
     @Test fun emptyHereButMoreOnPagelUz() {
-        show { screen(ui(emptyList(), sorted = 14, kept = 3, left = 214)) }
+        show { screen(ui(emptyList(), sorted = 4, kept = 3, left = 214)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-more-when-online.png")
         compose.onNodeWithText("214 more when online").assertIsDisplayed()
         compose.onNodeWithText("Nothing waiting").assertDoesNotExist()
@@ -265,9 +265,9 @@ class InboxScreenshotTest {
     }
 
     @Test fun ringAtTwentyOfTwenty() {
-        show { screen(ui(listOf(grant, meme), sorted = 20, kept = 5)) }
+        show { screen(ui(listOf(grant, meme), sorted = 5, kept = 5)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-ring-20.png")
-        compose.onNodeWithContentDescription("20 of 20 sorted today").captureRoboImage("build/outputs/roborazzi/inbox-ring-20-closeup.png")
+        compose.onNodeWithContentDescription("Done, 5 of 5 sorted today").captureRoboImage("build/outputs/roborazzi/inbox-ring-20-closeup.png")
         // Five kept today: the big button offers a Note in Learn's place, as the web does.
     }
 

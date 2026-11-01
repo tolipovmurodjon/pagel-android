@@ -324,4 +324,28 @@ class InboxCaptureTest {
         assertTrue("the card shown last time does not open the next visit", again.first().file != first.first().file)
         assertEquals("a refresh inside one visit keeps the order", first.map { it.file }, org.pagel.ai.ui.inbox.applyOrder(items.reversed(), v, emptyList()).map { it.file })
     }
+
+    @Test fun aCaptureFiledAsANoteIsAddedThenSortedAsANoteAndLeavesTheDeck() = runBlocking {
+        repo().capture(listOf("Drone operator: Rustam"), kind = "note")
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals("one add", 1, adds.size)
+        assertEquals("then one note on the file pagel.uz made", 1, others.size)
+        assertTrue(others[0], others[0].contains("\"action\":\"note\"") && others[0].contains("\"file\":\"inbox/cap-1.md\"") && others[0].contains("\"sentence\":\"Drone operator: Rustam\""))
+        assertTrue("it is a note now, not an Inbox card", db.inbox().deck().first().none { it.text == "Drone operator: Rustam" })
+    }
+
+    @Test fun aNotSureCaptureStaysAnInboxCardWithNoNote() = runBlocking {
+        repo().capture(listOf("Something to sort later"))
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(1, adds.size)
+        assertTrue("no note was made", others.isEmpty())
+    }
+
+    @Test fun learnIsANoteInEverySwipeAndEveryUnknownKind() {
+        assertEquals(Choice.NOTE, org.pagel.ai.ui.inbox.Swipe.LEARN.choice(false))
+        assertEquals(Choice.NOTE, org.pagel.ai.ui.inbox.Swipe.LEARN.choice(true))
+        assertEquals("an old keep or any unknown kind reads as a Note", Choice.NOTE, Choice.guessOf("keep"))
+        assertEquals(Choice.DROP, Choice.guessOf("drop"))
+        assertFalse("the dock no longer offers Learn", Choice.KEEP in org.pagel.ai.ui.inbox.NO_GROUP)
+    }
 }

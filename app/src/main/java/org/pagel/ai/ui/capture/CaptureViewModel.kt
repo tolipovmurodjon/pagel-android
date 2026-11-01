@@ -25,13 +25,14 @@ class CaptureViewModel @Inject constructor(private val repo: InboxRepository, pr
     val count: StateFlow<Int> = saved.asStateFlow()
 
     /** Saves [raw] now; false when there is nothing to save. The field may clear on true. */
-    fun save(raw: String): Boolean {
+    /** [note]: the saves are filed as Notes (Task goes to the task form, Not sure is the Inbox). */
+    fun save(raw: String, note: Boolean = false): Boolean {
         val parts = splitCapture(raw)
         if (parts.isEmpty()) return false
         val many = parts.size > 1
         saved.update { it + parts.size }
         viewModelScope.launch {
-            val rows = repo.capture(parts, source = null, hold = many)
+            val rows = repo.capture(parts, source = null, hold = many, kind = if (note) "note" else null)
             if (many) toasts.show("${parts.size} added to Inbox", action = "Undo", millis = 5_000) {
                 viewModelScope.launch {
                     val back = repo.undoCapture(rows)

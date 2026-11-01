@@ -52,6 +52,7 @@ import org.pagel.ai.ui.inbox.InboxActions
 import org.pagel.ai.ui.inbox.InboxScreen
 import org.pagel.ai.ui.inbox.InboxUi
 import org.pagel.ai.ui.inbox.InboxViewModel
+import org.pagel.ai.ui.inbox.SourceCount
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -79,9 +80,9 @@ class InboxV3ScreenshotTest {
 
     private val grant = row("inbox/grant.md", "The IT Park grant round closes on 15 November")
 
-    private fun ui(vararg rows: InboxItemEntity, old: Int? = 912, oldMode: Boolean = false, oldDone: Boolean = false, sorted: Int = 7) = InboxUi(
+    private fun ui(vararg rows: InboxItemEntity, old: Int? = 912, oldMode: Boolean = false, oldDone: Boolean = false, sorted: Int = 3) = InboxUi(
         loading = false, cards = rows.map { InboxViewModel.card(it, false, projects.firstOrNull { p -> p.name == it.project }) },
-        sorted = sorted, goal = 20, kept = 2, cap = 5, minWords = 6, left = rows.size, streak = 3, projects = projects, old = old, oldMode = oldMode, oldDone = oldDone,
+        sorted = sorted, goal = 5, kept = 2, cap = 5, minWords = 6, left = rows.size, streak = 3, projects = projects, old = old, oldMode = oldMode, oldDone = oldDone,
     )
 
     private fun show(fontScale: Float = 1f, body: @Composable () -> Unit) = compose.setContent {
@@ -131,15 +132,15 @@ class InboxV3ScreenshotTest {
         return red
     }
 
-    private val headerWords = listOf("Inbox", "Today's 20", "Old pile · 912")
+    private val headerWords = listOf("Inbox", "Today's 5", "Old pile · 912")
 
     @Test fun currentInboxWithOneQuietOldPileRow() {
         show { screen(ui(grant)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-current.png")
         compose.onNodeWithText("Old pile · 912", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Add to Inbox").assertIsDisplayed()
-        // The day's 20 is said once: by the ring, not again as words ("one count only").
-        compose.onNodeWithContentDescription("7 of 20 sorted today").assertIsDisplayed()
+        // The day's 5 is said once: by the ring, not again as words ("one count only").
+        compose.onNodeWithContentDescription("3 of 5 sorted today").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("sorted today", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         assertTrue(compose.onAllNodesWithText("Sorted today (", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         assertEquals("red pixels", 0, redPixels())
@@ -171,6 +172,24 @@ class InboxV3ScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-claim-320-font-1.5.png")
     }
 
+    /** Under 360 dp the big button shows its short hint, whole on one line (checker 5.5/10: the long example was cut). */
+    @Test fun theBigButtonHintIsWholeAt320dp() {
+        show(1f) { Box(Modifier.width(320.dp).height(640.dp)) { screen(ui(grant)) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-hint-320.png")
+        assertNoCutText("hint at 320 dp", listOf("a next step in a plan"))
+    }
+
+    /** Two source chips are in sight at 320 dp with no sideways scroll: both end inside the screen. */
+    @Test fun twoSourceChipsShowAt320dpWithoutAScroll() {
+        val chips = listOf(SourceCount("instagram", "Instagram", 3), SourceCount("x", "X", 2))
+        show(1f) { Box(Modifier.width(320.dp).height(640.dp)) { screen(ui(grant).copy(sources = chips)) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-chips-320.png")
+        for (d in listOf("All \u00B7 5", "Instagram \u00B7 3")) {
+            val b = compose.onNodeWithContentDescription(d).fetchSemanticsNode().boundsInRoot
+            assertTrue("$d ends inside 320 dp (right edge ${b.right})", b.right <= compose.onRoot().fetchSemanticsNode().boundsInRoot.right)
+        }
+    }
+
     @Test fun tappingTheOldPileRowOpensIt() {
         var opened = 0
         show { screen(ui(grant), onOld = { opened++ }) }
@@ -184,7 +203,7 @@ class InboxV3ScreenshotTest {
         compose.onNodeWithText("Old pile", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("910 left", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Tidy old saves").assertIsDisplayed()
-        for (w in listOf("Drop", "Someday", "Note", "Remember", "Do now", "Action", "Project", "Waiting", "Calendar", "Later")) compose.onAllNodesWithText(w, useUnmergedTree = true).fetchSemanticsNodes().let { assertTrue("$w in the old pile's dock", it.isNotEmpty()) }
+        for (w in listOf("Drop", "Someday", "Note", "Do now", "Action", "Project", "Waiting", "Calendar", "Later")) compose.onAllNodesWithText(w, useUnmergedTree = true).fetchSemanticsNodes().let { assertTrue("$w in the old pile's dock", it.isNotEmpty()) }
         assertEquals("red pixels", 0, redPixels())
     }
 
@@ -196,7 +215,7 @@ class InboxV3ScreenshotTest {
 
     @Test fun theEmptyInboxIsOneSentenceAndOneAction() {
         var captured = 0
-        show { screen(ui(old = 912, sorted = 14), onCapture = { captured++ }) }
+        show { screen(ui(old = 912, sorted = 4), onCapture = { captured++ }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-empty.png")
         compose.onNodeWithText("Nothing waiting").assertIsDisplayed()
         compose.onNodeWithText("Capture something").assertIsDisplayed().performClick()
@@ -206,7 +225,7 @@ class InboxV3ScreenshotTest {
     }
 
     @Test fun oldPileDoneIsSaidOnce() {
-        show { screen(ui(old = 0, oldDone = true, sorted = 14)) }
+        show { screen(ui(old = 0, oldDone = true, sorted = 4)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-old-done.png")
         compose.onNodeWithText("Old pile done", useUnmergedTree = true).assertIsDisplayed()
     }

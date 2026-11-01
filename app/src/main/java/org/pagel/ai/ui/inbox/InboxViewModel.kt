@@ -135,7 +135,7 @@ data class InboxUi(
     val loading: Boolean = true,
     val cards: List<InboxCard> = emptyList(),
     val sorted: Int = 0,
-    val goal: Int = 20,
+    val goal: Int = GOAL,
     val kept: Int = 0,
     val cap: Int = 5,
     val minWords: Int = 6,
@@ -153,6 +153,8 @@ data class InboxUi(
     val oldMode: Boolean = false,
     /** The Old pile just reached 0: its row says "Old pile done" once, then hides. */
     val oldDone: Boolean = false,
+    /** The Old pile's topics ("Claude / AI tool tips"), by plain rules, shown on its own screen. */
+    val oldGroups: List<OldGroup> = emptyList(),
 ) {
     val full get() = kept >= cap
 }
@@ -229,7 +231,7 @@ fun words(s: String) = s.trim().split(Regex("\\s+")).count { it.isNotEmpty() }
 
 /**
  * The Inbox (NATIVE-PLAN Phase 2, the web's /learn): one save at a time; Room answers every choice at once and the
- * outbox sends it. Drop has a 5 s Undo; keeps cheer at 5, 10, 25, 50, 100; 20 sorted a day is the ring's goal.
+ * outbox sends it. Drop has a 5 s Undo; 5 sorted a day is the ring's goal.
  */
 @HiltViewModel
 class InboxViewModel @Inject constructor(
@@ -302,7 +304,7 @@ class InboxViewModel @Inject constructor(
         val chosen = old.view.source?.takeIf { k -> chips.any { it.key == k } }
         val filtered = if (old.mode || chosen == null) pool else pool.filter { sourceChip(it.source).first == chosen }
         val ordered = if (old.mode) filtered else applyOrder(filtered, old.view, repo.captured.shown)
-        build(visibleDeck(ordered, hidden), state, projects, run, deck.isEmpty(), old).copy(reading = aiReading, sources = chips, source = chosen, order = old.view.order)
+        build(visibleDeck(ordered, hidden), state, projects, run, deck.isEmpty(), old).copy(reading = aiReading, sources = chips, source = chosen, order = old.view.order, oldGroups = if (old.mode) oldGroups(pool) else emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     /** Boss's one goal: five sorted a day, counted on the phone from what he sorted today (Do, Note, Waiting, Drop; never Later or tidy moves). */
@@ -610,7 +612,7 @@ class InboxViewModel @Inject constructor(
     }
 
     /**
-     * "Drop group": every old save in the topic goes as a quiet drop (it never counts toward the day's 20), with one Undo
+     * "Drop group": every old save in the topic goes as a quiet drop (it never counts toward the day's 5), with one Undo
      * that stops all of them before pagel.uz hears.
      */
     fun dropGroup(g: OldGroup) {
@@ -629,7 +631,7 @@ class InboxViewModel @Inject constructor(
      * Boss saw the count and chose: all of them go to Someday or are dropped (checker 2026-10-30 #2: all 412, not the
      * first 60). The first page waits out the one 5 s Undo, which stops every one; only then are the next pages asked
      * for (60 a time), so nothing past the Undo was ever queued. A quiet line says "120 of 412"; none of it counts
-     * toward the day's 20. Offline mid-way, it waits for pagel.uz and goes on.
+     * toward the day's 5. Offline mid-way, it waits for pagel.uz and goes on.
      */
     fun tidyAll(choice: Choice) {
         val t = _tidy.value?.takeIf { it.items.isNotEmpty() } ?: return
@@ -686,7 +688,6 @@ class InboxViewModel @Inject constructor(
         _leaving.value = Leaving(nextLeave++, card, choice, thrown)
         hide(card.file)
         if (choice != Choice.LATER) streak.update { it + 1 }
-        val keptBefore = ui.value.kept
         viewModelScope.launch {
             val op = repo.choose(card.file, choice, line, project, someday, due)
             where.record(card.file, choice.log, card.claim.ifEmpty { postBody(card.text).take(80) }, project, line, due, op)
@@ -703,12 +704,7 @@ class InboxViewModel @Inject constructor(
                     toasts.show("${projectName(project)}$whenText", action = "Undo", millis = 5_000) { undo(op, card) }
                 }
                 Choice.NOTE -> toasts.show("Saved to ${projectName(project)} notes", action = "Open") { project?.let { _open.trySend(InboxOpen.Notes(it)) } }
-                Choice.KEEP -> {
-                    val n = keptBefore + 1
-                    val cheer = CHEERS[n]
-                    toasts.show(cheer ?: "Kept. The AI turns it into a note.")
-                    if (cheer != null) _cheer.update { it + 1 }
-                }
+                Choice.KEEP -> toasts.show("Saved as a note")
                 Choice.NOW -> toasts.show("Done and gone")
                 Choice.LATER -> toasts.show("Later · back in 3 days")
                 Choice.SOMEDAY -> toasts.show("Someday · ${projectName(project)}", action = "Undo", millis = 5_000) { undo(op, card) }
@@ -760,7 +756,7 @@ class InboxViewModel @Inject constructor(
             loading = s == null && rawEmpty,
             cards = deck.take(2).map { i -> card(i, kept >= cap, byName[i.project]) },
             sorted = if (fresh) s!!.sorted else 0,
-            goal = s?.goal ?: 20,
+            goal = GOAL,
             kept = kept,
             cap = cap,
             minWords = s?.minWords ?: 6,
@@ -787,15 +783,6 @@ class InboxViewModel @Inject constructor(
         /** Pages in a row with nothing new before a bulk tidy-up stops (2 s apart online, 15 s offline): ~5 min online. */
         private const val BULK_MISSES = 150
 
-        /** The web's cheers for keeps (learn-client.tsx CHEERS): 5 is the habit, bigger days get bigger words. */
-        val CHEERS = mapOf(
-            5 to "5 learned. Today's habit is done",
-            10 to "10 learned. Double the habit",
-            25 to "25 learned in one day. That is a whole chapter",
-            50 to "50 learned. Rare day",
-            100 to "100 learned. Legendary",
-        )
-
         fun card(i: InboxItemEntity, full: Boolean, project: ProjectEntity?): InboxCard {
             val (site, name) = siteOf(i.source)
             val body = postBody(i.text)
@@ -811,7 +798,7 @@ class InboxViewModel @Inject constructor(
                 link = i.source.takeIf { it.startsWith("http") },
                 hasPicture = i.hasPicture,
                 pick = pick,
-                guess = if (pick == Choice.KEEP && full) Choice.NOTE else pick,
+                guess = pick,
                 putOff = i.later != null,
                 someday = i.kind == "someday",
                 next = i.next, note = i.note,

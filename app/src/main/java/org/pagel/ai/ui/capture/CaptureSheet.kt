@@ -11,6 +11,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -75,37 +78,52 @@ private val FieldRim = Brush.linearGradient(listOf(Color.White.copy(alpha = 0.95
  */
 @Composable
 fun CaptureSheet(onClose: () -> Unit, speak: Boolean = false, vm: CaptureViewModel = hiltViewModel(), taskVm: AddTaskViewModel = hiltViewModel()) {
-    var planning by rememberSaveable { mutableStateOf(false) }
+    // Task / Note / Not sure (Boss 2026-10-31): Not sure is the default and lands in the Inbox; the choice stays across Enter.
+    var kind by rememberSaveable { mutableStateOf(CaptureKind.NOT_SURE) }
+    val planning = kind == CaptureKind.TASK
     val projects by taskVm.projects.collectAsStateWithLifecycle()
     val notSaved by taskVm.notSaved.collectAsStateWithLifecycle()
     val count by vm.count.collectAsStateWithLifecycle()
     GlassSheet(onClose) {
         if (planning) {
             AddTaskContent(projects, home = "me", toToday = true, now = taskVm::now, notSaved = notSaved, onAdded = onClose, picker = rememberProjectPickerActions(), onSave = taskVm::save)
-            Row(Modifier.padding(start = 16.dp, bottom = 4.dp)) { GlassChip(TabIcons.Inbox, "To Inbox", set = false, description = "To Inbox") { planning = false } }
+            KindRow(kind) { kind = it }
         } else {
-            CaptureContent(vm, speak)
-            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 20.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                GlassChip(TabIcons.ListPlus, "Plan it", set = false, description = "Plan it") { planning = true }
-                Spacer(Modifier.weight(1f))
-                if (count > 0) Text("In Inbox · $count", style = MaterialTheme.typography.labelMedium, color = Glass.PrimaryInk, maxLines = 1, softWrap = false)
+            CaptureContent(vm, speak, note = kind == CaptureKind.NOTE)
+            Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 20.dp, bottom = 4.dp)) {
+                KindRow(kind) { kind = it }
+                if (count > 0) Text("In Inbox · $count", style = MaterialTheme.typography.labelMedium, color = Glass.PrimaryInk, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = Space.sm, top = Space.xs))
             }
         }
         Spacer(Modifier.height(SheetBottom))
     }
 }
 
+/** What a capture becomes. Not sure is the Inbox, where the sorting happens. */
+enum class CaptureKind(val label: String) { NOT_SURE("Not sure"), NOTE("Note"), TASK("Task") }
+
+/** One small row of three, not three big buttons: the chosen one is mint. */
+@Composable
+private fun KindRow(kind: CaptureKind, onPick: (CaptureKind) -> Unit) {
+    Row(Modifier.padding(start = Space.xs).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
+        for (k in listOf(CaptureKind.TASK, CaptureKind.NOTE, CaptureKind.NOT_SURE)) {
+            val icon = when (k) { CaptureKind.TASK -> TabIcons.ListPlus; CaptureKind.NOTE -> TabIcons.StickyNote; CaptureKind.NOT_SURE -> TabIcons.Inbox }
+            GlassChip(icon, k.label, set = kind == k, description = "Add as ${k.label}") { onPick(k) }
+        }
+    }
+}
+
 /** The field and its arrow: the capture itself, apart from the sheet so a test can draw it. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CaptureContent(vm: CaptureViewModel, speak: Boolean = false, initial: String = "") {
+fun CaptureContent(vm: CaptureViewModel, speak: Boolean = false, initial: String = "", note: Boolean = false) {
     var typed by rememberSaveable { mutableStateOf(initial) }
     val focus = remember { FocusRequester() }
     val haptics = LocalHapticFeedback.current
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     fun submit(text: String) {
-        if (vm.save(text)) {
+        if (vm.save(text, note)) {
             // One soft tick per save (rules/soft-tick-on-every-move); the field is empty again for the next one.
             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
             typed = ""

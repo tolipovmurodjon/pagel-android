@@ -343,14 +343,14 @@ fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onRetry: 
     Column(Modifier.fillMaxWidth().padding(horizontal = Space.gutter)) {
         Text("Old saves", style = MaterialTheme.typography.headlineSmall, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs, bottom = Space.sm))
         when {
-            tidy.loading -> Text("Looking for saves older than ${OLD_DAYS} days…", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
+            tidy.loading -> Text("Looking for saves from before 1 November…", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
             tidy.failed -> {
                 Text("Could not reach pagel.uz. Nothing moved.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, bottom = Space.md))
                 QuietButton("Retry", TabIcons.Refresh, onRetry)
             }
-            n == 0 -> Text("Nothing older than ${OLD_DAYS} days. The Inbox is fresh.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
+            n == 0 -> Text("Nothing from before 1 November. The Inbox is fresh.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
             else -> {
-                Text("$n saves older than ${OLD_DAYS} days", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs))
+                Text("$n saves from before 1 November", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs))
                 Text(if (tidy.bySource.isNotEmpty()) "Your whole Inbox, by where it came from:" else "By where they came from:", style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
                     modifier = Modifier.padding(start = Space.xs, top = Space.sm))
                 // One line, not a row per source: the sheet stays short enough that both moves show on a 640 dp phone.
@@ -412,7 +412,7 @@ fun GuideContent(onGuide: (() -> Unit)? = null) {
                 }
             }
         }
-        Text("GTD in one line: ask \"Can I do something about it?\". No → Drop, Someday, Note or Learn. Yes → Do now, Action, Project, Waiting or Calendar. Most saves are a Drop; that is the point.",
+        Text("GTD in one line: ask \"Can I do something about it?\". No → Drop, Someday or Note. Yes → Do now, Action, Project, Waiting or Calendar. Most saves are a Drop; that is the point.",
             style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
         if (onGuide != null) Text("How it works →", style = MaterialTheme.typography.titleMedium, color = Glass.PrimaryInk,
             modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onGuide).padding(horizontal = 4.dp, vertical = 12.dp))
@@ -426,7 +426,7 @@ fun GuideContent(onGuide: (() -> Unit)? = null) {
 @Composable
 fun SwipeMap(modifier: Modifier = Modifier) {
     Column(modifier.semantics(mergeDescendants = true) {
-        contentDescription = "Swipe up to shuffle, down to drop, left to learn, right for an action; hold for Do now"
+        contentDescription = "Swipe up to shuffle, down to drop, left for a note, right for an action; hold for Do now"
     }, horizontalAlignment = Alignment.CenterHorizontally) {
         Way(TabIcons.ArrowUp, Swipe.SHUFFLE)
         Row(verticalAlignment = Alignment.CenterVertically) {

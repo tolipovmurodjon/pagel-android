@@ -132,7 +132,7 @@ abstract class InboxDao {
 
     /**
      * One part of a bulk tidy-up (Someday or Drop for all the old saves): the card leaves and the choice waits in the
-     * outbox, but the day's 20 does not move: a hundred taps of "tidy" must not fake a day's sorting.
+     * outbox, but the day's 5 does not move: a hundred taps of "tidy" must not fake a day's sorting.
      */
     @Transaction
     open suspend fun chooseQuiet(file: String, action: String, body: String, at: Long): Long {
@@ -273,7 +273,7 @@ const val OLD_POSITION = 1_000_000
 
 private const val LATER = "later"
 
-/** The waiting choices that count toward the day's 20: a quiet bulk tidy-up part never does. */
+/** The waiting choices that count toward the day's 5: a quiet bulk tidy-up part never does. */
 private fun counted(bodies: List<String?>) = bodies.filter { it?.contains("\"quiet\":true") != true }
 private const val KEEP = "keep"
 

@@ -27,7 +27,7 @@ class InboxSwipeTest {
 
         assertNull(Swipe.SHUFFLE.choice(full = false))
         assertEquals(Choice.DROP, Swipe.DROP.choice(false))
-        assertEquals(Choice.KEEP, Swipe.LEARN.choice(false))
+        assertEquals("Learn became Note", Choice.NOTE, Swipe.LEARN.choice(false))
         assertEquals(Choice.ACT, Swipe.ACTION.choice(false))
         // Today's keeps full: left is a Note, as the web turns a Learn into a Note.
         assertEquals(Choice.NOTE, Swipe.LEARN.choice(full = true))

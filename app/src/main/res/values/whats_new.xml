@@ -9,14 +9,14 @@
 <resources>
     <string-array name="whats_new_items">
         <item>#0.3.45 · Inbox, capture and sort 5</item>
-        <item>Tap + on Today or in the Inbox, type, press Enter|today</item>
+        <item>Tap + to add: Task, Note or Not sure|today</item>
+        <item>Learn is now Note: a meme is inspiration|more</item>
         <item>Paste a list: one save each, one Undo|today</item>
         <item>Share a link from any app to PAGEL|more</item>
-        <item>Source chips with counts; tap one to filter|more</item>
-        <item>Newest, Oldest or Shuffle: the pill beside the chips|more</item>
-        <item>Drop asks twice, so a stray tap loses nothing|more</item>
+        <item>Source chips; Newest, Oldest or Shuffle|more</item>
+        <item>Drop asks twice, so a stray tap is safe|more</item>
         <item>Sort 5 and your habit ticks itself|habits</item>
-        <item>Old pile: saves from before 1 November, apart|more</item>
+        <item>Old pile: topics, saved before 1 November|more</item>
         <item>#0.3.44 · What now, the GTD way</item>
         <item>What now asks where, time, energy|today</item>
         <item>Pick where a task happens|today</item>

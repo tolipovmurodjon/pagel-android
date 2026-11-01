@@ -46,7 +46,7 @@ enum class Choice(val wire: String, val key: String, val log: String = wire) {
             "action" -> ACT
             "note" -> NOTE
             "drop" -> DROP
-            else -> KEEP
+            else -> NOTE
         }
     }
 }
@@ -126,12 +126,12 @@ class InboxRepository(
      * Captures [texts] (each its own save), top of the Inbox at once, each waiting in the outbox in the order typed.
      * [hold]: a pasted list waits out the 5 s Undo. Returns the (outbox row, local file) pairs for [undoCapture].
      */
-    suspend fun capture(texts: List<String>, source: String? = null, hold: Boolean = false): List<Pair<Long, String>> {
+    suspend fun capture(texts: List<String>, source: String? = null, hold: Boolean = false, kind: String? = null): List<Pair<Long, String>> {
         val now = clock()
         val day = tashkentDay(now)
         val rows = texts.map { text ->
             val id = "c" + java.util.UUID.randomUUID().toString().replace("-", "").take(14)
-            val body = wire.encodeToString(CaptureOp.serializer(), CaptureOp(id, text, source, hold))
+            val body = wire.encodeToString(CaptureOp.serializer(), CaptureOp(id, text, source, hold, kind))
             dao.capture(CAPTURE_PREFIX + id, body, text, day, now) to (CAPTURE_PREFIX + id)
         }
         scheduler.kick()
@@ -281,7 +281,17 @@ class InboxSender(
         if (c.hold && clock() - op.createdAt < UNDO_WINDOW_MS) return SortStep.HOLD
         dao.countAttempt(op.id)
         return when (val out = api.capture(account.serverUrl, account.token, CaptureBody("add", c.id, c.text, c.source))) {
-            is Outcome.Ok -> { out.value.file?.let(captured::add); dao.captureSent(op.id, op.taskId, out.value.file); SortStep.SENT }
+            is Outcome.Ok -> {
+                val file = out.value.file
+                file?.let(captured::add)
+                // A Note: pagel.uz has the save, now it is filed as one (a retry of the add is the same file, so a lost reply is safe).
+                if (c.kind == "note" && file != null) {
+                    when (val noted = api.sort(account.serverUrl, account.token, SortBody("note", file, sentence = c.text))) {
+                        is Outcome.Ok -> { dao.captureSent(op.id, op.taskId, null); SortStep.SENT }
+                        is Outcome.Failed -> if (noted.error is DataError.Unauthorized) SortStep.SIGNED_OUT else SortStep.TRY_LATER
+                    }
+                } else { dao.captureSent(op.id, op.taskId, file); SortStep.SENT }
+            }
             is Outcome.Failed -> when (val e = out.error) {
                 // An older pagel.uz does not know "add": the save stays on the phone, on top, and goes when it learns it.
                 is DataError.Refused -> if (e.message.contains("action is one of")) SortStep.SENT else { dao.captureRefused(op.id, op.taskId, e.message); SortStep.SENT }

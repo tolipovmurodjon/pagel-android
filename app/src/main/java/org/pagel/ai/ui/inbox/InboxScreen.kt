@@ -140,10 +140,9 @@ val Choice.look: ChoiceLook
     get() = when (this) {
         Choice.ACT -> ChoiceLook(TabIcons.ListTodo, "Action", "a next step in a plan", Color(0xFF1C7E69),
             "It becomes a task. Write the very next step: a verb and a thing. Good: \"Call Aziz about the grant · Mon\". Bad: \"Grant stuff\".", "\"Apply to the grant\" → \"Open the form and fill the first page\" in Humopedia.")
-        Choice.NOTE -> ChoiceLook(TabIcons.StickyNote, "Note", "one line to remember", Color(0xFF1C7E69),
-            "A quick note of any size: a name, a fact, a tool, an idea. Link it to a project or a topic. Good: \"Drone operator: Rustam, Chirchiq test site\". Bad: the caption copied word for word.", "\"Small daily starts beat big plans\" is a good note; so is one name.")
-        Choice.KEEP -> ChoiceLook(TabIcons.BookOpen, "Remember", "an idea, in your words", Color(0xFF7C4DFF),
-            "An idea you want in your head. Say it in your own words; PAGEL asks you about it later. 5 a day. Bad: the caption copied.", "\"Quizzes beat rereading\" → \"every lesson ends with 3 questions\".")
+        // Learn became Note (Boss 2026-10-31); a saved "keep" from before reads as a Note too.
+        Choice.NOTE, Choice.KEEP -> ChoiceLook(TabIcons.StickyNote, "Note", "one line to remember", Color(0xFF1C7E69),
+            "A quick note of any size: a name, a fact, a tool, an idea. A meme that sparks an idea is inspiration: Note it, do not Drop it. Good: \"Drone operator: Rustam, Chirchiq test site\". Bad: the caption copied word for word.", "A meme that sparks an idea \u2192 Note (inspiration).")
         Choice.NOW -> ChoiceLook(TabIcons.Zap, "Do now", "under 2 minutes", Color(0xFFB25E00),
             "It takes under 2 minutes. Do it right now, then it is gone.", "Follow an account, reply \"thanks\", star a repo.")
         Choice.LATER -> ChoiceLook(TabIcons.Clock, "Later", "once", Color(0xFF6B7280),
@@ -161,11 +160,11 @@ val Choice.look: ChoiceLook
     }
 
 /**
- * The GTD question's two groups (Boss 2026-10-30): "Can I do something about it?" No → Drop · Someday · Note · Learn;
+ * The GTD question's two groups (Boss 2026-10-30): "Can I do something about it?" No → Drop · Someday · Note;
  * Yes → Do now · Action · Project · Waiting · Calendar. Five slots a row (No's fifth stays empty), so the choices sit
  * in a grid and a card never shifts them. Later, the put-off, is a small text link under the rows.
  */
-val NO_GROUP = listOf(Choice.DROP, Choice.SOMEDAY, Choice.NOTE, Choice.KEEP)
+val NO_GROUP = listOf(Choice.DROP, Choice.SOMEDAY, Choice.NOTE)
 val YES_GROUP = listOf(Choice.NOW, Choice.ACT, Choice.PROJECT, Choice.WAITING, Choice.CALENDAR)
 
 /** Each choice's own feel under the finger (Apple HIG playing haptics: one per action, matched to its meaning). */
@@ -192,11 +191,11 @@ data class Throw(val x: Float = 0f, val y: Float = 0f, val vx: Float = 0f, val v
 enum class Swipe {
     SHUFFLE, DROP, LEARN, ACTION;
 
-    /** The choice a swipe makes; null = shuffle (back into the deck, nothing sent). Learn is a Note when today's keeps are full. */
+    /** The choice a swipe makes; null = shuffle (back into the deck, nothing sent). Left is a Note (Learn became Note). */
     fun choice(full: Boolean): Choice? = when (this) {
         SHUFFLE -> null
         DROP -> Choice.DROP
-        LEARN -> if (full) Choice.NOTE else Choice.KEEP
+        LEARN -> Choice.NOTE
         ACTION -> Choice.ACT
     }
 
@@ -274,6 +273,7 @@ data class InboxActions(
     /** Open the Old pile (the saves from before the fresh start) and come back from it. */
     val openOld: () -> Unit = {},
     val closeOld: () -> Unit = {},
+    val dropGroup: (OldGroup) -> Unit = {},
     /** A source chip (null = All) and the order pill. */
     val setSource: (String?) -> Unit = {},
     val cycleOrder: () -> Unit = {},
@@ -302,7 +302,7 @@ fun InboxRoute(
     }
     InboxScreen(
         ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer, sortedCount = sortedToday.size, bulk = bulk,
-        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy, repeat = vm::repeat, capture = onCapture, openOld = vm::openOld, closeOld = vm::closeOld, setSource = vm::setSource, cycleOrder = vm::cycleOrder),
+        actions = InboxActions(choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy, repeat = vm::repeat, capture = onCapture, openOld = vm::openOld, closeOld = vm::closeOld, dropGroup = vm::dropGroup, setSource = vm::setSource, cycleOrder = vm::cycleOrder),
     )
     tidy?.let { t -> TidySheet(t, onSomeday = { vm.tidyAll(Choice.SOMEDAY) }, onDrop = { vm.tidyAll(Choice.DROP) }, onDismiss = vm::closeTidy, onRetry = vm::openTidy, onGroup = vm::dropGroup) }
     form?.let { f -> ChoiceFormSheet(f, ui, onEdit = vm::editForm, onSubmit = vm::submit, onDismiss = vm::closeForm, withPicture = pictures[f.card.file] != null) }
@@ -315,7 +315,7 @@ fun InboxRoute(
  * tab bar with the AI's pick as the big button and the other choices beside it, so one thumb reaches all (Boss
  * 2026-10-28: "move that nav, action etc part lower so easy to use on hand"). Swipe up shuffles, down drops, left
  * learns, right makes an Action; hold for Do now. Every choice answers at once with its own motion, sound and haptic;
- * the save goes behind. The ring counts the day's 20. A short screen (landscape) scrolls with the dock under the card.
+ * the save goes behind. The ring counts the day's 5. A short screen (landscape) scrolls with the dock under the card.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -350,7 +350,7 @@ fun InboxScreen(
         haptics.performHapticFeedback(l.choice.haptic())
         scope.launch(Dispatchers.Default) { ChoiceSound.play(ctx.applicationContext, l.choice) }
     }
-    // A keep's milestone or the day's 20: the finish moment from the ring (Today's ding and confetti).
+    // A keep's milestone or the day's 5: the finish moment from the ring (Today's ding and confetti).
     LaunchedEffect(cheer) {
         if (cheer == 0) return@LaunchedEffect
         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
@@ -401,37 +401,68 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
             if (old) GlassIconButton(TabIcons.CalendarRange, "Tidy old saves", plain = true, onClick = actions.tidy)
             GlassIconButton(TabIcons.CircleHelp, "How sorting works", plain = true, onClick = actions.help)
             if (!old) GlassIconButton(TabIcons.ListTodo, "Sorted today", plain = true, onClick = actions.sorted)
-            // The day's 20 is counted once, here: the line under the title no longer repeats it (design audit 2026-10-31).
-            GoalRing(ui.sorted, ui.goal, Modifier.onGloballyPositioned { onRing(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) })
+            // The day's 5 is counted once, here: the line under the title no longer repeats it (design audit 2026-10-31).
+            GoalRing(minOf(ui.sorted, ui.goal), ui.goal, Modifier.onGloballyPositioned { onRing(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) })
         }
         // Always there, so the deck never moves when the first decision lands (RULES.md Layout 1).
+        val large = LocalDensity.current.fontScale >= 1.3f
         Row(Modifier.heightIn(min = Space.touch), verticalAlignment = Alignment.CenterVertically) {
             val line = bulk?.let(::bulkLine) ?: if (old) oldLeftLine(ui) else null
             if (line != null) Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
-            else if (!old) SourceChips(ui, actions, Modifier.weight(1f)) { OldPileRow(ui, actions.openOld) }
+            else if (!old) SourceChips(ui, actions, Modifier.weight(1f), large)
             else Spacer(Modifier.weight(1f))
         }
+        // The Old pile and the order pill sit on a line of their own, so at 320 to 360 dp two source chips show with no sideways
+        // scroll. On a large font that line is too dear (the claim needs it): they join the end of the chips row instead.
+        if (!old && !large) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OldPileRow(ui, actions.openOld)
+            Spacer(Modifier.weight(1f))
+            if (ui.sources.isNotEmpty()) OrderPill(ui, actions)
+        }
+        // The Old pile's own topics, right on its screen (Boss: "groups, Claude tips, Drop group"), two at a time.
+        if (old && bulk == null) for (g in ui.oldGroups.take(2)) OldGroupRow(g, actions.dropGroup)
     }
 }
 
 /**
- * The Old pile button, the order pill (Newest first, Oldest first, Shuffle) and the source chips in one scrolling row (they
- * never cut): "All", then each source that has saves with its count. Only the current Inbox has them.
+ * The source chips in one scrolling row (they never cut): "All", then each source that has saves with its count. On a large
+ * font the Old pile and the order pill (Newest first, Oldest first, Shuffle) follow them in the same row.
  */
 @Composable
-private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier = Modifier, leading: @Composable () -> Unit = {}) {
+private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier = Modifier, large: Boolean = false) {
     Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
-        // The Old pile leads: one button, always in sight, and the chips scroll behind it.
-        leading()
-        if (ui.sources.isEmpty()) return@Row
-        // The order pill leads, so it is always in reach; the chips scroll behind it.
-        GlassChip(TabIcons.Clock, ui.order.label, set = ui.order != InboxOrder.NEWEST, description = ui.order.label) { actions.cycleOrder() }
-        val all = ui.sources.sumOf { it.count }
-        GlassChip(TabIcons.Inbox, "All \u00B7 $all", set = ui.source == null, description = "All \u00B7 $all") { actions.setSource(null) }
-        for (s in ui.sources) {
-            val icon = when (s.key) { "note" -> TabIcons.StickyNote; "web" -> TabIcons.ArrowUpRight; else -> TabIcons.Sparkles }
-            GlassChip(icon, "${s.label} \u00B7 ${s.count}", set = ui.source == s.key, description = "${s.label} \u00B7 ${s.count}") { actions.setSource(s.key) }
+        if (ui.sources.isNotEmpty()) {
+            val all = ui.sources.sumOf { it.count }
+            GlassChip(TabIcons.Inbox, "All \u00B7 $all", set = ui.source == null, description = "All \u00B7 $all") { actions.setSource(null) }
+            for (s in ui.sources) {
+                val icon = when (s.key) { "note" -> TabIcons.StickyNote; "web" -> TabIcons.ArrowUpRight; else -> TabIcons.Sparkles }
+                GlassChip(icon, "${s.label} \u00B7 ${s.count}", set = ui.source == s.key, description = "${s.label} \u00B7 ${s.count}") { actions.setSource(s.key) }
+            }
         }
+        if (large) {
+            OldPileRow(ui, actions.openOld)
+            if (ui.sources.isNotEmpty()) OrderPill(ui, actions)
+        }
+    }
+}
+
+/** The order pill: one tap goes Newest first, Oldest first, Shuffle. */
+@Composable
+private fun OrderPill(ui: InboxUi, actions: InboxActions) {
+    GlassChip(TabIcons.Clock, ui.order.label, set = ui.order != InboxOrder.NEWEST, description = ui.order.label) { actions.cycleOrder() }
+}
+
+/** One topic of the Old pile with its one-tap "Drop group" (the Undo toast stops it before pagel.uz hears). */
+@Composable
+private fun OldGroupRow(g: OldGroup, onDrop: (OldGroup) -> Unit) {
+    val press = remember(g.name) { MutableInteractionSource() }
+    Row(Modifier.fillMaxWidth().heightIn(min = Space.touch), verticalAlignment = Alignment.CenterVertically) {
+        Text("${g.name} \u00B7 ${g.items.size}", style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = Space.xs))
+        Text(
+            "Drop group", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1, softWrap = false,
+            modifier = Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button) { onDrop(g) }
+                .wrapContentHeight(Alignment.CenterVertically).padding(horizontal = Space.sm).semantics { contentDescription = "Drop group ${g.name}" },
+        )
     }
 }
 
@@ -454,10 +485,10 @@ private fun OldPileRow(ui: InboxUi, onOpen: () -> Unit) {
     }
 }
 
-/** "912 left" in the Old pile: its own count, never the day's 20. */
-fun oldLeftLine(ui: InboxUi): String = "${ui.old ?: ui.left}\u00A0left"
+/** "912 left" in the Old pile: its own count, never the day's 5. */
+fun oldLeftLine(ui: InboxUi): String = "${ui.old ?: ui.left}\u00A0left \u00B7 saved before 1\u00A0November"
 
-/** The line over the title: "Today's 20", or "Done today" after the goal; a short "Done" at a large font so it stays one line. */
+/** The line over the title: "Today's 5", or "Done today" after the goal; a short "Done" at a large font so it stays one line. */
 private fun headerNote(ui: InboxUi, big: Boolean) = if (ui.sorted < ui.goal) "Today's ${ui.goal}" else if (big) "Done" else "Done today"
 
 /**
@@ -465,13 +496,18 @@ private fun headerNote(ui: InboxUi, big: Boolean) = if (ui.sorted < ui.goal) "To
  * the style's size, then steps down 8 % at a time (down to [minSize]) while the layout still overflows.
  */
 @Composable
-private fun FitText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier, maxLines: Int = 1, minSize: TextUnit = 10.sp) {
+private fun FitText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier, maxLines: Int = 1, minSize: TextUnit = 10.sp, onStuck: () -> Unit = {}) {
     var size by remember(text, style) { mutableStateOf(style.fontSize) }
     Text(
-        text, style = style.copy(fontSize = size, lineHeight = if (style.lineHeight.isSp && style.fontSize.isSp) (style.lineHeight.value * size.value / style.fontSize.value).sp else style.lineHeight), color = color, maxLines = maxLines, softWrap = maxLines > 1, overflow = TextOverflow.Clip,
+        // Tracking is in sp, so a shrunk text with its tracking left in loses its word spaces ("Quizzesbeat rereading"): it drops it.
+        text, style = style.copy(
+            fontSize = size, letterSpacing = if (size < style.fontSize) 0.sp else style.letterSpacing,
+            lineHeight = if (style.lineHeight.isSp && style.fontSize.isSp) (style.lineHeight.value * size.value / style.fontSize.value).sp else style.lineHeight,
+        ), color = color, maxLines = maxLines, softWrap = maxLines > 1, overflow = TextOverflow.Clip,
         onTextLayout = {
             val wide = maxLines == 1 && it.multiParagraph.intrinsics.maxIntrinsicWidth > it.size.width + 1f
             if ((it.hasVisualOverflow || wide) && size.value * 0.92f >= minSize.value) size = (size.value * 0.92f).sp
+            else if (it.hasVisualOverflow || wide) onStuck()
         },
         modifier = modifier,
     )
@@ -484,14 +520,8 @@ fun bulkLine(b: Bulk): String {
     return "$what · ${b.done}${nb}of${nb}${b.total}" + if (b.stalled) " · waiting for pagel.uz" else ""
 }
 
-/** The habit's count only ("2/5 learned"): the day's 20 is the ring's, said once. */
-fun countsLine(ui: InboxUi): String {
-    val nb = "\u00A0"
-    return if (ui.kept < 5) "${ui.kept}/5${nb}learned" else "${ui.kept}${nb}learned"
-}
-
 /**
- * The day's 20 as a ring (the web's goal bar, round, as Apple's activity rings): a mint arc on a faint track that
+ * The day's 5 as a ring (the web's goal bar, round, as Apple's activity rings): a mint arc on a faint track that
  * springs forward with each choice; at the goal it closes, fills soft mint and shows a tick.
  */
 @Composable
@@ -500,7 +530,7 @@ fun GoalRing(sorted: Int, goal: Int, modifier: Modifier = Modifier) {
     val p by animateFloatAsState(target, spring(dampingRatio = 0.8f, stiffness = 220f), label = "ring")
     val done = goal > 0 && sorted >= goal
     val scale = LocalDensity.current.fontScale
-    Box(modifier.size(58.dp).semantics { contentDescription = "$sorted of $goal sorted today" }, contentAlignment = Alignment.Center) {
+    Box(modifier.size(58.dp).semantics { contentDescription = if (sorted >= goal) "Done, $goal of $goal sorted today" else "$sorted of $goal sorted today" }, contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(50.dp)) {
             val w = 5.dp.toPx()
             if (done) drawCircle(Glass.PrimarySoft, size.minDimension / 2 - w)
@@ -509,7 +539,7 @@ fun GoalRing(sorted: Int, goal: Int, modifier: Modifier = Modifier) {
                 size = androidx.compose.ui.geometry.Size(size.width - w, size.height - w), style = Stroke(w, cap = StrokeCap.Round))
         }
         if (done) Icon(TabIcons.Check, contentDescription = null, tint = Glass.Primary, modifier = Modifier.size(22.dp))
-        // Numbers stop growing at 1.2× font so "18/20" stays inside the ring (as the tab words do).
+        // Numbers stop growing at 1.2× font so "4/5" stays inside the ring (as the tab words do).
         else Text("$sorted/$goal", style = Glass.NumberText.copy(fontSize = (11f * min(scale, 1.2f) / scale).sp), color = Glass.Ink, modifier = Modifier.clearAndSetSemantics {})
     }
 }
@@ -825,6 +855,8 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
     // A short screen at a large font: the claim comes first. The date, the project and the AI's reason leave until it fits.
     val crowded = scale >= 1.3f && room < 340.dp
     var cut by remember(card.file) { mutableStateOf(false) }
+    // 0: claim at 15 sp with the reason; 1: the reason left; 2: the claim may go down to 12 sp (never an unreadable 11).
+    var stage by remember(card.file) { mutableStateOf(0) }
     Pane(Modifier.fillMaxWidth().heightIn(max = room)) {
         Column(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = if (crowded) Space.md else 18.dp, bottom = if (crowded) Space.xs else 8.dp)) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -842,12 +874,12 @@ private fun CardBody(card: InboxCard, pictures: Map<String, Bitmap?>, actions: I
             // clipped claim ("Quizzes beat rereading:" and no more, walk 78) is a cut text.
             // With a picture the picture takes what the words leave, so the claim keeps its line count and shrinks by it instead.
             FitText(
-                card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = if (!showPicture) 8 else if (room < 380.dp) 4 else 6, minSize = 11.sp,
+                card.claim, MaterialTheme.typography.headlineSmall, Glass.Ink, maxLines = if (!showPicture) 8 else if (room < 380.dp) 4 else 6, minSize = if (crowded) 11.sp else if (stage >= 2) 12.sp else 15.sp, onStuck = { if (stage < 2) stage++ },
                 modifier = if (showPicture) Modifier else Modifier.weight(1f, fill = false),
             )
             // The claim comes first: on a short screen at a large font the AI's reason leaves, or the claim got no room at all
             // (320 dp at 1.5x, walk 98: the title was gone and the reason sat clipped at the card's foot).
-            card.why?.takeIf { !crowded }?.let {
+            card.why?.takeIf { !crowded && stage == 0 }?.let {
                 Spacer(Modifier.height(4.dp))
                 FitText(it, MaterialTheme.typography.bodyMedium.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Medium), Glass.Primary, maxLines = if (tight) 2 else 3, minSize = 11.sp)
             }
@@ -995,7 +1027,7 @@ private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
                         for (slot in 0 until DOCK_SLOTS) {
                             val c = group.getOrNull(slot)
                             if (c == null) Spacer(Modifier.weight(1f))
-                            else ChoiceIcon(c, enabled = !(c == Choice.KEEP && ui.full), picked = c == guess, labelSize = labelSize, modifier = Modifier.weight(1f),
+                            else ChoiceIcon(c, enabled = true, picked = c == guess, labelSize = labelSize, modifier = Modifier.weight(1f),
                                 label = if (c == Choice.DROP && armed) "Again" else null, onLongClick = { repeat(c) }) {
                                 if (c == Choice.DROP && !armed) armed = true else { armed = false; used(c); actions.choose(card, c, Throw.None) }
                             }
@@ -1057,7 +1089,7 @@ private fun dockSizes(width: Dp): Pair<Dp, androidx.compose.ui.unit.TextUnit> {
         val slotPx = with(density) { ((width - answer) / DOCK_SLOTS).toPx() } - with(density) { Space.xs.toPx() }
         val words = (NO_GROUP + YES_GROUP).map { it.look.label }
         val max = 12.5f * minOf(scale, 1.2f) / scale
-        val min = 8f / scale
+        val min = 9.5f / scale
         var size = max
         while (size > min && words.any { measurer.measure(it, small.copy(fontSize = size.sp), maxLines = 1, softWrap = false).size.width > slotPx }) size -= 0.25f / scale
         answer to size.coerceAtLeast(min).sp
@@ -1074,7 +1106,9 @@ private fun GuessButton(card: InboxCard, guess: Choice, ui: InboxUi, firstUse: B
     val press = remember { MutableInteractionSource() }
     val shape = RoundedCornerShape(18.dp)
     // The hint alone, in full white (the .92 white measured 4.36:1 on Learn's light end); "AI's pick" is the sparkle.
-    val sub = if (armed) "Tap again to drop" else if (guess != card.pick) "${ui.cap}/${ui.cap} remembered · one line" else if (firstUse) "e.g. " + look.eg else look.hint
+    // The long example only where it fits on one or two lines: at a large font or under 360 dp the short hint stays.
+    val roomy = LocalDensity.current.fontScale < 1.3f && LocalConfiguration.current.screenWidthDp >= 360
+    val sub = if (armed) "Tap again to drop" else if (firstUse && roomy) "e.g. " + look.eg else look.hint
     // One row tall (64 dp, Boss 2026-10-28: the pill read as a slab); it grows only when 1.3x+ text needs two lines.
     Row(
         Modifier.fillMaxWidth().then(if (LocalDensity.current.fontScale <= 1.2f) Modifier.height(64.dp) else Modifier.heightIn(min = 64.dp)).pressScale(press)
@@ -1130,7 +1164,7 @@ private fun ChoiceIcon(
         Spacer(Modifier.height(2.dp))
         androidx.compose.foundation.text.BasicText(
             label ?: look.label,
-            style = MaterialTheme.typography.labelSmall.copy(color = Glass.Ink.copy(alpha = 0.86f), fontSize = labelSize, textAlign = androidx.compose.ui.text.style.TextAlign.Center),
+            style = MaterialTheme.typography.labelSmall.copy(color = Glass.Ink.copy(alpha = 0.86f), fontSize = labelSize, letterSpacing = 0.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center),
             maxLines = 1,
             softWrap = false,
         )
