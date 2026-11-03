@@ -226,13 +226,16 @@ class InboxClarifyTest {
         r.chooseMany(old, Choice.SOMEDAY, "me")
         assertEquals(SendResult.TRY_LATER, sender().sendAll(account))
         assertTrue(sorts.isEmpty())
-        now += 5_001
+        now += 6_000
+        sender().sendAll(account)
+        assertTrue("a bulk waits past its 5 s toast, so a last-moment Undo still stops it", sorts.isEmpty())
+        now += org.pagel.ai.data.inbox.QUIET_HOLD_MS - 6_000 + 1
         assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
         val b = sent()
         assertEquals(3, b.size)
         assertTrue(b.all { it.action == "act" && it.someday == true && it.project == "me" && !it.sentence.isNullOrBlank() && it.quiet == true })
         r.chooseMany(old, Choice.DROP, "me")
-        now += 5_001
+        now += org.pagel.ai.data.inbox.QUIET_HOLD_MS + 1
         sender().sendAll(account)
         assertEquals(listOf("drop", "drop", "drop"), sent().drop(3).map { it.action })
     }
@@ -247,7 +250,7 @@ class InboxClarifyTest {
         // A fresh deck while they wait: pagel.uz's count, with no waiting quiet part added.
         r.refresh(account)
         assertEquals(ring, db.inbox().stateOnce()!!.sorted)
-        now += 6_000
+        now += org.pagel.ai.data.inbox.QUIET_HOLD_MS + 1
         assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
         assertEquals(3, sent().count { it.quiet == true })
         // pagel.uz answered "sorted": 4 to each: a quiet part keeps the phone's count.

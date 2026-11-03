@@ -618,11 +618,14 @@ class InboxViewModel @Inject constructor(
     fun dropGroup(g: OldGroup) {
         _tidy.value = null
         viewModelScope.launch {
-            val rows = repo.chooseMany(g.items, Choice.DROP, "me")
+            // The toast comes first and the rows are written behind it, so the Undo window starts when Boss sees the
+            // button (walk 2026-11-03: the rows went first, the toast came late and its Undo stopped only some).
+            val rows = async { repo.chooseMany(g.items, Choice.DROP, "me") }
             toasts.show("${g.items.size} dropped: ${g.name}", action = "Undo", millis = 5_000) {
-                viewModelScope.launch { repo.undoMany(rows); refresh() }
+                viewModelScope.launch { repo.undoMany(rows.await()); refresh() }
             }
-            delay(org.pagel.ai.data.tasks.UNDO_WINDOW_MS + 300)
+            rows.await()
+            delay(org.pagel.ai.data.inbox.QUIET_HOLD_MS + 300)
             repo.sendNow()
         }
     }
@@ -649,7 +652,7 @@ class InboxViewModel @Inject constructor(
                 _bulk.value = null
                 viewModelScope.launch { repo.undoMany(first.await()) }
             }
-            delay(org.pagel.ai.data.tasks.UNDO_WINDOW_MS + 300)
+            delay(org.pagel.ai.data.inbox.QUIET_HOLD_MS + 300)
             repo.sendNow()
             var misses = 0
             while (done.size < total && misses < BULK_MISSES) {

@@ -233,6 +233,12 @@ class InboxRepository(
  */
 internal fun SortBody.holdsForUndo() = action == Choice.DROP.wire || action == Choice.ACT.wire
 
+/**
+ * A bulk's parts wait 1.5 s past their 5 s toast: an Undo tapped in the toast's last moment still has to take back
+ * every row on a slow phone (walk 2026-11-03: 7 of a group reached pagel.uz after its Undo).
+ */
+const val QUIET_HOLD_MS = UNDO_WINDOW_MS + 1_500
+
 /** One page of the old saves for the tidy-up: the cards, how many old saves pagel.uz holds in all, the deck by source. */
 data class OlderPage(val items: List<InboxItemEntity>, val total: Int, val bySource: Map<String, Int> = emptyMap())
 
@@ -253,7 +259,8 @@ class InboxSender(
         if (op.op == OutboxEntity.CAPTURE) return sendCapture(account, op)
         val body = op.body?.let { runCatching { wire.decodeFromString(SortBody.serializer(), it) }.getOrNull() }
             ?: run { dao.removeFromOutbox(op.id); return SortStep.SENT }
-        if (body.holdsForUndo() && clock() - op.createdAt < UNDO_WINDOW_MS) return SortStep.HOLD
+        val window = if (body.quiet == true) QUIET_HOLD_MS else UNDO_WINDOW_MS
+        if (body.holdsForUndo() && clock() - op.createdAt < window) return SortStep.HOLD
         dao.countAttempt(op.id)
         return when (val out = api.sort(account.serverUrl, account.token, body)) {
             is Outcome.Ok -> {
