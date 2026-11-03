@@ -660,7 +660,7 @@ grep -q 'Can I do something about it' "$OUT/$(printf '%02d' $N)-inbox-groups.xml
 tap "More choices" || { log "WALKTHROUGH: no More on the dock"; exit 1; }
 shot inbox-more 1.5
 for w in Later Project Waiting Calendar; do
-  grep -qE "content-desc=\"$w\"" "$(last inbox-more)" || { log "WALKTHROUGH: More has no \"$w\""; exit 1; }
+  grep -qE "content-desc=\"$w\"" "$OUT/$(printf '%02d' $N)-inbox-more.xml" || { log "WALKTHROUGH: More has no \"$w\""; exit 1; }
 done
 $T adb shell input keyevent 4; sleep 1
 log "   the dock is one row of five and More; More holds Later, Project, Waiting and Calendar"
