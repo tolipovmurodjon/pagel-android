@@ -453,9 +453,9 @@ class TaskSystemScreenshotTest {
         show { org.pagel.ai.ui.shell.WhatsNewContent({ opened = it }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/whats-new-360x800.png")
         // The counter is this version's only; its lines are open, the older versions are folded rows.
-        compose.onAllNodesWithText("0/8")[0].assertIsDisplayed()
-        compose.onNodeWithContentDescription("Try: Tap + to add: Task, Note or Not sure").performClick()
-        assertEquals("today", opened)
+        compose.onAllNodesWithText("0/5")[0].assertIsDisplayed()
+        compose.onNodeWithContentDescription("Try: A calm list: drop things in all week").performClick()
+        assertEquals("inbox", opened)
         compose.onAllNodesWithContentDescription("Try: Compass: goals only you can read").assertCountEquals(0)
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("0.3.30 · Compass"))
         compose.onNodeWithText("0.3.30 · Compass").performClick()

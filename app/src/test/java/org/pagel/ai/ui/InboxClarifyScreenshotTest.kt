@@ -412,7 +412,7 @@ class InboxClarifyScreenshotTest {
     /** After the day's goal: done for today, never the pile ("900 more"). */
     @Test fun afterTheGoalItSaysDoneForToday() {
         show { screen(ui(grant, sorted = 5)) }
-        compose.onNodeWithText("Done today").assertIsDisplayed()
+        compose.onNodeWithText("Done today", substring = true).assertIsDisplayed()
     }
 
     @Test fun tidySheetAt15xFont() {

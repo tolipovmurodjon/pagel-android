@@ -418,7 +418,11 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
             else GlassIconButton(TabIcons.CircleHelp, "How sorting works", plain = true, onClick = actions.help)
             GoalRing(minOf(ui.sorted, ui.goal), ui.goal, Modifier.onGloballyPositioned { onRing(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) })
         }
-        val line = bulk?.let(::bulkLine) ?: if (old) oldLeftLine(ui) else "${ui.left}\u00A0left"
+        val line = bulk?.let(::bulkLine) ?: when {
+            old -> oldLeftLine(ui)
+            ui.sorted >= ui.goal -> "Done today \u00B7 ${ui.left}\u00A0left"
+            else -> "${ui.left}\u00A0left"
+        }
         Text(line, style = MaterialTheme.typography.labelMedium, color = Glass.Muted, modifier = Modifier.padding(start = 12.dp))
         // The Archive's own topics, right on its screen (Boss: "groups, Claude tips, Drop group"), two at a time.
         if (old && bulk == null) for (g in ui.oldGroups.take(2)) OldGroupRow(g, actions.dropGroup)
