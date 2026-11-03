@@ -277,6 +277,8 @@ MD=$(grep -c '"event":"micro_done"' "$FAKE_LOG"); log "   Focus: 4 ticks, micro_
 shot r4-focus-finished 2
 $T adb shell input keyevent 4; sleep 1.5
 front r4-back-on-today
+# Show 3 sits at the end of the list, under the tab bar until scrolled to (a tap there hit the Habits tab).
+for k in 1 2 3; do $T adb shell input swipe 160 520 160 200 300; done; sleep 1
 r4_tap "Show 3" || true
 shot r4-today-end 2
 no_pictographs
