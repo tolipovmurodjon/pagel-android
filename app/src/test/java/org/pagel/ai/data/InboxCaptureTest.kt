@@ -99,7 +99,8 @@ class InboxCaptureTest {
     private fun sender() = OutboxSender(api, db.dao(), clock = { now }, inbox = InboxSender(api, db.inbox(), clock = { now }, captured = captured))
     private fun textOf(body: String) = Regex(""""text":"([^"]*)"""").find(body)!!.groupValues[1]
 
-    private fun row(file: String, saved: String) = InboxItemEntity(file = file, position = 1, saved = saved, source = "", text = "t", claim = "c", why = "", project = "me",
+    // An imported save carries its link; Boss's typed notes have none.
+    private fun row(file: String, saved: String, source: String = "https://www.instagram.com/p/x1/") = InboxItemEntity(file = file, position = 1, saved = saved, source = source, text = "t", claim = "c", why = "", project = "me",
         kind = "drop", next = "", note = "", guessed = true, author = "", posted = "", later = null, hasPicture = false)
 
     @Test fun theLineIsMidnightInTashkent() {
@@ -350,7 +351,7 @@ class InboxCaptureTest {
     }
 
     @Test fun aTypedNoteDatedBeforeTheLineIsNotInTheOldPile() {
-        val typed = row("inbox/typed.md", "2026-10-20")
+        val typed = row("inbox/typed.md", "2026-10-20", source = "")
         assertTrue("Boss's own typed words stay in the Inbox", isCurrent(typed, FRESH_START, emptySet()))
         assertFalse("an imported save of the same day is old", isCurrent(typed.copy(source = "https://x.com/a/status/1"), FRESH_START, emptySet()))
     }
