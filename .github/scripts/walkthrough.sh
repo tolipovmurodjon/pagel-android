@@ -119,9 +119,13 @@ log "   All today's bottom $ROW_B is above the tab bar's top $NAV_T"
 tap 'All today · [0-9]+' || { log "WALKTHROUGH: Today has no All today row"; exit 1; }
 sleep 1; for k in 1 2 3 4; do $T adb shell input swipe 160 260 160 520 300; done; sleep 1
 shot r4-all-today 2
-for t in "Call the bank about the report" "Weigh in" "Clean the desk" "Write the release note"; do
+for t in "Call the bank about the report" "Weigh in" "Clean the desk"; do
   grep -q "text=\"$t\"" "$OUT/$(printf '%02d' $N)-r4-all-today.xml" || { log "WALKTHROUGH: All today did not open in place (no \"$t\")"; exit 1; }
 done
+# The What now card above the list pushes the last row off the first screen: one scroll finds it, one scroll back.
+$T adb shell input swipe 160 460 160 260 300; sleep 1
+r4_xml | grep -q 'text="Write the release note"' || { log "WALKTHROUGH: All today did not open in place (no \"Write the release note\")"; exit 1; }
+for k in 1 2 3 4; do $T adb shell input swipe 160 260 160 520 300; done; sleep 1
 # (Show 3 sits under the last row, below the fold on a 640 dp screen: it is tapped after the drag, scrolled to.)
 FROM=$(r4_centre "Clean the desk") || { log "WALKTHROUGH: no Clean the desk row to drag"; exit 1; }
 TO=$(r4_centre "Call the bank about the report") || { log "WALKTHROUGH: no first row to drop on"; exit 1; }
