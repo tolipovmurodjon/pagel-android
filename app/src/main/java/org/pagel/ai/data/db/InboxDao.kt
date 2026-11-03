@@ -140,6 +140,10 @@ abstract class InboxDao {
         return addToOutbox(OutboxEntity(taskId = file, op = OutboxEntity.SORT, createdAt = at, body = body))
     }
 
+    /** A bulk's Undo toast left untapped: its parts may go now (they are dated back past their hold). */
+    @Query("UPDATE outbox SET createdAt = :at WHERE id IN (:ids)")
+    abstract suspend fun releaseQuiet(ids: List<Long>, at: Long)
+
     /** Takes one bulk part back before it left the phone. False if it was already sent. */
     @Transaction
     open suspend fun undoQuiet(opId: Long, file: String): Boolean {

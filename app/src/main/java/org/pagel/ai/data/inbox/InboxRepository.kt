@@ -206,8 +206,15 @@ class InboxRepository(
         return rows
     }
 
-    /** Wakes the outbox now (a bulk's Undo window just ended: its held parts may go). */
+    /** Wakes the outbox now. */
     fun sendNow() = scheduler.kick()
+
+    /** The bulk's Undo toast left untapped: its held parts go now. */
+    suspend fun releaseMany(rows: List<Pair<Long, String>>) {
+        if (rows.isEmpty()) return
+        dao.releaseQuiet(rows.map { it.first }, clock() - QUIET_HOLD_MS)
+        scheduler.kick()
+    }
 
     /** Takes the bulk back: how many had not left the phone (all of them inside the Undo window). */
     suspend fun undoMany(rows: List<Pair<Long, String>>): Int = rows.count { (id, file) -> dao.undoQuiet(id, file) }
@@ -234,10 +241,11 @@ class InboxRepository(
 internal fun SortBody.holdsForUndo() = action == Choice.DROP.wire || action == Choice.ACT.wire
 
 /**
- * A bulk's parts wait 1.5 s past their 5 s toast: an Undo tapped in the toast's last moment still has to take back
- * every row on a slow phone (walk 2026-11-03: 7 of a group reached pagel.uz after its Undo).
+ * A bulk's parts never leave on a timer race with the Undo: they wait until the view model sees the Undo toast gone
+ * untapped and calls [InboxRepository.releaseMany]. This hold is only the safety net if the app dies first
+ * (walk 2026-11-03: the toast showed late, and rows timed from before it went out after Undo).
  */
-const val QUIET_HOLD_MS = UNDO_WINDOW_MS + 1_500
+const val QUIET_HOLD_MS = 30_000L
 
 /** One page of the old saves for the tidy-up: the cards, how many old saves pagel.uz holds in all, the deck by source. */
 data class OlderPage(val items: List<InboxItemEntity>, val total: Int, val bySource: Map<String, Int> = emptyMap())

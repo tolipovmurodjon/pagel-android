@@ -240,6 +240,19 @@ class InboxClarifyTest {
         assertEquals(listOf("drop", "drop", "drop"), sent().drop(3).map { it.action })
     }
 
+    /** Walk 2026-11-03: a late toast's Undo lost a race with a timer. Now a bulk leaves only when released. */
+    @Test fun aBulkWaitsForItsToastToLeaveUntappedThenGoesAtOnce() = runBlocking {
+        val r = repo()
+        val old = (r.older(account) as Outcome.Ok).value.items
+        val rows = r.chooseMany(old, Choice.DROP, "me")
+        now += 20_000
+        sender().sendAll(account)
+        assertTrue("held while its Undo could still be tapped, however slow the phone", sorts.isEmpty())
+        r.releaseMany(rows)
+        assertEquals(SendResult.ALL_SENT, sender().sendAll(account))
+        assertEquals(listOf("drop", "drop", "drop"), sent().map { it.action })
+    }
+
     /** Checker 2026-10-30 #1: the ring read 27/20 after a tidy-up. Quiet parts never move it, waiting or sent. */
     @Test fun aBulkThatReachesPagelUzNeverMovesTheRing() = runBlocking {
         val r = repo()

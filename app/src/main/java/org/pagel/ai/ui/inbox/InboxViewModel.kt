@@ -618,16 +618,23 @@ class InboxViewModel @Inject constructor(
     fun dropGroup(g: OldGroup) {
         _tidy.value = null
         viewModelScope.launch {
-            // The toast comes first and the rows are written behind it, so the Undo window starts when Boss sees the
-            // button (walk 2026-11-03: the rows went first, the toast came late and its Undo stopped only some).
+            // The toast comes first and the rows are written behind it; they leave only once the toast is gone untapped
+            // (walk 2026-11-03: rows timed from before a late toast went out after Undo).
             val rows = async { repo.chooseMany(g.items, Choice.DROP, "me") }
-            toasts.show("${g.items.size} dropped: ${g.name}", action = "Undo", millis = 5_000) {
+            var undone = false
+            val toast = toasts.show("${g.items.size} dropped: ${g.name}", action = "Undo", millis = 5_000) {
+                undone = true
                 viewModelScope.launch { repo.undoMany(rows.await()); refresh() }
             }
-            rows.await()
-            delay(org.pagel.ai.data.inbox.QUIET_HOLD_MS + 300)
-            repo.sendNow()
+            val written = rows.await()
+            untilToastGone(toast)
+            if (!undone) repo.releaseMany(written)
         }
+    }
+
+    /** Waits until this toast's action can no longer be tapped: it left, or another toast took its place. */
+    private suspend fun untilToastGone(id: Long) {
+        withTimeoutOrNull(TOAST_GONE_MAX_MS) { toasts.current.first { it?.id != id } }
     }
 
     /**
@@ -642,18 +649,21 @@ class InboxViewModel @Inject constructor(
         bulkJob?.cancel()
         val total = t.count
         val what = if (choice == Choice.SOMEDAY) "to Someday" else "dropped"
+        // The toast comes first (respond first, save after): the 60 rows are written behind it in the view model's own
+        // scope, so the Undo, which cancels the paging below, can still await and take back every one of them.
+        val first = viewModelScope.async { repo.chooseMany(t.items, choice, "me") }
+        _bulk.value = Bulk(choice, t.items.size, total)
+        val toast = toasts.show(if (choice == Choice.SOMEDAY) "$total moving to Someday" else "$total dropping", action = "Undo", millis = 5_000) {
+            bulkJob?.cancel()
+            _bulk.value = null
+            viewModelScope.launch { repo.undoMany(first.await()) }
+        }
         bulkJob = viewModelScope.launch {
             val done = t.items.map(InboxItemEntity::file).toMutableSet()
-            // The toast comes first (respond first, save after): the 60 rows are written behind it, and the Undo waits for them.
-            val first = async { repo.chooseMany(t.items, choice, "me") }
-            _bulk.value = Bulk(choice, done.size, total)
-            toasts.show(if (choice == Choice.SOMEDAY) "$total moving to Someday" else "$total dropping", action = "Undo", millis = 5_000) {
-                bulkJob?.cancel()
-                _bulk.value = null
-                viewModelScope.launch { repo.undoMany(first.await()) }
-            }
-            delay(org.pagel.ai.data.inbox.QUIET_HOLD_MS + 300)
-            repo.sendNow()
+            val written = first.await()
+            // The Undo cancels this job before the toast closes, so reaching the release means it was never tapped.
+            untilToastGone(toast)
+            repo.releaseMany(written)
             var misses = 0
             while (done.size < total && misses < BULK_MISSES) {
                 val account = (accounts.load() as? AccountState.Paired)?.account ?: break
@@ -668,7 +678,8 @@ class InboxViewModel @Inject constructor(
                     continue
                 }
                 misses = 0
-                repo.chooseMany(fresh, choice, "me")
+                // Pages after the Undo window have no Undo of their own: they go at once.
+                repo.releaseMany(repo.chooseMany(fresh, choice, "me"))
                 done += fresh.map(InboxItemEntity::file)
                 _bulk.value = Bulk(choice, done.size, total)
             }
@@ -785,6 +796,9 @@ class InboxViewModel @Inject constructor(
         private const val ASK_GAP_MS = 60_000L
         /** Pages in a row with nothing new before a bulk tidy-up stops (2 s apart online, 15 s offline): ~5 min online. */
         private const val BULK_MISSES = 150
+
+        /** A 5 s toast kept off screen (under a closing sheet) could never be tapped: stop waiting for it after this. */
+        private const val TOAST_GONE_MAX_MS = 15_000L
 
         fun card(i: InboxItemEntity, full: Boolean, project: ProjectEntity?): InboxCard {
             val (site, name) = siteOf(i.source)

@@ -85,8 +85,11 @@ class ToastCenter @Inject constructor() {
     /** How many glass sheets are open: the top one shows the toast, the shell's stays hidden under the scrim. */
     var sheets by mutableIntStateOf(0)
 
-    fun show(message: String, good: Boolean = true, action: String? = null, millis: Long = 4_000, onAction: (() -> Unit)? = null) {
-        _current.value = ToastData(next++, message, good, action, millis, onAction)
+    /** Returns the toast's id, so a caller can wait until its action can no longer be tapped. */
+    fun show(message: String, good: Boolean = true, action: String? = null, millis: Long = 4_000, onAction: (() -> Unit)? = null): Long {
+        val id = next++
+        _current.value = ToastData(id, message, good, action, millis, onAction)
+        return id
     }
 
     fun dismiss(id: Long) = _current.update { if (it?.id == id) null else it }
