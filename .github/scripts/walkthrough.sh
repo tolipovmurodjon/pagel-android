@@ -789,6 +789,10 @@ shot namoz-group 2
 grep -q 'text="Bomdod"' "$OUT/$(printf '%02d' $N)-namoz-group.xml" || log "   (WARN: the Namoz group shows no Bomdod row yet)"
 log "-- each prayer sits in its time of day: Afternoon holds Asr; its tick is its own, the Namoz page opens from its row"
 tap Afternoon && shot namoz-afternoon 1.5
+for k in 1 2 3; do
+  grep -q 'content-desc="Prayer: Asr"' "$OUT/$(printf '%02d' $N)-namoz-afternoon.xml" && break
+  $T adb shell input swipe 160 460 160 260 400; shot namoz-afternoon 1
+done
 grep -q 'content-desc="Prayer: Asr"' "$OUT/$(printf '%02d' $N)-namoz-afternoon.xml" || { log "WALKTHROUGH: Afternoon has no Asr prayer row"; exit 1; }
 # Before 1 November the prayers are not counted yet, so the tick waits; the row still opens the Namoz page. Scroll the row above the bar first.
 $T adb shell input swipe 160 460 160 260 400; sleep 1
