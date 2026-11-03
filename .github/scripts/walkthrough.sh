@@ -466,7 +466,9 @@ log "-- the Inbox (Phase 2): sort 5 saves with no network, come back online, pag
 tap Inbox && shot inbox 3
 grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbox.xml" || { log "WALKTHROUGH: the Inbox shows no card from pagel.uz"; exit 1; }
 log "-- Inbox v3 chips and order: Instagram -> only Instagram cards; All resets; the pill flips Newest/Oldest/Shuffle and the choice is kept"
-texts_of() { tr '>' '\n' < "$1" | grep -oE 'text="[^"]{12,}"' | grep -vE 'Old pile|Newest first|Oldest first|Instagram ·|LinkedIn ·|Your notes ·|Links ·|All ·|X ·|Telegram ·' | head -3 | md5sum; }
+texts_of() { tr '>' '\n' < "$1" | grep -oE 'text="[^"]{12,}"' | grep -vE 'Old pile|Archive|Newest first|Oldest first|Instagram ·|LinkedIn ·|Your notes ·|Links ·|All ·|X ·|Telegram ·|waiting|Clear the Inbox|Sorted today' | head -3 | md5sum; }
+# The Inbox is a list now (Boss 2026-11-03): the first row's claim, the way texts_of reads it.
+first_claim() { tr '>' '\n' < "$1" | grep -oE 'text="[^"]{12,}"' | grep -vE 'Old pile|Archive|Newest first|Oldest first|Instagram ·|LinkedIn ·|Your notes ·|Links ·|All ·|X ·|Telegram ·|waiting|Clear the Inbox|Sorted today' | head -1; }
 # At 320 to 360 dp two source chips show with no sideways scroll: All and Instagram end inside the screen.
 SCREEN_W=$($T adb shell wm size | grep -oE '[0-9]+x' | head -1 | tr -d x)
 for chip in 'All · [0-9]+' 'Instagram · [0-9]+'; do
@@ -484,7 +486,7 @@ tap "Newest first" || { log "WALKTHROUGH: no order pill"; exit 1; }
 sleep 1.5; shot inbox-order-oldest 1.5
 OX="$OUT/$(printf '%02d' $N)-inbox-order-oldest.xml"
 grep -q 'text="Oldest first"' "$OX" || { log "WALKTHROUGH: the pill did not say Oldest first"; exit 1; }
-grep -q 'text="10 AI tools lists are mostly ads"' "$OX" && { log "WALKTHROUGH: Oldest first still shows the newest card on top"; exit 1; }
+[ "$(first_claim "$OX")" = 'text="10 AI tools lists are mostly ads"' ] && { log "WALKTHROUGH: Oldest first still shows the newest save first"; exit 1; }
 tap "Oldest first" || { log "WALKTHROUGH: no order pill the second time"; exit 1; }
 sleep 1.5; shot inbox-order-shuffle 1.5
 SX="$OUT/$(printf '%02d' $N)-inbox-order-shuffle.xml"
@@ -500,10 +502,14 @@ grep -q 'text="Shuffle"' "$RX" || { log "WALKTHROUGH: reopening lost the chosen 
 tap "Shuffle" || { log "WALKTHROUGH: no order pill to go back to Newest first"; exit 1; }
 sleep 1.5
 shot inbox-order-newest 1.5
-grep -q 'text="10 AI tools lists are mostly ads"' "$OUT/$(printf '%02d' $N)-inbox-order-newest.xml" || { log "WALKTHROUGH: Newest first did not bring the newest card back"; exit 1; }
-log "   chips filter by source, All resets, Oldest first flips the deck, Shuffle deals a new first card on reopen and the order is kept"
-# The next steps read the numbered "inbox" dump: take it again here, after the chip steps' own shots.
+[ "$(first_claim "$OUT/$(printf '%02d' $N)-inbox-order-newest.xml")" = 'text="10 AI tools lists are mostly ads"' ] || { log "WALKTHROUGH: Newest first did not bring the newest save back first"; exit 1; }
+log "   chips filter by source, All resets, Oldest first flips the list, Shuffle deals a new first save on reopen and the order is kept"
+# The list's one action opens the deck (Boss 2026-11-03: the Inbox is a list, cleared with one button).
+tap "Clear the Inbox" || { log "WALKTHROUGH: the Inbox list has no Clear the Inbox button"; exit 1; }
+sleep 1.5
+# The next steps read the numbered "inbox" dump: the deck, with its dock.
 shot inbox 2
+grep -q 'content-desc="Back to the list"' "$OUT/$(printf '%02d' $N)-inbox.xml" || { log "WALKTHROUGH: Clear the Inbox did not open the deck"; exit 1; }
 # Offline for real: the app's only road to the fake pagel.uz is adb reverse, so removing it refuses every call.
 $T adb reverse --remove tcp:8799
 log "   offline (adb reverse removed)"
@@ -532,7 +538,7 @@ y_of() { tr '>' '\n' < "$XML" | grep -E "(text|content-desc)=\"$1\"" | head -1 |
 BAR=$(y_of Today 2)
 [ -n "$BAR" ] || { log "WALKTHROUGH: no Today tab on the Inbox screen"; exit 1; }
 CHECKED=0
-for c in Action Note "Do now" Later Drop "AI pick: [A-Za-z ]+"; do
+for c in Action Note "Do now" Someday Drop "More choices" "AI pick: [A-Za-z ]+"; do
   B=$(y_of "$c" 4); [ -n "$B" ] || continue
   CHECKED=$((CHECKED + 1))
   [ "$B" -le "$BAR" ] || { log "WALKTHROUGH: \"$c\" ends at y=$B, under the tab bar's top y=$BAR"; exit 1; }
@@ -578,8 +584,10 @@ swipe_card "10 AI tools lists are mostly ads" down "$((RING + 1)) of 5 sorted to
 grep -q "content-desc=\"$((RING + 1)) of 5 sorted today\"" "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" \
   || { log "WALKTHROUGH: the ring did not go $RING -> $((RING + 1)) after one sort"; grep -oE 'content-desc="[0-9]+ of 5 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-swiped-down-drop.xml" | tee -a "$OUT/steps.txt"; exit 1; }
 log "   the ring went $RING -> $((RING + 1))"
-# Later stays a button in the dock (up is the shuffle now).
-tap Later && shot inbox-later-button 1.5
+# A choice in the row, or one of the four behind More (Later, Project, Waiting, Calendar).
+pick() { tap "$1" && return 0; tap "More choices" || return 1; sleep 1.5; tap "$1"; }
+# Later lives behind More (up is the shuffle).
+pick Later && shot inbox-later-button 1.5
 # A meme that sparks an idea is inspiration (Boss): the AI says Drop, Boss files it as a Note.
 tap Note || { log "WALKTHROUGH: no Note button for the meme"; exit 1; }
 sleep 1.5; $T adb shell "input text 'Inspiration%sfor%sMonday'"; shot inbox-meme-note-form 2
@@ -645,10 +653,17 @@ undo_pass() { # $1 the form's button, $2 the card's claim, $3 the card's file
   log "   Undo of \"$1\" took $3 back before it left: pagel.uz never heard of it"
 }
 shot inbox-groups 1.5
-for w in "Can I do something about it\?" Drop Someday Note Later "Do now" Action Project Waiting Calendar; do
+for w in Action Note "Do now" Someday Drop "More choices"; do
   grep -qE "(text|content-desc)=\"$w\"" "$OUT/$(printf '%02d' $N)-inbox-groups.xml" || { log "WALKTHROUGH: the Inbox dock has no \"$w\""; exit 1; }
 done
-log "   the dock shows the question and all nine choices"
+grep -q 'Can I do something about it' "$OUT/$(printf '%02d' $N)-inbox-groups.xml" && { log "WALKTHROUGH: the GTD question is back on the dock"; exit 1; }
+tap "More choices" || { log "WALKTHROUGH: no More on the dock"; exit 1; }
+shot inbox-more 1.5
+for w in Later Project Waiting Calendar; do
+  grep -qE "content-desc=\"$w\"" "$(last inbox-more)" || { log "WALKTHROUGH: More has no \"$w\""; exit 1; }
+done
+$T adb shell input keyevent 4; sleep 1
+log "   the dock is one row of five and More; More holds Later, Project, Waiting and Calendar"
 # Someday: one tap, no sheet; it waits its 5 s Undo, then pagel.uz gets a P3 act (someday:true) in the card's project.
 onscreen "Buy a second battery for the A05s" || fail_inbox "ib7 is not the top card before the Someday step"
 tap Someday || fail_inbox "no Someday choice on the Inbox card"
@@ -660,10 +675,10 @@ log "   Someday reached pagel.uz as an act with someday:true"
 for k in 1 2 3 4; do onscreen "Chase the signed grant form from Aziz" && break; drop_tap; sleep 3; done
 onscreen "Chase the signed grant form from Aziz" || fail_inbox "the new saves never reached the top of the Inbox"
 # Waiting: who is optional; the check day is 3 days on.
-tap Waiting || fail_inbox "no Waiting choice"
+pick Waiting || fail_inbox "no Waiting choice"
 $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
 undo_pass "Add to waiting" "Chase the signed grant form from Aziz" ib9
-tap Waiting || fail_inbox "no Waiting choice the second time"
+pick Waiting || fail_inbox "no Waiting choice the second time"
 shot inbox-waiting-form 2
 # The form grew labels (checker 2026-10-30 #9): the keyboard may cover its button; Back hides it only while it is up.
 $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
@@ -675,7 +690,7 @@ wait_re "POST /api/v1/inbox \{\"action\":\"act\",\"file\":\"inbox/ib9.md\",\"sen
 log "   Waiting reached pagel.uz with its words and check day $CHECK"
 # Project: the name comes from the card, the first step from its next step; the project is made, then the step lands in it.
 onscreen "Launch a newsletter for parents" || fail_inbox "ib10 is not on top for the Project step"
-tap Project || fail_inbox "no Project choice"
+pick Project || fail_inbox "no Project choice"
 $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
 undo_pass "Start project" "Launch a newsletter for parents" ib10
 # The new project is made first, so it may have left before the Undo: then pagel.uz must hear the delete.
@@ -685,7 +700,7 @@ if grep -qE 'POST /api/v1/projects \{[^}]*"title":"Launch a newsletter for paren
 else
   log "   the Undone project never left the phone"
 fi
-tap Project || fail_inbox "no Project choice the second time"
+pick Project || fail_inbox "no Project choice the second time"
 shot inbox-project-form 2
 $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
 tap "Start project" || fail_inbox "the Project form has no Start project button"
@@ -697,13 +712,13 @@ log "   Project: the project and its first step reached pagel.uz"
 # Calendar asks for the time at once (checker 2026-10-30 #6): the date sheet opens on the wheel, on the day the save names
 # ("closes on Friday" -> the coming Friday, today included) at 09:00; Done goes back to the form.
 onscreen "Grant round closes on Friday" || fail_inbox "ib11 is not on top for the Calendar step"
-tap Calendar || fail_inbox "no Calendar choice"
+pick Calendar || fail_inbox "no Calendar choice"
 sleep 2
 tap Done || fail_inbox "the Calendar's date sheet has no Done (Undo pass)"
 sleep 1
 $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }
 undo_pass "Put on calendar" "Grant round closes on Friday" ib11
-tap Calendar || fail_inbox "no Calendar choice the second time"
+pick Calendar || fail_inbox "no Calendar choice the second time"
 shot inbox-calendar-wheel 2.5
 grep -qE '(text|content-desc)="Time 09:00"' "$OUT/$(printf '%02d' $N)-inbox-calendar-wheel.xml" || fail_inbox "Calendar did not open the date sheet on the 09:00 wheel"
 tap Done || fail_inbox "the Calendar's date sheet has no Done"
@@ -714,15 +729,17 @@ grep -q 'text="Undo"' "$OUT/$(printf '%02d' $N)-inbox-calendar-sent.xml" || fail
 FRIDAY=$(TZ=Asia/Tashkent date -d 'friday' +%Y-%m-%d)
 wait_re "POST /api/v1/inbox \{\"action\":\"act\",\"file\":\"inbox/ib11.md\",\"sentence\":\"Fill in the grant form\",\"project\":\"humopedia\",\"someday\":false,\"due\":\"$FRIDAY 09:00\"\}" || fail_inbox "Calendar never reached pagel.uz with its due $FRIDAY 09:00"
 log "   Calendar reached pagel.uz with due $FRIDAY 09:00 (the day the save named, the wheel's hour)"
-# Inbox v3: the Old pile. Everything from January is old; the Inbox shows only the current saves and one quiet row at the end.
+# Inbox v3: the Archive (the Old pile). Everything from January is old; the Inbox list shows only the current saves and one
+# quiet Archive row at its foot. The Inbox tab tapped again goes from the deck back to the list.
 tap Inbox && sleep 2
+for k in 1 2 3 4; do onscreen 'Archive' && break; $T adb shell input swipe 160 450 160 150 400; sleep 1; done
 shot inbox-old-row 2
-grep -q 'text="Old pile · 64"' "$OUT/$(printf '%02d' $N)-inbox-old-row.xml" || fail_inbox "the Inbox shows no \"Old pile · 64\" row (the count of the saves from before the fresh start)"
+grep -q 'text="Archive · 64"' "$OUT/$(printf '%02d' $N)-inbox-old-row.xml" || fail_inbox "the Inbox shows no \"Archive · 64\" row (the count of the saves from before the fresh start)"
 grep -q 'An old save' "$OUT/$(printf '%02d' $N)-inbox-old-row.xml" && fail_inbox "an old save is showing in the current Inbox"
-tap "Old pile" || fail_inbox "no Old pile row to open"
+tap "Archive" || fail_inbox "no Archive row to open"
 sleep 3
 shot inbox-old-pile 2
-grep -q 'text="Old pile"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile did not open (no Old pile title)"
+grep -q 'text="Archive"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Archive did not open (no Archive title)"
 grep -qE 'text="64.{1,2}left[^"]*"' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile does not say 64 left"
 grep -q 'An old save' "$OUT/$(printf '%02d' $N)-inbox-old-pile.xml" || fail_inbox "the Old pile shows no old save"
 # Sort two old saves with the same dock: the pile's own count goes 64 -> 62.
@@ -774,17 +791,17 @@ log "   the ring stayed at $RING_A/20 through the bulk move"
 tap "Back to Inbox" || fail_inbox "no way back from the emptied Old pile"
 sleep 2
 shot inbox-old-done 1.5
-grep -q 'text="Old pile done"' "$OUT/$(printf '%02d' $N)-inbox-old-done.xml" && log "   the Inbox says \"Old pile done\" once" || log "   (no Old pile done line in this shot; see inbox-old-done.png)"
+grep -q 'text="Archive done"' "$OUT/$(printf '%02d' $N)-inbox-old-done.xml" && log "   the Inbox says \"Archive done\" once" || log "   (no Old pile done line in this shot; see inbox-old-done.png)"
 # The dock at 1.5x on the real phone, glass bar and all (checker 2026-10-30 #8): every choice ends above the bar.
 $T adb shell settings put system font_scale 1.5; sleep 3; front inbox-dock-font-1.5; shot inbox-dock-font-1.5 1.5
 XML="$OUT/$(printf '%02d' $N)-inbox-dock-font-1.5.xml"
-if grep -q 'text="Can I do something about it?"' "$XML"; then
+if grep -q 'content-desc="More choices"' "$XML"; then
   BAR=$(y_of Today 2)
-  for c in Drop Someday Note "Do now" Action Project Waiting Calendar Later; do
+  for c in Drop Someday Note "Do now" Action "More choices"; do
     B=$(y_of "$c" 4); [ -n "$B" ] || { $T adb shell settings put system font_scale 1.0; fail_inbox "no \"$c\" in the dock at 1.5x"; }
     [ "$B" -le "$BAR" ] || { $T adb shell settings put system font_scale 1.0; fail_inbox "at 1.5x \"$c\" ends at y=$B, under the tab bar's top y=$BAR"; }
   done
-  log "   at 1.5x every choice and Later end above the bar (top y=$BAR)"
+  log "   at 1.5x every choice and More end above the bar (top y=$BAR)"
 else
   log "   (no card left for the 1.5x dock look; the screenshot shows the empty Inbox)"
 fi
@@ -829,7 +846,7 @@ log "   three captures reached pagel.uz in the order typed"
 front capture-closed
 shot capture-inbox 2
 onscreen "Capture Three from CI" || fail_inbox "the newest capture is not on top of the Inbox"
-grep -q 'content-desc="Old pile"' "$OUT/$(printf '%02d' $N)-capture-inbox.xml" && fail_inbox "the Old pile row came back after the bulk emptied it"
+grep -q 'content-desc="Archive"' "$OUT/$(printf '%02d' $N)-capture-inbox.xml" && fail_inbox "the Archive row came back after the bulk emptied it"
 log "   the captures sit on top of the current Inbox"
 log "-- Inbox v3 capture kinds: Note once, then Enter again keeps Note, then Task; each makes its own request (Not sure was the three adds above)"
 tap "Add to Inbox" || fail_inbox "no Add to Inbox for the kinds"
@@ -858,6 +875,8 @@ log "   the shared link reached pagel.uz"
 
 log "-- Inbox: where did it go (round D item 2): Sorted today lists the day's choices by where they went; More -> Notes reads a project's notes"
 sleep 6   # a swipe down here would Drop the top card; the last toast (top of the Inbox, over the header icons) needs to be gone
+# Sorted today is a quiet row at the foot of the Inbox list (Boss 2026-11-03): scroll to it (the list scrolls, nothing is swiped away).
+for k in 1 2 3 4; do onscreen "Sorted today" && break; $T adb shell input swipe 160 450 160 150 400; sleep 1; done
 tap "Sorted today" && shot sorted-today 2
 # Match the word, not the emoji: uiautomator writes 📝 (outside the basic plane) as &#128221; but ✅ as itself.
 grep -qE 'text="[^"]*Notes · [0-9]+"' "$OUT/$(printf '%02d' $N)-sorted-today.xml" || { log "WALKTHROUGH: Sorted today does not list the Note"; exit 1; }

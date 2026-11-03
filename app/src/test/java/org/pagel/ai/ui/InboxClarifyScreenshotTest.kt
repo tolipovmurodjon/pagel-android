@@ -106,38 +106,40 @@ class InboxClarifyScreenshotTest {
         assertFalse("\"$text\" is cut", l.isLineEllipsized(0) || l.getLineRight(0) - l.getLineLeft(0) > l.size.width + 1f)
     }
 
-    @Test fun theTwoGroupsUnderTheCardAt360() {
+    /** Boss 2026-11-03 ("you are making it worse"): the dock is one row again, as in 0.3.41, and no question line. */
+    private val row = listOf("Action", "Note", "Do now", "Someday", "Drop", "More")
+
+    @Test fun theDockIsOneRowAt360() {
         show { screen(ui(grant)) }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-groups-360.png")
-        compose.onNodeWithText("Can I do something about it?").assertIsDisplayed()
-        for (w in listOf("Drop", "Someday", "Note", "Later", "Do now", "Action", "Project", "Waiting", "Calendar")) compose.onAllNodesWithText(w, useUnmergedTree = true).onFirst().assertIsDisplayed()
-        // Today's 5, not 905.
-        compose.onNodeWithText("Today's 5").assertIsDisplayed()
-        // All ten sit above the 96 dp the tab bar takes.
-        val last = compose.onNodeWithText("Calendar", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-row-360.png")
+        for (w in row) compose.onAllNodesWithText(w, useUnmergedTree = true).onLast().assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithText("Can I do something about it?").fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodesWithText("Hold = repeat").fetchSemanticsNodes().isEmpty())
+        val tops = row.map { compose.onAllNodesWithText(it, useUnmergedTree = true).onLast().fetchSemanticsNode().boundsInRoot.top }.toSet()
+        assertEquals("the six words sit on one line: $tops", 1, tops.size)
+        // The row sits above the 96 dp the tab bar takes.
+        val last = compose.onNodeWithText("More", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
         assertTrue("the choices end at ${last.bottom} px of ${root.bottom}", last.bottom <= root.bottom - 96 * 3f)
     }
 
-    /** Checker 2026-10-30 #3: "Yes" was cut at 1.5x and Someday/Calendar shrank alone. Every word whole, one size. */
-    @Test fun theTwoGroupsUnderTheCardAt15xFont() {
+    /** Every word whole and one size at 1.5x (checker 2026-10-30 #3). */
+    @Test fun theDockIsOneRowAt15xFont() {
         show(1.5f) { screen(ui(grant)) }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-groups-360-font-1.5.png")
-        // (Action is also the AI pick's own word above, so it is read as the grid's last node below.)
-        for (w in listOf("No", "Yes", "Drop", "Someday", "Note", "Do now", "Project", "Waiting", "Calendar", "Later")) oneWholeLine(w)
-        val sizes = listOf("Drop", "Someday", "Note", "Do now", "Action", "Project", "Waiting", "Calendar").map { fontSize(it) }.toSet()
-        assertEquals("one word size in the grid: $sizes", 1, sizes.size)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-row-360-font-1.5.png")
+        for (w in listOf("Drop", "Someday", "Do now", "More")) oneWholeLine(w)
+        val sizes = row.map { fontSize(it) }.toSet()
+        assertEquals("one word size in the row: $sizes", 1, sizes.size)
     }
 
-    @Test fun oneWordSizeInTheGridAt1x() {
+    @Test fun oneWordSizeInTheRowAt1x() {
         show { screen(ui(grant)) }
-        val sizes = listOf("Drop", "Someday", "Note", "Do now", "Action", "Project", "Waiting", "Calendar").map { fontSize(it) }.toSet()
-        assertEquals("one word size in the grid: $sizes", 1, sizes.size)
-        oneWholeLine("Calendar")
+        val sizes = row.map { fontSize(it) }.toSet()
+        assertEquals("one word size in the row: $sizes", 1, sizes.size)
+        oneWholeLine("Someday")
     }
 
-    private val dockWords = listOf("Drop", "Someday", "Note", "Do now", "Action", "Project", "Waiting", "Calendar", "Later", "Yes", "No",
-        "Hold = repeat", "Can I do something about it?", "Inbox", "Today's 5", "Done")
+    private val dockWords = row + "Clear"
 
     private fun layoutOf(n: SemanticsNode): TextLayoutResult? {
         val out = mutableListOf<TextLayoutResult>()
@@ -160,7 +162,7 @@ class InboxClarifyScreenshotTest {
                 assertTrue("$at breaks a word at line ${i + 1}", e >= text.length || text[e - 1].isWhitespace() || text[e].isWhitespace() || text[e - 1] == '-')
             }
         }
-        assertTrue("$what: some dock text was checked", seen >= 8)
+        assertTrue("$what: some dock text was checked", seen >= 6)
     }
 
     @Test fun theDockCutsNothingAt15xFont() {
@@ -218,22 +220,24 @@ class InboxClarifyScreenshotTest {
         return layout.single().layoutInput.style.fontSize.value
     }
 
-    /** Later is a small text link under the two rows (checker 2026-10-30 #9), not a sixth disc in the No row. */
-    @Test fun laterIsALinkUnderTheRows() {
+    /** Later, Project, Waiting and Calendar live behind More: one tap opens them, each says what it does. */
+    @Test fun moreHoldsTheFourRarerChoices() {
         var chosen: Choice? = null
         show { screen(ui(grant), onChoose = { chosen = it }) }
-        val later = compose.onNodeWithText("Later", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        val calendar = compose.onNodeWithText("Calendar", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        assertTrue("Later (top ${later.top}) sits under the Yes row (bottom ${calendar.bottom})", later.top >= calendar.bottom - 1f)
-        compose.onNodeWithText("Later", useUnmergedTree = true).performClick()
+        for (w in listOf("Later", "Project", "Waiting", "Calendar")) assertTrue("$w is not in the row", compose.onAllNodesWithText(w).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithContentDescription("More choices").performClick()
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-more-choices.png")
+        for (w in listOf("Later", "Project", "Waiting", "Calendar")) compose.onNodeWithContentDescription(w).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Later").performClick()
         assertEquals(Choice.LATER, chosen)
     }
 
-    /** A card with an AI pick and one with none: the question line and the groups stay at the same y (no layout jump). */
+    /** A card with an AI pick and one with none: the row stays at the same y (no layout jump). */
     @Test fun theDockDoesNotMoveBetweenAPickedAndAnUnreadCard() {
         var u by androidx.compose.runtime.mutableStateOf(ui(grant))
         show { screen(u) }
-        fun tops() = listOf("Can I do something about it?", "Someday", "Calendar").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top }
+        fun tops() = listOf("Someday", "More").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.top }
         val picked = tops()
         u = ui(unread)
         compose.waitForIdle()
@@ -247,10 +251,10 @@ class InboxClarifyScreenshotTest {
         assertEquals(Choice.SOMEDAY, chosen)
     }
 
-    @Test fun anUnreadCardShowsTheSameGroups() {
+    @Test fun anUnreadCardShowsTheSameRow() {
         show { screen(ui(unread)) }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-groups-unread.png")
-        compose.onNodeWithText("Waiting", useUnmergedTree = true).assertIsDisplayed()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-row-unread.png")
+        compose.onNodeWithContentDescription("More choices").assertIsDisplayed()
     }
 
     @Test fun waitingForm() {

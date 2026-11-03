@@ -238,6 +238,7 @@ private fun Tabs(onOpenPhone: () -> Unit, onDisconnect: () -> Unit) {
             "notifications" -> { selected = more; stacks[more].add(NotificationsRoute) }
             "compass" -> { selected = more; stacks[more].add(org.pagel.ai.ui.compass.CompassRoute) }
             "habits" -> selected = Tab.entries.indexOf(Tab.Habits)
+            "inbox" -> selected = Tab.entries.indexOf(Tab.Inbox)
             "shutdown" -> { goToday(); stacks[0].add(ShutdownRoute) }
             "more" -> selected = more
             else -> goToday()

@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -58,8 +59,8 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * Inbox v3 at Boss's sizes (360 dp, 1x and 1.5x font, and the 320 dp screen): the capture sheet's field with the keyboard
- * up, the current Inbox with its one quiet Old pile row, the Old pile with its own count and the same dock, the calm empty
- * Inbox with its one action, and "Old pile done". Every shot is checked for cut words and for red.
+ * up, the Inbox as a list with the Archive at its foot, the deck behind Clear, the Archive with its own count and the
+ * same dock, the calm empty Inbox with its one action, and "Archive done". Every shot is checked for cut words and for red.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -82,6 +83,7 @@ class InboxV3ScreenshotTest {
 
     private fun ui(vararg rows: InboxItemEntity, old: Int? = 912, oldMode: Boolean = false, oldDone: Boolean = false, sorted: Int = 3) = InboxUi(
         loading = false, cards = rows.map { InboxViewModel.card(it, false, projects.firstOrNull { p -> p.name == it.project }) },
+        items = if (oldMode) emptyList() else rows.map { InboxViewModel.card(it, false, projects.firstOrNull { p -> p.name == it.project }) },
         sorted = sorted, goal = 5, kept = 2, cap = 5, minWords = 6, left = rows.size, streak = 3, projects = projects, old = old, oldMode = oldMode, oldDone = oldDone,
     )
 
@@ -93,8 +95,12 @@ class InboxV3ScreenshotTest {
     }
 
     @Composable
-    private fun screen(u: InboxUi, onCapture: () -> Unit = {}, onOld: () -> Unit = {}) =
-        InboxScreen(u, leaving = null, pictures = emptyMap(), contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp), actions = InboxActions(capture = onCapture, openOld = onOld))
+    private fun screen(u: InboxUi, onCapture: () -> Unit = {}, onOld: () -> Unit = {}, clearing: Boolean = true) =
+        InboxScreen(u, leaving = null, pictures = emptyMap(), contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp), actions = InboxActions(capture = onCapture, openOld = onOld), clearing = clearing)
+
+    /** The Inbox's own face (Boss 2026-11-03): the list, not the deck. */
+    @Composable
+    private fun list(u: InboxUi, onCapture: () -> Unit = {}, onOld: () -> Unit = {}) = screen(u, onCapture, onOld, clearing = false)
 
     private fun layoutOf(n: SemanticsNode): TextLayoutResult? {
         val out = mutableListOf<TextLayoutResult>()
@@ -132,31 +138,54 @@ class InboxV3ScreenshotTest {
         return red
     }
 
-    private val headerWords = listOf("Inbox", "Today's 5", "Old pile · 912")
+    private val listWords = listOf("Inbox", "Archive · 912", "Clear · 1")
 
-    @Test fun currentInboxWithOneQuietOldPileRow() {
-        show { screen(ui(grant)) }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-current.png")
-        compose.onNodeWithText("Old pile · 912", useUnmergedTree = true).assertIsDisplayed()
+    /** The list: + and ? in the header, the save as a row, the Archive at the foot, one Clear button; no ring, no grid. */
+    @Test fun theInboxIsAListWithTheArchiveAtItsFoot() {
+        show { list(ui(grant)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-list.png")
+        compose.onNodeWithText("The IT Park grant round closes on 15 November", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Archive · 912", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Add to Inbox").assertIsDisplayed()
-        // The day's 5 is said once: by the ring, not again as words ("one count only").
-        compose.onNodeWithContentDescription("3 of 5 sorted today").assertIsDisplayed()
-        assertTrue(compose.onAllNodesWithText("sorted today", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithContentDescription("How sorting works").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Clear the Inbox").assertIsDisplayed()
+        assertTrue("no ring on the list", compose.onAllNodesWithContentDescription("3 of 5 sorted today").fetchSemanticsNodes().isEmpty())
+        assertTrue("no dock on the list", compose.onAllNodesWithText("Someday", useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         assertTrue(compose.onAllNodesWithText("Sorted today (", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         assertEquals("red pixels", 0, redPixels())
     }
 
-    @Test fun currentInboxAt15xFontCutsNothing() {
-        show(1.5f) { screen(ui(grant)) }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-current-font-1.5.png")
-        assertNoCutText("v3 header 1.5x", headerWords)
+    @Test fun tappingARowOpensTheDeckAtThatSave() {
+        var opened: String? = "none"
+        show { InboxScreen(ui(grant), leaving = null, pictures = emptyMap(), contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp), actions = InboxActions(clear = { opened = it }), clearing = false) }
+        compose.onNodeWithText("The IT Park grant round closes on 15 November", useUnmergedTree = true).performClick()
+        assertEquals("inbox/grant.md", opened)
+        compose.onNodeWithContentDescription("Clear the Inbox").performClick()
+        assertEquals(null, opened)
+    }
+
+    @Test fun theListAt15xFontCutsNothing() {
+        show(1.5f) { list(ui(grant)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-list-font-1.5.png")
+        assertNoCutText("v3 list 1.5x", listWords)
         assertEquals("red pixels", 0, redPixels())
     }
 
-    @Test fun currentInboxAt320dpAnd15xFontCutsNothing() {
-        show(1.5f) { Box(Modifier.width(320.dp).height(640.dp)) { screen(ui(grant)) } }
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-current-320-font-1.5.png")
-        assertNoCutText("v3 header 320 dp 1.5x", headerWords)
+    @Test fun theListAt320dpAnd15xFontCutsNothing() {
+        show(1.5f) { Box(Modifier.width(320.dp).height(640.dp)) { list(ui(grant)) } }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-list-320-font-1.5.png")
+        assertNoCutText("v3 list 320 dp 1.5x", listWords)
+    }
+
+    /** The deck's header is 0.3.41's: back, "Clear", how many are left, the ring. */
+    @Test fun theDeckHeaderIsBackClearAndTheRing() {
+        show { screen(ui(grant)) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-clear-deck.png")
+        compose.onNodeWithContentDescription("Back to the list").assertIsDisplayed()
+        compose.onNodeWithText("Clear", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("3 of 5 sorted today").assertIsDisplayed()
+        assertTrue("no + on the deck", compose.onAllNodesWithContentDescription("Add to Inbox").fetchSemanticsNodes().isEmpty())
+        assertEquals("red pixels", 0, redPixels())
     }
 
     /**
@@ -181,59 +210,59 @@ class InboxV3ScreenshotTest {
 
     /** Two source chips are in sight at 320 dp with no sideways scroll: both end inside the screen. */
     @Test fun twoSourceChipsShowAt320dpWithoutAScroll() {
-        val chips = listOf(SourceCount("instagram", "Instagram", 3), SourceCount("x", "X", 2))
-        show(1f) { Box(Modifier.width(320.dp).height(640.dp)) { screen(ui(grant).copy(sources = chips)) } }
+        val chips = listOf(SourceCount("instagram", "Instagram", 4), SourceCount("x", "X", 3))
+        show(1f) { Box(Modifier.width(320.dp).height(640.dp)) { list(ui(grant).copy(sources = chips)) } }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-chips-320.png")
-        for (d in listOf("All \u00B7 5", "Instagram \u00B7 3")) {
+        for (d in listOf("All \u00B7 7", "Instagram \u00B7 4")) {
             val b = compose.onNodeWithContentDescription(d).fetchSemanticsNode().boundsInRoot
             assertTrue("$d ends inside 320 dp (right edge ${b.right})", b.right <= compose.onRoot().fetchSemanticsNode().boundsInRoot.right)
         }
     }
 
-    @Test fun tappingTheOldPileRowOpensIt() {
+    @Test fun tappingTheArchiveRowOpensIt() {
         var opened = 0
-        show { screen(ui(grant), onOld = { opened++ }) }
-        compose.onNodeWithContentDescription("Old pile").performClick()
+        show { list(ui(grant), onOld = { opened++ }) }
+        compose.onNodeWithContentDescription("Archive").performClick()
         assertEquals(1, opened)
     }
 
     @Test fun theOldPileHasItsOwnCountAndTheSameDock() {
         show { screen(ui(grant, old = 910, oldMode = true)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-old-pile.png")
-        compose.onNodeWithText("Old pile", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Archive", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("saved before 1", substring = true, useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Tidy old saves").assertIsDisplayed()
-        for (w in listOf("Drop", "Someday", "Note", "Do now", "Action", "Project", "Waiting", "Calendar", "Later")) compose.onAllNodesWithText(w, useUnmergedTree = true).fetchSemanticsNodes().let { assertTrue("$w in the old pile's dock", it.isNotEmpty()) }
+        for (w in listOf("Drop", "Someday", "Note", "Do now", "Action", "More")) compose.onAllNodesWithText(w, useUnmergedTree = true).fetchSemanticsNodes().let { assertTrue("$w in the old pile's dock", it.isNotEmpty()) }
         assertEquals("red pixels", 0, redPixels())
     }
 
     @Test fun theOldPileAt15xFontCutsNothing() {
         show(1.5f) { screen(ui(grant, old = 910, oldMode = true)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-old-pile-font-1.5.png")
-        assertNoCutText("v3 old pile 1.5x", listOf("Old pile", "910 left · saved before 1 November"))
+        assertNoCutText("v3 old pile 1.5x", listOf("Archive", "910 left · saved before 1 November"))
     }
 
     @Test fun theEmptyInboxIsOneSentenceAndOneAction() {
         var captured = 0
-        show { screen(ui(old = 912, sorted = 4), onCapture = { captured++ }) }
+        show { list(ui(old = 912, sorted = 4), onCapture = { captured++ }) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-empty.png")
         compose.onNodeWithText("Nothing waiting").assertIsDisplayed()
         compose.onNodeWithText("Capture something").assertIsDisplayed().performClick()
         assertEquals(1, captured)
-        compose.onNodeWithText("Old pile · 912", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Archive · 912", useUnmergedTree = true).assertIsDisplayed()
         assertEquals("red pixels", 0, redPixels())
     }
 
     @Test fun oldPileDoneIsSaidOnce() {
-        show { screen(ui(old = 0, oldDone = true, sorted = 4)) }
+        show { list(ui(old = 0, oldDone = true, sorted = 4)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-old-done.png")
-        compose.onNodeWithText("Old pile done", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Archive done", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test fun anEmptyOldPileOffersTheWayBack() {
         show { screen(ui(old = 0, oldMode = true)) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-old-pile-empty.png")
-        compose.onNodeWithText("Old pile is clear").assertIsDisplayed()
+        compose.onNodeWithText("Archive is clear").assertIsDisplayed()
         compose.onNodeWithText("Back to Inbox").assertIsDisplayed()
     }
 

@@ -134,6 +134,8 @@ fun applyOrder(items: List<InboxItemEntity>, v: ViewPrefs, shown: List<String>):
 data class InboxUi(
     val loading: Boolean = true,
     val cards: List<InboxCard> = emptyList(),
+    /** The whole current Inbox for its list (Boss 2026-11-03: a drop box cleared at the week's end); empty in the Archive. */
+    val items: List<InboxCard> = emptyList(),
     val sorted: Int = 0,
     val goal: Int = GOAL,
     val kept: Int = 0,
@@ -297,16 +299,23 @@ class InboxViewModel @Inject constructor(
     private var nextLeave = 1L
     private var refreshing = false
 
-    private val baseUi: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), combine(combine(streak, reading, gone) { a, b, c -> Triple(a, b, c) }, oldView) { t, o -> t to o }) { deck, state, _, projects, (t, old) ->
-        val (run, aiReading, hidden) = t
-        // The Inbox is the current saves; the Old pile is the rest, shown only while it is open.
+    /** The save tapped in the list: it leads the deck until it leaves. */
+    private val focus = MutableStateFlow<String?>(null)
+    private data class Live(val run: Int, val reading: Boolean, val hidden: Set<String>, val focus: String?)
+
+    private val baseUi: StateFlow<InboxUi> = combine(repo.deck, repo.state, repo.leaving, session.projects(), combine(combine(streak, reading, gone, focus) { a, b, c, d -> Live(a, b, c, d) }, oldView) { t, o -> t to o }) { deck, state, _, projects, (live, old) ->
+        // The Inbox is the current saves; the Archive (the Old pile) is the rest, shown only while it is open.
         val pool = deck.filter { isCurrent(it, old.fresh, old.captured) != old.mode }
         val chips = if (old.mode) emptyList() else sourceCounts(pool)
         // A chip that no longer has saves (its last one was sorted) falls back to All instead of showing an empty Inbox.
         val chosen = old.view.source?.takeIf { k -> chips.any { it.key == k } }
         val filtered = if (old.mode || chosen == null) pool else pool.filter { sourceChip(it.source).first == chosen }
         val ordered = if (old.mode) filtered else applyOrder(filtered, old.view, repo.captured.shown)
-        build(visibleDeck(ordered, hidden), state, projects, run, deck.isEmpty(), old).copy(reading = aiReading, sources = chips, source = chosen, order = old.view.order, oldGroups = if (old.mode) oldGroups(pool) else emptyList())
+        val onDeck = visibleDeck(ordered, live.hidden)
+        val lead = live.focus?.takeIf { !old.mode }?.let { f -> onDeck.firstOrNull { it.file == f } }
+        val dealt = if (lead == null) onDeck else listOf(lead) + (onDeck - lead)
+        build(dealt, state, projects, live.run, deck.isEmpty(), old, list = if (old.mode) emptyList() else onDeck)
+            .copy(reading = live.reading, sources = chips, source = chosen, order = old.view.order, oldGroups = if (old.mode) oldGroups(pool) else emptyList())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     /** Boss's one goal: five sorted a day, counted on the phone from what he sorted today (Do, Note, Waiting, Drop; never Later or tidy moves). */
@@ -387,6 +396,9 @@ class InboxViewModel @Inject constructor(
 
     /** A chip filters the deck to its source; null = All. Remembered for this visit. */
     fun setSource(key: String?) { sourceFilter.value = key }
+
+    /** A row tapped in the list leads the deck; null = the deck in its own order again. */
+    fun focusOn(file: String?) { focus.value = file }
 
     /** The order pill: Newest first, Oldest first, Shuffle. Remembered across visits; a new Shuffle is a new deal. */
     fun cycleOrder() {
@@ -760,7 +772,7 @@ class InboxViewModel @Inject constructor(
         }
     }
 
-    private fun build(deck: List<InboxItemEntity>, s: InboxStateEntity?, projects: List<ProjectEntity>, run: Int, rawEmpty: Boolean, old: OldView): InboxUi {
+    private fun build(deck: List<InboxItemEntity>, s: InboxStateEntity?, projects: List<ProjectEntity>, run: Int, rawEmpty: Boolean, old: OldView, list: List<InboxItemEntity> = emptyList()): InboxUi {
         val today = org.pagel.ai.data.inbox.tashkentDay(System.currentTimeMillis())
         // Today's counts: the day pagel.uz names, or counts it sent today (never a ring reset by a stale day field).
         val fresh = s != null && (s.day == today || org.pagel.ai.data.inbox.tashkentDay(s.fetchedAt) == today)
@@ -771,6 +783,7 @@ class InboxViewModel @Inject constructor(
         return InboxUi(
             loading = s == null && rawEmpty,
             cards = deck.take(2).map { i -> card(i, kept >= cap, byName[i.project]) },
+            items = list.take(LIST_MAX).map { i -> card(i, kept >= cap, byName[i.project]) },
             sorted = if (fresh) s!!.sorted else 0,
             goal = GOAL,
             kept = kept,
@@ -793,6 +806,8 @@ class InboxViewModel @Inject constructor(
         private const val OLD_DONE_SHOWN = "old_pile_done_shown"
         /** Cards whose pictures are fetched ahead of time. */
         private const val PREFETCH = 10
+        /** The list shows at most this many rows; the deck clears the rest. */
+        private const val LIST_MAX = 200
         /** The cards Boss sees next: one with no AI pick among them asks pagel.uz's AI to read. */
         private const val NEXT = 5
         private const val ASK_GAP_MS = 60_000L

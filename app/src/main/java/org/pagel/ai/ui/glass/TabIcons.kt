@@ -97,6 +97,7 @@ object TabIcons {
     val XLogo = icon("x-logo", "M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z", fill = true, outline = false)
     val Instagram = icon("instagram", "M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1 -5 5h-10a5 5 0 0 1 -5 -5v-10a5 5 0 0 1 5 -5z", "M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z", "M17.5 6.5h.01")
     val InboxZero = icon("inbox-check", "M3.5 13.5 6 5.6A2.5 2.5 0 0 1 8.4 4h7.2A2.5 2.5 0 0 1 18 5.6l2.5 7.9V18a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 18z", "m9 9.5 2 2 4-4")
+    val Archive = icon("archive", "M3 3h18a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z", "M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8", "M10 12h4")
 
     // The rituals (Phase 5): Lucide calendar-check (the weekly review) and refresh-cw (the next prompt).
     val CalendarCheck = icon("calendar-check", "M8 2v4", "M16 2v4", "M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2z", "M3 10h18", "m9 16 2 2 4-4")

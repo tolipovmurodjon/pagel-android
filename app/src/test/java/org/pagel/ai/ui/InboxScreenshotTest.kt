@@ -110,7 +110,7 @@ class InboxScreenshotTest {
         compose.onNodeWithContentDescription("AI pick: Note").assertIsDisplayed()
         compose.onNodeWithContentDescription("The post's picture").assertIsDisplayed()
         compose.onNodeWithContentDescription("3 of 5 sorted today").assertIsDisplayed()
-        oneWholeLine("Inbox")
+        oneWholeLine("Clear")
         // The row of choices ends above the 96 dp the tab bar takes (checker 2026-10-28 #5).
         val drop = compose.onNodeWithText("Drop", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
@@ -120,9 +120,9 @@ class InboxScreenshotTest {
     @Test fun cardWithPictureAt360LargeFont() {
         show(1.5f) { screen(ui(listOf(ig, meme))) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-card-360-font-1.5.png")
-        oneWholeLine("Inbox")
+        oneWholeLine("Clear")
         oneWholeLine("Drop")
-        oneWholeLine("Later")
+        oneWholeLine("Someday")
         // The AI's pick stays on the 780 dp screen at 1.5x (checker 2026-10-28 #1).
         compose.onNodeWithContentDescription("AI pick: Note").assertIsDisplayed()
         val pick = compose.onNodeWithContentDescription("AI pick: Note").fetchSemanticsNode().boundsInRoot
@@ -183,11 +183,11 @@ class InboxScreenshotTest {
     @Test fun dockAboveTheBarOnTheA05s() {
         show { InboxScreen(ui(listOf(ig, meme)), leaving = null, pictures = mapOf(ig.file to picture), contentPadding = a05s) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-360x800.png")
-        dockClearsTheBar(listOf("Action", "Do now", "Later", "Drop"))
-        // The pick is one row tall (64 dp), not a slab.
+        dockClearsTheBar(listOf("Action", "Do now", "Someday", "Drop", "More"))
+        // The pick is one row tall (56 dp), not a slab.
         val pick = compose.onNodeWithContentDescription("AI pick: Note").fetchSemanticsNode().boundsInRoot
         val px = compose.onRoot().fetchSemanticsNode().boundsInRoot.width / 360f
-        assertEquals(64f, pick.height / px, 1f)
+        assertEquals(56f, pick.height / px, 1f)
         // The caption leaves out the claim it starts with.
         compose.onNodeWithText("Long caption: why it works, three examples from real classes, and a link to the full study in the comments.", substring = true).assertIsDisplayed()
     }
@@ -196,7 +196,7 @@ class InboxScreenshotTest {
     @Test fun dockAboveTheBarOnTheA05sAtLargeFont() {
         show(1.5f) { InboxScreen(ui(listOf(ig, meme)), leaving = null, pictures = mapOf(ig.file to picture), contentPadding = a05s) }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-360x800-font-1.5.png")
-        dockClearsTheBar(listOf("Action", "Do now", "Later", "Drop"))
+        dockClearsTheBar(listOf("Action", "Do now", "Someday", "Drop", "More"))
     }
 
     /** LinkedIn's caption is its claim again: the card says it once (Boss 2026-10-28). */
@@ -303,7 +303,7 @@ class InboxScreenshotTest {
     @Test fun dockChoicesKeepTheirPlacesFromCardToCard() {
         val top = androidx.compose.runtime.mutableStateOf(listOf(ig, meme))
         show { InboxScreen(ui(top.value), leaving = null, pictures = mapOf(ig.file to picture), contentPadding = a05s) }
-        fun places() = listOf("Action", "Do now", "Later").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.let { b -> b.left to b.top } }
+        fun places() = listOf("Action", "Do now", "Someday", "More").map { compose.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.let { b -> b.left to b.top } }
         val a = places()
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-dock-state-a.png")
         top.value = listOf(meme, ig)

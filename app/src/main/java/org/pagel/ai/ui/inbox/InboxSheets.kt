@@ -395,7 +395,7 @@ fun GuideContent(onGuide: (() -> Unit)? = null) {
         SwipeMap(Modifier.fillMaxWidth().padding(bottom = 14.dp))
         Pane(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(vertical = 4.dp)) {
-                (NO_GROUP + YES_GROUP + Choice.LATER).forEachIndexed { i, c ->
+                (DOCK_ROW + MORE_CHOICES).forEachIndexed { i, c ->
                     if (i > 0) HorizontalDivider(Modifier.padding(start = 60.dp), thickness = 1.dp, color = Glass.Ink.copy(alpha = 0.07f))
                     val look = c.look
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.Top) {

@@ -8,6 +8,12 @@
 -->
 <resources>
     <string-array name="whats_new_items">
+        <item>#0.3.46 · Inbox, calm again</item>
+        <item>A calm list: drop things in all week|inbox</item>
+        <item>Clear it at the end of the week|inbox</item>
+        <item>Tap a row to sort just that one|inbox</item>
+        <item>One row of choices; the rest under More|inbox</item>
+        <item>Old saves wait in the Archive|inbox</item>
         <item>#0.3.45 · Inbox, capture and sort 5</item>
         <item>Tap + to add: Task, Note or Not sure|today</item>
         <item>Learn is now Note: a meme is inspiration|more</item>

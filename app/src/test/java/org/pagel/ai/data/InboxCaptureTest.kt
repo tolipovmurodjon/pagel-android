@@ -347,7 +347,7 @@ class InboxCaptureTest {
         assertEquals(Choice.NOTE, org.pagel.ai.ui.inbox.Swipe.LEARN.choice(true))
         assertEquals("an old keep or any unknown kind reads as a Note", Choice.NOTE, Choice.guessOf("keep"))
         assertEquals(Choice.DROP, Choice.guessOf("drop"))
-        assertFalse("the dock no longer offers Learn", Choice.KEEP in org.pagel.ai.ui.inbox.NO_GROUP)
+        assertFalse("the dock no longer offers Learn", Choice.KEEP in org.pagel.ai.ui.inbox.DOCK_ROW + org.pagel.ai.ui.inbox.MORE_CHOICES)
     }
 
     @Test fun aTypedNoteDatedBeforeTheLineIsNotInTheOldPile() {
