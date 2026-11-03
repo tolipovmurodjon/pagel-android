@@ -1414,6 +1414,10 @@ last() { echo "$OUT/$(printf '%02d' $N)-$1.xml"; }
 hide_keys() { $T adb shell dumpsys input_method | grep -q "mInputShown=true" && { $T adb shell input keyevent 4; sleep 1; }; return 0; }
 to_projects() {
   for k in 1 2 3 4; do tap More && break; $T adb shell input keyevent 4; sleep 1; done
+  # More keeps its scroll: coming back from a project it can sit at the bottom (the Sounds card made it longer), so
+  # look first, then scroll up, then down (CI 41648370154: Projects was above the screen and three down-swipes missed it).
+  sleep 1; tap Projects && return 0
+  for k in 1 2 3; do $T adb shell input swipe 160 160 160 500 400; sleep 1; tap Projects && return 0; done
   for k in 1 2 3; do $T adb shell input swipe 160 450 160 120 400; sleep 1; tap Projects && return 0; done
   return 1
 }
