@@ -411,7 +411,9 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             GlassIconButton(TabIcons.ArrowLeft, if (old) "Back to Inbox" else "Back to the list", plain = true, onClick = if (old) actions.closeOld else actions.stopClear)
             Text(
-                if (old) "Archive" else "Clear", style = MaterialTheme.typography.headlineMedium, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                // The Inbox's own bold title, growing with the font only to 1.2x: three icons share its row.
+                if (old) "Archive" else "Clear", color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.headlineLarge.let { s -> val f = LocalDensity.current.fontScale; s.copy(fontSize = s.fontSize * (min(f, 1.2f) / f), lineHeight = s.lineHeight * (min(f, 1.2f) / f)) },
                 modifier = Modifier.weight(1f).semantics { heading() },
             )
             if (old) GlassIconButton(TabIcons.CalendarRange, "Tidy old saves", plain = true, onClick = actions.tidy)
@@ -567,11 +569,18 @@ private fun InboxRow(card: InboxCard, onOpen: () -> Unit) {
                 Text(card.siteName.ifBlank { "Link" }, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 card.posted?.let {
                     Text("  ·  ", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
+                    Text(shortDay(it), style = MaterialTheme.typography.labelSmall, color = Glass.Muted, maxLines = 1)
                 }
             }
         }
     }
+}
+
+/** "2026-11-02" as "2 Nov" (the year only when it is not this one); anything else as it came. */
+fun shortDay(posted: String): String {
+    val d = runCatching { java.time.LocalDate.parse(posted.take(10)) }.getOrNull() ?: return posted
+    val month = d.month.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH)
+    return if (d.year == java.time.LocalDate.now().year) "${d.dayOfMonth} $month" else "${d.dayOfMonth} $month ${d.year}"
 }
 
 /** Where a save came from, as a 28 dp round mark in the site's own colour (the card's pill, without its words). */
