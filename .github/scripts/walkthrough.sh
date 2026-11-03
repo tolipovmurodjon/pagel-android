@@ -167,8 +167,15 @@ A=$(r4_centre "Clean the desk"); B=$(r4_centre "Record the fractions lesson")
 grep -q 'text="Measure the drone' "$OUT/$(printf '%02d' $N)-r4-folded.xml" && { log "WALKTHROUGH: folded Today still shows a 4th task"; exit 1; }
 
 log "-- What now: energy once, one pick (Clean the desk is first in Boss's order), Start · 10 min, the tick reaches pagel.uz"
-# What now is its own card under the list again: scroll it above the tab bar first.
-for k in 1 2; do $T adb shell input swipe 160 520 160 200 300; done; sleep 1
+# What now sits above the list: back to the top, and its card must end above the tab bar (creative round: it hid under the bar).
+for k in 1 2 3 4; do $T adb shell input swipe 160 260 160 520 300; done; sleep 1
+WN=$(r4_xml | tr '>' '
+' | grep -E 'content-desc="What now\?"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | sed -n 4p)
+WN_NAV=$(r4_xml | tr '>' '
+' | grep -E 'text="Inbox"' | head -1 | grep -oE 'bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' | grep -oE '[0-9]+' | sed -n 2p)
+[ -n "$WN" ] && [ -n "$WN_NAV" ] || { log "WALKTHROUGH: no What now card ($WN) or tab bar ($WN_NAV) to measure"; exit 1; }
+[ "$WN" -le "$WN_NAV" ] || { log "WALKTHROUGH: What now hides under the tab bar (card bottom $WN, tab bar top $WN_NAV)"; exit 1; }
+log "   What now's bottom $WN is above the tab bar's top $WN_NAV"
 r4_tap 'What now\?' || { log "WALKTHROUGH: no What now button on Today"; exit 1; }
 shot r4-energy 2
 # GTD's questions (Where, Time, Energy): at home, 30 minutes, OK energy, the first fitting task in Boss's order is Clean the desk.
@@ -191,7 +198,7 @@ shot r4-after-what-now 2
 
 log "-- GTD What now: Phone only + 15 min picks the call; Make it tiny from it, sheet closed while it writes -> PATCH {micro} + a toast"
 MICRO0=$(grep -cE 'PATCH /api/v1/tasks/[A-Za-z0-9_]+ \{"micro":\["Stand up' "$FAKE_LOG")
-for k in 1 2; do $T adb shell input swipe 160 520 160 200 300; done; sleep 1
+for k in 1 2 3 4; do $T adb shell input swipe 160 260 160 520 300; done; sleep 1
 r4_tap 'What now\?' || { log "WALKTHROUGH: no What now card for the GTD check"; exit 1; }
 sleep 1
 tap "Where: Phone only" || { log "WALKTHROUGH: no Phone only"; exit 1; }

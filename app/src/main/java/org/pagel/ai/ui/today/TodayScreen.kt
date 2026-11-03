@@ -225,6 +225,11 @@ fun TodayScreen(
             if (pills != null && pills.any) item(key = "rituals", contentType = "pills") {
                 org.pagel.ai.ui.rituals.RitualPillsRow(pills, links, Modifier.animateItem().padding(horizontal = Space.gutter))
             }
+            // What now? is its own thing (Boss 2026-10-31): a full-width mint card, only while something is open. It sits above
+            // the list: under it, the card was the first thing the glass tab bar covered on a 640 dp screen (creative round).
+            if (onWhatNow != null && !ui.loading && ui.rows.any { !it.done }) item(key = "whatnow", contentType = "whatnow") {
+                WhatNowButton(Modifier.padding(horizontal = Space.gutter), onWhatNow)
+            }
             when {
                 ui.loading -> item(key = "loading", contentType = "note") {
                     Pane(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { SkeletonRows(3, Modifier.padding(vertical = 6.dp)) }
@@ -252,10 +257,6 @@ fun TodayScreen(
                         }
                     }
                 }
-            }
-            // What now? is its own thing (Boss 2026-10-31): a full-width mint card under the list, only while something is open.
-            if (onWhatNow != null && !ui.loading && ui.rows.any { !it.done }) item(key = "whatnow", contentType = "whatnow") {
-                WhatNowButton(Modifier.padding(horizontal = Space.gutter), onWhatNow)
             }
             // The empty space under the hero says the next timed thing (unless the hero is that very task), so the page never ends in nothing.
             nextTimed(ui.all, today)?.takeIf { (row, _) -> row.id != ui.rows.firstOrNull()?.takeIf { !it.done }?.id }?.let { (row, time) -> item(key = "next", contentType = "next") {

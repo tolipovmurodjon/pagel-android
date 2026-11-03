@@ -161,12 +161,13 @@ private val Hair = 2.dp
  */
 fun projectColor(ui: UpcomingUi, project: String): Color = calendarSafe(TileColors.stops(project, ui.projects[project]?.color).first)
 
-/** OKLCH hues the calendar never paints at full strength: red, from pink (340°) round to coral (40°). */
-internal fun isWarmRed(hue: Double): Boolean = hue < 40.0 || hue > 340.0
+/** OKLCH hues the calendar never paints: red, from pink (330°) round to peach (50°); a peach at 40° is HSV hue 20°, still red. */
+internal fun isWarmRed(hue: Double): Boolean = hue < 50.0 || hue >= 330.0
 
 /**
- * Checker round 2 #2 (never alarm red): a warm-red fill keeps its hue but its chroma drops to 0.07 and its lightness
- * rises to 0.80, so it reads rose or peach. Every other colour is kept; the saved colour itself never changes.
+ * Never alarm red (checker round 2 #2; Boss 2026-10-31: the softened red still read as pale salmon, "near red"): a
+ * warm-red fill becomes a calm slate-blue of the same lightness (at least 0.80). Every other colour is kept; the saved
+ * colour itself never changes.
  */
 internal fun calendarSafe(c: Color): Color {
     fun lin(v: Float) = if (v <= 0.04045f) v / 12.92 else Math.pow((v + 0.055) / 1.055, 2.4)
@@ -180,8 +181,11 @@ internal fun calendarSafe(c: Color): Color {
     val chroma = Math.hypot(aa, bb)
     val hue = (Math.toDegrees(Math.atan2(bb, aa)) + 360.0) % 360.0
     if (chroma < 0.02 || !isWarmRed(hue)) return c
-    return TileColors.oklch(maxOf(ll, 0.80), minOf(chroma, 0.07), hue).copy(alpha = c.alpha)
+    return TileColors.oklch(maxOf(ll, 0.80), 0.02, 260.0).copy(alpha = c.alpha)
 }
+
+/** A habit or prayer block is always mint, never its project's colour: Namoz must not read as red (Boss, no-red wall). */
+internal fun blockColor(habit: Boolean, project: Color): Color = if (habit) Glass.Primary else project
 
 private fun titleOf(t: TaskEntity) = t.title?.takeIf(String::isNotBlank) ?: headline(t.text)
 
@@ -219,7 +223,8 @@ internal fun fitWords(m: TextMeasurer, text: String, style: TextStyle, w: Int, h
     }
     val sizes = generateSequence(maxSp) { it - 0.5f }.takeWhile { it >= minSp - 0.01f }.toList()
     for (n in words.size downTo 1) {
-        val t = words.take(n).joinToString(" ")
+        // Words left out say so: "Call the" alone read as the whole title (Boss 2026-10-31, walk 139); "Call the…" does not.
+        val t = words.take(n).joinToString(" ").let { if (n < words.size) "$it…" else it }
         for ((k, sp) in sizes.withIndex()) lines(t, sp, last = k == sizes.lastIndex)?.let { return TitleFit(t, sp, it) }
     }
     // Not even the first word fits at [minSp] (8 sp, the floor: smaller is not read): no text. The block keeps its
@@ -228,7 +233,8 @@ internal fun fitWords(m: TextMeasurer, text: String, style: TextStyle, w: Int, h
 }
 
 /**
- * A calendar title in the box it is given: whole words only ([fitWords]), clipped never with "…". Tagged [CAL_TITLE] so
+ * A calendar title in the box it is given: whole words only ([fitWords]); when words are left out, a "…" after the last
+ * whole word, never a word cut through. Tagged [CAL_TITLE] so
  * the screenshot tests can read every line of it.
  */
 @Composable
@@ -767,7 +773,7 @@ private fun DayColumn(d: LocalDate, today: Boolean, blocks: List<Block>, ui: Upc
 @Composable
 private fun BlockView(b: Block, ui: UpcomingUi, hourH: Dp, colW: Int, held: Boolean, onOpen: () -> Unit) {
     val density = LocalDensity.current
-    val color = projectColor(ui, b.task.project)
+    val color = blockColor(b.habit, projectColor(ui, b.task.project))
     val top = hourH * (b.start / 60f)
     val height = maxOf(hourH * ((b.end - b.start) / 60f), MIN_BLOCK)
     val time = timeText(b)

@@ -57,9 +57,13 @@ object Ding {
         return ShortArray(out.size) { (out[it].coerceIn(-1f, 1f) * Short.MAX_VALUE).toInt().toShort() }
     }
 
+    /** Media, not sonification: a silent phone mutes the sonification stream, and Boss's A05s is usually on silent. */
+    internal fun attributes(): AudioAttributes =
+        AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+
     private fun build(pcm: ShortArray): AudioTrack =
         AudioTrack.Builder()
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            .setAudioAttributes(attributes())
             .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
             .setTransferMode(AudioTrack.MODE_STATIC)
             .setBufferSizeInBytes(pcm.size * 2)
@@ -129,7 +133,7 @@ fun reducedMotion(ctx: Context): Boolean =
 data class Burst(val id: Long, val origin: Offset, val power: Int = 0)
 
 // The web's colours; the confetti is the one place the whole Todoist palette shows.
-private val CONFETTI = listOf(0xFFD1453B, 0xFFEB8909, 0xFFF6C445, 0xFF058527, 0xFF246FE0, 0xFF692FC2, 0xFFE05194).map { Color(it) }
+private val CONFETTI = listOf(0xFF0E9AA7, 0xFFEB8909, 0xFFF6C445, 0xFF058527, 0xFF246FE0, 0xFF692FC2, 0xFFE05194).map { Color(it) }
 
 private class Bit(var x: Float, var y: Float, var vx: Float, var vy: Float, val w: Float, val h: Float, var rot: Float, val spin: Float, val color: Color, val round: Boolean)
 

@@ -691,7 +691,7 @@ private fun PinRow(ui: PanelUi, today: LocalDate, onToggle: () -> Unit) {
     }
     val full = !ui.star && ui.pinned >= MAX_PINNED
     Row(Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (ui.star) TabIcons.StarFilled else TabIcons.Star, contentDescription = null, tint = if (ui.star) Color(0xFFC2410C) else Glass.Primary, modifier = Modifier.size(19.dp))
+        Icon(if (ui.star) TabIcons.StarFilled else TabIcons.Star, contentDescription = null, tint = if (ui.star) Glass.Amber else Glass.Primary, modifier = Modifier.size(19.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text("Pin to Today", style = MaterialTheme.typography.bodyLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -122,7 +122,10 @@ class CalendarScreenshotTest {
         assertTrue("no calendar title on screen", nodes.isNotEmpty())
         for (n in nodes) {
             val shown = n.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString("") { it.text }
-            assertTrue("\"$shown\" is not whole words of a title", shown.isEmpty() || shown.startsWith("+") || titles.any { it == shown || it.startsWith("$shown ") })
+            // Left-out words are marked by a closing "…" after the last whole word (Boss 2026-10-31: "Call the" read as complete).
+            val words = shown.removeSuffix("…")
+            if (shown.isNotEmpty() && !shown.startsWith("+") && titles.none { it == words }) assertTrue("\"$shown\" left words out without a closing …", shown.endsWith("…"))
+            assertTrue("\"$shown\" is not whole words of a title", shown.isEmpty() || shown.startsWith("+") || titles.any { it == words || it.startsWith("$words ") })
             val results = mutableListOf<TextLayoutResult>()
             n.config[SemanticsActions.GetTextLayoutResult].action?.invoke(results)
             val r = results.single()

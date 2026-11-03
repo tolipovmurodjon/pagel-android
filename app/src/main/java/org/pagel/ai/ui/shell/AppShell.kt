@@ -617,7 +617,10 @@ private fun SoundsRow() {
             contentAlignment = Alignment.Center,
         ) { Icon(TabIcons.Volume, contentDescription = null, tint = Color.White, modifier = Modifier.size(19.dp)) }
         Spacer(Modifier.size(14.dp))
-        Text("Sounds", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.weight(1f))
+        androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+            Text("Sounds", style = MaterialTheme.typography.titleMedium, color = Glass.Ink)
+            Text("Silent mode: no tick sound while the phone is on silent or vibrate.", style = MaterialTheme.typography.labelSmall, color = Glass.Muted)
+        }
         if (mode != null) Text(word, style = MaterialTheme.typography.bodyMedium, color = Glass.PrimaryInk, maxLines = 1)
     }
 }

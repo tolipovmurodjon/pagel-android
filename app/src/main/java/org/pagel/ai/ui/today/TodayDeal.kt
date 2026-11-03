@@ -48,7 +48,7 @@ data class DueLabel(val text: String, val tone: DueTone)
 private val WEEKDAY = DateTimeFormatter.ofPattern("EEEE d MMM", Locale.UK)
 private val DAY = DateTimeFormatter.ofPattern("d MMM", Locale.UK)
 
-/** "Today 15:00", "Tomorrow", "Friday 30 Oct", "20 Nov", with the web's tone (late red, today mint, soon). */
+/** "Today 15:00", "Tomorrow", "Friday 30 Oct", "20 Nov", with the web's tone (late amber, today mint, soon). */
 fun dueLabel(due: String?, today: LocalDate): DueLabel? {
     if (due.isNullOrBlank() || due.length < 10) return null
     val day = runCatching { LocalDate.parse(due.take(10)) }.getOrNull() ?: return null

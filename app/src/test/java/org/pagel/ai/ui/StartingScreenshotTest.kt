@@ -117,6 +117,16 @@ class StartingScreenshotTest {
         assertEquals("opens in place", true, asked)
     }
 
+    /** Creative round: on a 640 dp screen the What now card hid under the glass tab bar; its bottom must clear the bar (96 dp here). */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun whatNowEndsAboveTheTabBarOnTheFirstScreen() {
+        show(1.5f) { Today(folded) }
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val barTop = root.bottom - 96f * root.width / 320f
+        val card = compose.onNodeWithContentDescription("What now?").fetchSemanticsNode().boundsInRoot
+        assertTrue("What now ends at ${card.bottom}, the bar starts at $barTop", card.bottom <= barTop)
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/start-today-folded-320x640-font-1.5.png")
+    }
+
     @Test fun todayFoldedLargeFont() {
         show(1.5f) { Today(folded) }
         assertNoCutText(1.5f)
