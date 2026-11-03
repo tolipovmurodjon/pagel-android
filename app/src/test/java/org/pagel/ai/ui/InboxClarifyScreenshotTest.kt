@@ -393,7 +393,9 @@ class InboxClarifyScreenshotTest {
         compose.onNodeWithText("412 saves from before 1 November").assertIsDisplayed()
         compose.onNodeWithContentDescription("Move all 412 to Someday").assertIsDisplayed()
         compose.onNodeWithContentDescription("Drop all 412").assertIsDisplayed()
-        compose.onNodeWithText("Telegram", substring = true).assertIsDisplayed()
+        // The source line counts the 60 it moves first, never the whole Inbox's 700 / 150 / 12 (checker 2026-11-03 #2).
+        compose.onNodeWithText("The first 60, by where they came from:").assertIsDisplayed()
+        compose.onNodeWithText("Telegram", substring = true).assertDoesNotExist()
     }
 
     /** The quiet progress line while a bulk pages through: "120 of 412", in the counts' place, no spinner. */
