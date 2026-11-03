@@ -351,7 +351,7 @@ fun TidyContent(tidy: Tidy, onSomeday: () -> Unit, onDrop: () -> Unit, onRetry: 
             n == 0 -> Text("Nothing from before 1 November. The Inbox is fresh.", style = MaterialTheme.typography.bodyLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs))
             else -> {
                 Text("$n saves from before 1 November", style = MaterialTheme.typography.titleMedium, color = Glass.Ink, modifier = Modifier.padding(start = Space.xs))
-                Text(if (tidy.bySource.isNotEmpty()) "Your whole Inbox, by where it came from:" else "By where they came from:", style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
+                Text(if (tidy.items.size < n) "The first ${tidy.items.size}, by where they came from:" else "By where they came from:", style = MaterialTheme.typography.labelSmall, color = Glass.Muted,
                     modifier = Modifier.padding(start = Space.xs, top = Space.sm))
                 // One line, not a row per source: the sheet stays short enough that both moves show on a 640 dp phone.
                 Pane(Modifier.fillMaxWidth().padding(vertical = Space.sm)) {

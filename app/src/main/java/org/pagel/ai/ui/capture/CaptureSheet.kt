@@ -16,6 +16,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -92,7 +94,8 @@ fun CaptureSheet(onClose: () -> Unit, speak: Boolean = false, vm: CaptureViewMod
             CaptureContent(vm, speak, note = kind == CaptureKind.NOTE)
             Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 20.dp, bottom = 4.dp)) {
                 KindRow(kind) { kind = it }
-                if (count > 0) Text("In Inbox · $count", style = MaterialTheme.typography.labelMedium, color = Glass.PrimaryInk, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = Space.sm, top = Space.xs))
+                // "Saved", not "In Inbox": a Note is saved too but never joins the Inbox deck (checker 2026-11-03 #4).
+                if (count > 0) Text("Saved · $count", style = MaterialTheme.typography.labelMedium, color = Glass.PrimaryInk, maxLines = 1, softWrap = false, modifier = Modifier.padding(start = Space.sm, top = Space.xs))
             }
         }
         Spacer(Modifier.height(SheetBottom))
@@ -103,9 +106,11 @@ fun CaptureSheet(onClose: () -> Unit, speak: Boolean = false, vm: CaptureViewMod
 enum class CaptureKind(val label: String) { NOT_SURE("Not sure"), NOTE("Note"), TASK("Task") }
 
 /** One small row of three, not three big buttons: the chosen one is mint. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun KindRow(kind: CaptureKind, onPick: (CaptureKind) -> Unit) {
-    Row(Modifier.padding(start = Space.xs).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
+    // Wraps instead of scrolling: at 320 dp the scrolling row cut "Task" at the edge with no hint (checker 2026-11-03 #3).
+    FlowRow(Modifier.padding(start = Space.xs), horizontalArrangement = Arrangement.spacedBy(Space.xs)) {
         for (k in listOf(CaptureKind.NOT_SURE, CaptureKind.NOTE, CaptureKind.TASK)) {
             val icon = when (k) { CaptureKind.TASK -> TabIcons.ListPlus; CaptureKind.NOTE -> TabIcons.StickyNote; CaptureKind.NOT_SURE -> TabIcons.Inbox }
             GlassChip(icon, k.label, set = kind == k, description = "Add as ${k.label}") { onPick(k) }

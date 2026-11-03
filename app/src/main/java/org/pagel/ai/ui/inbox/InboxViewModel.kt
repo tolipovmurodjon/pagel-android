@@ -194,10 +194,12 @@ data class Tidy(
 ) {
     val count get() = maxOf(total, items.size)
 
-    /** The whole Inbox by where it came from (pagel.uz's by_source), biggest first; an older pagel.uz: the page's own. */
+    /**
+     * The saves this sheet moves, by where they came from, biggest first. Never the whole Inbox's by_source: "62 saves" over
+     * "Instagram 762 · X 150" read as a wrong count (checker 2026-11-03 #2).
+     */
     val sources: List<Pair<String, Int>> get() =
-        if (bySource.isNotEmpty()) bySource.entries.map { (k, v) -> sourceName(k) to v }.filter { it.second > 0 }.sortedByDescending { it.second }
-        else items.groupingBy { siteOf(it.source).second }.eachCount().toList().sortedByDescending { it.second }
+        items.groupingBy { siteOf(it.source).second }.eachCount().toList().sortedByDescending { it.second }
 }
 
 /** pagel.uz's by_source keys (inbox-filter.ts platformOf) in words. */

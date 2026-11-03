@@ -199,7 +199,8 @@ class InboxClarifyTest {
         assertEquals(412, page.total)
         val tidy = Tidy(loading = false, items = page.items, total = page.total, bySource = page.bySource)
         assertEquals(412, tidy.count)
-        assertEquals(listOf("Instagram" to 700, "X" to 150, "Typed by you" to 55), tidy.sources)
+        // The source line counts the saves the sheet moves, never the whole Inbox (checker 2026-11-03 #2).
+        assertEquals(page.items.size, tidy.sources.sumOf { it.second })
     }
 
     @Test fun aBulkSomedayMovesThemAllQuietlyAndOneUndoStopsEveryOne() = runBlocking {

@@ -815,7 +815,7 @@ for w in One Two Three; do
   $T adb shell "input text 'Capture%s$w%sfrom%sCI'"; $T adb shell input keyevent 66; sleep 1.5
 done
 shot capture-three 1.5
-grep -q 'text="In Inbox · 3"' "$OUT/$(printf '%02d' $N)-capture-three.xml" || fail_inbox "the capture sheet does not count \"In Inbox · 3\""
+grep -q 'text="Saved · 3"' "$OUT/$(printf '%02d' $N)-capture-three.xml" || fail_inbox "the capture sheet does not count \"Saved · 3\""
 for k in 1 2 3; do
   $T adb shell uiautomator dump /sdcard/ui.xml > /dev/null 2>&1
   timeout 20 adb exec-out cat /sdcard/ui.xml < /dev/null | grep -q 'New capture' || break

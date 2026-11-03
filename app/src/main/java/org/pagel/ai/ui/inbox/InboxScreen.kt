@@ -405,16 +405,15 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
             GoalRing(minOf(ui.sorted, ui.goal), ui.goal, Modifier.onGloballyPositioned { onRing(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) })
         }
         // Always there, so the deck never moves when the first decision lands (RULES.md Layout 1).
-        val large = LocalDensity.current.fontScale >= 1.3f
         Row(Modifier.heightIn(min = Space.touch), verticalAlignment = Alignment.CenterVertically) {
             val line = bulk?.let(::bulkLine) ?: if (old) oldLeftLine(ui) else null
             if (line != null) Text(line, style = MaterialTheme.typography.labelSmall, color = Glass.Muted, modifier = Modifier.weight(1f))
-            else if (!old) SourceChips(ui, actions, Modifier.weight(1f), large)
+            else if (!old) SourceChips(ui, actions, Modifier.weight(1f))
             else Spacer(Modifier.weight(1f))
         }
-        // The Old pile and the order pill sit on a line of their own, so at 320 to 360 dp two source chips show with no sideways
-        // scroll. On a large font that line is too dear (the claim needs it): they join the end of the chips row instead.
-        if (!old && !large) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // The Old pile and the order pill sit on a line of their own at every font size: at 1.5x they used to join the chips
+        // row and scrolled off as "Newe", and the screen changed shape between sizes (checker 2026-11-03 #1).
+        if (!old) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OldPileRow(ui, actions.openOld)
             Spacer(Modifier.weight(1f))
             if (ui.sources.isNotEmpty()) OrderPill(ui, actions)
@@ -424,12 +423,9 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
     }
 }
 
-/**
- * The source chips in one scrolling row (they never cut): "All", then each source that has saves with its count. On a large
- * font the Old pile and the order pill (Newest first, Oldest first, Shuffle) follow them in the same row.
- */
+/** The source chips in one scrolling row (they never cut): "All", then each source that has saves with its count. */
 @Composable
-private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier = Modifier, large: Boolean = false) {
+private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier = Modifier) {
     Row(modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalAlignment = Alignment.CenterVertically) {
         if (ui.sources.isNotEmpty()) {
             val all = ui.sources.sumOf { it.count }
@@ -438,10 +434,6 @@ private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier =
                 val icon = when (s.key) { "note" -> TabIcons.StickyNote; "web" -> TabIcons.ArrowUpRight; else -> TabIcons.Sparkles }
                 GlassChip(icon, "${s.label} \u00B7 ${s.count}", set = ui.source == s.key, description = "${s.label} \u00B7 ${s.count}") { actions.setSource(s.key) }
             }
-        }
-        if (large) {
-            OldPileRow(ui, actions.openOld)
-            if (ui.sources.isNotEmpty()) OrderPill(ui, actions)
         }
     }
 }
@@ -1047,7 +1039,7 @@ private fun Dock(card: InboxCard, ui: InboxUi, actions: InboxActions) {
             val press = remember { MutableInteractionSource() }
             val laterOff = card.putOff
             Row(
-                Modifier.heightIn(min = DOCK_LINK_ROW).pressScale(press).graphicsLayer { alpha = if (laterOff) 0.4f else 1f }
+                Modifier.heightIn(min = DOCK_LINK_ROW).pressScale(press).graphicsLayer { alpha = if (laterOff) 0.6f else 1f }
                     .clickable(press, indication = null, enabled = !laterOff, role = Role.Button) { actions.choose(card, Choice.LATER, Throw.None) }
                     .padding(horizontal = Space.sm),
                 verticalAlignment = Alignment.CenterVertically,
