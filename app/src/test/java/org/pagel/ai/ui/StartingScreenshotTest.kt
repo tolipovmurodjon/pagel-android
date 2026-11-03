@@ -17,7 +17,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getBoundsInRoot
-import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -117,16 +117,6 @@ class StartingScreenshotTest {
         assertEquals("opens in place", true, asked)
     }
 
-    /** Creative round: on a 640 dp screen the What now card hid under the glass tab bar; its bottom must clear the bar (96 dp here). */
-    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun whatNowEndsAboveTheTabBarOnTheFirstScreen() {
-        show(1.5f) { Today(folded) }
-        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
-        val barTop = root.bottom - 96f * root.width / 320f
-        val card = compose.onNodeWithContentDescription("What now?").fetchSemanticsNode().boundsInRoot
-        assertTrue("What now ends at ${card.bottom}, the bar starts at $barTop", card.bottom <= barTop)
-        compose.onRoot().captureRoboImage("build/outputs/roborazzi/start-today-folded-320x640-font-1.5.png")
-    }
-
     @Test fun todayFoldedLargeFont() {
         show(1.5f) { Today(folded) }
         assertNoCutText(1.5f)
@@ -134,8 +124,9 @@ class StartingScreenshotTest {
     }
 
     @Test fun todayOpenListsEveryTaskInOrder() = both({ Today(folded.copy(expanded = true)) }) { s ->
-        compose.onNodeWithText("Write the release note").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Show 3").assertIsDisplayed()
+        // The What now card sits above the list now, so the end of the open list is scrolled to.
+        compose.onNodeWithText("Write the release note").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Show 3").performScrollTo().assertIsDisplayed()
         assertNoCutText(s)
         shot("today-open", s)
     }
@@ -254,11 +245,10 @@ class StartingScreenshotTest {
         }
     }
 
-    /** At the end of the scroll the What now card sits fully above the glass tab bar (not under it), at both font sizes. */
-    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun todayScrolledToTheBottomShowsWhatNowAboveTheBar() {
+    /** Creative round: on the FIRST screen (no scroll) the What now card sits fully above the glass tab bar, at both font sizes. */
+    @Test @Config(qualifiers = "w320dp-h640dp-xxhdpi") fun todayFirstScreenShowsWhatNowAboveTheBar() {
         for (s in listOf(1f, 1.5f)) {
             if (s == 1f) show(1f) { Today(folded) } else { scale = s; compose.waitForIdle() }
-            repeat(3) { compose.onRoot().performTouchInput { swipeUp() } }
             compose.waitForIdle()
             val card = compose.onNodeWithContentDescription("What now?").getBoundsInRoot()
             val root = compose.onRoot().getBoundsInRoot()

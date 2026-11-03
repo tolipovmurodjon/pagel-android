@@ -161,8 +161,8 @@ private val Hair = 2.dp
  */
 fun projectColor(ui: UpcomingUi, project: String): Color = calendarSafe(TileColors.stops(project, ui.projects[project]?.color).first)
 
-/** OKLCH hues the calendar never paints: red, from pink (330°) round to peach (50°); a peach at 40° is HSV hue 20°, still red. */
-internal fun isWarmRed(hue: Double): Boolean = hue < 50.0 || hue >= 330.0
+/** OKLCH hues the calendar never paints: red, from pink (330°) round to orange-peach (70°); a peach at 60° is still HSV hue 22°, red. */
+internal fun isWarmRed(hue: Double): Boolean = hue < 70.0 || hue >= 330.0
 
 /**
  * Never alarm red (checker round 2 #2; Boss 2026-10-31: the softened red still read as pale salmon, "near red"): a
