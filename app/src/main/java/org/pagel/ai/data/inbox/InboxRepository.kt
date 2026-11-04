@@ -90,8 +90,7 @@ class InboxRepository(
     /** How many old saves pagel.uz holds (null = not known yet). */
     val oldTotal: StateFlow<Int?> = captured.oldLeft
     val leavingOld: Flow<Int> = dao.leavingOldCount()
-    /** The whole Archive by source and by project, and what is left in the focus, as pagel.uz last counted (null = an older pagel.uz). */
-    val pile = MutableStateFlow<PileCounts?>(null)
+    val pile: StateFlow<PileCounts?> = captured.pile
     private var visitSeed = clock()
     private var randomVisit = false
 
@@ -160,7 +159,7 @@ class InboxRepository(
         return when (val r = api.inbox(account.serverUrl, account.token, OLDER_PAGE, seed = focus.seed, olderThan = days, focus.source, focus.project, focus.newest)) {
             is Outcome.Failed -> r
             is Outcome.Ok -> {
-                r.value.pileTotal?.let { pile.value = PileCounts(r.value.pileBySource.orEmpty(), r.value.pileByProject.orEmpty(), it) }
+                r.value.pileTotal?.let { captured.pile.value = PileCounts(r.value.pileBySource.orEmpty(), r.value.pileByProject.orEmpty(), it) }
                 val here = captured.files.value
                 Outcome.Ok(dao.addOld(r.value.items.map(::entity).filter { !isCurrent(it, fresh.value, here) }))
             }
@@ -288,7 +287,7 @@ class InboxSender(
                 dao.sent(op.id, body.file, body.action, out.value.sorted, out.value.keptToday, clock(), body.quiet == true)
                 if (old && body.action != "later") {
                     captured.oldLeft.update { it?.minus(1)?.coerceAtLeast(0) }
-                    pile.update { it?.copy(left = (it.left - 1).coerceAtLeast(0)) }
+                    captured.pile.update { it?.copy(left = (it.left - 1).coerceAtLeast(0)) }
                 }
                 SortStep.SENT
             }

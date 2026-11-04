@@ -84,6 +84,9 @@ class CapturedFiles(private val prefs: SharedPreferences? = null) {
     /** Old saves pagel.uz still holds, as last known; null until the first answer. */
     val oldLeft = MutableStateFlow<Int?>(null)
 
+    /** The Archive by source and by project, and what is left in its focus, as pagel.uz last counted (null = an older pagel.uz). */
+    val pile = MutableStateFlow<PileCounts?>(null)
+
     fun add(file: String) {
         state.update { (it + file).toList().takeLast(MAX).toSet() }
         runCatching { prefs?.edit()?.putStringSet(KEY, state.value)?.apply() }
