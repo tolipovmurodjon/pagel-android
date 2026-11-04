@@ -8,6 +8,11 @@
 -->
 <resources>
     <string-array name="whats_new_items">
+        <item>#0.3.47 · Archive focus</item>
+        <item>Archive: one Focus icon, no group rows|inbox</item>
+        <item>Focus on Instagram, X, LinkedIn or Telegram|inbox</item>
+        <item>Focus on a topic: ABABIL, Humopedia, PAGEL|inbox</item>
+        <item>Shuffle now works in the Archive|inbox</item>
         <item>#0.3.46 · Inbox, calm again</item>
         <item>A calm list: drop things in all week|inbox</item>
         <item>Clear it at the end of the week|inbox</item>

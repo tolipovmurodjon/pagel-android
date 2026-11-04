@@ -135,14 +135,23 @@ def by_source(items):
         out[k] = out.get(k, 0) + 1
     return out
 
-def old_body(limit=60):
+def old_body(limit=60, source=None, project=None):
     left = old_left()
     items = [{"file": f"inbox/{i}.md", "saved": "2026-01-05", "source": f"https://www.instagram.com/p/{i}/", "text": f"An old save {k}. It has sat here since January.", "claim": f"An old save {k}", "why": "",
               "project": "all", "kind": "drop", "next": "", "note": "", "guessed": True, "author": "old.account", "posted": "2026-01-05", "later": None, "has_picture": False}
              for k, i in enumerate(OLD_IDS, 1) if i in left]
     items.sort(key=lambda x: x["file"])
+    # The Archive's focus (inbox-api.ts, 2026-11-04): source and project narrow the pile; each side counts inside the other's choice.
+    from_ok = lambda it: not source or by_source([it]).get(source)
+    about_ok = lambda it: not project or (it["project"] or "all") == project
+    focus = [it for it in items if from_ok(it) and about_ok(it)]
+    by_project = {}
+    for it in items:
+        if from_ok(it):
+            by_project[it["project"] or "all"] = by_project.get(it["project"] or "all", 0) + 1
     return {"day": today(), "goal": 20, "sorted": counted(), "kept_today": 2, "cap": 5, "min_words": 6, "total": 900 + len(items),
-            "by_source": {"instagram": 700 + len(items), "x": 150}, "older_than_60": len(items), "items": items[:limit]}
+            "by_source": {"instagram": 700 + len(items), "x": 150}, "older_than_60": len(items),
+            "pile_by_source": by_source([it for it in items if about_ok(it)]), "pile_by_project": by_project, "pile_total": len(focus), "items": focus[:limit]}
 
 def inbox_body():
     sorted_files = {f for f, a in SORTS if a != "later"}
@@ -340,8 +349,9 @@ class H(BaseHTTPRequestHandler):
             return self.send(404, {"error": "No picture."})
         if self.path.startswith("/api/v1/inbox"):
             if "older_than=" in self.path:
-                lim = parse_qs(urlparse(self.path).query).get("limit", ["60"])[0]
-                return self.send(200, old_body(min(int(lim) if lim.isdigit() else 60, 60)))
+                q = parse_qs(urlparse(self.path).query)
+                lim = q.get("limit", ["60"])[0]
+                return self.send(200, old_body(min(int(lim) if lim.isdigit() else 60, 60), q.get("source", [None])[0], q.get("project", [None])[0]))
             return self.send(200, inbox_body())
         if self.path.startswith("/api/v1/completed"):
             # total = every finished task, as the web counts them; 4 were finished before done_at was kept (no row).

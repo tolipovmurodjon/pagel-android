@@ -272,7 +272,10 @@ data class InboxActions(
     /** Open the Old pile (the saves from before the fresh start) and come back from it. */
     val openOld: () -> Unit = {},
     val closeOld: () -> Unit = {},
-    val dropGroup: (OldGroup) -> Unit = {},
+    /** The Archive's focus: one source, one project, the order. */
+    val setArchive: (ArchiveView) -> Unit = {},
+    /** Focus opened: fresh counts from pagel.uz. */
+    val recount: () -> Unit = {},
     /** A source chip (null = All) and the order pill. */
     val setSource: (String?) -> Unit = {},
     val cycleOrder: () -> Unit = {},
@@ -318,7 +321,7 @@ fun InboxRoute(
         ui, leaving, pictures, contentPadding, reselect = reselect, cheer = cheer, sortedCount = sortedToday.size, bulk = bulk, clearing = clearing,
         actions = InboxActions(
             choose = vm::choose, shuffle = vm::shuffle, openForm = vm::openForm, leaveDone = vm::leaveDone, help = { guide = true }, readAll = { reading = it }, sorted = onSorted, tidy = vm::openTidy,
-            repeat = vm::repeat, capture = onCapture, openOld = vm::openOld, closeOld = vm::closeOld, dropGroup = vm::dropGroup, setSource = vm::setSource, cycleOrder = vm::cycleOrder,
+            repeat = vm::repeat, capture = onCapture, openOld = vm::openOld, closeOld = vm::closeOld, setArchive = vm::setArchive, recount = vm::recount, setSource = vm::setSource, cycleOrder = vm::cycleOrder,
             clear = { file -> vm.focusOn(file); clearing = true }, stopClear = stop,
         ),
     )
@@ -406,6 +409,7 @@ fun InboxScreen(
 @Composable
 private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit, bulk: Bulk? = null) {
     val old = ui.oldMode
+    var focusing by remember { mutableStateOf(false) }
     // The deck's header is 0.3.41's (Boss 2026-11-03: "previous updates were perfect"): back, the title, one line, the ring.
     Column(Modifier.fillMaxWidth().padding(start = 8.dp, end = 12.dp, top = 12.dp, bottom = Space.sm)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -416,19 +420,20 @@ private fun Header(ui: InboxUi, actions: InboxActions, onRing: (Offset) -> Unit,
                 style = MaterialTheme.typography.headlineLarge.let { s -> val f = LocalDensity.current.fontScale; s.copy(fontSize = s.fontSize * (min(f, 1.2f) / f), lineHeight = s.lineHeight * (min(f, 1.2f) / f)) },
                 modifier = Modifier.weight(1f).semantics { heading() },
             )
-            if (old) GlassIconButton(TabIcons.CalendarRange, "Tidy old saves", plain = true, onClick = actions.tidy)
+            // The Archive's one icon (Boss 2026-11-04: "drop group nope… filter… one icon"): Focus opens From, About and
+            // Order; a set focus wears the mint ring so it never hides. The tidy-up lives one level down, in that sheet.
+            if (old) GlassIconButton(TabIcons.ListFilter, "Focus", plain = !ui.archive.focused, on = ui.archive.focused, onClick = { focusing = true; actions.recount() })
             else GlassIconButton(TabIcons.CircleHelp, "How sorting works", plain = true, onClick = actions.help)
             GoalRing(minOf(ui.sorted, ui.goal), ui.goal, Modifier.onGloballyPositioned { onRing(it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)) })
         }
         val line = bulk?.let(::bulkLine) ?: when {
-            old -> oldLeftLine(ui)
+            old -> archiveLine(ui)
             ui.sorted >= ui.goal -> "Done today \u00B7 ${ui.left}\u00A0left"
             else -> "${ui.left}\u00A0left"
         }
         Text(line, style = MaterialTheme.typography.labelMedium, color = Glass.Muted, modifier = Modifier.padding(start = 12.dp))
-        // The Archive's own topics, right on its screen (Boss: "groups, Claude tips, Drop group"), two at a time.
-        if (old && bulk == null) for (g in ui.oldGroups.take(2)) OldGroupRow(g, actions.dropGroup)
     }
+    if (focusing) ArchiveFocusSheet(ui, onSet = actions.setArchive, onTidy = { focusing = false; actions.tidy() }, onDismiss = { focusing = false })
 }
 
 /** The source chips and the order pill, wrapping onto a second line rather than scrolling one off the edge. */
@@ -446,24 +451,103 @@ private fun SourceChips(ui: InboxUi, actions: InboxActions, modifier: Modifier =
     }
 }
 
+private val ARCHIVE_ORDERS = listOf(InboxOrder.OLDEST, InboxOrder.NEWEST, InboxOrder.SHUFFLE)
+
+private fun sourceIcon(key: String) = when (key) {
+    "instagram" -> TabIcons.Instagram; "x" -> TabIcons.XLogo; "note" -> TabIcons.StickyNote; else -> TabIcons.Globe
+}
+
+private fun orderIcon(o: InboxOrder) = when (o) { InboxOrder.OLDEST -> TabIcons.Hourglass; InboxOrder.NEWEST -> TabIcons.Clock; InboxOrder.SHUFFLE -> TabIcons.Shuffle }
+
+/** A project's own name ("ABABIL"); "all" is a save the AI has not read yet. */
+fun projectLabel(name: String, projects: List<org.pagel.ai.data.db.ProjectEntity>): String =
+    projects.firstOrNull { it.name == name }?.title ?: if (name == "all") "Not read yet" else name.replaceFirstChar { it.uppercase() }
+
+private fun counted(label: String, n: Int?) = if (n == null) label else "$label · $n"
+
+/**
+ * The Archive's Focus (Boss 2026-11-04: "filter Telegram, X, Instagram, LinkedIn… ABABIL, Humopedia… one icon"): From,
+ * About and Order in one glass sheet, each choice with its real count (pagel.uz counts the whole pile, each side inside
+ * the other's choice). A tap answers at once behind the sheet; "Show N" closes it. The bulk tidy-up waits one level
+ * down, the last quiet row, so a stray tap never drops a group.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ArchiveFocusSheet(ui: InboxUi, onSet: (ArchiveView) -> Unit, onTidy: () -> Unit, onDismiss: () -> Unit) {
+    val a = ui.archive
+    val pile = ui.pile
+    org.pagel.ai.ui.glass.GlassSheet(onDismiss) {
+        org.pagel.ai.ui.glass.SheetTitle("Focus")
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            FocusGroup("From") {
+                val all = counted("All", pile?.bySource?.values?.sum())
+                GlassChip(TabIcons.Archive, all, set = a.source == null, description = "From: $all") { onSet(a.copy(source = null)) }
+                // The chosen one stays on screen even when its count falls to 0 under the other side's choice.
+                val keys = pile?.bySource.orEmpty().entries.sortedByDescending { it.value }.map { it.key }.let { k -> k + listOfNotNull(a.source).filter { it !in k } }
+                for (k in keys) {
+                    val label = counted(sourceName(k), pile?.bySource?.get(k) ?: 0)
+                    GlassChip(sourceIcon(k), label, set = a.source == k, description = "From: $label") { onSet(a.copy(source = k)) }
+                }
+            }
+            FocusGroup("About") {
+                val all = counted("All", pile?.byProject?.values?.sum())
+                GlassChip(TabIcons.Archive, all, set = a.project == null, description = "About: $all") { onSet(a.copy(project = null)) }
+                val keys = pile?.byProject.orEmpty().entries.sortedByDescending { it.value }.map { it.key }.let { k -> k + listOfNotNull(a.project).filter { it !in k } }
+                for (k in keys) {
+                    val p = ui.projects.firstOrNull { it.name == k }
+                    val label = counted(projectLabel(k, ui.projects), pile?.byProject?.get(k) ?: 0)
+                    GlassChip(TabIcons.Folder, label, set = a.project == k, description = "About: $label",
+                        leading = p?.let { { ProjectTile(it.name, it.color, it.title, size = 20.dp) } }) { onSet(a.copy(project = k)) }
+                }
+            }
+            FocusGroup("Order") {
+                for (o in ARCHIVE_ORDERS) GlassChip(orderIcon(o), o.label, set = a.order == o, description = "Order: ${o.label}") { onSet(a.copy(order = o)) }
+            }
+            Spacer(Modifier.height(Space.md))
+            ShowButton(pile?.left ?: ui.left, onDismiss)
+            Spacer(Modifier.height(Space.sm))
+            FootRow(TabIcons.Archive, "Tidy up all old saves", "Tidy up all old saves", onTidy)
+        }
+        Spacer(Modifier.height(org.pagel.ai.ui.glass.SheetBottom))
+    }
+}
+
+/** One part of the Focus sheet: its quiet name over its chips, which wrap rather than scroll off the edge. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FocusGroup(title: String, chips: @Composable () -> Unit) {
+    Text(title, style = MaterialTheme.typography.labelLarge, color = Glass.Muted, modifier = Modifier.padding(start = Space.xs, top = Space.sm, bottom = Space.xs).semantics { heading() })
+    FlowRow(Modifier.fillMaxWidth().padding(bottom = Space.sm), horizontalArrangement = Arrangement.spacedBy(Space.xs), verticalArrangement = Arrangement.spacedBy(Space.xs)) { chips() }
+}
+
+/** The Focus sheet's one mint button: what Boss gets, "Show 120 saves". */
+@Composable
+private fun ShowButton(n: Int, onClick: () -> Unit) {
+    val press = remember { MutableInteractionSource() }
+    val words = if (n == 1) "Show 1 save" else "Show $n saves"
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).pressScale(press).background(Glass.Primary, CircleShape)
+            .clickable(press, indication = null, role = Role.Button, onClick = onClick).semantics(mergeDescendants = true) { contentDescription = words }
+            .padding(horizontal = Space.xl, vertical = Space.md),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(words, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** The Archive's line: its count and the day it ends, or the focus in words ("Instagram · ABABIL · 40 left"). */
+fun archiveLine(ui: InboxUi): String {
+    val a = ui.archive
+    if (!a.focused && a.order == InboxOrder.OLDEST) return oldLeftLine(ui)
+    val left = if (a.focused) ui.pile?.left ?: ui.left else ui.old ?: ui.left
+    val words = listOfNotNull(a.source?.let(::sourceName), a.project?.let { projectLabel(it, ui.projects) }, a.order.takeIf { it != InboxOrder.OLDEST }?.label)
+    return (words + "$left left").joinToString(" · ")
+}
+
 /** The order pill: one tap goes Newest first, Oldest first, Shuffle. */
 @Composable
 private fun OrderPill(ui: InboxUi, actions: InboxActions) {
     GlassChip(TabIcons.Clock, ui.order.label, set = ui.order != InboxOrder.NEWEST, description = ui.order.label) { actions.cycleOrder() }
-}
-
-/** One topic of the Old pile with its one-tap "Drop group" (the Undo toast stops it before pagel.uz hears). */
-@Composable
-private fun OldGroupRow(g: OldGroup, onDrop: (OldGroup) -> Unit) {
-    val press = remember(g.name) { MutableInteractionSource() }
-    Row(Modifier.fillMaxWidth().heightIn(min = Space.touch), verticalAlignment = Alignment.CenterVertically) {
-        Text("${g.name} \u00B7 ${g.items.size}", style = MaterialTheme.typography.labelLarge, color = Glass.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = Space.xs))
-        Text(
-            "Drop group", style = MaterialTheme.typography.labelLarge, color = Glass.PrimaryInk, maxLines = 1, softWrap = false,
-            modifier = Modifier.heightIn(min = Space.touch).pressScale(press).clickable(press, indication = null, role = Role.Button) { onDrop(g) }
-                .wrapContentHeight(Alignment.CenterVertically).padding(horizontal = Space.sm).semantics { contentDescription = "Drop group ${g.name}" },
-        )
-    }
 }
 
 /**

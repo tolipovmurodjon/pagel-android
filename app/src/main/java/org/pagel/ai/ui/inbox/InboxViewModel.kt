@@ -131,6 +131,47 @@ fun applyOrder(items: List<InboxItemEntity>, v: ViewPrefs, shown: List<String>):
     InboxOrder.SHUFFLE -> org.pagel.ai.data.inbox.openOrder(items, (shown + v.skipped).distinct(), v.seed)
 }
 
+/** pagel.uz's platformOf (inbox-filter.ts) on the phone, so the Archive's From matches its counts. */
+fun platformKey(source: String): String {
+    val host = runCatching { java.net.URI(source.trim()).host }.getOrNull()?.removePrefix("www.") ?: return "note"
+    return when {
+        "instagram" in host -> "instagram"
+        host == "x.com" || host.endsWith(".x.com") || host.endsWith("twitter.com") -> "x"
+        "linkedin" in host -> "linkedin"
+        "youtube" in host || host == "youtu.be" -> "youtube"
+        host == "t.me" || "telegram" in host -> "telegram"
+        else -> "web"
+    }
+}
+
+/**
+ * The Archive's focus (Boss 2026-11-04: "filter Telegram, X, Instagram, LinkedIn… ABABIL, Humopedia, so I can focus on
+ * related when sorting"): one source, one project ("all" = not read yet), the order. Oldest first by default.
+ */
+data class ArchiveView(val source: String? = null, val project: String? = null, val order: InboxOrder = InboxOrder.OLDEST) {
+    val focused get() = source != null || project != null
+    private fun from(i: InboxItemEntity) = source == null || platformKey(i.source) == source
+    private fun about(i: InboxItemEntity) = project == null || i.project.ifBlank { "all" } == project
+
+    /** The Archive's saves on the phone in this focus and order (pagel.uz deals the same, a page at a time). */
+    fun deal(items: List<InboxItemEntity>, seed: Long): List<InboxItemEntity> {
+        val f = items.filter { from(it) && about(it) }
+        val day = { i: InboxItemEntity -> i.posted.ifBlank { i.saved } }
+        return when (order) {
+            InboxOrder.OLDEST -> f.sortedBy(day)
+            InboxOrder.NEWEST -> f.sortedByDescending(day)
+            InboxOrder.SHUFFLE -> org.pagel.ai.data.inbox.openOrder(f, emptyList(), seed)
+        }
+    }
+
+    /** The phone's own counts when pagel.uz sends none: each side inside the other side's choice, as pagel.uz counts. */
+    fun counts(items: List<InboxItemEntity>, left: Int) = org.pagel.ai.data.inbox.PileCounts(
+        items.filter(::about).groupingBy { platformKey(it.source) }.eachCount(),
+        items.filter(::from).groupingBy { it.project.ifBlank { "all" } }.eachCount(),
+        left,
+    )
+}
+
 data class InboxUi(
     val loading: Boolean = true,
     val cards: List<InboxCard> = emptyList(),
@@ -155,8 +196,9 @@ data class InboxUi(
     val oldMode: Boolean = false,
     /** The Old pile just reached 0: its row says "Old pile done" once, then hides. */
     val oldDone: Boolean = false,
-    /** The Old pile's topics ("Claude / AI tool tips"), by plain rules, shown on its own screen. */
-    val oldGroups: List<OldGroup> = emptyList(),
+    /** The Archive's focus and its counts (pagel.uz's for the whole pile, else the phone's page). */
+    val archive: ArchiveView = ArchiveView(),
+    val pile: org.pagel.ai.data.inbox.PileCounts? = null,
 ) {
     val full get() = kept >= cap
 }
@@ -259,11 +301,15 @@ class InboxViewModel @Inject constructor(
     private val visitSeed = MutableStateFlow(System.currentTimeMillis())
     private val skipped = MutableStateFlow(skippedToday())
     private val viewPrefs = combine(order, sourceFilter, visitSeed, skipped) { o, s, seed, k -> ViewPrefs(o, s, seed, k) }
+    private val archive = MutableStateFlow(ArchiveView(order = runCatching { InboxOrder.valueOf(prefs.getString(ARCHIVE_ORDER, InboxOrder.OLDEST.name).orEmpty()) }.getOrDefault(InboxOrder.OLDEST)))
     private var oldLoading = false
+    /** The focus changed while a page was on its way: ask again, in the new focus, when it lands. */
+    private var oldAgain = false
     private var oldMisses = 0
-    private data class OldView(val fresh: String, val captured: Set<String>, val total: Int?, val leaving: Int, val mode: Boolean, val doneShown: Boolean, val view: ViewPrefs)
-    private val oldView = combine(repo.freshFrom, repo.captured.files, repo.oldTotal, repo.leavingOld, combine(oldMode, doneShown, viewPrefs) { m, d, v -> Triple(m, d, v) }) { f, c, t, l, md ->
-        OldView(f, c, t, l, md.first, md.second, md.third)
+    private data class Mode(val on: Boolean, val doneShown: Boolean, val view: ViewPrefs, val archive: ArchiveView)
+    private data class OldView(val fresh: String, val captured: Set<String>, val total: Int?, val leaving: Int, val mode: Boolean, val doneShown: Boolean, val view: ViewPrefs, val archive: ArchiveView)
+    private val oldView = combine(repo.freshFrom, repo.captured.files, repo.oldTotal, repo.leavingOld, combine(oldMode, doneShown, viewPrefs, archive) { m, d, v, a -> Mode(m, d, v, a) }) { f, c, t, l, m ->
+        OldView(f, c, t, l, m.on, m.doneShown, m.view, m.archive)
     }
     private val _open = kotlinx.coroutines.channels.Channel<InboxOpen>(kotlinx.coroutines.channels.Channel.BUFFERED)
     /** A toast's Open: the shell pushes the project page or its notes. */
@@ -309,18 +355,20 @@ class InboxViewModel @Inject constructor(
         val chips = if (old.mode) emptyList() else sourceCounts(pool)
         // A chip that no longer has saves (its last one was sorted) falls back to All instead of showing an empty Inbox.
         val chosen = old.view.source?.takeIf { k -> chips.any { it.key == k } }
-        val filtered = if (old.mode || chosen == null) pool else pool.filter { sourceChip(it.source).first == chosen }
-        val ordered = if (old.mode) filtered else applyOrder(filtered, old.view, repo.captured.shown)
+        val ordered = if (old.mode) old.archive.deal(pool, old.view.seed)
+            else applyOrder(if (chosen == null) pool else pool.filter { sourceChip(it.source).first == chosen }, old.view, repo.captured.shown)
         val onDeck = visibleDeck(ordered, live.hidden)
         val lead = live.focus?.takeIf { !old.mode }?.let { f -> onDeck.firstOrNull { it.file == f } }
         val dealt = if (lead == null) onDeck else listOf(lead) + (onDeck - lead)
         build(dealt, state, projects, live.run, deck.isEmpty(), old, list = if (old.mode) emptyList() else onDeck)
-            .copy(reading = live.reading, sources = chips, source = chosen, order = old.view.order, oldGroups = if (old.mode) oldGroups(pool) else emptyList())
+            .copy(reading = live.reading, sources = chips, source = chosen, order = old.view.order, archive = old.archive, pile = if (old.mode) old.archive.counts(pool, onDeck.size) else null)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     /** Boss's one goal: five sorted a day, counted on the phone from what he sorted today (Do, Note, Waiting, Drop; never Later or tidy moves). */
-    val ui: StateFlow<InboxUi> = combine(baseUi, where.sortedToday()) { u, rows -> u.copy(sorted = goalCount(rows), goal = GOAL) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
+    val ui: StateFlow<InboxUi> = combine(baseUi, where.sortedToday(), repo.pile) { u, rows, p ->
+        // pagel.uz counts the whole Archive; the phone's own counts (one page) stand only for an older pagel.uz.
+        u.copy(sorted = goalCount(rows), goal = GOAL, pile = if (u.oldMode) p ?: u.pile else null)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), InboxUi())
 
     init {
         refresh()
@@ -444,19 +492,39 @@ class InboxViewModel @Inject constructor(
 
     fun closeOld() { oldMode.value = false }
 
-    /** The next page of the Old pile (60, oldest first); it stops after a few pages that bring nothing new. */
+    /**
+     * The Archive's focus (one source, one project, the order): the screen answers at once from the saves on the phone,
+     * and the next page in the new focus comes from pagel.uz with its counts. Shuffle tapped again deals again.
+     */
+    fun setArchive(a: ArchiveView) {
+        val was = archive.value
+        if (a.order != was.order) prefs.edit().putString(ARCHIVE_ORDER, a.order.name).apply()
+        if (a.order == InboxOrder.SHUFFLE && (was.order != InboxOrder.SHUFFLE || a == was)) visitSeed.value = System.currentTimeMillis()
+        archive.value = a
+        oldMisses = 0
+        loadOld()
+    }
+
+    /** Focus opened: pagel.uz counts the pile again, so the counts match what was sorted since. */
+    fun recount() { oldMisses = 0; loadOld() }
+
+    /** The next page of the Old pile (60) in the Archive's focus; it stops after a few pages that bring nothing new. */
     private fun loadOld() {
-        if (oldLoading || oldMisses >= 3) return
+        if (oldLoading) { oldAgain = true; return }
+        if (oldMisses >= 3) return
         oldLoading = true
         viewModelScope.launch {
             try {
                 val account = (accounts.load() as? AccountState.Paired)?.account ?: return@launch
-                when (val r = repo.loadOld(account)) {
+                val a = archive.value
+                val focus = org.pagel.ai.data.inbox.ArchiveFocus(a.source, a.project, newest = a.order == InboxOrder.NEWEST, seed = if (a.order == InboxOrder.SHUFFLE) visitSeed.value else 0)
+                when (val r = repo.loadOld(account, focus)) {
                     is org.pagel.ai.data.Outcome.Ok -> if (r.value == 0) oldMisses++ else oldMisses = 0
                     else -> oldMisses++
                 }
             } finally {
                 oldLoading = false
+                if (oldAgain) { oldAgain = false; oldMisses = 0; loadOld() }
             }
         }
     }
@@ -800,6 +868,7 @@ class InboxViewModel @Inject constructor(
 
     companion object {
         private const val ORDER = "order"
+        private const val ARCHIVE_ORDER = "archive_order"
         private const val SKIPPED = "skipped_files"
         private const val SKIPPED_DAY = "skipped_day"
         private const val OLD_SEEN = "old_pile_seen"

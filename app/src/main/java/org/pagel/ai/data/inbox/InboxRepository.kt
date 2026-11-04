@@ -64,6 +64,14 @@ internal fun tashkentDay(ms: Long): String = Instant.ofEpochMilli(ms).atZone(Zon
 internal fun tashkentDayStart(ms: Long): Long = Instant.ofEpochMilli(ms).atZone(ZoneId.of("Asia/Tashkent")).toLocalDate().atStartOfDay(ZoneId.of("Asia/Tashkent")).toInstant().toEpochMilli()
 
 /**
+ * The Archive's focus (Boss 2026-11-04: "filter Telegram, X, Instagram, LinkedIn… ABABIL, Humopedia, so I can focus on
+ * related when sorting"): one source (pagel.uz's platformOf key), one project, newest first or a shuffle [seed] (0 = oldest first).
+ */
+data class ArchiveFocus(val source: String? = null, val project: String? = null, val newest: Boolean = false, val seed: Long = 0)
+
+data class PileCounts(val bySource: Map<String, Int>, val byProject: Map<String, Int>, val left: Int)
+
+/**
  * The Inbox (Phase 2): the deck and the day's counts live in Room, so sorting works with no network; each choice
  * waits in the outbox and is sent in order. Refresh pulls the next cards from pagel.uz when the screen opens or the
  * deck runs low.
@@ -82,6 +90,8 @@ class InboxRepository(
     /** How many old saves pagel.uz holds (null = not known yet). */
     val oldTotal: StateFlow<Int?> = captured.oldLeft
     val leavingOld: Flow<Int> = dao.leavingOldCount()
+    /** The whole Archive by source and by project, and what is left in the focus, as pagel.uz last counted (null = an older pagel.uz). */
+    val pile = MutableStateFlow<PileCounts?>(null)
     private var visitSeed = clock()
     private var randomVisit = false
 
@@ -145,11 +155,12 @@ class InboxRepository(
      * Brings the next page (60) of the Old pile into Room, oldest first, behind the ones already here. The pile is every
      * save before the fresh start. Returns how many were new, or the failure.
      */
-    suspend fun loadOld(account: Account): Outcome<Int> {
+    suspend fun loadOld(account: Account, focus: ArchiveFocus = ArchiveFocus()): Outcome<Int> {
         val days = oldPileDays(fresh.value, tashkentDay(clock()))
-        return when (val r = api.inbox(account.serverUrl, account.token, OLDER_PAGE, seed = 0, olderThan = days)) {
+        return when (val r = api.inbox(account.serverUrl, account.token, OLDER_PAGE, seed = focus.seed, olderThan = days, focus.source, focus.project, focus.newest)) {
             is Outcome.Failed -> r
             is Outcome.Ok -> {
+                r.value.pileTotal?.let { pile.value = PileCounts(r.value.pileBySource.orEmpty(), r.value.pileByProject.orEmpty(), it) }
                 val here = captured.files.value
                 Outcome.Ok(dao.addOld(r.value.items.map(::entity).filter { !isCurrent(it, fresh.value, here) }))
             }
@@ -275,7 +286,10 @@ class InboxSender(
                 // An old save reached pagel.uz: the Old pile is one shorter (its row in Room is about to go, a quiet bulk part has none).
                 val old = body.quiet == true || (dao.item(body.file)?.position ?: 0) >= OLD_POSITION
                 dao.sent(op.id, body.file, body.action, out.value.sorted, out.value.keptToday, clock(), body.quiet == true)
-                if (old && body.action != "later") captured.oldLeft.update { it?.minus(1)?.coerceAtLeast(0) }
+                if (old && body.action != "later") {
+                    captured.oldLeft.update { it?.minus(1)?.coerceAtLeast(0) }
+                    pile.update { it?.copy(left = (it.left - 1).coerceAtLeast(0)) }
+                }
                 SortStep.SENT
             }
             is Outcome.Failed -> when (val e = out.error) {

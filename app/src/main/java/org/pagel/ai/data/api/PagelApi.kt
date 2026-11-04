@@ -63,8 +63,15 @@ class PagelApi(private val http: OkHttpClient, private val io: CoroutineDispatch
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(CreatedTaskDto.serializer(), it) } }
     }
 
-    suspend fun inbox(baseUrl: String, token: String, limit: Int, seed: Long, olderThan: Int? = null): Outcome<InboxResponse> = call {
-        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox?limit=$limit&seed=$seed" + (olderThan?.let { "&older_than=$it" } ?: ""))), token).build()
+    /** [source], [project] and [newest] focus the old pile (with [olderThan]); an older pagel.uz ignores them. */
+    suspend fun inbox(
+        baseUrl: String, token: String, limit: Int, seed: Long, olderThan: Int? = null,
+        source: String? = null, project: String? = null, newest: Boolean = false,
+    ): Outcome<InboxResponse> = call {
+        fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+        val query = "limit=$limit&seed=$seed" + (olderThan?.let { "&older_than=$it" } ?: "") +
+            (source?.let { "&source=${enc(it)}" } ?: "") + (project?.let { "&project=${enc(it)}" } ?: "") + (if (newest) "&newest=1" else "")
+        val req = authed(Request.Builder().url(url(baseUrl, "/api/v1/inbox?$query")), token).build()
         http.newCall(req).execute().use { r -> read(r) { json.decodeFromString(InboxResponse.serializer(), it) } }
     }
 

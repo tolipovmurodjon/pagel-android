@@ -760,9 +760,34 @@ grep -qE 'text="62.{1,2}left[^"]*"' "$OUT/$(printf '%02d' $N)-inbox-old-sorted-t
 for i in $(seq 1 30); do [ "$(grep -cE 'POST /api/v1/inbox \{"action":"drop","file":"inbox/old[0-9]+.md"\}' "$FAKE_LOG")" = "2" ] && break; sleep 1; done
 [ "$(grep -cE 'POST /api/v1/inbox \{"action":"drop","file":"inbox/old[0-9]+.md"\}' "$FAKE_LOG")" = "2" ] || fail_inbox "the two old drops did not reach pagel.uz"
 log "   the Old pile opened, two old saves were sorted with the same dock, its own count read 62 left"
-# The Old pile's own topics sit on its screen: Drop group, Undo, and pagel.uz hears nothing of it.
 grep -q 'saved before 1.November' "$OUT/$(printf '%02d' $N)-inbox-old-sorted-two.xml" || fail_inbox "the Old pile does not say \"saved before 1 November\""
-tap "Drop group Instagram 2026" || fail_inbox "no Drop group row for Instagram 2026 inside the Old pile screen"
+# The Archive's one icon (Boss 2026-11-04: "drop group nope… filter Telegram, X, Instagram… ABABIL, Humopedia"): Focus
+# counts the pile by source and topic, a source asks pagel.uz for that pile, and the line says the focus in words.
+grep -q 'Drop group' "$OUT/$(printf '%02d' $N)-inbox-old-sorted-two.xml" && fail_inbox "Drop group rows are back on the Archive's screen (Boss 2026-11-04: one Focus icon)"
+open_tidy() { tap Focus || return 1; sleep 2; tap "Tidy up all old saves"; }
+tap Focus || fail_inbox "the Archive has no Focus icon"
+shot inbox-focus 2.5
+grep -q 'content-desc="From: Instagram · 62"' "$OUT/$(printf '%02d' $N)-inbox-focus.xml" || fail_inbox "Focus does not count the Archive by source (no From: Instagram · 62)"
+grep -q 'content-desc="About: Not read yet · 62"' "$OUT/$(printf '%02d' $N)-inbox-focus.xml" || fail_inbox "Focus does not count the Archive by topic (no About: Not read yet · 62)"
+grep -q 'content-desc="Order: Shuffle"' "$OUT/$(printf '%02d' $N)-inbox-focus.xml" || fail_inbox "Focus has no Shuffle order"
+tap "From: Instagram · 62" || fail_inbox "the Instagram choice in Focus did not take a tap"
+for i in $(seq 1 16); do grep -q 'GET /api/v1/inbox?.*older_than=.*source=instagram' "$FAKE_LOG" && break; sleep 0.5; done
+grep -q 'GET /api/v1/inbox?.*older_than=.*source=instagram' "$FAKE_LOG" || fail_inbox "the Instagram focus never asked pagel.uz for its pile (no source=instagram)"
+tap "Order: Shuffle" || fail_inbox "the Shuffle order did not take a tap"
+for i in $(seq 1 16); do grep -qE 'GET /api/v1/inbox\?limit=60&seed=[1-9][0-9]*&older_than=.*source=instagram' "$FAKE_LOG" && break; sleep 0.5; done
+grep -qE 'GET /api/v1/inbox\?limit=60&seed=[1-9][0-9]*&older_than=.*source=instagram' "$FAKE_LOG" || fail_inbox "Shuffle in the Archive did not ask pagel.uz for a shuffled deal (seed 0)"
+tap "Show 62 saves" || fail_inbox "Focus has no Show 62 saves button"
+shot inbox-focused 2
+grep -qE 'text="Instagram · Shuffle · 62.{1,2}left"' "$OUT/$(printf '%02d' $N)-inbox-focused.xml" || fail_inbox "the focused Archive does not say Instagram · Shuffle · 62 left"
+tap Focus || fail_inbox "no Focus icon the second time"
+sleep 2
+tap "From: All · 62" || fail_inbox "no From: All in Focus"
+tap "Order: Oldest first" || fail_inbox "no Oldest first in Focus"
+log "   Focus: Instagram and Shuffle reached pagel.uz (source=instagram, a seed); the line said Instagram · Shuffle · 62 left"
+# Drop group lives one level down now, in the tidy-up sheet: Drop group, Undo, and pagel.uz hears nothing of it.
+tap "Tidy up all old saves" || fail_inbox "Focus has no Tidy up all old saves row"
+sleep 3
+tap "Drop group Instagram 2026" || fail_inbox "no Drop group row for Instagram 2026 in the tidy-up sheet"
 tap Undo || tap Undo || fail_inbox "Drop group showed no Undo"
 shot inbox-old-group-undone 1.5
 sleep 9
@@ -771,7 +796,7 @@ log "   Drop group on the Old pile screen, then Undo: pagel.uz heard of nothing"
 # The bulk tidy-up: the count first, "Move all" with one Undo that stops every one before pagel.uz hears of it.
 # pagel.uz now holds 62 old saves and deals 60 a page: the sheet shows its whole count (checker 2026-10-30 #2), "Move all"
 # pages through all 62 with one Undo, every part is quiet, and the ring does not move (checker 2026-10-30 #1).
-tap "Tidy old saves" || fail_inbox "no Tidy old saves button in the Inbox header"
+open_tidy || fail_inbox "no way to the tidy-up: Focus, then Tidy up all old saves"
 shot inbox-tidy 3
 grep -q '62 saves from before 1 November' "$OUT/$(printf '%02d' $N)-inbox-tidy.xml" || fail_inbox "the tidy-up did not show pagel.uz's whole count (62) before moving anything"
 tap "Move all 62 to Someday" || fail_inbox "no Move all 62 to Someday button"
@@ -784,7 +809,7 @@ log "   one Undo stopped all 62 before pagel.uz heard of them"
 shot inbox-before-bulk 1
 RING_B=$(grep -oE 'content-desc="(Done, )?[0-9]+ of 5 sorted today"' "$OUT/$(printf '%02d' $N)-inbox-before-bulk.xml" | grep -oE '[0-9]+' | head -1)
 [ -n "$RING_B" ] || fail_inbox "the ring says nothing before the bulk"
-tap "Tidy old saves" || fail_inbox "no Tidy old saves button the second time"
+open_tidy || fail_inbox "no way to the tidy-up the second time"
 shot inbox-tidy-again 2
 tap "Move all 62 to Someday" || fail_inbox "no Move all 62 to Someday button the second time"
 shot inbox-bulk-progress 2

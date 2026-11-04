@@ -49,7 +49,10 @@ import org.pagel.ai.ui.capture.CaptureViewModel
 import org.pagel.ai.ui.glass.AuroraBackground
 import org.pagel.ai.ui.glass.GlassTheme
 import org.pagel.ai.ui.glass.ToastCenter
+import org.pagel.ai.data.inbox.PileCounts
+import org.pagel.ai.ui.inbox.ArchiveView
 import org.pagel.ai.ui.inbox.InboxActions
+import org.pagel.ai.ui.inbox.InboxOrder
 import org.pagel.ai.ui.inbox.InboxScreen
 import org.pagel.ai.ui.inbox.InboxUi
 import org.pagel.ai.ui.inbox.InboxViewModel
@@ -231,9 +234,63 @@ class InboxV3ScreenshotTest {
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-v3-old-pile.png")
         compose.onNodeWithText("Archive", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("saved before 1", substring = true, useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Tidy old saves").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Focus").assertIsDisplayed()
+        // Boss 2026-11-04: "drop group nope": one icon in the header, no group rows under it.
+        assertTrue("no Drop group on the Archive", compose.onAllNodesWithText("Drop group", substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         for (w in listOf("Drop", "Someday", "Note", "Do now", "Action", "More")) compose.onAllNodesWithText(w, useUnmergedTree = true).fetchSemanticsNodes().let { assertTrue("$w in the old pile's dock", it.isNotEmpty()) }
         assertEquals("red pixels", 0, redPixels())
+    }
+
+    private val pile = PileCounts(mapOf("instagram" to 600, "x" to 95, "linkedin" to 50, "telegram" to 12), mapOf("ababil" to 300, "humopedia" to 200, "all" to 100), 941)
+
+    /** Focus (Boss 2026-11-04): From, About and Order with real counts, Show N, the tidy-up one level down; a tap sets it. */
+    @Test fun focusFiltersTheArchiveBySourceTopicAndOrder() {
+        var set: ArchiveView? = null
+        var tidied = 0
+        show { InboxScreen(ui(grant, old = 941, oldMode = true).copy(pile = pile), leaving = null, pictures = emptyMap(), contentPadding = PaddingValues(top = 16.dp, bottom = 96.dp), actions = InboxActions(setArchive = { set = it }, tidy = { tidied++ })) }
+        compose.onNodeWithContentDescription("Focus").performClick()
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-archive-focus.png")
+        for (d in listOf("From: Instagram · 600", "From: Telegram · 12", "About: Humopedia · 200", "About: Not read yet · 100", "Order: Shuffle", "Show 941 saves", "Tidy up all old saves"))
+            compose.onNodeWithContentDescription(d).assertIsDisplayed()
+        compose.onNodeWithContentDescription("From: Instagram · 600").performClick()
+        assertEquals(ArchiveView(source = "instagram"), set)
+        compose.onNodeWithContentDescription("Order: Shuffle").performClick()
+        assertEquals(ArchiveView(order = InboxOrder.SHUFFLE), set)
+        compose.onNodeWithContentDescription("Tidy up all old saves").performClick()
+        assertEquals(1, tidied)
+    }
+
+    /** A set focus is never hidden: the line says it in words and its count. */
+    @Test fun aFocusedArchiveSaysItsFocus() {
+        val u = ui(grant, old = 941, oldMode = true).copy(pile = pile.copy(left = 40), archive = ArchiveView("instagram", "humopedia", InboxOrder.SHUFFLE))
+        show { screen(u) }
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-archive-focused.png")
+        compose.onNodeWithText("Instagram · Humopedia · Shuffle · 40 left", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test fun theFocusSheetAt320dpAnd15xFontCutsNothing() {
+        show(1.5f) { Box(Modifier.width(320.dp).height(640.dp)) { screen(ui(grant, old = 941, oldMode = true).copy(pile = pile)) } }
+        compose.onNodeWithContentDescription("Focus").performClick()
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("build/outputs/roborazzi/inbox-archive-focus-320-font-1.5.png")
+        assertNoCutText("focus 320 dp 1.5x", listOf("Instagram · 600", "Humopedia · 200", "Shuffle", "Show 941 saves"))
+    }
+
+    /** The phone deals the same focus as pagel.uz: one source, one project ("all" = not read), oldest or newest first. */
+    @Test fun theArchiveDealsItsFocusInOrder() {
+        fun save(file: String, source: String, project: String, day: String) = row(file, file).copy(source = source, project = project, saved = day, posted = day)
+        val items = listOf(
+            save("a", "https://www.instagram.com/p/a/", "ababil", "2025-03-01"), save("b", "https://x.com/u/status/1", "ababil", "2025-01-01"),
+            save("c", "https://instagram.com/p/c/", "ababil", "2025-01-15"), save("d", "https://t.me/chan/4", "humopedia", "2025-02-01"),
+            save("e", "Boss said (phone capture)", "all", "2025-02-10"),
+        )
+        assertEquals(listOf("c", "a"), ArchiveView("instagram", "ababil").deal(items, 0).map { it.file })
+        assertEquals(listOf("a", "c", "b"), ArchiveView(project = "ababil", order = InboxOrder.NEWEST).deal(items, 0).map { it.file })
+        assertEquals(listOf("d"), ArchiveView("telegram").deal(items, 0).map { it.file })
+        assertEquals(listOf("e"), ArchiveView(project = "all").deal(items, 0).map { it.file })
+        assertEquals(ArchiveView().deal(items, 7).map { it.file }.toSet(), ArchiveView(order = InboxOrder.SHUFFLE).deal(items, 7).map { it.file }.toSet())
+        assertEquals(mapOf("instagram" to 2, "x" to 1), ArchiveView(project = "ababil").counts(items, 3).bySource)
     }
 
     @Test fun theOldPileAt15xFontCutsNothing() {

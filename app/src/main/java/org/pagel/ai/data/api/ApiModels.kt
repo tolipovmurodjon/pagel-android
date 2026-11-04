@@ -150,6 +150,10 @@ data class InboxResponse(
     @SerialName("older_than_60") val olderThan60: Int? = null,
     /** The day the Old pile starts from; only a newer pagel.uz (or the CI fake) names it, else the app's own line stands. */
     @SerialName("fresh_from") val freshFrom: String? = null,
+    /** The Archive's focus counts (asked with older_than): the whole old pile by source and by project, and what is left in the focus. */
+    @SerialName("pile_by_source") val pileBySource: Map<String, Int>? = null,
+    @SerialName("pile_by_project") val pileByProject: Map<String, Int>? = null,
+    @SerialName("pile_total") val pileTotal: Int? = null,
 )
 
 /** `POST /api/v1/inbox {action: "add"}`: one capture. [id] is the phone's own, so a retry never saves it twice. */
